@@ -19,6 +19,7 @@ em_qualquer_ordem
   recebe 35=AF 585=9 584=>MS
   recebe 35=D 11=KM-P-1009-1 38=1 54=2 847=1014 20828=129510 20829=129410
 fim
+envia @ER 11=KM-P-1009-1 37=dsa.1009.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
 
 # o mass status confirma a mesma execução, e o PnT repete o mesmo ExecID
 envia @ER 11=KM-E-1009-1 37=dsa.1009.E 150=I 39=2 584=$MS 54=1 38=1 44=130020 847=1031 14=1 151=0 6=130010

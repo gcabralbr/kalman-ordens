@@ -1,0 +1,164 @@
+// Package config lê a configuração do serviço (service.env em produção; um mapa nos testes).
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/shopspring/decimal"
+)
+
+// Config é um mapa chave → valor com padrões.
+type Config struct{ v map[string]string }
+
+// Do mapa.
+func Novo(v map[string]string) Config {
+	c := Config{v: map[string]string{}}
+	for k, x := range v {
+		c.v[k] = x
+	}
+	return c
+}
+
+// DoAmbiente lê as variáveis de ambiente.
+func DoAmbiente() Config {
+	m := map[string]string{}
+	for _, kv := range os.Environ() {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			m[k] = v
+		}
+	}
+	return Novo(m)
+}
+
+func (c Config) Texto(k, padrao string) string {
+	if s, ok := c.v[k]; ok && s != "" {
+		return s
+	}
+	return padrao
+}
+
+func (c Config) Inteiro(k string, padrao int) int {
+	s := c.Texto(k, "")
+	if s == "" {
+		return padrao
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		panic(fmt.Sprintf("config %s=%q: %v", k, s, err))
+	}
+	return n
+}
+
+func (c Config) Pontos(k string, padrao int64) int64 { return int64(c.Inteiro(k, int(padrao))) }
+
+// Segundos aceita fração ("0.5").
+func (c Config) Segundos(k string, padrao float64) time.Duration {
+	s := c.Texto(k, "")
+	if s == "" {
+		return time.Duration(padrao * float64(time.Second))
+	}
+	d, err := decimal.NewFromString(strings.TrimSpace(s))
+	if err != nil {
+		panic(fmt.Sprintf("config %s=%q: %v", k, s, err))
+	}
+	return time.Duration(d.Mul(decimal.NewFromInt(int64(time.Second))).IntPart())
+}
+
+// Hora HH:MM ou HH:MM:SS, como duração desde meia-noite.
+func (c Config) Hora(k, padrao string) time.Duration {
+	s := c.Texto(k, padrao)
+	p := strings.Split(s, ":")
+	if len(p) < 2 {
+		panic(fmt.Sprintf("config %s=%q: hora", k, s))
+	}
+	var d time.Duration
+	for i, x := range p {
+		n, err := strconv.Atoi(x)
+		if err != nil {
+			panic(fmt.Sprintf("config %s=%q: hora", k, s))
+		}
+		d += time.Duration(n) * []time.Duration{time.Hour, time.Minute, time.Second}[i]
+	}
+	return d
+}
+
+func (c Config) Bool(k string, padrao bool) bool {
+	switch strings.ToUpper(c.Texto(k, "")) {
+	case "Y", "S", "TRUE", "1":
+		return true
+	case "N", "FALSE", "0":
+		return false
+	}
+	return padrao
+}
+
+// Parametros são os valores que o motor usa, já lidos.
+type Parametros struct {
+	Conta, Simbolo, Bolsa, OnBehalfOfSubID, SenderLocationID string
+	UIDReal                                                  int // 0 = ninguém
+	Vencimento                                               string
+
+	ColarEntrada, FolgaStop, ColarSaida, Tick int64
+	TimeoutEntrada, TimeoutSaida, EsperaStop  time.Duration
+	PrazoConfirmacao, EsperaEncerramento      time.Duration
+	RetentativaProtecao, AlertaSemProtecao    time.Duration
+	AlertaPendente, RepeticaoAlerta           time.Duration
+	SilencioMassStatus                        time.Duration
+	IdadeMaxPreco, IdadeMaxPrecoDivergente    time.Duration
+	MaxRepreco                                int
+
+	PosicaoMax, QtdMaxOrdem, EntradasPorMinuto, MensagensPorMinuto, EntradasPorDia, RecusasParaParada int
+	IntervaloEntradas                                                                                 time.Duration
+	PerdaDiaPts, BookDescoladoPts                                                                     int64
+	JanelaInicio, JanelaFim, HoraZeragem                                                              time.Duration
+	PregoesAvisoVencimento                                                                            int
+}
+
+// Parametros lê tudo com os padrões da SPEC (v1 + v1.1).
+func (c Config) Parametros() Parametros {
+	return Parametros{
+		Conta:            c.Texto("ORDENS_CONTA", ""),
+		Simbolo:          c.Texto("ORDENS_SIMBOLO", ""),
+		Bolsa:            c.Texto("ORDENS_BOLSA", "BVMF"),
+		OnBehalfOfSubID:  c.Texto("ORDENS_ONBEHALF", ""),
+		SenderLocationID: c.Texto("ORDENS_SENDER_LOCATION", ""),
+		UIDReal:          c.Inteiro("ORDENS_UID_REAL", 0),
+		Vencimento:       c.Texto("ORDENS_VENCIMENTO", ""),
+
+		ColarEntrada:            c.Pontos("COLAR_ENTRADA_PTS", 15),
+		FolgaStop:               c.Pontos("FOLGA_STOP_PTS", 100),
+		ColarSaida:              c.Pontos("COLAR_SAIDA_PTS", 50),
+		Tick:                    c.Pontos("TICK_PTS", 5),
+		TimeoutEntrada:          c.Segundos("TIMEOUT_ENTRADA_S", 3),
+		TimeoutSaida:            c.Segundos("TIMEOUT_SAIDA_S", 2),
+		EsperaStop:              c.Segundos("ESPERA_STOP_S", 5),
+		PrazoConfirmacao:        c.Segundos("PRAZO_CONFIRMACAO_S", 3),
+		EsperaEncerramento:      c.Segundos("ESPERA_ENCERRAMENTO_S", 5),
+		RetentativaProtecao:     c.Segundos("RETENTATIVA_PROTECAO_S", 1),
+		AlertaSemProtecao:       c.Segundos("ALERTA_SEM_PROTECAO_S", 2),
+		AlertaPendente:          c.Segundos("ALERTA_PENDENTE_S", 3),
+		RepeticaoAlerta:         c.Segundos("ALERTA_REPETICAO_S", 30),
+		SilencioMassStatus:      c.Segundos("MASS_STATUS_SILENCIO_S", 3),
+		IdadeMaxPreco:           c.Segundos("PRECO_IDADE_MAX_S", 3),
+		IdadeMaxPrecoDivergente: c.Segundos("IDADE_MAX_PRECO_DIVERGENTE_S", 60),
+		MaxRepreco:              c.Inteiro("MAX_REPRECO_SAIDA", 3),
+
+		PosicaoMax:             c.Inteiro("LIMITE_POSICAO_MAX", 1),
+		QtdMaxOrdem:            c.Inteiro("LIMITE_QTD_ORDEM", 1),
+		IntervaloEntradas:      c.Segundos("LIMITE_INTERVALO_ENTRADAS_S", 60),
+		EntradasPorMinuto:      c.Inteiro("LIMITE_ENTRADAS_MIN", 1),
+		MensagensPorMinuto:     c.Inteiro("LIMITE_MENSAGENS_MIN", 10),
+		EntradasPorDia:         c.Inteiro("LIMITE_ENTRADAS_DIA", 15),
+		PerdaDiaPts:            c.Pontos("LIMITE_PERDA_DIA_PTS", 1500),
+		BookDescoladoPts:       c.Pontos("LIMITE_BOOK_DESCOLADO_PTS", 150),
+		RecusasParaParada:      c.Inteiro("LIMITE_RECUSAS_PARADA", 3),
+		JanelaInicio:           c.Hora("JANELA_INICIO", "09:00:00"),
+		JanelaFim:              c.Hora("JANELA_FIM", "14:00:00"),
+		HoraZeragem:            c.Hora("HORA_ZERAGEM", "14:30:00"),
+		PregoesAvisoVencimento: c.Inteiro("AVISO_VENCIMENTO_PREGOES", 3),
+	}
+}

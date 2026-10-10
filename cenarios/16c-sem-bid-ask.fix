@@ -1,5 +1,6 @@
 cenario 16c Ativo presente sem bid/ask → entrada recusada; saída calculada sobre o preco
 hora 2026-10-13 11:45:00
+config LIMITE_POSICAO_MAX=2
 
 executa INICIO
 executa COMPRADO OP=1631

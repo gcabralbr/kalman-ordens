@@ -3,6 +3,7 @@ hora 2026-10-13 11:50:00
 # No leilão de abertura o marketdata manda bid, ask e status84 != 0, sem preco.
 # status84 é verificado antes dos campos ausentes: o código é LEILAO, não SEM_PRECO.
 # O valor 2 é ilustrativo: qualquer status84 != 0 é tratado igual.
+config LIMITE_POSICAO_MAX=2
 
 executa INICIO
 executa COMPRADO OP=1641

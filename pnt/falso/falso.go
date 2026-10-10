@@ -83,6 +83,8 @@ type Falso struct {
 	logado    atomic.Bool
 	logons    atomic.Int64
 	autoExec  atomic.Int64
+	enviadas  atomic.Int64
+	recebidas atomic.Int64
 	mu        sync.Mutex
 	aplicacao []Recebida
 	admin     []Recebida
@@ -253,8 +255,18 @@ func (f *Falso) enviar(campos []Campo) error {
 	if err != nil {
 		return err
 	}
-	return quickfix.SendToTarget(m, f.sessao)
+	if err := quickfix.SendToTarget(m, f.sessao); err != nil {
+		return err
+	}
+	f.enviadas.Add(1)
+	return nil
 }
+
+// EnviadasApp conta as mensagens de aplicação enviadas pelo falso (inclusive offline).
+func (f *Falso) EnviadasApp() int64 { return f.enviadas.Load() }
+
+// RecebidasApp conta as mensagens de aplicação (e 35=3) recebidas pelo falso desde o início.
+func (f *Falso) RecebidasApp() int64 { return f.recebidas.Load() }
 
 // Proxima tira a próxima mensagem de aplicação da fila, esperando até `limite`.
 func (f *Falso) Proxima(limite time.Duration) (Recebida, error) {
@@ -396,6 +408,7 @@ func (f *Falso) FromAdmin(m *quickfix.Message, _ quickfix.SessionID) quickfix.Me
 	} else {
 		// 35=3 enviado pelo serviço: entra na fila de aplicação, como no roteiro
 		f.aplicacao = append(f.aplicacao, r)
+		f.recebidas.Add(1)
 	}
 	f.mu.Unlock()
 	f.avisar()
@@ -409,6 +422,7 @@ func (f *Falso) FromApp(m *quickfix.Message, _ quickfix.SessionID) quickfix.Mess
 	}
 	f.mu.Lock()
 	f.aplicacao = append(f.aplicacao, r)
+	f.recebidas.Add(1)
 	f.mu.Unlock()
 	f.avisar()
 	return nil

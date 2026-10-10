@@ -3,6 +3,7 @@ hora 2026-10-13 11:40:00
 # Entrada: SEM_PRECO. Saída sem nenhum preço: alerta crítico SAIDA_SEM_PRECO e nova tentativa
 # a cada TIMEOUT_SAIDA_S; sai assim que o preço volta. A 1014 já foi cancelada nesse ponto.
 # Duas recusas por minuto no máximo, para não disparar a parada por 3 recusas.
+config LIMITE_POSICAO_MAX=2
 
 executa INICIO
 executa COMPRADO OP=1621

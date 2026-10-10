@@ -323,7 +323,10 @@ func (l *leitor) expandir(ls []linha, params map[string]string, capturas map[str
 }
 
 var reCampo = regexp.MustCompile(`^(\d+)=(>?)(.*)$`)
-var reRef = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
+
+// RefRe casa $NOME.
+var RefRe = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
+var reRef = RefRe
 
 // campos interpreta tag=valor, tag=>NOME e @MODELO (que se expande e é sobrescrito pelo que vem depois).
 func (l *leitor) campos(toks []string, capturas map[string]bool, origem string) ([]Campo, error) {
