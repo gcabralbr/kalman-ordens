@@ -142,6 +142,23 @@ Na sessão FIX do serviço: `RejectInvalidMessage=N`, `AllowUnknownMsgFields=Y`,
 |---|---|
 | F0 | **Todos os roteiros passando nos dois backends** (memória e MariaDB 10.11.15 em container); com banco real são obrigatórios 08, 09, 10, 11, 19, 22 e todos os de restart. Mais: a suíte inteira com `go test -race ./...` sem achado, numa máquina com cgo (na .51 ou equivalente; a máquina de desenvolvimento atual não tem cgo). Tudo pelo `scripts/teste-completo.sh`. Antes da HML. |
 
+### F0 fechada — 2026-10-10, commit `f5bfb8a` (`f5bfb8aed7fde814eea8767c1663dd9303194929`)
+
+Verificado sobre o commit, com a árvore limpa, pelo `scripts/teste-completo.sh`:
+
+| Verificação | Resultado |
+|---|---|
+| Suíte inteira, Go local (1.26, sem cgo), backends memória e MariaDB `mariadb:10.11.15` (`sql_mode` da .51) | todos os pacotes `ok` |
+| Suíte inteira com `-race` em `golang:1.24-bookworm` (Go 1.24.13, cgo), contra o `kalman-mariadb-teste` | todos os pacotes `ok`, nenhum DATA RACE |
+| Roteiros com `-race` | 36/36 na memória, 36/36 no MariaDB (inclui 08, 09, 10, 11, 19, 22 e todos os de restart) |
+| Camada PnT com `-race`, 10 rodadas seguidas | `ok` |
+| Teste de mutação do executor | 9/9 mutações reprovadas |
+
+Achado do `-race` durante a F0: o `handleLogon` do QuickFIX/Go lê a sequência do store sem trava
+antes do `OnLogon`; um `SendToTarget` nesse intervalo corre com ele (`memoryStore` sem
+sincronização). A produção já só envia depois do `OnLogon` (F5); o cliente de teste do PnT falso
+não esperava e foi corrigido. Próxima fase: F1 (HML do PnT, Parte 11.2).
+
 ## 8. Pendências abertas
 
 1. ~~Posição sem proteção em B5.c quando a saída não executa (16i).~~ **Resolvida por P5**: a
