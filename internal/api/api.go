@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"gammaquant.com.br/kalman-ordens/internal/motor"
 )
 
-// Handler monta as rotas.
-func Handler(m *motor.Motor) http.Handler {
+// Handler monta as rotas. espera = quanto o POST /ordens espera o motor antes do 503.
+func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /ordens", func(w http.ResponseWriter, r *http.Request) {
 		var p motor.Pedido
@@ -21,7 +22,14 @@ func Handler(m *motor.Motor) http.Handler {
 			escrever(w, http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()})
 			return
 		}
-		escrever(w, http.StatusOK, m.Pedir(p))
+		select {
+		case r := <-m.PedirAssincrono(p):
+			escrever(w, http.StatusOK, r)
+		case <-time.After(espera):
+			// o motor segue com o pedido; o gestor reenvia o mesmo corpo e recebe o resultado original
+			escrever(w, http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "RESULTADO_DESCONHECIDO",
+				"motivo": "o motor não respondeu a tempo; reenviar o mesmo pedido"})
+		}
 	})
 	mux.HandleFunc("GET /ordens/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

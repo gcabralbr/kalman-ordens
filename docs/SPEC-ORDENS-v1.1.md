@@ -7,8 +7,9 @@ Onde a v1.1 não diz nada, vale a v1.
 Os roteiros (`cenarios/*.fix`, formato em `cenarios/FORMATO.md`) são a especificação executável:
 cada decisão abaixo está afirmada em pelo menos um deles.
 
-Data: 2026-10-10. Decisões confirmadas pelo responsável em três rodadas (stack e envio;
-roteiros e preço; fill perdido por 35=3 e saída com ticker divergente).
+Data: 2026-10-10. Decisões confirmadas pelo responsável em quatro rodadas (stack e envio;
+roteiros e preço; fill perdido por 35=3 e saída com ticker divergente; banco, idempotência e
+Telegram).
 
 ---
 
@@ -77,6 +78,29 @@ Contrato real do `/precos/atual` em [`docs/referencia/precos-atual.md`](referenc
 "Último preço conhecido do símbolo certo" = o `preco` (e seu `ts`) da última leitura com
 `ticker == ORDENS_SIMBOLO`. O motor guarda esse par a cada leitura válida.
 
+## 4b. Contrato HTTP: idempotência e 503 (Parte C)
+
+| # | Regra | Parte da v1 | Roteiro |
+|---|---|---|---|
+| C1 | **Idempotência do POST /ordens por `(operacao_id, papel)`.** Corpo idêntico ao do pedido original (todos os campos, inclusive `ts_decisao`) → **200 com o resultado original**, `repetido=true` e `estado_atual` (a operação como está agora: estado, posição, ordens); sem alerta, sem ordem nova. Vale para ENTRADA e SAIDA, inclusive depois de a operação zerar (o reenvio de uma SAIDA aceita devolve o original, não `SEM_POSICAO`). Corpo diferente → recusa `DUPLICADA` + alerta `DUPLICADA_DIFERENTE` (bug no gestor). Pedido recusado (limite, preço...) não cria o par: o reenvio é avaliado de novo. O pedido e a resposta originais ficam gravados na operação (sobrevivem a restart). | 2.1, 5 | 23, 25 |
+| C2 | **503 `RESULTADO_DESCONHECIDO`:** a API espera o motor por `HTTP_ESPERA_S` (inicial 5 s); estourou, responde 503 e **o motor processa o pedido mesmo assim**. Contrato com o gestor: diante de 503 (ou de timeout/erro de rede no POST), **reenviar o mesmo corpo**; a idempotência (C1) devolve o resultado original. Nunca mandar um corpo novo para a mesma operação. | 2.1 | 24 |
+
+## 4c. Persistência, executável e alertas
+
+| # | Regra | Parte da v1 | Teste |
+|---|---|---|---|
+| P1 | **MariaDB 10.11** (produção 10.11.15 na .51). SQL restrito ao que roda no 10.11; testes em container `mariadb:10.11.15`, nunca no MySQL 5.7 do note. Schema próprio do serviço (`kalmanordens` em produção, a confirmar; `kalmanordens_teste` nos testes), nunca o dbecotools. DDL em `migracoes/0001_inicial.sql` (reescrito para o modelo em Go; nunca foi aplicado), aplicado pelo próprio serviço na subida (`kalmanordem_migracao`). Horários em UTC (`DATETIME(3)`); `data` é o dia do pregão. A limpeza de tabelas dos testes só roda em schema `*_teste`. | 8 | `internal/repo/contrato_test.go` (mesma bateria na memória e no MariaDB) |
+| P2 | **Executável:** `kalman-ordens servir` (systemd), `parar`/`zerar`/`retomar -motivo` e `saude` pelo HTTP local; o HTTP recusa subir fora de loopback; SIGTERM faz logout FIX e não cancela nada no PnT. `deploy/` tem a unidade do systemd, o `service.env.example` e o roteiro de instalação. | 1, 6 | `cmd/kalman-ordens/main_test.go` (ponta a ponta com MariaDB) |
+| P3 | **Telegram direto** (`api.telegram.org`, token e chat no service.env). Fila própria, timeout de 3 s, nunca bloqueia o motor. Falha → log + nova tentativa com espera crescente (1, 2, 5, 10, 30, 60 s). **Crítico nunca é descartado**; não crítico desiste após 3 tentativas ou quando a fila passa de 1000. 4xx permanente não se retenta; 429 respeita `retry_after`. O token nunca vai para o log. | 9 | `internal/alerta/telegram_test.go` |
+| P4 | **Leitor do /precos/atual** testado com as fixtures reais (`precos-atual-exemplo.json`, `precos-atual-vazio.json`) e contra um servidor HTTP: 404/400 = indisponível, falha de rede nunca mantém o preço antigo. | — | `internal/preco/preco_test.go` |
+
+## 4d. Decisões a revisar quando a posição máxima passar de 1
+
+| # | Decisão (v1) | Revisar quando |
+|---|---|---|
+| R1 | **Saída parcial vira total:** uma SAIDA com `qtd` menor que a posição zera a posição toda (com aviso no log). Reduce-only continua valendo. | **revisar quando posição máxima > 1** |
+| R2 | **Fill tardio em operação ainda aberta** (só possível com qtd > 1) é tratado como fill normal, com alerta `ENTRADA_TARDIA`; a regra A3 de zerar vale para operação já encerrada. | **revisar quando posição máxima > 1** |
+
 ## 5. Configuração nova
 
 | Chave | Inicial | Uso |
@@ -85,6 +109,11 @@ Contrato real do `/precos/atual` em [`docs/referencia/precos-atual.md`](referenc
 | `ESPERA_ENCERRAMENTO_S` | 5 | A3 |
 | `PRECOS_URL` | `http://172.16.110.51:9090` | B |
 | `IDADE_MAX_PRECO_DIVERGENTE_S` | 60 | B5.d |
+| `HTTP_ESPERA_S` | 5 | C2 |
+| `HTTP_ENDERECO` | 127.0.0.1:9092 | P2 (só loopback) |
+| `DB_DSN` | — | P1 |
+| `TELEGRAM_TOKEN`, `TELEGRAM_CHAT` | — | P3 |
+| `PRECOS_ATIVO` | WINFUT | B |
 
 Na sessão FIX do serviço: `RejectInvalidMessage=N`, `AllowUnknownMsgFields=Y`,
 `ValidateUserDefinedFields=N`, `ValidateFieldsOutOfOrder=N`, `ValidateFieldsHaveValues=N`,
@@ -98,13 +127,17 @@ Na sessão FIX do serviço: `RejectInvalidMessage=N`, `AllowUnknownMsgFields=Y`,
 - `ENTRADA_ENCERRADA` pode chegar até `ESPERA_ENCERRAMENTO_S` depois do cancelamento, e
   `motivo` pode ser `EXECUTADA`, `CANCELADA`, `EXPIRADA`, `REJEITADA` ou `DESCONHECIDA`.
 - Recusas novas: `LADO_INCOMPATIVEL`, `SEM_CONFIRMACAO`, `CONCILIANDO`, `SIMBOLO_DIVERGENTE`,
-  `SEM_PRECO`, `BOOK_INVALIDO`, `RESULTADO_DESCONHECIDO` (HTTP 503: consultar `GET /ordens/{id}`).
+  `SEM_PRECO`, `BOOK_INVALIDO`, `RESULTADO_DESCONHECIDO` (HTTP 503).
+- **Reenvio (C1/C2):** diante de 503, timeout ou erro de rede no POST, o gestor reenvia **o mesmo
+  corpo** (mesmo `ts_decisao`). Resposta com `repetido=true` = o pedido original já tinha sido
+  aceito; `estado_atual` traz a operação como está. `DUPLICADA` = corpo diferente para o mesmo par:
+  bug no gestor. `GET /ordens/{id}` continua disponível para consulta.
 
 ## 7. Critérios de fase acrescentados
 
 | Fase | Critério novo |
 |---|---|
-| F0 | Além dos roteiros verdes: a suíte inteira roda com `go test -race ./...` sem achado, numa máquina com cgo (na .51 ou equivalente). A máquina de desenvolvimento atual não tem cgo. Antes da HML. |
+| F0 | **Todos os roteiros passando nos dois backends** (memória e MariaDB 10.11.15 em container); com banco real são obrigatórios 08, 09, 10, 11, 19, 22 e todos os de restart. Mais: a suíte inteira com `go test -race ./...` sem achado, numa máquina com cgo (na .51 ou equivalente; a máquina de desenvolvimento atual não tem cgo). Tudo pelo `scripts/teste-completo.sh`. Antes da HML. |
 
 ## 8. Pendências abertas
 
@@ -122,8 +155,13 @@ Na sessão FIX do serviço: `RejectInvalidMessage=N`, `AllowUnknownMsgFields=Y`,
    cenário 08 supõe 14 correto.
 4. **Valores de `status84`.** A regra é "≠ 0 = não negocia"; o 2 dos roteiros é ilustrativo.
 5. **Gestor (Python):** precisa tratar `tardio`, as origens de A4, o atraso do
-   `ENTRADA_ENCERRADA` e a recusa `SIMBOLO_DIVERGENTE` na SAIDA (B5.d: a operação continua aberta,
-   protegida pela 1014).
+   `ENTRADA_ENCERRADA`, a recusa `SIMBOLO_DIVERGENTE` na SAIDA (B5.d: a operação continua aberta,
+   protegida pela 1014) e o 503 (C2: reenviar o mesmo corpo; `repetido=true` na resposta).
+6. **Schema de produção:** a v1 (Parte 8) falava em dbecotools; o serviço agora usa schema
+   próprio. `kalmanordens` é a proposta (`deploy/service.env.example`); confirmar nome e usuário
+   na .51, e o `sql_mode` de lá (o container usa o padrão do 10.11.15:
+   `STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION`).
+7. **Usuário do systemd:** a unidade usa `kalman-ordens` (usuário de sistema próprio); confirmar.
 
 ## 9. Cobertura dos roteiros
 
@@ -148,3 +186,6 @@ Na sessão FIX do serviço: `RejectInvalidMessage=N`, `AllowUnknownMsgFields=Y`,
 | 19 | F6 / A6 |
 | 21 | F8 (fill incompleto aplicado, sem 35=3) |
 | 22 | F9 (35=3 enviado → alerta + mass status) |
+| 23 | C1 (reenvio idêntico: entrada, saída e saída depois de zerada) |
+| 24 | C2 (503 e reenvio do mesmo pedido) |
+| 25 | C1 (par repetido com conteúdo diferente → DUPLICADA + alerta) |

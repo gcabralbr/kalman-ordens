@@ -310,24 +310,100 @@ func (m *Motor) Processadas() int64 {
 	return n
 }
 
-// Pedir trata um POST /ordens.
-func (m *Motor) Pedir(p Pedido) Resposta {
+// Pedir trata um POST /ordens e espera o resultado.
+func (m *Motor) Pedir(p Pedido) Resposta { return <-m.PedirAssincrono(p) }
+
+// PedirAssincrono enfileira o pedido; o resultado chega no canal. Quem desiste de esperar (503)
+// não cancela nada: o motor processa o pedido do mesmo jeito.
+func (m *Motor) PedirAssincrono(p Pedido) <-chan Resposta {
+	ch := make(chan Resposta, 1)
+	m.fila <- func() { ch <- m.pedir(p) }
+	return ch
+}
+
+// Enfileirar roda f na goroutine do motor sem esperar (testes: simular motor lento).
+func (m *Motor) Enfileirar(f func()) { m.fila <- f }
+
+func (m *Motor) pedir(p Pedido) Resposta {
+	if r, ok := m.repetido(p); ok {
+		return r
+	}
 	var r Resposta
-	m.Fazer(func() {
-		var rec *recusa
-		switch p.Papel {
-		case "ENTRADA":
-			r, rec = m.pedirEntrada(p)
-		case "SAIDA":
-			r, rec = m.pedirSaida(p)
-		default:
-			rec = simples("CAMPO_INVALIDO", "papel deve ser ENTRADA ou SAIDA")
-		}
-		if rec != nil {
-			r = m.recusar(p, rec)
-		}
-	})
+	var rec *recusa
+	switch p.Papel {
+	case "ENTRADA":
+		r, rec = m.pedirEntrada(p)
+	case "SAIDA":
+		r, rec = m.pedirSaida(p)
+	default:
+		rec = simples("CAMPO_INVALIDO", "papel deve ser ENTRADA ou SAIDA")
+	}
+	if rec != nil {
+		r = m.recusar(p, rec)
+	}
+	m.guardarOriginal(p, r)
 	return r
+}
+
+// impressao: o pedido canônico (todos os campos), para comparar reenvios.
+func impressao(p Pedido) string {
+	b, _ := json.Marshal(p)
+	return string(b)
+}
+
+// repetido: mesmo (operacao_id, papel) já existente. Idêntico → resultado original + repetido=true +
+// estado atual, sem alerta. Diferente → DUPLICADA + alerta (bug no gestor).
+func (m *Motor) repetido(p Pedido) (Resposta, bool) {
+	if p.OperacaoID == nil {
+		return nil, false
+	}
+	op := m.porOp[*p.OperacaoID]
+	if op == nil {
+		return nil, false
+	}
+	var pedido, resposta string
+	switch p.Papel {
+	case "ENTRADA":
+		pedido, resposta = op.PedidoEntrada, op.RespostaEntrada
+	case "SAIDA":
+		pedido, resposta = op.PedidoSaida, op.RespostaSaida
+	default:
+		return nil, false
+	}
+	if pedido == "" {
+		return nil, false
+	}
+	if pedido != impressao(p) {
+		m.al.Emitir("DUPLICADA_DIFERENTE", "", fmt.Sprintf("%s repetida com conteúdo diferente: operação %d", p.Papel, op.OperacaoID), op.OperacaoID)
+		return m.recusar(p, simples("DUPLICADA", "operação já recebida com outro conteúdo")), true
+	}
+	r := Resposta{}
+	_ = json.Unmarshal([]byte(resposta), &r)
+	r["repetido"] = true
+	r["estado_atual"] = m.descrever(op)
+	return r, true
+}
+
+// guardarOriginal grava pedido e resposta quando o par (operacao_id, papel) passa a existir.
+// Entrada: sempre que a operação foi criada (aceita ou ENVIO_FALHOU). Saída: só aceita.
+func (m *Motor) guardarOriginal(p Pedido, r Resposta) {
+	if p.OperacaoID == nil {
+		return
+	}
+	op := m.porOp[*p.OperacaoID]
+	if op == nil {
+		return
+	}
+	b, _ := json.Marshal(r)
+	switch {
+	case p.Papel == "ENTRADA" && op.PedidoEntrada == "":
+		op.PedidoEntrada, op.RespostaEntrada = impressao(p), string(b)
+	case p.Papel == "SAIDA" && op.PedidoSaida == "" && r["aceito"] == true:
+		op.PedidoSaida, op.RespostaSaida = impressao(p), string(b)
+	default:
+		return
+	}
+	m.salvarOp(op)
 }
 
 // AtivarParada (POST /parada).

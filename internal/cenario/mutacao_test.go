@@ -54,6 +54,8 @@ func TestExecutorReprovaMutacoes(t *testing.T) {
 		{"07", "código de alerta", mutar("alerta", "STOP_FURADO", "SAIDA_ESGOTOU")},
 		{"05", "código de recusa", mutar("resposta", "codigo=SEM_POSICAO", "codigo=DUPLICADA")},
 		{"02", "quantidade do replace", mutar("recebe", "KM-P-1002-2", "KM-P-1002-9")},
+		{"23", "reenvio não marcado como repetido", mutar("resposta", "repetido=true", "repetido=null")},
+		{"24", "503 virou 200", mutar("resposta", "_status=503", "_status=200")},
 		{"13", "nada com mensagem pendente", func(c *roteiro.Cenario) bool {
 			// tira o recebe do cancel: o 'nada' seguinte tem de pegar o 35=F
 			for i, p := range c.Passos {
@@ -74,7 +76,7 @@ func TestExecutorReprovaMutacoes(t *testing.T) {
 				t.Fatal("mutação não se aplicou ao roteiro")
 			}
 			dir, _ := os.MkdirTemp("", "mutacao")
-			if err := Executar(c, dir); err == nil {
+			if err := Executar(c, dir, Memoria); err == nil {
 				t.Fatal("o executor aceitou um roteiro mutado")
 			} else {
 				t.Logf("reprovado como devia: %v", strings.SplitN(err.Error(), "\n", 2)[0])

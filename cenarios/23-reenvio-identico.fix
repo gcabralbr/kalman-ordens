@@ -1,0 +1,46 @@
+cenario 23 Reenvio idêntico do mesmo pedido → resultado original, repetido=true, sem alerta, sem ordem nova
+hora 2026-10-13 12:35:00
+# SPEC v1.1 C1: mesmo (operacao_id, papel) com corpo idêntico → 200 com o resultado original,
+# repetido=true e o estado atual da operação. Vale para ENTRADA e SAIDA, inclusive depois de zerada.
+
+executa INICIO
+
+entrada 2301 C
+resposta aceito=true clordid=KM-E-2301-1 _status=200
+recebe 35=D 11=KM-E-2301-1 44=130020 54=1 847=1031
+
+# reenvio antes de qualquer resposta do PnT
+entrada 2301 C
+resposta aceito=true repetido=true clordid=KM-E-2301-1 preco=130020 estado_atual.estado=ENTRANDO _status=200
+nada
+
+envia @ER 11=KM-E-2301-1 37=dsa.2301.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-E-2301-1 37=dsa.2301.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+recebe 35=D 11=KM-P-2301-1 54=2 847=1014
+envia @ER 11=KM-P-2301-1 37=dsa.2301.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+
+# reenvio depois do fill: resultado original, estado atual novo
+entrada 2301 C
+resposta aceito=true repetido=true clordid=KM-E-2301-1 estado_atual.estado=PROTEGIDA estado_atual.posicao=1
+nada
+
+saida 2301 V SINAL_OPOSTO
+resposta aceito=true repetido=null
+recebe 35=F 11=KM-P-2301-2 41=KM-P-2301-1 37=dsa.2301.P
+saida 2301 V SINAL_OPOSTO
+resposta aceito=true repetido=true estado_atual.estado=CANCELANDO_PROTECAO
+nada
+
+envia @ER 11=KM-P-2301-2 41=KM-P-2301-1 37=dsa.2301.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-2301-1 44=129950 54=2 847=1031
+envia @ER 11=KM-S-2301-1 37=dsa.2301.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=2301 origem=GESTOR
+
+# reenvio da saída depois de zerada: o original, não SEM_POSICAO
+saida 2301 V SINAL_OPOSTO
+resposta aceito=true repetido=true estado_atual.estado=ZERADA
+sem_alerta SEM_POSICAO
+sem_alerta DUPLICADA_DIFERENTE
+nada
+conta_eventos ENTRADA_EXECUTADA operacao_id=2301 = 1
+conta_eventos ZERADA operacao_id=2301 = 1

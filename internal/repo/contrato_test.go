@@ -1,0 +1,164 @@
+package repo
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/shopspring/decimal"
+
+	"gammaquant.com.br/kalman-ordens/internal/dominio"
+)
+
+// DSN do MariaDB de teste (container mariadb:10.11.15). Sem ela, só a memória é testada.
+// Ex.: KALMAN_TESTE_MARIADB=kalman:kalman@tcp(127.0.0.1:33306)/kalmanordens_teste
+func dsnTeste() string { return os.Getenv("KALMAN_TESTE_MARIADB") }
+
+// NovoMariaDBTeste abre o banco de teste limpo e migrado.
+func NovoMariaDBTeste(t testing.TB) *MariaDB {
+	t.Helper()
+	r, err := AbrirMariaDB(dsnTeste())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.LimparTeste(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Migrar(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.Fechar() })
+	return r
+}
+
+func backends(t *testing.T) map[string]func(t *testing.T) Repositorio {
+	b := map[string]func(t *testing.T) Repositorio{"memoria": func(*testing.T) Repositorio { return NovaMemoria() }}
+	if dsnTeste() != "" {
+		b["mariadb"] = func(t *testing.T) Repositorio { return NovoMariaDBTeste(t) }
+	} else {
+		t.Log("KALMAN_TESTE_MARIADB vazio: MariaDB não testado")
+	}
+	return b
+}
+
+func TestContrato(t *testing.T) {
+	for nome, novo := range backends(t) {
+		t.Run(nome, func(t *testing.T) {
+			r := novo(t)
+			em := time.Date(2026, 10, 13, 13, 15, 2, 123e6, time.UTC)
+
+			op := &dominio.Operacao{Data: "2026-10-13", OperacaoID: 77, UID: 7, Lado: dominio.Compra, QtdPedida: 1, StopPts: 500,
+				Estado: dominio.Entrando, MotivoEntrada: "SINAL", CriadaEm: em, ContadorN: map[string]int{"E": 1},
+				PedidoEntrada: `{"operacao_id":77}`, RespostaEntrada: `{"aceito":true}`}
+			if err := r.SalvarOperacao(op); err != nil || op.ID == 0 {
+				t.Fatalf("inserir operação: id=%d err=%v", op.ID, err)
+			}
+			dup := &dominio.Operacao{Data: "2026-10-13", OperacaoID: 77, UID: 7, Lado: dominio.Compra, Estado: dominio.Entrando, CriadaEm: em}
+			if err := r.SalvarOperacao(dup); err != ErrDuplicada {
+				t.Fatalf("operação duplicada: %v", err)
+			}
+			op.Estado, op.EncerrouEntrada, op.PnL = dominio.Zerada, true, decimal.RequireFromString("-505.5")
+			op.ContadorN["P"] = 3
+			op.SaidaPedidaEm = em.Add(time.Minute)
+			if err := r.SalvarOperacao(op); err != nil {
+				t.Fatal(err)
+			}
+			if ok, _ := r.OperacaoExiste(77); !ok {
+				t.Fatal("OperacaoExiste")
+			}
+
+			o := &dominio.Ordem{Data: "2026-10-13", UID: 7, OperacaoID: 77, Papel: dominio.Protecao, ClOrdBase: "KM-P-77-1",
+				ClOrdAtual: "KM-P-77-1", Estrategia: 1014, Lado: dominio.Venda, Qtd: 1, Preco: 129410, Stop: 129510, StopLim: 129410,
+				Estado: dominio.Enviando, CriadaEm: em}
+			if err := r.SalvarOrdem(o); err != nil || o.ID == 0 {
+				t.Fatalf("inserir ordem: %v", err)
+			}
+			o.ClOrdAtual, o.OrderID, o.Estado, o.QtdExec, o.PrecoMedio = "KM-P-77-2", "dsa.9", dominio.Executada, 1, decimal.RequireFromString("129505.25")
+			if err := r.SalvarOrdem(o); err != nil {
+				t.Fatal(err)
+			}
+
+			ops, ords, err := r.CarregarDia("2026-10-13")
+			if err != nil || len(ops) != 1 || len(ords) != 1 {
+				t.Fatalf("carregar: %d ops %d ordens err=%v", len(ops), len(ords), err)
+			}
+			g := ops[0]
+			if g.Estado != dominio.Zerada || !g.EncerrouEntrada || !g.PnL.Equal(op.PnL) || g.ContadorN["P"] != 3 ||
+				!g.CriadaEm.Equal(em) || !g.SaidaPedidaEm.Equal(em.Add(time.Minute)) || g.RespostaEntrada != `{"aceito":true}` || g.Lado != dominio.Compra {
+				t.Fatalf("operação lida diferente: %+v", g)
+			}
+			go_ := ords[0]
+			if go_.ClOrdAtual != "KM-P-77-2" || go_.OrderID != "dsa.9" || go_.Estado != dominio.Executada || !go_.PrecoMedio.Equal(o.PrecoMedio) ||
+				go_.Papel != dominio.Protecao || go_.Lado != dominio.Venda || go_.Stop != 129510 {
+				t.Fatalf("ordem lida diferente: %+v", go_)
+			}
+			if ops, _, _ := r.CarregarDia("2026-10-14"); len(ops) != 0 {
+				t.Fatal("outro dia não pode vir")
+			}
+
+			q := 1
+			ev := EventoFIX{OrdemID: o.ID, Direcao: "REC", MsgType: "8", ExecID: "T-1", CumQty: &q, Em: em}
+			if novo, err := r.RegistrarEvento(ev); !novo || err != nil {
+				t.Fatalf("evento: %v %v", novo, err)
+			}
+			if novo, err := r.RegistrarEvento(ev); novo || err != nil {
+				t.Fatalf("execid repetido aceito: %v %v", novo, err)
+			}
+			for i := 0; i < 2; i++ { // sem execid nunca conflita
+				if novo, err := r.RegistrarEvento(EventoFIX{Direcao: "ENV", MsgType: "D", Em: em.Add(time.Duration(i) * time.Second)}); !novo || err != nil {
+					t.Fatalf("evento sem execid: %v %v", novo, err)
+				}
+			}
+			if n, _ := r.EnviosDesde(em); n != 2 {
+				t.Fatalf("EnviosDesde = %d", n)
+			}
+			if n, _ := r.EnviosDesde(em.Add(500 * time.Millisecond)); n != 1 {
+				t.Fatalf("EnviosDesde corte = %d", n)
+			}
+
+			for i := 0; i < 3; i++ {
+				b, _ := json.Marshal(map[string]any{"i": i})
+				if s, err := r.Publicar("ALERTA", 77, b, em); err != nil || s != int64(i+1) {
+					t.Fatalf("publicar: seq=%d err=%v", s, err)
+				}
+			}
+			ps, _ := r.Publicados(1, 10)
+			if len(ps) != 2 || ps[0].Seq != 2 || ps[0].OperacaoID != 77 || string(ps[1].Dados) != `{"i":2}` {
+				t.Fatalf("publicados: %+v", ps)
+			}
+
+			if _, ok, _ := r.LerEstado("parada"); ok {
+				t.Fatal("estado inexistente")
+			}
+			_ = r.GravarEstado("parada", "a", em)
+			_ = r.GravarEstado("parada", "b", em)
+			if v, ok, _ := r.LerEstado("parada"); !ok || v != "b" {
+				t.Fatalf("estado: %q %v", v, ok)
+			}
+		})
+	}
+}
+
+// LimparTeste recusa schema que não termina em _teste.
+func TestLimparTesteRecusaProducao(t *testing.T) {
+	if dsnTeste() == "" {
+		t.Skip("sem MariaDB de teste")
+	}
+	r, err := AbrirMariaDB(dsnTeste())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Fechar()
+	r.db.SetMaxOpenConns(1) // USE vale por conexão
+	if _, err := r.db.Exec("CREATE DATABASE IF NOT EXISTS kalmanordens_prod_simulada"); err != nil {
+		t.Skipf("sem permissão para criar schema de simulação: %v", err)
+	}
+	defer r.db.Exec("DROP DATABASE IF EXISTS kalmanordens_prod_simulada")
+	if _, err := r.db.Exec("USE kalmanordens_prod_simulada"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.LimparTeste(); err == nil {
+		t.Fatal("LimparTeste aceitou um schema que não é de teste")
+	}
+}

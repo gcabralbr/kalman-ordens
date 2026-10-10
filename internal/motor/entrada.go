@@ -31,10 +31,8 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if p.StopPts == nil || *p.StopPts <= 0 {
 		return nil, simples("SEM_STOP", "stop_pts ausente na ENTRADA: sem stop, não há ordem")
 	}
-	if ex := m.porOp[*p.OperacaoID]; ex != nil {
-		if ex.Lado != lado || ex.QtdPedida != *p.Qtd || ex.StopPts != *p.StopPts {
-			m.al.Emitir("DUPLICADA_DIFERENTE", "", fmt.Sprintf("ENTRADA repetida com conteúdo diferente: operação %d", *p.OperacaoID), *p.OperacaoID)
-		}
+	if m.porOp[*p.OperacaoID] != nil {
+		// a idempotência (repetido) já tratou o reenvio; aqui só chega operação sem pedido guardado
 		return nil, simples("DUPLICADA", "operação já recebida")
 	}
 	if existe, _ := m.repo.OperacaoExiste(*p.OperacaoID); existe {

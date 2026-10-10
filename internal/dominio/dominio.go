@@ -154,6 +154,8 @@ type Operacao struct {
 	EncerrouEntrada bool
 	CriadaEm        time.Time
 	ContadorN       map[string]int // último n do ClOrdID, por papel
+	// Idempotência do POST /ordens: pedido e resposta originais (JSON).
+	PedidoEntrada, RespostaEntrada, PedidoSaida, RespostaSaida string
 }
 
 // Copia devolve uma cópia profunda.

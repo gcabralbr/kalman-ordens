@@ -1,0 +1,21 @@
+cenario 24 503 RESULTADO_DESCONHECIDO → o gestor reenvia o mesmo pedido e recebe o resultado original
+hora 2026-10-13 12:40:00
+# SPEC v1.1 C2: a API espera o motor por HTTP_ESPERA_S; estourou → 503 RESULTADO_DESCONHECIDO,
+# e o motor segue com o pedido. O gestor reenvia o mesmo corpo: idempotência devolve o original.
+config HTTP_ESPERA_S=0.2
+
+executa INICIO
+
+motor_lento
+entrada 2401 C
+resposta aceito=false codigo=RESULTADO_DESCONHECIDO _status=503
+motor_normal
+
+# o motor processou o pedido mesmo assim
+recebe 35=D 11=KM-E-2401-1 44=130020 54=1 847=1031
+envia @ER 11=KM-E-2401-1 37=dsa.2401.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+
+entrada 2401 C
+resposta aceito=true repetido=true clordid=KM-E-2401-1 _status=200
+nada
+sem_alerta DUPLICADA_DIFERENTE

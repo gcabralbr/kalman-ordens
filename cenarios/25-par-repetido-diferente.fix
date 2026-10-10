@@ -1,0 +1,23 @@
+cenario 25 Mesmo (operacao_id, papel) com conteúdo diferente → DUPLICADA + alerta (bug no gestor)
+hora 2026-10-13 12:45:00
+# SPEC v1.1 C1. DUPLICADA não conta para a parada por recusas: nada para.
+
+executa INICIO
+executa COMPRADO OP=2501
+
+entrada 2501 C stop=600
+resposta aceito=false codigo=DUPLICADA
+alerta DUPLICADA_DIFERENTE
+entrada 2501 V
+resposta aceito=false codigo=DUPLICADA
+alerta DUPLICADA_DIFERENTE
+nada
+
+saida 2501 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-2501-2 41=KM-P-2501-1 37=dsa.2501.P
+saida 2501 V STOP
+resposta aceito=false codigo=DUPLICADA
+alerta DUPLICADA_DIFERENTE
+nada
+saude posicao=1 parada=null

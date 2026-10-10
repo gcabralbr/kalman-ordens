@@ -59,7 +59,8 @@ type Executor struct {
 	dir      string
 	rel      *relogio.Controlado
 	preco    *preco.Falsa
-	repo     *repo.Memoria
+	repo     repo.Repositorio
+	backend  Backend
 	notif    *notificador
 	pnt      *falso.Falso
 	svc      *servico
@@ -69,12 +70,54 @@ type Executor struct {
 	casados  map[int64]bool
 	sessaoOK int
 	logons   int64
+	travado  chan struct{} // motor_lento
+	tsPorOp  map[string]string
 	Registro []string // o que aconteceu, para depuração
 }
 
+// Backend de persistência do cenário. Novo dá um repositório limpo; Reabrir, o mesmo banco numa
+// conexão nova (reinicia_servico).
+type Backend struct {
+	Nome    string
+	Novo    func() (repo.Repositorio, error)
+	Reabrir func(repo.Repositorio) (repo.Repositorio, error)
+}
+
+// Memoria é o backend em memória: reabrir é o mesmo objeto (o que foi salvo continua lá).
+var Memoria = Backend{
+	Nome:    "memoria",
+	Novo:    func() (repo.Repositorio, error) { return repo.NovaMemoria(), nil },
+	Reabrir: func(r repo.Repositorio) (repo.Repositorio, error) { return r, nil },
+}
+
+// MariaDB devolve o backend sobre o schema de teste (limpo e migrado a cada cenário).
+func MariaDB(dsn string) Backend {
+	return Backend{
+		Nome: "mariadb",
+		Novo: func() (repo.Repositorio, error) {
+			r, err := repo.AbrirMariaDB(dsn)
+			if err != nil {
+				return nil, err
+			}
+			if err := r.LimparTeste(); err != nil {
+				return nil, err
+			}
+			return r, r.Migrar()
+		},
+		Reabrir: func(velho repo.Repositorio) (repo.Repositorio, error) {
+			velho.(*repo.MariaDB).Fechar()
+			r, err := repo.AbrirMariaDB(dsn)
+			if err != nil {
+				return nil, err
+			}
+			return r, r.Migrar()
+		},
+	}
+}
+
 // Executar roda o cenário; o primeiro passo que falha devolve erro com arquivo:linha.
-func Executar(c roteiro.Cenario, dir string) (err error) {
-	e := &Executor{c: c, dir: dir, capturas: map[string]string{}, casados: map[int64]bool{}}
+func Executar(c roteiro.Cenario, dir string, b Backend) (err error) {
+	e := &Executor{c: c, dir: dir, backend: b, capturas: map[string]string{}, casados: map[int64]bool{}, tsPorOp: map[string]string{}}
 	defer e.encerrar()
 	if err := e.preparar(); err != nil {
 		return err
@@ -90,7 +133,11 @@ func Executar(c roteiro.Cenario, dir string) (err error) {
 func (e *Executor) preparar() error {
 	e.rel = relogio.NovoControlado(e.c.Hora)
 	e.preco = preco.NovaFalsa(e.rel)
-	e.repo = repo.NovaMemoria()
+	r, err := e.backend.Novo()
+	if err != nil {
+		return err
+	}
+	e.repo = r
 	e.notif = &notificador{}
 	f, err := falso.Novo(falso.Config{Contraparte: "KALMAN", Dir: filepath.Join(e.dir, "pnt")})
 	if err != nil {
@@ -121,7 +168,7 @@ func (e *Executor) subir() error {
 	if err := m.Iniciar(); err != nil {
 		return err
 	}
-	e.svc = &servico{motor: m, sessao: s, http: api.Handler(m), baseEnv: e.pnt.EnviadasApp(), baseRec: e.pnt.RecebidasApp()}
+	e.svc = &servico{motor: m, sessao: s, http: api.Handler(m, e.cfg.Segundos("HTTP_ESPERA_S", 5)), baseEnv: e.pnt.EnviadasApp(), baseRec: e.pnt.RecebidasApp()}
 	return s.Iniciar()
 }
 
@@ -135,15 +182,26 @@ func (e *Executor) descer() {
 }
 
 func (e *Executor) encerrar() {
+	// um passo que falhou com o motor travado (motor_lento) não pode deixar o Parar esperando
+	if e.travado != nil {
+		close(e.travado)
+		e.travado = nil
+	}
 	e.descer()
 	if e.pnt != nil {
 		e.pnt.Parar()
+	}
+	if m, ok := e.repo.(*repo.MariaDB); ok {
+		m.Fechar()
 	}
 }
 
 // ocioso espera o serviço tratar tudo o que o falso mandou e o falso receber tudo o que o
 // serviço mandou.
 func (e *Executor) ocioso() {
+	if e.travado != nil {
+		return // motor_lento: nada anda até motor_normal
+	}
 	fim := time.Now().Add(3 * time.Second)
 	for time.Now().Before(fim) {
 		proc := e.svc.motor.Processadas()
@@ -195,6 +253,11 @@ func (e *Executor) passo(p roteiro.Passo) error {
 	case "reinicia_servico":
 		e.descer()
 		_ = e.pnt.EsperarQueda(5 * time.Second)
+		r, err := e.backend.Reabrir(e.repo)
+		if err != nil {
+			return err
+		}
+		e.repo = r
 		return e.subir()
 	case "recebe":
 		return e.recebe(p.Campos)
@@ -238,6 +301,18 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return nil
 	case "entrada", "saida":
 		return e.pedido(p)
+	case "motor_lento":
+		e.travado = make(chan struct{})
+		trava := e.travado
+		e.svc.motor.Enfileirar(func() { <-trava })
+		return nil
+	case "motor_normal":
+		if e.travado != nil {
+			close(e.travado)
+			e.travado = nil
+		}
+		e.ocioso()
+		return nil
 	case "http":
 		corpo := ""
 		if len(p.Args) > 2 {
@@ -396,7 +471,13 @@ func (e *Executor) pedido(p roteiro.Passo) error {
 	extras := p.Args[2:]
 	if p.Verbo == "entrada" {
 		b["papel"], b["stop_pts"], b["motivo"] = "ENTRADA", 500, "SINAL"
-		b["ts_decisao"] = e.rel.Agora().In(relogio.Fuso).Format("2006-01-02T15:04:05.000-07:00")
+		// reenvio da mesma operação repete o ts_decisao (o gestor reenvia o mesmo corpo)
+		ts, ok := e.tsPorOp[p.Args[0]]
+		if !ok {
+			ts = e.rel.Agora().In(relogio.Fuso).Format("2006-01-02T15:04:05.000-07:00")
+			e.tsPorOp[p.Args[0]] = ts
+		}
+		b["ts_decisao"] = ts
 	} else {
 		b["papel"], b["motivo"] = "SAIDA", p.Args[2]
 		extras = p.Args[3:]
@@ -410,6 +491,8 @@ func (e *Executor) pedido(p roteiro.Passo) error {
 			b["stop_pts"], _ = strconv.Atoi(v)
 		case "motivo":
 			b["motivo"] = v
+		case "ts":
+			b["ts_decisao"] = v
 		}
 	}
 	j, _ := json.Marshal(b)
@@ -431,6 +514,7 @@ func (e *Executor) http(metodo, caminho, corpo string) error {
 	} else {
 		e.resposta = map[string]any{"_lista": v}
 	}
+	e.resposta["_status"] = json.Number(strconv.Itoa(w.Code))
 	e.Registro = append(e.Registro, fmt.Sprintf("%s %s %s → %d %v", metodo, caminho, corpo, w.Code, e.resposta))
 	e.ocioso()
 	return nil

@@ -30,9 +30,7 @@ func (m *Motor) pedirSaida(p Pedido) (Resposta, *recusa) {
 		return nil, simples("SEM_POSICAO", "operação sem posição real")
 	}
 	if !op.SaidaPedidaEm.IsZero() || op.saidaAposEntrada {
-		if op.OrigemSaida == "GESTOR" {
-			return nil, simples("DUPLICADA", "saída já pedida")
-		}
+		// saída já iniciada pelo serviço (stop, parada, zeragem...): o pedido do gestor é aceito
 		return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "ja_em_saida": true, "origem": op.OrigemSaida}, nil
 	}
 	pos := op.posicao()

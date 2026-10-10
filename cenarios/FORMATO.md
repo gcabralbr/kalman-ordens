@@ -5,6 +5,9 @@ O PnT falso genérico lê o roteiro, faz o papel do PnT na sessão FIX e control
 preço que o serviço enxerga. Antes de cada cenário é carregado `_comum.fix` (configuração,
 modelos e blocos).
 
+Os roteiros rodam nos dois backends de persistência (memória e MariaDB 10.11.15 em container):
+`go test ./internal/cenario/` (memória) e, com `KALMAN_TESTE_MARIADB`, `TestRoteirosMariaDB`.
+
 O roteiro **é a especificação do comportamento**: se o serviço e o roteiro discordam, um dos
 dois está errado e a correção é discutida, não contornada no código.
 
@@ -61,10 +64,10 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 
 | Instrução | Efeito |
 |---|---|
-| `entrada OP LADO [qtd=1] [stop=500] [motivo=SINAL]` | `POST /ordens` papel ENTRADA, uid = `ORDENS_UID_REAL`, `ts_decisao` = hora do relógio |
+| `entrada OP LADO [qtd=1] [stop=500] [motivo=SINAL] [ts=...]` | `POST /ordens` papel ENTRADA, uid = `ORDENS_UID_REAL`; `ts_decisao` = hora do relógio no primeiro pedido da operação e **o mesmo** nos seguintes (o gestor reenvia o mesmo corpo); `ts=` força outro |
 | `saida OP LADO MOTIVO [qtd=1]` | `POST /ordens` papel SAIDA; LADO é o lado da ordem de saída |
 | `http METODO /caminho [json]` | requisição livre |
-| `resposta campo=valor ...` | confere o corpo da última resposta HTTP (`parada.modo=BLOQUEAR`; `null`; `*` = presente) |
+| `resposta campo=valor ...` | confere o corpo da última resposta HTTP (`parada.modo=BLOQUEAR`; `null`; `*` = presente); `_status` é o código HTTP |
 | `saude campo=valor ...` | `GET /saude` e confere |
 | `evento TIPO campo=valor ...` | existe em `GET /eventos` um evento desse tipo, ainda não casado, que bate; ele passa a contar como casado |
 | `sem_evento TIPO [campo=valor ...]` | nenhum evento não casado desse tipo |
@@ -78,7 +81,8 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 |---|---|
 | `aguarda_logon` | espera o serviço logar (tempo real, até 10 s) |
 | `derruba_sessao` | o PnT falso derruba a conexão; o serviço reconecta sozinho |
-| `reinicia_servico` | encerra o processo do serviço e sobe de novo com o mesmo banco e o mesmo store FIX; o relógio continua de onde estava |
+| `reinicia_servico` | encerra o processo do serviço e sobe de novo com o mesmo banco (no MariaDB, numa conexão nova) e o mesmo store FIX; o relógio continua de onde estava |
+| `motor_lento` / `motor_normal` | trava / solta a fila do motor (os pedidos HTTP ficam esperando; com `HTTP_ESPERA_S` curto, dá o 503) |
 
 ## Blocos e modelos (em `_comum.fix`)
 
