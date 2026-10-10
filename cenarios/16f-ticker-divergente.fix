@@ -1,0 +1,23 @@
+cenario 16f ticker do marketdata ≠ ORDENS_SIMBOLO → entradas bloqueadas + alerta SIMBOLO_DIVERGENTE
+hora 2026-10-13 12:00:00
+# O marketdata já virou para o próximo vencimento e o serviço continua em WINZ26.
+# O bloqueio dura enquanto o ticker divergir; não é parada (não exige retomada).
+# O vencimento por calendário (ORDENS_VENCIMENTO) é só aviso antecipado.
+
+executa INICIO
+
+preco ticker=WING27
+avanca 200ms
+alerta SIMBOLO_DIVERGENTE
+entrada 1661 C
+resposta aceito=false codigo=SIMBOLO_DIVERGENTE
+saude parada=null
+nada
+
+# volta a casar: alerta resolvido, entradas liberadas
+preco ticker=WINZ26
+avanca 200ms
+alerta RESOLVIDO
+entrada 1662 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1662-1 55=WINZ26 54=1 847=1031

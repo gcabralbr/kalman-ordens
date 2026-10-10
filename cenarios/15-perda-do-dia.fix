@@ -6,7 +6,7 @@ config LIMITE_PERDA_DIA_PTS=300
 executa INICIO
 executa COMPRADO OP=1501
 
-preco bid=129695 ask=129700 ultimo=129700
+preco bid=129695 ask=129700 preco=129700
 avanca 200ms
 alerta PARADA
 saude parada.modo=BLOQUEAR parada.origem=auto posicao=1

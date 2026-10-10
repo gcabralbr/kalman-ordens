@@ -1,0 +1,38 @@
+cenario 16b Sem preço: corpo {} (sem dado de hoje), 404 (motor desabilitado), 400 (ativo desconhecido)
+hora 2026-10-13 11:40:00
+# Entrada: SEM_PRECO. Saída sem nenhum preço: alerta crítico SAIDA_SEM_PRECO e nova tentativa
+# a cada TIMEOUT_SAIDA_S; sai assim que o preço volta. A 1014 já foi cancelada nesse ponto.
+# Duas recusas por minuto no máximo, para não disparar a parada por 3 recusas.
+
+executa INICIO
+executa COMPRADO OP=1621
+avanca 61s
+
+preco vazio
+entrada 1622 C
+resposta aceito=false codigo=SEM_PRECO
+preco http=404
+entrada 1623 C
+resposta aceito=false codigo=SEM_PRECO
+avanca 61s
+preco http=400
+entrada 1624 C
+resposta aceito=false codigo=SEM_PRECO
+saude parada=null
+nada
+
+preco vazio
+saida 1621 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-1621-2 41=KM-P-1621-1 37=dsa.1621.P
+envia @ER 11=KM-P-1621-2 41=KM-P-1621-1 37=dsa.1621.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+alerta SAIDA_SEM_PRECO
+nada
+avanca 2s
+nada
+
+# o preço volta: a saída sai no próximo TIMEOUT_SAIDA_S
+preco normal
+avanca 2s
+recebe 35=D 11=KM-S-1621-1 38=1 44=129950 54=2 847=1031
+alerta RESOLVIDO

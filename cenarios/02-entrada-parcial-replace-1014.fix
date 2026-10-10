@@ -39,12 +39,16 @@ avanca 100ms
 recebe 35=F 11=KM-E-1002-2 41=KM-E-1002-1 37=dsa.201 38=3 54=1
 envia @ER 11=KM-E-1002-2 41=KM-E-1002-1 37=dsa.201 150=6 39=6 54=1 38=3 44=130020 847=1031 14=2 151=1 6=130015
 envia @ER 11=KM-E-1002-2 41=KM-E-1002-1 37=dsa.201 150=4 39=4 54=1 38=3 44=130020 847=1031 14=2 151=0 6=130015
+# ENTRADA_ENCERRADA fica retido por ESPERA_ENCERRAMENTO_S (5 s) depois do 39=4
+avanca 4900ms
+sem_evento ENTRADA_ENCERRADA
+avanca 200ms
 evento ENTRADA_ENCERRADA operacao_id=1002 qtd_final=2 preco_medio=130015
 nada
 saude posicao=2
 
 # a 1014 dispara: fills com o ClOrdID corrente (P-2) e o mesmo 37
-preco bid=129400 ask=129405 ultimo=129415
+preco bid=129400 ask=129405 preco=129415
 envia @ER 11=KM-P-1002-2 37=dsa.202 150=F 39=1 54=2 38=2 44=129415 847=1014 32=1 31=129415 14=1 151=1 6=129415
 evento SAIDA_EXECUTADA operacao_id=1002 qtd=1 preco=129415 origem=STOP_SERVIDOR
 saude posicao=1

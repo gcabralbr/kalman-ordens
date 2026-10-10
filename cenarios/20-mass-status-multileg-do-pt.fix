@@ -6,7 +6,7 @@ hora 2026-10-13 09:10:00
 # Mensagem 1: mass status SwingTrade 2028 do RoE 2025 (HML, WINQ25), com 11 de PT e a conta.
 # Mensagem 2: multileg no formato do rejected.message (pernas sem 600).
 
-preco bid=130000 ask=130005 ultimo=130000 status84=0 idade=100ms
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
 aguarda_logon
 recebe 35=AF 585=9 1=12345 584=>MS
 

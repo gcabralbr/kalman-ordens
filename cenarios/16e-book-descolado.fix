@@ -1,0 +1,22 @@
+cenario 16e Book descolado (|meio − preco| > 150) ou cruzado (bid >= ask) → entrada recusada
+hora 2026-10-13 11:55:00
+
+executa INICIO
+
+# meio = 130202,5; |130202,5 − 130000| = 202,5 > 150
+preco preco=130000 bid=130200 ask=130205
+entrada 1651 C
+resposta aceito=false codigo=BOOK_DESCOLADO
+# cruzado
+preco preco=130000 bid=130010 ask=130000
+entrada 1652 C
+resposta aceito=false codigo=BOOK_INVALIDO
+nada
+
+# no limite (|meio − preco| = 150) ainda vale; a entrada usa o ask + 15
+avanca 61s
+preco preco=130000 bid=130145 ask=130155
+entrada 1653 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1653-1 44=130170 54=1 847=1031
+saude parada=null

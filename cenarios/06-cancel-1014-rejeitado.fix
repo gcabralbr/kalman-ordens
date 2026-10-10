@@ -5,7 +5,7 @@ executa INICIO
 executa COMPRADO OP=1006
 
 # abaixo do gatilho (129510), acima do limite (129410): a 1014 dispara e está executando
-preco bid=129500 ask=129505 ultimo=129505
+preco bid=129500 ask=129505 preco=129505
 saida 1006 V STOP
 resposta aceito=true
 recebe 35=F 11=KM-P-1006-2 41=KM-P-1006-1 37=dsa.1006.P

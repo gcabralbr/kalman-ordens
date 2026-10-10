@@ -2,7 +2,7 @@ cenario 18 35=j 380=4 no mass status → nova tentativa com espera crescente (1,
 hora 2026-10-13 09:01:00
 # Enquanto a conciliação não termina, entradas são recusadas (CONCILIANDO).
 
-preco bid=130000 ask=130005 ultimo=130000 status84=0 idade=100ms
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
 aguarda_logon
 recebe 35=AF 34=>S1 585=9 584=>MS1
 envia 35=j 45=$S1 372=AF 379=$MS1 380=4 58="Application not available: system starting"

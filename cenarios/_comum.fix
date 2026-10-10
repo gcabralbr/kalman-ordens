@@ -11,7 +11,7 @@ modelo ER 35=8 1=12345 55=WINZ26 207=XBMF 40=2 59=0
 
 # Sessão no ar, mass status vazio, conciliação concluída.
 bloco INICIO
-  preco bid=130000 ask=130005 ultimo=130000 status84=0 idade=100ms
+  preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
   aguarda_logon
   recebe 35=AF 585=9 1=12345 584=>MS
   avanca 3s

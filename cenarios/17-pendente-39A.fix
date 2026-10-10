@@ -17,6 +17,7 @@ alerta PENDENTE_39A
 sem_alerta SEM_CONFIRMACAO
 recebe 35=F 11=KM-E-1701-2 41=KM-E-1701-1 37=dsa.1701.E
 envia @ER 11=KM-E-1701-2 41=KM-E-1701-1 37=dsa.1701.E 150=4 39=4 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0
-evento ENTRADA_ENCERRADA operacao_id=1701 qtd_final=0
+avanca 5s
+evento ENTRADA_ENCERRADA operacao_id=1701 qtd_final=0 motivo=CANCELADA
 saude posicao=0 parada=null
 nada

@@ -5,7 +5,7 @@ executa INICIO
 executa COMPRADO OP=1007
 
 # gap: último abaixo do limite da 1014 (129410) e a 1014 não executa
-preco bid=129295 ask=129300 ultimo=129300
+preco bid=129295 ask=129300 preco=129300
 avanca 5s
 nada
 avanca 1s
@@ -32,7 +32,7 @@ sem_alerta SAIDA_ESGOTOU
 
 # esgotou MAX_REPRECO_SAIDA (3): alerta crítico e continua reapregoando,
 # no afastamento máximo (−200) sobre o mercado do momento
-preco bid=129200 ask=129205 ultimo=129200
+preco bid=129200 ask=129205 preco=129200
 avanca 2s
 alerta SAIDA_ESGOTOU
 recebe 35=G 11=KM-S-1007-5 41=KM-S-1007-4 37=dsa.1007.S 44=129000

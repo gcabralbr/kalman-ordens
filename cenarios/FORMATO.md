@@ -34,7 +34,10 @@ dois está errado e a correção é discutida, não contornada no código.
 | Instrução | Efeito |
 |---|---|
 | `avanca 3s` / `avanca 500ms` / `avanca 1m` | avança o relógio do serviço em passos de 100 ms; depois de cada passo espera o serviço ficar ocioso |
-| `preco bid=N ask=N ultimo=N status84=S idade=D` | muda o que a interface de preço devolve; campos omitidos ficam como estavam; pode aparecer em qualquer ponto |
+| `preco ticker=T preco=N bid=N ask=N status84=S idade=D` | muda o que a fonte de preço falsa devolve (contrato em `docs/referencia/precos-atual.md`); campos omitidos ficam como estavam; `campo=-` omite o campo do JSON (como o marketdata faz sem valor de hoje); `idade` vira `idade_seg` e `ts` = relógio − idade; pode aparecer em qualquer ponto |
+| `preco vazio` | corpo `{}` com 200 (sem dado de hoje) |
+| `preco http=404` / `preco http=400` | motor do marketdata desabilitado / ativo desconhecido |
+| `preco normal` | volta a responder 200 com os últimos campos definidos (definir qualquer campo também volta) |
 
 O relógio só anda com `avanca`. Tempo "por mais de X" é contado a partir do primeiro passo em que
 o serviço observa a condição; os roteiros deixam a folga de um passo quando isso importa.
@@ -86,15 +89,14 @@ bloco NOME [PARAM ...]            # executa NOME PARAM=valor; dentro do bloco, $
 fim
 ```
 
-## Códigos de alerta
+## Códigos de alerta e de recusa
 
-`SESSAO_CAIU`, `SESSAO_VOLTOU`, `CONCILIACAO`, `DESCONHECIDA`, `DIVERGENTE`, `RECUSA_PNT`,
-`LIMITE`, `PARADA`, `RETOMADA`, `SEM_PROTECAO`, `PROTECAO_REJEITADA`, `STOP_FURADO`,
-`SAIDA_ESGOTOU`, `CANCEL_STOP_REJEITADO`, `FILL_ORDEM_ENCERRADA`, `PENDENTE_39A`,
-`SEM_CONFIRMACAO`, `SEM_POSICAO`, `PRECO_VELHO_SAIDA`, `VENCIMENTO`, `ERRO_INTERNO`.
+Catálogo único em `docs/ALERTAS.md`. Um roteiro só usa códigos que estão lá.
 
 ## Origem das saídas (`SAIDA_EXECUTADA.origem`, `ZERADA.origem`)
 
 `GESTOR` (pedida pelo gestor), `STOP_SERVIDOR` (fill da 1014), `STOP_FURADO` (Parte 3.6),
-`PARADA` (ZERAR), `ZERAGEM` (HORA_ZERAGEM), `PROTECAO_REJEITADA` (1014 rejeitada duas vezes).
-O gestor trata tudo o que não é `GESTOR` como operação fechada pelo serviço, com esse motivo.
+`PARADA` (ZERAR), `ZERAGEM` (HORA_ZERAGEM), `PROTECAO_REJEITADA` (1014 rejeitada duas vezes),
+`ENTRADA_TARDIA` (fill de entrada depois da espera de encerramento; só registro, o gestor nunca
+reabre a operação). O gestor trata tudo o que não é `GESTOR` como operação fechada pelo serviço,
+com esse motivo.

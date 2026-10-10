@@ -1,0 +1,25 @@
+cenario 16c Ativo presente sem bid/ask → entrada recusada; saída calculada sobre o preco
+hora 2026-10-13 11:45:00
+
+executa INICIO
+executa COMPRADO OP=1631
+avanca 61s
+
+preco bid=- ask=- preco=130000
+entrada 1632 C
+resposta aceito=false codigo=SEM_PRECO
+nada
+
+# só bid ausente também recusa
+preco bid=- ask=130005
+entrada 1633 C
+resposta aceito=false codigo=SEM_PRECO
+
+# saída: sem bid, o limite sai do preco − COLAR_SAIDA_PTS = 129950
+preco bid=- ask=- preco=130000
+saida 1631 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-1631-2 41=KM-P-1631-1 37=dsa.1631.P
+envia @ER 11=KM-P-1631-2 41=KM-P-1631-1 37=dsa.1631.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-1631-1 38=1 44=129950 54=2 847=1031
+alerta SAIDA_PRECO_DEGRADADO

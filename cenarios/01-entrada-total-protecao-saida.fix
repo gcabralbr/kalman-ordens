@@ -26,7 +26,7 @@ avanca 10s
 nada
 
 # saída do gestor: primeiro cancela a 1014 e espera o 39=4
-preco bid=130100 ask=130105 ultimo=130100
+preco bid=130100 ask=130105 preco=130100
 saida 1001 V SINAL_OPOSTO
 resposta aceito=true
 recebe 35=F 11=KM-P-1001-2 41=KM-P-1001-1 37=dsa.102 1=12345 38=1 54=2 55=WINZ26

@@ -24,6 +24,6 @@ avanca 61s
 executa COMPRADO OP=1403
 saida 1403 C SINAL_OPOSTO
 resposta aceito=false codigo=LADO_INCOMPATIVEL
-alerta SEM_POSICAO
+alerta LADO_INCOMPATIVEL
 saude posicao=1
 nada
