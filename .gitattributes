@@ -1,3 +1,4 @@
 * text=auto eol=lf
 *.message -text
 *.fix text eol=lf
+pnt/dicionario/dsa_FIX44.original.xml -text
