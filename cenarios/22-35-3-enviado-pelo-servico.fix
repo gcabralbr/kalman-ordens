@@ -1,0 +1,18 @@
+cenario 22 35=3 enviado pelo serviço → alerta crítico SESSAO_REJEITOU_MENSAGEM + mass status
+hora 2026-10-13 12:10:00
+# SPEC v1.1 F9: um 35=3 do serviço pode ter descartado uma mensagem do PnT (talvez um fill).
+# Todo 35=3 enviado → alerta crítico e mass status para reconciliar.
+# Gatilho: tipo de mensagem desconhecido, que a biblioteca ainda rejeita na sessão.
+
+executa INICIO
+executa COMPRADO OP=2201
+
+envia 35=U9 58="mensagem proprietária desconhecida"
+recebe 35=3 373=11
+alerta SESSAO_REJEITOU_MENSAGEM
+recebe 35=AF 585=9 1=12345 584=>MS2
+envia @ER 11=KM-P-2201-1 37=dsa.2201.P 150=I 39=0 584=$MS2 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+avanca 3s
+alerta CONCILIACAO
+saude posicao=1 divergente=false parada=null
+nada

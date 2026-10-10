@@ -1,0 +1,30 @@
+cenario 16i Saída com ticker divergente que não executa no timeout → alerta crítico, não repete
+hora 2026-10-13 12:25:00
+# SPEC v1.1 B5.c. Sem execução em TIMEOUT_SAIDA_S: alerta crítico SAIDA_DIVERGENTE_NAO_EXECUTOU,
+# nenhum replace, nenhum cancel, nenhuma nova saída. Decisão humana.
+# A 1014 já foi cancelada (passo 2 da Parte 3.5): a posição fica sem proteção até a decisão.
+# Ver pendência na SPEC v1.1.
+
+executa INICIO
+executa COMPRADO OP=1691
+
+preco ticker=WING27 preco=130900 bid=130895 ask=130905
+avanca 200ms
+alerta SIMBOLO_DIVERGENTE_COM_POSICAO
+
+saida 1691 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-1691-2 41=KM-P-1691-1 37=dsa.1691.P
+envia @ER 11=KM-P-1691-2 41=KM-P-1691-1 37=dsa.1691.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-1691-1 38=1 44=129800 54=2 847=1031
+envia @ER 11=KM-S-1691-1 37=dsa.1691.S 150=0 39=0 54=2 38=1 44=129800 847=1031 14=0 151=1 6=0
+
+avanca 1900ms
+nada
+sem_alerta SAIDA_DIVERGENTE_NAO_EXECUTOU
+avanca 200ms
+alerta SAIDA_DIVERGENTE_NAO_EXECUTOU
+nada
+avanca 30s
+nada
+saude posicao=1

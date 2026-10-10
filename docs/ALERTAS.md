@@ -11,6 +11,7 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 |---|---|---|
 | `SESSAO_CAIU` | sessão FIX caiu | não |
 | `SESSAO_VOLTOU` | sessão FIX logou de novo após uma queda | não |
+| `SESSAO_REJEITOU_MENSAGEM` | o serviço enviou 35=3 (a biblioteca descartou uma mensagem do PnT); dispara mass status | sim |
 | `CONCILIACAO` | resultado da conciliação do logon (ordens KM, ignoradas, divergências, posição) | não |
 | `MASS_STATUS_REJEITADO` | mass status rejeitado por motivo diferente de 380=4; entradas bloqueadas | sim |
 | `DESCONHECIDA` | ordem viva na tabela e ausente no mass status | não |
@@ -36,6 +37,9 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `RETOMADA` | parada retirada (sempre manual) | não |
 | `ZERAGEM` | `HORA_ZERAGEM` com posição: ZERAR | não |
 | `SIMBOLO_DIVERGENTE` | ticker do marketdata ≠ `ORDENS_SIMBOLO`: entradas bloqueadas | sim |
+| `SIMBOLO_DIVERGENTE_COM_POSICAO` | divergência detectada com posição aberta (no lugar de `SIMBOLO_DIVERGENTE`); a 1014 continua | sim |
+| `SAIDA_DIVERGENTE_NAO_EXECUTOU` | saída com ticker divergente não executou no timeout: não repete, decisão humana | sim |
+| `SAIDA_BLOQUEADA_PRECO_ANTIGO` | saída com ticker divergente e último preço do símbolo certo com mais de 60 s: não enviada, 1014 fica | sim |
 | `VENCIMENTO` | aviso antecipado: faltam ≤ 3 pregões para o vencimento do símbolo | não |
 | `FIM_DIA_POSICAO` | conciliação diária: posição final do Kalman ≠ 0 | sim |
 | `RESUMO_DIA` | resumo da conciliação diária (operações, contratos, PnL, recusas, alertas) | não |
@@ -58,7 +62,7 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `SEM_SESSAO` | sessão FIX não logada | não | — |
 | `CONCILIANDO` | conciliação do logon em andamento | não | — |
 | `SEM_CONFIRMACAO` | há ordem sem confirmação do PnT | não | — |
-| `SIMBOLO_DIVERGENTE` | ticker do marketdata ≠ `ORDENS_SIMBOLO` | não | (o alerta é do estado) |
+| `SIMBOLO_DIVERGENTE` | ENTRADA: ticker do marketdata ≠ `ORDENS_SIMBOLO`. SAIDA: idem e último preço do símbolo certo com mais de 60 s | não | entrada: o alerta é do estado; saída: `SAIDA_BLOQUEADA_PRECO_ANTIGO` |
 | `FORA_JANELA` | fora de 09:00–14:00 | sim | — |
 | `QTD_MAXIMA` | qtd > limite por ordem | sim | — |
 | `POSICAO_MAXIMA` | posição + entradas pendentes + qtd > máximo | sim | — |

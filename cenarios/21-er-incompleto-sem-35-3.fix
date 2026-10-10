@@ -1,0 +1,19 @@
+cenario 21 ExecutionReport de fill sem 6 e sem 151 → aplicado normalmente, sem 35=3
+hora 2026-10-13 12:05:00
+# SPEC v1.1 F8: na cópia do dicionário, o corpo do 35=8 e do 35=9 não tem campo obrigatório.
+# A biblioteca não pode descartar um fill; o motor valida o conteúdo e decide.
+# Sem AvgPx (6), o preço vem do LastPx (31).
+
+executa INICIO
+
+entrada 2101 C
+resposta aceito=true
+recebe 35=D 11=KM-E-2101-1 54=1 847=1031
+envia @ER 11=KM-E-2101-1 37=dsa.2101.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-E-2101-1 37=dsa.2101.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1
+nada 35=3
+sem_alerta SESSAO_REJEITOU_MENSAGEM
+evento ENTRADA_EXECUTADA operacao_id=2101 qtd=1 preco=130010 qtd_total=1 preco_medio=130010
+recebe 35=D 11=KM-P-2101-1 38=1 54=2 847=1014 20828=129510 20829=129410
+evento ENTRADA_ENCERRADA operacao_id=2101 qtd_final=1
+saude posicao=1

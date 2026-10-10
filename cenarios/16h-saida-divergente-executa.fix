@@ -1,0 +1,26 @@
+cenario 16h Saída com ticker divergente → limite sobre o último preço do símbolo certo, colar máximo; executa
+hora 2026-10-13 12:20:00
+# SPEC v1.1 B5.c. Último preco conhecido de WINZ26 = 130000. Venda: 130000 − 200 (colar máximo
+# = COLAR_SAIDA_PTS × (MAX_REPRECO_SAIDA + 1)) = 129800, já na 1ª tentativa e sem repreço.
+# O bid/ask de WING27 (contrato errado) é ignorado.
+
+executa INICIO
+executa COMPRADO OP=1681
+
+preco ticker=WING27 preco=130900 bid=130895 ask=130905
+avanca 200ms
+alerta SIMBOLO_DIVERGENTE_COM_POSICAO
+
+saida 1681 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-1681-2 41=KM-P-1681-1 37=dsa.1681.P
+envia @ER 11=KM-P-1681-2 41=KM-P-1681-1 37=dsa.1681.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-1681-1 38=1 40=2 44=129800 54=2 55=WINZ26 847=1031
+envia @ER 11=KM-S-1681-1 37=dsa.1681.S 150=0 39=0 54=2 38=1 44=129800 847=1031 14=0 151=1 6=0
+avanca 1s
+envia @ER 11=KM-S-1681-1 37=dsa.1681.S 150=F 39=2 54=2 38=1 44=129800 847=1031 32=1 31=129995 14=1 151=0 6=129995
+evento SAIDA_EXECUTADA operacao_id=1681 qtd=1 preco=129995 origem=GESTOR
+evento ZERADA operacao_id=1681 origem=GESTOR pnl_pts=-15
+saude posicao=0
+avanca 5s
+nada

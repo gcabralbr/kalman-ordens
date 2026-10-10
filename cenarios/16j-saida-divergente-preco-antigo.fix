@@ -1,0 +1,21 @@
+cenario 16j Saída com ticker divergente e último preço do símbolo certo com mais de 60 s → não envia
+hora 2026-10-13 12:30:00
+# SPEC v1.1 B5.d. A saída é recusada (SIMBOLO_DIVERGENTE), nada é cancelado: a 1014 fica.
+# Alerta crítico SAIDA_BLOQUEADA_PRECO_ANTIGO.
+
+executa INICIO
+executa COMPRADO OP=16101
+
+preco ticker=WING27 preco=130900 bid=130895 ask=130905
+avanca 200ms
+alerta SIMBOLO_DIVERGENTE_COM_POSICAO
+
+# o último preço de WINZ26 ainda vale até 60 s
+avanca 61s
+saida 16101 V SINAL_OPOSTO
+resposta aceito=false codigo=SIMBOLO_DIVERGENTE
+alerta SAIDA_BLOQUEADA_PRECO_ANTIGO
+nada
+avanca 10s
+nada
+saude posicao=1

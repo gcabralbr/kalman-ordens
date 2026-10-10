@@ -1,0 +1,15 @@
+cenario 16g Divergência de ticker detectada com posição aberta → alerta crítico na detecção, 1014 continua
+hora 2026-10-13 12:15:00
+# SPEC v1.1 B5.b. Com posição, o alerta é SIMBOLO_DIVERGENTE_COM_POSICAO (no lugar de
+# SIMBOLO_DIVERGENTE). Nada é enviado: a 1014 segue protegendo (o PnT usa o mercado dele).
+
+executa INICIO
+executa COMPRADO OP=1671
+
+preco ticker=WING27 preco=130900 bid=130895 ask=130905
+avanca 200ms
+alerta SIMBOLO_DIVERGENTE_COM_POSICAO
+saude posicao=1
+nada
+avanca 30s
+nada
