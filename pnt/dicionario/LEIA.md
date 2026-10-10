@@ -9,7 +9,10 @@
      AvgPx; 9: OrderID, ClOrdID, OrigClOrdID, OrdStatus, CxlRejResponseTo). Mesmo com
      `RejectInvalidMessage=N`, o QuickFIX/Go rejeita com 35=3 a mensagem sem campo obrigatório, e
      ela não chega à aplicação: um fill incompleto seria descartado. O motor valida o conteúdo e
-     decide (SPEC v1.1 F8). Cabeçalho, trailer e MsgType ficam como estão.
+     decide (SPEC v1.1 F8). Cabeçalho, trailer e MsgType ficam como estão;
+  3. o enum de `MassStatusReqType (585)` ganhou o valor `9` (orders for account), que o RoE 2025
+     manda usar no mass status por conta e o dicionário de 2020 não tem (o FIX 4.4 padrão vai até
+     8). Sem ele, o próprio mass status do serviço falha na validação estrita (SPEC v1.1 F10).
 
   Conferir com `diff --strip-trailing-cr dsa_FIX44.original.xml dsa_FIX44.xml`. A prova está em
   `dicionario_test.go` (aceito na cópia, rejeitado no original).

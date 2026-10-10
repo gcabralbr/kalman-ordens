@@ -5994,6 +5994,7 @@
       <value enum="6" description="STATUS_FOR_ORDERS_FOR_A_TRADING_SESSION"/>
       <value enum="7" description="STATUS_FOR_ALL_ORDERS"/>
       <value enum="8" description="STATUS_FOR_ORDERS_FOR_A_PARTYID"/>
+      <value enum="9" description="STATUS_FOR_ORDERS_FOR_AN_ACCOUNT"/>
     </field>
     <field number="586" name="OrigOrdModTime" type="UTCTIMESTAMP"/>
     <field number="587" name="LegSettlType" type="CHAR"/>
