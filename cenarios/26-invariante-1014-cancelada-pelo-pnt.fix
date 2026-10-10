@@ -1,0 +1,24 @@
+cenario 26 Invariante de proteção: 1014 cancelada pelo PnT sem pedido nosso → recriada
+hora 2026-10-13 12:50:00
+# SPEC v1.1 P5: "posição ≠ 0 e nenhuma ordem de saída viva ⇒ 1014 viva", verificada a cada 1 s;
+# violada por mais de 2 s → 1014 recriada com o mesmo gatilho e limite + alerta crítico
+# PROTECAO_RECRIADA. Caminho não previsto pelo fluxo: o PnT cancela a 1014 sozinho. O mercado anda
+# no meio, para mostrar que a recriação não depende do feed.
+
+executa INICIO
+executa COMPRADO OP=2601
+
+preco bid=130300 ask=130305 preco=130300
+envia @ER 11=KM-P-2601-1 37=dsa.2601.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0 58="Order cancelled by the system"
+avanca 2s
+nada
+sem_alerta PROTECAO_RECRIADA
+avanca 2100ms
+recebe 35=D 11=KM-P-2601-2 38=1 40=2 44=129410 54=2 847=1014 20828=129510 20829=129410
+alerta PROTECAO_RECRIADA
+envia @ER 11=KM-P-2601-2 37=dsa.2601.P2 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=2601 preco_stop=129510 preco_limite=129410
+alerta RESOLVIDO
+saude posicao=1
+avanca 10s
+nada

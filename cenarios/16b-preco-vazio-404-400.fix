@@ -1,7 +1,8 @@
 cenario 16b Sem preço: corpo {} (sem dado de hoje), 404 (motor desabilitado), 400 (ativo desconhecido)
 hora 2026-10-13 11:40:00
 # Entrada: SEM_PRECO. Saída sem nenhum preço: alerta crítico SAIDA_SEM_PRECO e nova tentativa
-# a cada TIMEOUT_SAIDA_S; sai assim que o preço volta. A 1014 já foi cancelada nesse ponto.
+# a cada TIMEOUT_SAIDA_S; sai assim que o preço volta. A 1014 já foi cancelada nesse ponto, e a
+# invariante de proteção a recria enquanto a saída não sai.
 # Duas recusas por minuto no máximo, para não disparar a parada por 3 recusas.
 config LIMITE_POSICAO_MAX=2
 
@@ -32,8 +33,18 @@ nada
 avanca 2s
 nada
 
-# o preço volta: a saída sai no próximo TIMEOUT_SAIDA_S
+# invariante de proteção (v1.1 P5): posição sem 1014 e sem saída viva por mais de 2 s → 1014 recriada
+# com o mesmo gatilho e limite (não depende do feed, que está vazio)
+avanca 2100ms
+recebe 35=D 11=KM-P-1621-3 38=1 40=2 44=129410 54=2 847=1014 20828=129510 20829=129410
+alerta PROTECAO_RECRIADA
+envia @ER 11=KM-P-1621-3 37=dsa.1621.P3 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+alerta RESOLVIDO
+
+# o preço volta: no próximo TIMEOUT_SAIDA_S a saída cancela a 1014 recriada e sai (Parte 3.5)
 preco normal
 avanca 2s
+recebe 35=F 11=KM-P-1621-4 41=KM-P-1621-3 37=dsa.1621.P3
+envia @ER 11=KM-P-1621-4 41=KM-P-1621-3 37=dsa.1621.P3 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
 recebe 35=D 11=KM-S-1621-1 38=1 44=129950 54=2 847=1031
 alerta RESOLVIDO

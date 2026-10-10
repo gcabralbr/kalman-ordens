@@ -379,10 +379,11 @@ func (m *Motor) ordemEncerrada(op *operacao, o *ordem, motivo string) {
 			m.mudar(op, dominio.Saindo)
 			m.enviarSaida(op)
 		case !op.Estado.Saindo() && !op.Estado.Final() && op.posicao() != 0:
-			m.al.Emitir("SEM_PROTECAO", chaveOp("SEM_PROTECAO", op), fmt.Sprintf("1014 encerrada (%s) com posição aberta; recriando: operação %d", motivo, op.OperacaoID), op.OperacaoID)
+			// 1014 encerrada sem pedido nosso (cancelada ou expirada pelo PnT): a invariante de
+			// proteção recria (v1.1 P5)
+			slog.Warn("1014 encerrada sem pedido nosso com posição aberta", "op", op.OperacaoID, "motivo", motivo, "clordid", o.ClOrdAtual)
 			m.mudar(op, dominio.PosicionadaSemProtecao)
 			op.semProtecaoDesde = m.agora()
-			m.ajustarProtecao(op)
 		}
 	case dominio.Saida:
 		if op.Estado == dominio.Saindo && op.posicao() != 0 {

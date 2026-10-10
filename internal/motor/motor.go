@@ -101,6 +101,7 @@ type operacao struct {
 	protecaoDesatualizada bool
 	saidaDivergente       bool
 	congelada             bool
+	violacaoDesde         time.Time // invariante de proteção violada desde
 }
 
 func (op *operacao) posicao() int {
@@ -236,6 +237,7 @@ type Motor struct {
 	massRespostas  []*pnt.Mensagem // nil = ordem de outro (PT)
 	processadas    int64
 	seqOrdens      int64
+	proxInvariante time.Time
 	massCorte      int64 // ordens com seq até aqui existiam quando o mass status foi pedido
 }
 

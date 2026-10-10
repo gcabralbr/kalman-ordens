@@ -23,6 +23,7 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `CANCEL_SEM_RESPOSTA` | cancel enviado sem resposta em `ESPERA_STOP_S` | sim |
 | `SEM_PROTECAO` | posição sem 1014 aceita por mais de 2 s | sim |
 | `PROTECAO_REJEITADA` | 1014 rejeitada (1ª vez: nova tentativa; 2ª: zera a posição) | não |
+| `PROTECAO_RECRIADA` | invariante violada: posição ≠ 0 sem 1014 e sem saída viva por mais de 2 s; 1014 recriada com o mesmo gatilho e limite | sim |
 | `STOP_FURADO` | último além do limite da 1014 por mais de `ESPERA_STOP_S` com posição | sim |
 | `SAIDA_ESGOTOU` | saída esgotou `MAX_REPRECO_SAIDA` e continua reapregoando | sim |
 | `SAIDA_SEM_PRECO` | saída sem nenhum preço para calcular o limite | sim |

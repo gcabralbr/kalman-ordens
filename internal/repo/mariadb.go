@@ -15,6 +15,10 @@ import (
 	"gammaquant.com.br/kalman-ordens/migracoes"
 )
 
+// SQLMode é fixado em toda conexão (não depende da configuração global do servidor). É o valor
+// da .51 e o padrão do mariadb:10.11.15.
+const SQLMode = "STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION"
+
 // MariaDB implementa Repositorio sobre MariaDB 10.11. Horários gravados em UTC.
 type MariaDB struct {
 	db *sql.DB
@@ -31,6 +35,10 @@ func AbrirMariaDB(dsn string) (*MariaDB, error) {
 	cfg.Timeout = 5 * time.Second
 	cfg.ReadTimeout = 10 * time.Second
 	cfg.WriteTimeout = 10 * time.Second
+	if cfg.Params == nil {
+		cfg.Params = map[string]string{}
+	}
+	cfg.Params["sql_mode"] = "'" + SQLMode + "'" // SET sql_mode a cada conexão nova
 	db, err := sql.Open("mysql", cfg.FormatDSN())
 	if err != nil {
 		return nil, err

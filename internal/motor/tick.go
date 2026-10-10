@@ -55,6 +55,10 @@ func (m *Motor) tick() {
 				m.acoesDeTempo(op, agora)
 			}
 		}
+		if !agora.Before(m.proxInvariante) {
+			m.verificarInvariante(agora)
+			m.proxInvariante = agora.Add(time.Second)
+		}
 		m.verificarZeragem()
 		m.verificarPerdaDoDia()
 	}

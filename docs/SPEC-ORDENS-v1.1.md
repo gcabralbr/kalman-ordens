@@ -7,9 +7,9 @@ Onde a v1.1 não diz nada, vale a v1.
 Os roteiros (`cenarios/*.fix`, formato em `cenarios/FORMATO.md`) são a especificação executável:
 cada decisão abaixo está afirmada em pelo menos um deles.
 
-Data: 2026-10-10. Decisões confirmadas pelo responsável em quatro rodadas (stack e envio;
+Data: 2026-10-10. Decisões confirmadas pelo responsável em cinco rodadas (stack e envio;
 roteiros e preço; fill perdido por 35=3 e saída com ticker divergente; banco, idempotência e
-Telegram).
+Telegram; invariante de proteção, sql_mode, permissões e -race).
 
 ---
 
@@ -92,6 +92,9 @@ Contrato real do `/precos/atual` em [`docs/referencia/precos-atual.md`](referenc
 | P1 | **MariaDB 10.11** (produção 10.11.15 na .51). SQL restrito ao que roda no 10.11; testes em container `mariadb:10.11.15`, nunca no MySQL 5.7 do note. Schema próprio do serviço (`kalmanordens` em produção, a confirmar; `kalmanordens_teste` nos testes), nunca o dbecotools. DDL em `migracoes/0001_inicial.sql` (reescrito para o modelo em Go; nunca foi aplicado), aplicado pelo próprio serviço na subida (`kalmanordem_migracao`). Horários em UTC (`DATETIME(3)`); `data` é o dia do pregão. A limpeza de tabelas dos testes só roda em schema `*_teste`. | 8 | `internal/repo/contrato_test.go` (mesma bateria na memória e no MariaDB) |
 | P2 | **Executável:** `kalman-ordens servir` (systemd), `parar`/`zerar`/`retomar -motivo` e `saude` pelo HTTP local; o HTTP recusa subir fora de loopback; SIGTERM faz logout FIX e não cancela nada no PnT. `deploy/` tem a unidade do systemd, o `service.env.example` e o roteiro de instalação. | 1, 6 | `cmd/kalman-ordens/main_test.go` (ponta a ponta com MariaDB) |
 | P3 | **Telegram direto** (`api.telegram.org`, token e chat no service.env). Fila própria, timeout de 3 s, nunca bloqueia o motor. Falha → log + nova tentativa com espera crescente (1, 2, 5, 10, 30, 60 s). **Crítico nunca é descartado**; não crítico desiste após 3 tentativas ou quando a fila passa de 1000. 4xx permanente não se retenta; 429 respeita `retry_after`. O token nunca vai para o log. | 9 | `internal/alerta/telegram_test.go` |
+| P5 | **Invariante de proteção:** "posição ≠ 0 e nenhuma ordem de saída viva ⇒ 1014 viva", verificada a cada 1 s. Violada por mais de 2 s → o serviço recria a 1014 com o **mesmo gatilho e limite da original** (não depende do feed; sem 1014 anterior, calcula sobre o preço médio da entrada) e emite o alerta crítico `PROTECAO_RECRIADA` (resolvido quando a 1014 é aceita). Pega qualquer caminho que deixe a posição sem proteção, previsto ou não. Consequências: (a) 1014 cancelada/expirada pelo PnT sem pedido nosso não tem mais recriação própria — é a invariante que recria; (b) saída com ticker divergente que não executou (B5.c) é **cancelada** no timeout, sem nova saída (decisão humana), e a invariante recria a 1014 (resolve a pendência 1); (c) saída sem preço (B2) deixa a 1014 voltar; quando o preço volta, a saída cancela a 1014 recriada antes de sair (Parte 3.5). | 3.4, 3.5, 4 | 26 (caminho não previsto), 16i, 16b |
+| P6 | **sql_mode fixo na conexão:** `STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION` (valor da .51, conferido; padrão do container), aplicado pelo driver em cada conexão nova. Não depende da configuração global do servidor. | 8 | `internal/repo/contrato_test.go` (global vazio, sessão continua certa) |
+| P7 | **Permissões:** usuário de sistema `kalman-ordens`; `service.env` `root:kalman-ordens 640`; `/var/lib/kalman-ordens` do usuário do serviço. Banco: schema `kalmanordens`, usuário `kalman_ordens` sem DROP/DELETE; **SELECT só em `dbecotools.kalmanoperacao`** (conciliação diária), nada mais no dbecotools. Em `deploy/LEIA.md`. | 1, 8, 10 | — |
 | P4 | **Leitor do /precos/atual** testado com as fixtures reais (`precos-atual-exemplo.json`, `precos-atual-vazio.json`) e contra um servidor HTTP: 404/400 = indisponível, falha de rede nunca mantém o preço antigo. | — | `internal/preco/preco_test.go` |
 
 ## 4d. Decisões a revisar quando a posição máxima passar de 1
@@ -141,11 +144,8 @@ Na sessão FIX do serviço: `RejectInvalidMessage=N`, `AllowUnknownMsgFields=Y`,
 
 ## 8. Pendências abertas
 
-1. **Posição sem proteção em B5.c quando a saída não executa (16i).** O passo 2 da Parte 3.5 já
-   cancelou a 1014; "não repete, decisão humana" deixa a posição sem proteção e com uma ordem
-   de saída parada no livro até alguém agir. Opções: (a) manter como está; (b) no timeout,
-   cancelar a saída e recriar a 1014 sobre o preço médio da entrada (o PnT dispara pelo
-   mercado dele, que é o certo). O roteiro 16i segue (a), como decidido.
+1. ~~Posição sem proteção em B5.c quando a saída não executa (16i).~~ **Resolvida por P5**: a
+   saída parada é cancelada e a invariante recria a 1014 com o mesmo gatilho e limite.
 2. **Verificações que usam preço durante a divergência.** Perda do dia (Parte 5) e stop furado
    (3.6) leem o `preco`; com o ticker errado leriam o contrato errado. Adotado até decisão: as
    duas ficam suspensas enquanto durar a divergência (a 1014 continua protegendo), e o alerta
@@ -157,11 +157,7 @@ Na sessão FIX do serviço: `RejectInvalidMessage=N`, `AllowUnknownMsgFields=Y`,
 5. **Gestor (Python):** precisa tratar `tardio`, as origens de A4, o atraso do
    `ENTRADA_ENCERRADA`, a recusa `SIMBOLO_DIVERGENTE` na SAIDA (B5.d: a operação continua aberta,
    protegida pela 1014) e o 503 (C2: reenviar o mesmo corpo; `repetido=true` na resposta).
-6. **Schema de produção:** a v1 (Parte 8) falava em dbecotools; o serviço agora usa schema
-   próprio. `kalmanordens` é a proposta (`deploy/service.env.example`); confirmar nome e usuário
-   na .51, e o `sql_mode` de lá (o container usa o padrão do 10.11.15:
-   `STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION`).
-7. **Usuário do systemd:** a unidade usa `kalman-ordens` (usuário de sistema próprio); confirmar.
+6. ~~Schema de produção, sql_mode e usuário do systemd.~~ **Confirmados** (P6, P7).
 
 ## 9. Cobertura dos roteiros
 
@@ -189,3 +185,4 @@ Na sessão FIX do serviço: `RejectInvalidMessage=N`, `AllowUnknownMsgFields=Y`,
 | 23 | C1 (reenvio idêntico: entrada, saída e saída depois de zerada) |
 | 24 | C2 (503 e reenvio do mesmo pedido) |
 | 25 | C1 (par repetido com conteúdo diferente → DUPLICADA + alerta) |
+| 26 | P5 (1014 cancelada pelo PnT sem pedido nosso → recriada pela invariante) |

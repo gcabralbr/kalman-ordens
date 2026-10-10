@@ -162,3 +162,36 @@ func TestLimparTesteRecusaProducao(t *testing.T) {
 		t.Fatal("LimparTeste aceitou um schema que não é de teste")
 	}
 }
+
+// O sql_mode da sessão é o do serviço mesmo com o global do servidor diferente.
+func TestSQLModeFixoNaConexao(t *testing.T) {
+	if dsnTeste() == "" {
+		t.Skip("sem MariaDB de teste")
+	}
+	adm, err := AbrirMariaDB(dsnTeste())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adm.Fechar()
+	var global string
+	if err := adm.db.QueryRow("SELECT @@GLOBAL.sql_mode").Scan(&global); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adm.db.Exec("SET GLOBAL sql_mode=''"); err != nil {
+		t.Skipf("sem permissão para mudar o sql_mode global: %v", err)
+	}
+	defer adm.db.Exec("SET GLOBAL sql_mode=?", global)
+
+	r, err := AbrirMariaDB(dsnTeste()) // conexão nova: herdaria o global vazio
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Fechar()
+	var sessao string
+	if err := r.db.QueryRow("SELECT @@SESSION.sql_mode").Scan(&sessao); err != nil {
+		t.Fatal(err)
+	}
+	if sessao != SQLMode {
+		t.Fatalf("sql_mode da sessão = %q, esperado %q", sessao, SQLMode)
+	}
+}

@@ -202,12 +202,27 @@ func (m *Motor) tickSaida(op *operacao) {
 	agora := m.agora()
 	s := op.viva(dominio.Saida)
 	if s == nil {
-		for _, o := range op.ordens {
-			if o.Papel != dominio.Entrada && o.viva() {
-				return // espera o fim da 1014 ou da saída anterior
-			}
-		}
 		if op.proximaSaidaEm.IsZero() || !agora.Before(op.proximaSaidaEm) {
+			if p := op.viva(dominio.Protecao); p != nil {
+				// 1014 recriada pela invariante enquanto a saída não podia sair: com preço, cancela a 1014
+				// e sai (Parte 3.5); sem preço, a posição continua protegida e tenta de novo depois
+				if p.pend != semPendencia || p.Estado == dominio.Enviando || p.Estado == dominio.Pendente || p.Estado == dominio.SemConfirmacao {
+					return
+				}
+				if _, _, _, ok := m.precoSaida(dominio.ParaZerar(op.posicao()), 1); !ok {
+					op.proximaSaidaEm = agora.Add(m.p.TimeoutSaida)
+					return
+				}
+				m.mudar(op, dominio.CancelandoProtecao)
+				op.cancelProtEm = agora
+				m.cancelar(p)
+				return
+			}
+			for _, o := range op.ordens {
+				if o.Papel == dominio.Saida && o.viva() {
+					return
+				}
+			}
 			op.proximaSaidaEm = agora
 			m.enviarSaida(op)
 		}
@@ -220,10 +235,12 @@ func (m *Motor) tickSaida(op *operacao) {
 		return
 	}
 	if op.saidaDivergente || m.simboloDiv {
-		// B5.c: sem repreço; decisão humana
+		// B5.c: sem repreço; decisão humana. A saída parada é cancelada para a 1014 poder voltar
+		// (invariante de proteção, v1.1 P5) sem risco de duas saídas executarem.
 		m.al.Emitir("SAIDA_DIVERGENTE_NAO_EXECUTOU", chaveOp("SAIDA_DIVERGENTE", op),
-			fmt.Sprintf("saída da operação %d com ticker divergente não executou; decisão humana", op.OperacaoID), op.OperacaoID)
+			fmt.Sprintf("saída da operação %d com ticker divergente não executou: cancelada, 1014 será recriada; decisão humana", op.OperacaoID), op.OperacaoID)
 		op.congelada = true
+		m.cancelar(s)
 		return
 	}
 	op.repreco++

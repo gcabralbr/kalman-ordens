@@ -1,9 +1,9 @@
-cenario 16i Saída com ticker divergente que não executa no timeout → alerta crítico, não repete
+cenario 16i Saída com ticker divergente que não executa no timeout → alerta crítico, saída cancelada, 1014 recriada
 hora 2026-10-13 12:25:00
-# SPEC v1.1 B5.c. Sem execução em TIMEOUT_SAIDA_S: alerta crítico SAIDA_DIVERGENTE_NAO_EXECUTOU,
-# nenhum replace, nenhum cancel, nenhuma nova saída. Decisão humana.
-# A 1014 já foi cancelada (passo 2 da Parte 3.5): a posição fica sem proteção até a decisão.
-# Ver pendência na SPEC v1.1.
+# SPEC v1.1 B5.c + P5. Sem execução em TIMEOUT_SAIDA_S: alerta crítico SAIDA_DIVERGENTE_NAO_EXECUTOU,
+# nenhum replace, nenhuma nova saída; decisão humana. A saída parada é cancelada e a invariante de
+# proteção recria a 1014 com o mesmo gatilho e limite da original (não depende do feed, que está no
+# contrato errado).
 
 executa INICIO
 executa COMPRADO OP=1691
@@ -24,7 +24,16 @@ nada
 sem_alerta SAIDA_DIVERGENTE_NAO_EXECUTOU
 avanca 200ms
 alerta SAIDA_DIVERGENTE_NAO_EXECUTOU
+recebe 35=F 11=KM-S-1691-2 41=KM-S-1691-1 37=dsa.1691.S 38=1 54=2
+envia @ER 11=KM-S-1691-2 41=KM-S-1691-1 37=dsa.1691.S 150=4 39=4 54=2 38=1 44=129800 847=1031 14=0 151=0 6=0
+avanca 2s
 nada
+avanca 2100ms
+recebe 35=D 11=KM-P-1691-3 38=1 40=2 44=129410 54=2 847=1014 20828=129510 20829=129410
+alerta PROTECAO_RECRIADA
+envia @ER 11=KM-P-1691-3 37=dsa.1691.P3 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+alerta RESOLVIDO
+# nenhuma nova saída: decisão humana
 avanca 30s
 nada
 saude posicao=1

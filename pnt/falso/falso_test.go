@@ -107,6 +107,9 @@ func subir(t *testing.T) (*Falso, *cliente) {
 	if err := f.EsperarLogon(0, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
+	// como em produção (pnt.Sessao.Enviar): só envia depois do próprio OnLogon. Antes dele, o
+	// handleLogon do QuickFIX/Go ainda lê a sequência do store sem trava (o -race acusa).
+	esperar(t, "logon do cliente", func() bool { c.mu.Lock(); defer c.mu.Unlock(); return c.logado })
 	return f, c
 }
 
