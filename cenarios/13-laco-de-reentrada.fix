@@ -1,0 +1,52 @@
+cenario 13 Laço de reentrada: 10 POST de entrada em 1 s → 1 aceito, 9 recusados, parada automática
+hora 2026-10-13 11:10:00
+# Limites de produção (sem config): posição 1, intervalo 60 s, 1 entrada/min.
+# 3 recusas por limite em 1 min → BLOQUEAR, que cancela a entrada pendente.
+
+executa INICIO
+
+entrada 1301 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1301-1 54=1 847=1031
+envia @ER 11=KM-E-1301-1 37=dsa.1301.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+
+avanca 100ms
+entrada 1302 C
+resposta aceito=false
+avanca 100ms
+entrada 1303 C
+resposta aceito=false
+avanca 100ms
+entrada 1304 C
+resposta aceito=false
+alerta PARADA
+saude parada.modo=BLOQUEAR parada.origem=auto
+
+recebe 35=F 11=KM-E-1301-2 41=KM-E-1301-1 37=dsa.1301.E
+envia @ER 11=KM-E-1301-2 41=KM-E-1301-1 37=dsa.1301.E 150=4 39=4 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0
+evento ENTRADA_ENCERRADA operacao_id=1301 qtd_final=0
+
+avanca 100ms
+entrada 1305 C
+resposta aceito=false codigo=PARADA
+avanca 100ms
+entrada 1306 C
+resposta aceito=false codigo=PARADA
+avanca 100ms
+entrada 1307 C
+resposta aceito=false codigo=PARADA
+avanca 100ms
+entrada 1308 C
+resposta aceito=false codigo=PARADA
+avanca 100ms
+entrada 1309 C
+resposta aceito=false codigo=PARADA
+avanca 100ms
+entrada 1310 C
+resposta aceito=false codigo=PARADA
+
+conta_eventos ENTRADA_ENCERRADA = 1
+nada
+# retomar é sempre manual
+avanca 2m
+saude parada.modo=BLOQUEAR

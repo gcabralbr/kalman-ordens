@@ -1,0 +1,45 @@
+cenario 07 1014 dispara e a saída não executa (gap) → stop furado → saída agressiva
+hora 2026-10-13 10:45:00
+
+executa INICIO
+executa COMPRADO OP=1007
+
+# gap: último abaixo do limite da 1014 (129410) e a 1014 não executa
+preco bid=129295 ask=129300 ultimo=129300
+avanca 5s
+nada
+avanca 1s
+alerta STOP_FURADO
+recebe 35=F 11=KM-P-1007-2 41=KM-P-1007-1 37=dsa.1007.P
+envia @ER 11=KM-P-1007-2 41=KM-P-1007-1 37=dsa.1007.P 150=6 39=6 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+envia @ER 11=KM-P-1007-2 41=KM-P-1007-1 37=dsa.1007.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+
+# saída a partir do passo 3: bid 129295 − 50 = 129245
+recebe 35=D 11=KM-S-1007-1 38=1 40=2 44=129245 54=2 847=1031
+envia @ER 11=KM-S-1007-1 37=dsa.1007.S 150=0 39=0 54=2 38=1 44=129245 847=1031 14=0 151=1 6=0
+
+# sem execução em TIMEOUT_SAIDA (2 s): replace com +50 a cada vez (−100, −150, −200)
+avanca 2s
+recebe 35=G 11=KM-S-1007-2 41=KM-S-1007-1 37=dsa.1007.S 38=1 44=129195 54=2 847=1031
+envia @ER 11=KM-S-1007-2 41=KM-S-1007-1 37=dsa.1007.S 150=5 39=5 54=2 38=1 44=129195 847=1031 14=0 151=1 6=0
+avanca 2s
+recebe 35=G 11=KM-S-1007-3 41=KM-S-1007-2 37=dsa.1007.S 44=129145
+envia @ER 11=KM-S-1007-3 41=KM-S-1007-2 37=dsa.1007.S 150=5 39=5 54=2 38=1 44=129145 847=1031 14=0 151=1 6=0
+avanca 2s
+recebe 35=G 11=KM-S-1007-4 41=KM-S-1007-3 37=dsa.1007.S 44=129095
+envia @ER 11=KM-S-1007-4 41=KM-S-1007-3 37=dsa.1007.S 150=5 39=5 54=2 38=1 44=129095 847=1031 14=0 151=1 6=0
+sem_alerta SAIDA_ESGOTOU
+
+# esgotou MAX_REPRECO_SAIDA (3): alerta crítico e continua reapregoando,
+# no afastamento máximo (−200) sobre o mercado do momento
+preco bid=129200 ask=129205 ultimo=129200
+avanca 2s
+alerta SAIDA_ESGOTOU
+recebe 35=G 11=KM-S-1007-5 41=KM-S-1007-4 37=dsa.1007.S 44=129000
+envia @ER 11=KM-S-1007-5 41=KM-S-1007-4 37=dsa.1007.S 150=5 39=5 54=2 38=1 44=129000 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-S-1007-5 37=dsa.1007.S 150=F 39=2 54=2 38=1 44=129000 847=1031 32=1 31=129200 14=1 151=0 6=129200
+evento SAIDA_EXECUTADA operacao_id=1007 qtd=1 preco=129200 origem=STOP_FURADO
+evento ZERADA operacao_id=1007 origem=STOP_FURADO pnl_pts=-810
+saude posicao=0
+avanca 3s
+nada

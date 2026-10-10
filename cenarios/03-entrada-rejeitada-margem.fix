@@ -1,0 +1,20 @@
+cenario 03 Entrada rejeitada por margem (35=8 39=8 com 103)
+hora 2026-10-13 10:25:00
+
+executa INICIO
+
+entrada 1003 V
+resposta aceito=true
+# venda: bid 130000 − 15 = 129985
+recebe 35=D 11=KM-E-1003-1 38=1 40=2 44=129985 54=2 847=1031
+envia @ER 11=KM-E-1003-1 37=dsa.301 150=A 39=A 54=2 38=1 44=129985 847=1031 14=0 151=1 6=0
+# [PnT-15] texto e código gravados sem interpretar
+envia @ER 11=KM-E-1003-1 37=dsa.301 150=8 39=8 54=2 38=1 44=129985 847=1031 14=0 151=0 6=0 103=99 58="[DSA-xx] Risk rejected: insufficient margin"
+
+evento RECUSADA operacao_id=1003 papel=E codigo=99 motivo="[DSA-xx] Risk rejected: insufficient margin"
+evento ENTRADA_ENCERRADA operacao_id=1003 qtd_final=0 motivo=REJEITADA
+alerta RECUSA_PNT
+saude posicao=0 parada=null
+nada
+avanca 5s
+nada

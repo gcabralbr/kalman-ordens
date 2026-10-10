@@ -1,0 +1,28 @@
+cenario 11 Restart com posição aberta e sem 1014 → 1014 criada no logon
+hora 2026-10-13 11:05:00
+# A 1014 foi enviada mas o processo caiu antes de qualquer resposta, e ela não está no PnT.
+# A ordem sumida vira DESCONHECIDA: divergência não resolvida → DIVERGENTE + BLOQUEAR (7.2.5).
+# A posição não fica sem proteção: a nova 1014 sai mesmo assim (7.2.4).
+
+executa INICIO
+
+entrada 1011 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1011-1 44=130020 54=1 847=1031
+envia @ER 11=KM-E-1011-1 37=dsa.1011.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-E-1011-1 37=dsa.1011.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=1011 qtd=1
+recebe 35=D 11=KM-P-1011-1 38=1 54=2 847=1014
+
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345 584=>MS
+# mass status vazio
+avanca 3s
+alerta DESCONHECIDA
+alerta CONCILIACAO
+recebe 35=D 11=KM-P-1011-2 38=1 40=2 44=129410 54=2 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-1011-2 37=dsa.1011.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=1011 preco_stop=129510
+saude posicao=1 divergente=true parada.modo=BLOQUEAR parada.origem=auto
+nada

@@ -1,0 +1,20 @@
+cenario 05 1014 dispara sozinha → fill → ZERADA com origem STOP_SERVIDOR
+hora 2026-10-13 10:35:00
+# [PnT-5] fills da 1014 com o mesmo 37; a origem vem do papel P.
+
+executa INICIO
+executa COMPRADO OP=1005
+
+preco bid=129500 ask=129505 ultimo=129505
+envia @ER 11=KM-P-1005-1 37=dsa.1005.P 150=F 39=2 54=2 38=1 44=129410 847=1014 32=1 31=129505 14=1 151=0 6=129505
+evento SAIDA_EXECUTADA operacao_id=1005 qtd=1 preco=129505 origem=STOP_SERVIDOR
+evento ZERADA operacao_id=1005 origem=STOP_SERVIDOR pnl_pts=-505
+saude posicao=0
+nada
+
+# o gestor, atrasado, pede a saída: reduce-only recusa e nenhuma ordem sai
+saida 1005 V STOP
+resposta aceito=false codigo=SEM_POSICAO
+nada
+avanca 10s
+nada

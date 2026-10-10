@@ -1,0 +1,18 @@
+cenario 10 Restart do processo com posição aberta e 1014 viva → nada é reenviado
+hora 2026-10-13 11:00:00
+
+executa INICIO
+executa COMPRADO OP=1010
+
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345 584=>MS
+# [PnT-13] o mass status traz só as ativas: a 1014 (a entrada já executou)
+envia @ER 11=KM-P-1010-1 37=dsa.1010.P 150=I 39=0 584=$MS 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 20828=129510.0000000001 20829=129410.0000000001
+avanca 3s
+alerta CONCILIACAO
+
+saude posicao=1 divergente=false parada=null
+nada
+avanca 10s
+nada

@@ -1,0 +1,30 @@
+cenario 08 Queda da sessão com entrada viva → reconexão → mass status → fill recuperado
+hora 2026-10-13 10:50:00
+# O fill aconteceu durante a queda e o PnT não o reenvia: só aparece no 150=I.
+# Supõe que o 150=I traz o CumQty (14) correto. O mass status de HML 2025 trouxe 39=2 com 14=0;
+# se for assim em produção, o serviço marca DIVERGENTE (não há como saber a posição). [PnT-13]
+
+executa INICIO
+
+entrada 1008 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1008-1 44=130020 54=1 847=1031
+envia @ER 11=KM-E-1008-1 37=dsa.1008.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+
+derruba_sessao
+alerta SESSAO_CAIU
+aguarda_logon
+alerta SESSAO_VOLTOU
+recebe 35=AF 585=9 1=12345 584=>MS
+envia @ER 11=KM-E-1008-1 37=dsa.1008.E 150=I 39=2 584=$MS 54=1 38=1 44=130020 847=1031 14=1 151=0 6=130010
+avanca 3s
+alerta CONCILIACAO
+
+evento ENTRADA_EXECUTADA operacao_id=1008 qtd=1 preco=130010 qtd_total=1
+evento ENTRADA_ENCERRADA operacao_id=1008 qtd_final=1
+# a entrada já está executada: o timeout não manda cancel
+recebe 35=D 11=KM-P-1008-1 38=1 54=2 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-1008-1 37=dsa.1008.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=1008
+saude posicao=1 divergente=false parada=null
+nada

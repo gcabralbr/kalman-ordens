@@ -1,0 +1,23 @@
+cenario 06 Cancelamento da 1014 rejeitado (35=9) porque já disparou → nenhuma saída extra
+hora 2026-10-13 10:40:00
+
+executa INICIO
+executa COMPRADO OP=1006
+
+# abaixo do gatilho (129510), acima do limite (129410): a 1014 dispara e está executando
+preco bid=129500 ask=129505 ultimo=129505
+saida 1006 V STOP
+resposta aceito=true
+recebe 35=F 11=KM-P-1006-2 41=KM-P-1006-1 37=dsa.1006.P
+envia 35=9 11=KM-P-1006-2 41=KM-P-1006-1 37=dsa.1006.P 39=0 434=1 102=0 58="[DSA-xx] Order is being executed by the robot"
+alerta CANCEL_STOP_REJEITADO
+
+# não manda a saída: espera os fills por ESPERA_STOP_S (5 s)
+avanca 4s
+nada
+envia @ER 11=KM-P-1006-1 37=dsa.1006.P 150=F 39=2 54=2 38=1 44=129410 847=1014 32=1 31=129505 14=1 151=0 6=129505
+evento SAIDA_EXECUTADA operacao_id=1006 qtd=1 preco=129505 origem=STOP_SERVIDOR
+evento ZERADA operacao_id=1006 origem=STOP_SERVIDOR pnl_pts=-505
+saude posicao=0
+avanca 5s
+nada

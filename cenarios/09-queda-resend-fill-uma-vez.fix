@@ -1,0 +1,30 @@
+cenario 09 Queda com fill durante a queda → ResendRequest → fill aplicado uma vez
+hora 2026-10-13 10:55:00
+# [PnT-11] sem reset intradiário: o fill gravado no store do PnT chega por ResendRequest
+# (PossDupFlag=Y). O mass status e um reenvio do mesmo ExecID não mudam a posição.
+
+executa INICIO
+
+entrada 1009 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1009-1 44=130020 54=1 847=1031
+envia @ER 11=KM-E-1009-1 37=dsa.1009.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+
+derruba_sessao
+envia_offline @ER 11=KM-E-1009-1 37=dsa.1009.E 150=F 39=2 17=T-1009-1 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+aguarda_logon
+recebe_sessao 35=2
+
+em_qualquer_ordem
+  recebe 35=AF 585=9 584=>MS
+  recebe 35=D 11=KM-P-1009-1 38=1 54=2 847=1014 20828=129510 20829=129410
+fim
+
+# o mass status confirma a mesma execução, e o PnT repete o mesmo ExecID
+envia @ER 11=KM-E-1009-1 37=dsa.1009.E 150=I 39=2 584=$MS 54=1 38=1 44=130020 847=1031 14=1 151=0 6=130010
+envia @ER 11=KM-E-1009-1 37=dsa.1009.E 150=F 39=2 17=T-1009-1 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+avanca 3s
+
+conta_eventos ENTRADA_EXECUTADA operacao_id=1009 = 1
+saude posicao=1
+nada

@@ -1,0 +1,30 @@
+cenario 15 Perda do dia atingida com posição aberta → BLOQUEAR, posição mantida com a 1014
+hora 2026-10-13 11:20:00
+# Limite reduzido para caber antes do stop: aberta = 129700 − 130010 = −310 ≤ −300.
+config LIMITE_PERDA_DIA_PTS=300
+
+executa INICIO
+executa COMPRADO OP=1501
+
+preco bid=129695 ask=129700 ultimo=129700
+avanca 200ms
+alerta PARADA
+saude parada.modo=BLOQUEAR parada.origem=auto posicao=1
+# BLOQUEAR mantém a 1014
+nada
+
+avanca 61s
+entrada 1502 C
+resposta aceito=false codigo=PARADA
+nada
+
+# saída do gestor continua aceita
+saida 1501 V STOP
+resposta aceito=true
+recebe 35=F 11=KM-P-1501-2 41=KM-P-1501-1 37=dsa.1501.P
+envia @ER 11=KM-P-1501-2 41=KM-P-1501-1 37=dsa.1501.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+# bid 129695 − 50 = 129645
+recebe 35=D 11=KM-S-1501-1 44=129645 54=2 847=1031
+envia @ER 11=KM-S-1501-1 37=dsa.1501.S 150=F 39=2 54=2 38=1 44=129645 847=1031 32=1 31=129695 14=1 151=0 6=129695
+evento ZERADA operacao_id=1501 origem=GESTOR pnl_pts=-315
+saude posicao=0 parada.modo=BLOQUEAR

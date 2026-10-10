@@ -1,0 +1,31 @@
+cenario 04 Entrada sem fill → timeout → cancelamento → fill chega depois do 39=4
+hora 2026-10-13 10:30:00
+# O RoE 2025 mostra o PnT entregando um fill real depois de dar a ordem por encerrada
+# ("Received RealExecReport when Order was already over"). O fill é aceito e contabilizado,
+# com alerta, e a posição que ele cria é protegida pela 1014.
+
+executa INICIO
+
+entrada 1004 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1004-1 44=130020 54=1 847=1031
+envia @ER 11=KM-E-1004-1 37=dsa.401 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+
+avanca 2900ms
+nada
+avanca 100ms
+recebe 35=F 11=KM-E-1004-2 41=KM-E-1004-1 37=dsa.401 38=1 54=1
+envia @ER 11=KM-E-1004-2 41=KM-E-1004-1 37=dsa.401 150=6 39=6 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-E-1004-2 41=KM-E-1004-1 37=dsa.401 150=4 39=4 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0
+evento ENTRADA_ENCERRADA operacao_id=1004 qtd_final=0 motivo=CANCELADA
+saude posicao=0
+nada
+
+envia @ER 11=KM-E-1004-2 37=dsa.401 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010 58="Received RealExecReport when Order was already over. RealExecReport accepted."
+alerta FILL_ORDEM_ENCERRADA
+evento ENTRADA_EXECUTADA operacao_id=1004 qtd=1 preco=130010 qtd_total=1 tardio=true
+recebe 35=D 11=KM-P-1004-1 38=1 54=2 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-1004-1 37=dsa.402 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=1004 preco_stop=129510
+saude posicao=1
+nada

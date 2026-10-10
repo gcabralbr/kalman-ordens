@@ -1,0 +1,56 @@
+cenario 02 Entrada parcial (2 fills) → replace da 1014; um replace por vez; posição pelo 37
+hora 2026-10-13 10:20:00
+# Cobre também: replace enfileirado manda só o estado final; fill da 1014 depois de replaces
+# chega com outro ClOrdID e o mesmo 37, e a posição continua certa (chave = 37).
+config LIMITE_POSICAO_MAX=3
+config LIMITE_QTD_ORDEM=3
+
+executa INICIO
+
+entrada 1002 C qtd=3
+resposta aceito=true
+recebe 35=D 11=KM-E-1002-1 38=3 40=2 44=130020 54=1 847=1031
+envia @ER 11=KM-E-1002-1 37=dsa.201 150=0 39=0 54=1 38=3 44=130020 847=1031 14=0 151=3 6=0
+
+# 1º fill → 1014 de 1 contrato
+envia @ER 11=KM-E-1002-1 37=dsa.201 150=F 39=1 54=1 38=3 44=130020 847=1031 32=1 31=130010 14=1 151=2 6=130010
+evento ENTRADA_EXECUTADA operacao_id=1002 qtd=1 preco=130010 qtd_total=1 preco_medio=130010
+recebe 35=D 11=KM-P-1002-1 38=1 54=2 847=1014 20828=129510 20829=129410 44=129410
+
+# 2º fill antes de a 1014 responder: nada sai agora
+envia @ER 11=KM-E-1002-1 37=dsa.201 150=F 39=1 54=1 38=3 44=130020 847=1031 32=1 31=130020 14=2 151=1 6=130015
+evento ENTRADA_EXECUTADA operacao_id=1002 qtd=1 preco=130020 qtd_total=2 preco_medio=130015
+nada
+
+envia @ER 11=KM-P-1002-1 37=dsa.202 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=1002 qtd=1 preco_stop=129510
+
+# agora o replace, já com o estado final: 2 contratos sobre o médio 130015
+# gatilho 130015 − 500 = 129515 (múltiplo de 5); limite 129415
+recebe 35=G 11=KM-P-1002-2 41=KM-P-1002-1 37=dsa.202 38=2 40=2 44=129415 54=2 847=1014 20828=129515 20829=129415
+envia @ER 11=KM-P-1002-2 41=KM-P-1002-1 37=dsa.202 150=E 39=E 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+envia @ER 11=KM-P-1002-2 41=KM-P-1002-1 37=dsa.202 150=5 39=5 54=2 38=2 44=129415 847=1014 14=0 151=2 6=0
+evento PROTEGIDA operacao_id=1002 qtd=2 preco_stop=129515 preco_limite=129415
+
+# TIMEOUT_ENTRADA (3 s desde o envio): cancela o restante, não persegue o preço
+avanca 2900ms
+nada
+avanca 100ms
+recebe 35=F 11=KM-E-1002-2 41=KM-E-1002-1 37=dsa.201 38=3 54=1
+envia @ER 11=KM-E-1002-2 41=KM-E-1002-1 37=dsa.201 150=6 39=6 54=1 38=3 44=130020 847=1031 14=2 151=1 6=130015
+envia @ER 11=KM-E-1002-2 41=KM-E-1002-1 37=dsa.201 150=4 39=4 54=1 38=3 44=130020 847=1031 14=2 151=0 6=130015
+evento ENTRADA_ENCERRADA operacao_id=1002 qtd_final=2 preco_medio=130015
+nada
+saude posicao=2
+
+# a 1014 dispara: fills com o ClOrdID corrente (P-2) e o mesmo 37
+preco bid=129400 ask=129405 ultimo=129415
+envia @ER 11=KM-P-1002-2 37=dsa.202 150=F 39=1 54=2 38=2 44=129415 847=1014 32=1 31=129415 14=1 151=1 6=129415
+evento SAIDA_EXECUTADA operacao_id=1002 qtd=1 preco=129415 origem=STOP_SERVIDOR
+saude posicao=1
+envia @ER 11=KM-P-1002-2 37=dsa.202 150=F 39=2 54=2 38=2 44=129415 847=1014 32=1 31=129415 14=2 151=0 6=129415
+evento SAIDA_EXECUTADA operacao_id=1002 qtd=1 preco=129415 origem=STOP_SERVIDOR
+# (129415 − 130015) × 2
+evento ZERADA operacao_id=1002 origem=STOP_SERVIDOR pnl_pts=-1200
+saude posicao=0
+nada

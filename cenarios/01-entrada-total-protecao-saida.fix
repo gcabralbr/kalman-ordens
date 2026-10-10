@@ -1,0 +1,44 @@
+cenario 01 Entrada total → 1014 → saída do gestor (cancel 39=6/39=4 → saída → fill)
+hora 2026-10-13 10:15:00
+# Também cobre o item "ordens single-leg passam no dicionário": D (1031 e 1014), F e AF
+# enviados pelo serviço são validados pelo PnT falso (ver FORMATO.md).
+
+executa INICIO
+
+entrada 1001 C
+resposta aceito=true
+# compra: ask 130005 + COLAR_ENTRADA 15 = 130020
+recebe 35=D 11=KM-E-1001-1 1=12345 21=4 38=1 40=2 44=130020 54=1 55=WINZ26 59=0 207=BVMF 847=1031
+envia @ER 11=KM-E-1001-1 37=dsa.101 150=A 39=A 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-E-1001-1 37=dsa.101 198=PNT-101 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-E-1001-1 37=dsa.101 198=PNT-101 150=F 39=2 17=T-101-1 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=1001 qtd=1 preco=130010 qtd_total=1 preco_medio=130010
+
+# 1014 no tratamento do primeiro fill: gatilho 130010 − 500 = 129510, limite − 100 = 129410
+recebe 35=D 11=KM-P-1001-1 1=12345 21=4 38=1 40=2 44=129410 54=2 55=WINZ26 59=0 207=BVMF 847=1014 20828=129510 20829=129410
+evento ENTRADA_ENCERRADA operacao_id=1001 qtd_final=1 preco_medio=130010
+envia @ER 11=KM-P-1001-1 37=dsa.102 150=A 39=A 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+envia @ER 11=KM-P-1001-1 37=dsa.102 198=PNT-102 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 20828=129510.0000000001 20829=129410.0000000001
+evento PROTEGIDA operacao_id=1001 preco_stop=129510 preco_limite=129410 qtd=1
+saude posicao=1
+
+avanca 10s
+nada
+
+# saída do gestor: primeiro cancela a 1014 e espera o 39=4
+preco bid=130100 ask=130105 ultimo=130100
+saida 1001 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-1001-2 41=KM-P-1001-1 37=dsa.102 1=12345 38=1 54=2 55=WINZ26
+envia @ER 11=KM-P-1001-2 41=KM-P-1001-1 37=dsa.102 150=6 39=6 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+nada 35=D
+envia @ER 11=KM-P-1001-2 41=KM-P-1001-1 37=dsa.102 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+
+# venda: bid 130100 − COLAR_SAIDA 50 = 130050
+recebe 35=D 11=KM-S-1001-1 1=12345 21=4 38=1 40=2 44=130050 54=2 55=WINZ26 59=0 207=BVMF 847=1031
+envia @ER 11=KM-S-1001-1 37=dsa.103 150=0 39=0 54=2 38=1 44=130050 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-S-1001-1 37=dsa.103 150=F 39=2 54=2 38=1 44=130050 847=1031 32=1 31=130100 14=1 151=0 6=130100
+evento SAIDA_EXECUTADA operacao_id=1001 qtd=1 preco=130100 origem=GESTOR
+evento ZERADA operacao_id=1001 preco_medio_saida=130100 pnl_pts=90 origem=GESTOR
+saude posicao=0
+nada

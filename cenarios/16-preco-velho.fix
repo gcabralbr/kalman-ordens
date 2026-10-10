@@ -1,0 +1,28 @@
+cenario 16 Preço velho (> 3 s) ou leilão → entrada recusada, saída aceita
+hora 2026-10-13 11:25:00
+config LIMITE_POSICAO_MAX=2
+
+executa INICIO
+executa COMPRADO OP=1601
+avanca 61s
+
+preco idade=4s
+entrada 1602 C
+resposta aceito=false codigo=PRECO_VELHO
+nada
+
+# status84 fora de negociação normal (STATUS84_NEGOCIACAO=0)
+preco idade=100ms status84=2
+entrada 1603 C
+resposta aceito=false codigo=LEILAO
+nada
+
+# saída segue com preço velho: usa o último bid conhecido − 50 e alerta
+preco status84=0 idade=4s
+saida 1601 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-1601-2 41=KM-P-1601-1 37=dsa.1601.P
+envia @ER 11=KM-P-1601-2 41=KM-P-1601-1 37=dsa.1601.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-1601-1 44=129950 54=2 847=1031
+alerta PRECO_VELHO_SAIDA
+saude parada=null

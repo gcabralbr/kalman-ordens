@@ -1,0 +1,48 @@
+cenario 19 Ordem sem resposta do PnT → SEM_CONFIRMACAO
+hora 2026-10-13 11:35:00
+# Ordem em ENVIANDO sem nenhuma resposta em PRAZO_CONFIRMACAO_S (3 s) → SEM_CONFIRMACAO,
+# alerta, entradas bloqueadas, mass status para reconciliar.
+# Enquanto SEM_CONFIRMACAO, o timeout da entrada não manda cancel: quem decide é a conciliação.
+# Parte A: a conciliação acha a ordem viva → resolvido, sem parada.
+# Parte B: a ordem não está no PnT → DESCONHECIDA → DIVERGENTE + BLOQUEAR.
+
+executa INICIO
+
+# ---------- Parte A
+entrada 1901 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1901-1 54=1 847=1031
+avanca 2900ms
+nada
+sem_alerta SEM_CONFIRMACAO
+avanca 200ms
+alerta SEM_CONFIRMACAO
+recebe 35=AF 585=9 1=12345 584=>MS
+entrada 1902 C
+resposta aceito=false codigo=SEM_CONFIRMACAO
+
+envia @ER 11=KM-E-1901-1 37=dsa.1901.E 150=I 39=0 584=$MS 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+avanca 3s
+alerta CONCILIACAO
+saude parada=null divergente=false
+# viva e com o tempo da entrada vencido: cancela o restante agora
+recebe 35=F 11=KM-E-1901-2 41=KM-E-1901-1 37=dsa.1901.E
+envia @ER 11=KM-E-1901-2 41=KM-E-1901-1 37=dsa.1901.E 150=4 39=4 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0
+evento ENTRADA_ENCERRADA operacao_id=1901 qtd_final=0
+nada
+
+# ---------- Parte B
+avanca 61s
+entrada 1903 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1903-1 54=1 847=1031
+avanca 3100ms
+alerta SEM_CONFIRMACAO
+recebe 35=AF 585=9 584=>MS2
+# mass status vazio
+avanca 3s
+alerta DESCONHECIDA
+alerta CONCILIACAO
+evento ENTRADA_ENCERRADA operacao_id=1903 qtd_final=0 motivo=DESCONHECIDA
+saude posicao=0 divergente=true parada.modo=BLOQUEAR parada.origem=auto
+nada

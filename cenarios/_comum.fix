@@ -1,0 +1,37 @@
+# Carregado antes de todo cenário.
+
+config ORDENS_CONTA=12345
+config ORDENS_SIMBOLO=WINZ26
+config ORDENS_VENCIMENTO=2026-12-16
+config ORDENS_UID_REAL=7
+config FIX_RECONEXAO_S=1
+
+# ExecutionReport do PnT (campos fixos da conta e do símbolo)
+modelo ER 35=8 1=12345 55=WINZ26 207=XBMF 40=2 59=0
+
+# Sessão no ar, mass status vazio, conciliação concluída.
+bloco INICIO
+  preco bid=130000 ask=130005 ultimo=130000 status84=0 idade=100ms
+  aguarda_logon
+  recebe 35=AF 585=9 1=12345 584=>MS
+  avanca 3s
+  alerta CONCILIACAO
+  saude sessao_logada=true conciliando=false posicao=0 parada=null divergente=false
+fim
+
+# Posição comprada de 1 contrato a 130010, protegida pela 1014.
+# Pede o mercado em bid=130000 ask=130005 (entrada a ask + 15 = 130020).
+# 1014: gatilho 130010 − 500 = 129510; limite 129510 − 100 = 129410.
+bloco COMPRADO OP
+  entrada $OP C
+  resposta aceito=true
+  recebe 35=D 11=KM-E-$OP-1 1=12345 21=4 38=1 40=2 44=130020 54=1 55=WINZ26 59=0 207=BVMF 847=1031
+  envia @ER 11=KM-E-$OP-1 37=dsa.$OP.E 198=PNT-$OP 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+  envia @ER 11=KM-E-$OP-1 37=dsa.$OP.E 198=PNT-$OP 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+  evento ENTRADA_EXECUTADA operacao_id=$OP qtd=1 preco=130010 qtd_total=1 preco_medio=130010
+  recebe 35=D 11=KM-P-$OP-1 1=12345 21=4 38=1 40=2 44=129410 54=2 55=WINZ26 59=0 207=BVMF 847=1014 20828=129510 20829=129410
+  evento ENTRADA_ENCERRADA operacao_id=$OP qtd_final=1 preco_medio=130010
+  envia @ER 11=KM-P-$OP-1 37=dsa.$OP.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 20828=129510.0000000001 20829=129410.0000000001
+  evento PROTEGIDA operacao_id=$OP preco_stop=129510 preco_limite=129410 qtd=1
+  saude posicao=1
+fim
