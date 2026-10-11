@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +23,23 @@ const SQLMode = "STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_U
 
 // MariaDB implementa Repositorio sobre MariaDB 10.11. Horários gravados em UTC.
 type MariaDB struct {
-	db *sql.DB
+	db            *sql.DB
+	tabelaUsuario string // dbecotools.acusuario (em teste, acusuario_teste no schema de teste)
+}
+
+// TabelaUsuarioPadrao: a configuração dos usuários do GQ. Só SELECT de usucodusuario,
+// usutxtconfig e usutxtconfigprd (grant por coluna, deploy/LEIA.md 1.2).
+const TabelaUsuarioPadrao = "dbecotools.acusuario"
+
+var reTabela = regexp.MustCompile(`^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)?$`)
+
+// UsarTabelaUsuario troca a tabela de usuários do GQ (testes: acusuario_teste).
+func (r *MariaDB) UsarTabelaUsuario(nome string) error {
+	if !reTabela.MatchString(nome) {
+		return fmt.Errorf("repo: nome de tabela inválido %q", nome)
+	}
+	r.tabelaUsuario = nome
+	return nil
 }
 
 // AbrirMariaDB conecta (DSN no formato do go-sql-driver; parseTime e loc=UTC são forçados).
@@ -49,7 +67,7 @@ func AbrirMariaDB(dsn string) (*MariaDB, error) {
 		db.Close()
 		return nil, fmt.Errorf("repo: conectar: %w", err)
 	}
-	return &MariaDB{db: db}, nil
+	return &MariaDB{db: db, tabelaUsuario: TabelaUsuarioPadrao}, nil
 }
 
 func (r *MariaDB) Fechar() error { return r.db.Close() }
@@ -94,7 +112,8 @@ func (r *MariaDB) LimparTeste() error {
 	if !strings.HasSuffix(schema, "_teste") {
 		return fmt.Errorf("repo: LimparTeste recusado no schema %q (só *_teste)", schema)
 	}
-	for _, t := range []string{"kalmanordemevento", "kalmanordempub", "kalmanordemestado", "kalmanordem", "kalmanordemoperacao", "kalmanordem_migracao"} {
+	for _, t := range []string{"kalmanordemevento", "kalmanordempub", "kalmanordemestado", "kalmanordem", "kalmanordemoperacao",
+		"kalmanordemusuario", "kalmanordemusuariohist", "acusuario_teste", "kalmanordem_migracao"} {
 		if _, err := r.db.Exec("DROP TABLE IF EXISTS " + t); err != nil {
 			return err
 		}
@@ -121,11 +140,11 @@ func (r *MariaDB) SalvarOperacao(o *dominio.Operacao) error {
 	agora := time.Now().UTC()
 	pnl := o.PnL.String()
 	if o.ID == 0 {
-		res, err := r.db.Exec(`INSERT INTO kalmanordemoperacao (data, operacao_id, uid, lado, qtd_pedida, stop_pts, estado,
-			motivo_entrada, ts_decisao, motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts, encerrou_entrada,
-			contador_n, pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, criado_em, atualizado_em)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			o.Data, o.OperacaoID, o.UID, o.Lado.Letra(), o.QtdPedida, o.StopPts, string(o.Estado),
+		res, err := r.db.Exec(`INSERT INTO kalmanordemoperacao (data, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida,
+			stop_pts, estado, motivo_entrada, ts_decisao, motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts,
+			encerrou_entrada, contador_n, pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, criado_em, atualizado_em)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			o.Data, o.OperacaoID, o.UID, nulo(o.Conta), o.Destino, nulo(o.Simbolo), o.Lado.Letra(), o.QtdPedida, o.StopPts, string(o.Estado),
 			nulo(o.MotivoEntrada), nulo(o.TsDecisao), nulo(o.MotivoSaida), nulo(o.OrigemSaida), utc(o.SaidaPedidaEm),
 			o.Divergente, pnl, o.EncerrouEntrada, string(cn), nulo(o.PedidoEntrada), nulo(o.RespostaEntrada),
 			nulo(o.PedidoSaida), nulo(o.RespostaSaida), utc(o.CriadaEm), agora)
@@ -157,10 +176,10 @@ func (r *MariaDB) OperacaoExiste(id int64) (bool, error) {
 func (r *MariaDB) SalvarOrdem(o *dominio.Ordem) error {
 	agora := time.Now().UTC()
 	if o.ID == 0 {
-		res, err := r.db.Exec(`INSERT INTO kalmanordem (data, uid, operacao_id, papel, clordid_base, clordid_atual, orderid37,
-			secid198, estrategia, lado, qtd, preco, preco_stop, preco_stop_lim, estado, qtd_exec, preco_medio, motivo_gestor,
-			motivo_rejeicao, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			o.Data, o.UID, o.OperacaoID, o.Papel.String(), o.ClOrdBase, o.ClOrdAtual, nulo(o.OrderID), nulo(o.SecID),
+		res, err := r.db.Exec(`INSERT INTO kalmanordem (data, uid, operacao_id, papel, conta, simbolo, clordid_base, clordid_atual,
+			orderid37, secid198, estrategia, lado, qtd, preco, preco_stop, preco_stop_lim, estado, qtd_exec, preco_medio,
+			motivo_gestor, motivo_rejeicao, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			o.Data, o.UID, o.OperacaoID, o.Papel.String(), nulo(o.Conta), nulo(o.Simbolo), o.ClOrdBase, o.ClOrdAtual, nulo(o.OrderID), nulo(o.SecID),
 			o.Estrategia, o.Lado.Letra(), o.Qtd, o.Preco, o.Stop, o.StopLim, string(o.Estado), o.QtdExec, o.PrecoMedio.String(),
 			nulo(o.MotivoGestor), nulo(cortar(o.MotivoRejeicao, 500)), utc(o.CriadaEm), agora)
 		if err != nil {
@@ -263,7 +282,7 @@ func (r *MariaDB) GravarEstado(k, v string, em time.Time) error {
 }
 
 func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem, error) {
-	rows, err := r.db.Query(`SELECT id, data, operacao_id, uid, lado, qtd_pedida, stop_pts, estado, motivo_entrada, ts_decisao,
+	rows, err := r.db.Query(`SELECT id, data, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida, stop_pts, estado, motivo_entrada, ts_decisao,
 		motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts, encerrou_entrada, contador_n, pedido_entrada,
 		resposta_entrada, pedido_saida, resposta_saida, criado_em FROM kalmanordemoperacao WHERE data=? ORDER BY id`, data)
 	if err != nil {
@@ -274,14 +293,16 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 		var o dominio.Operacao
 		var d time.Time
 		var lado, estado, cn string
-		var me, ts, ms, os, pe, re, ps, rs, pnl sql.NullString
+		var me, ts, ms, os, pe, re, ps, rs, pnl, conta, simb sql.NullString
+		var dest sql.NullInt64
 		var sp sql.NullTime
-		if err := rows.Scan(&o.ID, &d, &o.OperacaoID, &o.UID, &lado, &o.QtdPedida, &o.StopPts, &estado, &me, &ts, &ms, &os,
+		if err := rows.Scan(&o.ID, &d, &o.OperacaoID, &o.UID, &conta, &dest, &simb, &lado, &o.QtdPedida, &o.StopPts, &estado, &me, &ts, &ms, &os,
 			&sp, &o.Divergente, &pnl, &o.EncerrouEntrada, &cn, &pe, &re, &ps, &rs, &o.CriadaEm); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
 		o.Data = d.Format("2006-01-02")
+		o.Conta, o.Destino, o.Simbolo = conta.String, int(dest.Int64), simb.String
 		o.Lado, _ = dominio.LadoDaLetra(lado)
 		o.Estado = dominio.EstadoOperacao(estado)
 		o.MotivoEntrada, o.TsDecisao, o.MotivoSaida, o.OrigemSaida = me.String, ts.String, ms.String, os.String
@@ -300,7 +321,7 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
-	rows, err = r.db.Query(`SELECT id, data, uid, operacao_id, papel, clordid_base, clordid_atual, orderid37, secid198,
+	rows, err = r.db.Query(`SELECT id, data, uid, operacao_id, papel, conta, simbolo, clordid_base, clordid_atual, orderid37, secid198,
 		estrategia, lado, qtd, preco, preco_stop, preco_stop_lim, estado, qtd_exec, preco_medio, motivo_gestor,
 		motivo_rejeicao, criado_em FROM kalmanordem WHERE data=? ORDER BY id`, data)
 	if err != nil {
@@ -312,13 +333,14 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 		var o dominio.Ordem
 		var d time.Time
 		var papel, lado, estado, pm string
-		var oid, sid, mg, mr sql.NullString
-		if err := rows.Scan(&o.ID, &d, &o.UID, &o.OperacaoID, &papel, &o.ClOrdBase, &o.ClOrdAtual, &oid, &sid, &o.Estrategia,
+		var oid, sid, mg, mr, conta, simb sql.NullString
+		if err := rows.Scan(&o.ID, &d, &o.UID, &o.OperacaoID, &papel, &conta, &simb, &o.ClOrdBase, &o.ClOrdAtual, &oid, &sid, &o.Estrategia,
 			&lado, &o.Qtd, &o.Preco, &o.Stop, &o.StopLim, &estado, &o.QtdExec, &pm, &mg, &mr, &o.CriadaEm); err != nil {
 			return nil, nil, err
 		}
 		o.Data = d.Format("2006-01-02")
 		o.Papel = dominio.Papel(papel[0])
+		o.Conta, o.Simbolo = conta.String, simb.String
 		o.Lado, _ = dominio.LadoDaLetra(lado)
 		o.Estado = dominio.EstadoOrdem(estado)
 		o.OrderID, o.SecID, o.MotivoGestor, o.MotivoRejeicao = oid.String, sid.String, mg.String, mr.String
@@ -326,6 +348,116 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 		ords = append(ords, o)
 	}
 	return ops, ords, rows.Err()
+}
+
+// ---------------------------------------------------------------- habilitação e usuários do GQ
+
+func (r *MariaDB) Habilitacao(uid int) (dominio.Habilitacao, bool, error) {
+	h := dominio.Habilitacao{UID: uid}
+	err := r.db.QueryRow(`SELECT habilitado, posicao_max, qtd_max_ordem, alterado_por, motivo, alterado_em
+		FROM kalmanordemusuario WHERE uid=?`, uid).Scan(&h.Habilitado, &h.PosicaoMax, &h.QtdMaxOrdem, &h.Por, &h.Motivo, &h.Em)
+	if errors.Is(err, sql.ErrNoRows) {
+		return h, false, nil
+	}
+	return h, err == nil, err
+}
+
+func (r *MariaDB) Habilitacoes() ([]dominio.Habilitacao, error) {
+	rows, err := r.db.Query(`SELECT uid, habilitado, posicao_max, qtd_max_ordem, alterado_por, motivo, alterado_em
+		FROM kalmanordemusuario ORDER BY uid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var hs []dominio.Habilitacao
+	for rows.Next() {
+		var h dominio.Habilitacao
+		if err := rows.Scan(&h.UID, &h.Habilitado, &h.PosicaoMax, &h.QtdMaxOrdem, &h.Por, &h.Motivo, &h.Em); err != nil {
+			return nil, err
+		}
+		hs = append(hs, h)
+	}
+	return hs, rows.Err()
+}
+
+func (r *MariaDB) GravarHabilitacao(h dominio.Habilitacao) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO kalmanordemusuario (uid, habilitado, posicao_max, qtd_max_ordem, alterado_por, motivo, alterado_em)
+		VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE habilitado=VALUES(habilitado), posicao_max=VALUES(posicao_max),
+		qtd_max_ordem=VALUES(qtd_max_ordem), alterado_por=VALUES(alterado_por), motivo=VALUES(motivo), alterado_em=VALUES(alterado_em)`,
+		h.UID, h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, cortar(h.Por, 64), cortar(h.Motivo, 200), h.Em.UTC()); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO kalmanordemusuariohist (uid, habilitado, posicao_max, qtd_max_ordem, alterado_por, motivo, alterado_em)
+		VALUES (?,?,?,?,?,?,?)`, h.UID, h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, cortar(h.Por, 64), cortar(h.Motivo, 200), h.Em.UTC()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ConfigUsuario: usucodusuario é char(15) com o uid do Kalman (o mesmo do GQ).
+func (r *MariaDB) ConfigUsuario(uid int) (string, string, bool, error) {
+	var hml, prd sql.NullString
+	err := r.db.QueryRow("SELECT usutxtconfig, usutxtconfigprd FROM "+r.tabelaUsuario+" WHERE usucodusuario = ?",
+		strconv.Itoa(uid)).Scan(&hml, &prd)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, err
+	}
+	return hml.String, prd.String, true, nil
+}
+
+// PrepararUsuariosTeste cria acusuario_teste (mesmas colunas lidas do dbecotools.acusuario) no
+// schema de teste e passa a ler dela. Recusado fora de *_teste.
+func (r *MariaDB) PrepararUsuariosTeste() error {
+	if err := r.soTeste(); err != nil {
+		return err
+	}
+	if _, err := r.db.Exec(`CREATE TABLE IF NOT EXISTS acusuario_teste (
+		usucodusuario CHAR(15) NOT NULL PRIMARY KEY, usutxtconfig TEXT NULL, usutxtconfigprd TEXT NULL
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
+		return err
+	}
+	return r.UsarTabelaUsuario("acusuario_teste")
+}
+
+// DefinirUsuario (testes): campo hml, prd ou ausente, na acusuario_teste.
+func (r *MariaDB) DefinirUsuario(uid int, campo, valor string) error {
+	if err := r.soTeste(); err != nil {
+		return err
+	}
+	cod := strconv.Itoa(uid)
+	var err error
+	switch campo {
+	case "ausente":
+		_, err = r.db.Exec("DELETE FROM acusuario_teste WHERE usucodusuario=?", cod)
+	case "hml":
+		_, err = r.db.Exec(`INSERT INTO acusuario_teste (usucodusuario, usutxtconfig) VALUES (?,?)
+			ON DUPLICATE KEY UPDATE usutxtconfig=VALUES(usutxtconfig)`, cod, valor)
+	case "prd":
+		_, err = r.db.Exec(`INSERT INTO acusuario_teste (usucodusuario, usutxtconfigprd) VALUES (?,?)
+			ON DUPLICATE KEY UPDATE usutxtconfigprd=VALUES(usutxtconfigprd)`, cod, valor)
+	default:
+		err = errors.New("repo: campo do usuário deve ser hml, prd ou ausente")
+	}
+	return err
+}
+
+func (r *MariaDB) soTeste() error {
+	var schema string
+	if err := r.db.QueryRow("SELECT DATABASE()").Scan(&schema); err != nil {
+		return err
+	}
+	if !strings.HasSuffix(schema, "_teste") {
+		return fmt.Errorf("repo: só no schema de teste (*_teste), não em %q", schema)
+	}
+	return nil
 }
 
 func cortar(s string, n int) string {

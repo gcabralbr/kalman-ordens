@@ -31,6 +31,8 @@ dois está errado e a correção é discutida, não contornada no código.
 | `cenario NN Título` | identificação |
 | `hora AAAA-MM-DD HH:MM:SS` | hora inicial do relógio do serviço (America/Sao_Paulo) |
 | `config CHAVE=valor` | sobrescreve a configuração do serviço (mesmas chaves do service.env) |
+| `usuario UID hml\|prd JSON` | a configuração do usuário no GQ (`usutxtconfig` / `usutxtconfigprd`; o JSON é o resto da linha, cru); `usuario UID ausente` apaga a linha. No `_comum.fix` e no cabeçalho vale antes de o serviço subir; no corpo, na hora |
+| `habilita UID [posicao_max=N] [qtd_max=N]` / `desabilita UID` | a habilitação do uid (o que a CLI faria); mesma regra de quando vale |
 
 ## Relógio e preço
 
@@ -64,7 +66,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 
 | Instrução | Efeito |
 |---|---|
-| `entrada OP LADO [qtd=1] [stop=500] [motivo=SINAL] [ts=...]` | `POST /ordens` papel ENTRADA, uid = `ORDENS_UID_REAL`; `ts_decisao` = hora do relógio no primeiro pedido da operação e **o mesmo** nos seguintes (o gestor reenvia o mesmo corpo); `ts=` força outro |
+| `entrada OP LADO [qtd=1] [stop=500] [motivo=SINAL] [ts=...] [uid=N]` | `POST /ordens` papel ENTRADA, uid 7 (o habilitado no `_comum.fix`; `uid=` troca); `ts_decisao` = hora do relógio no primeiro pedido da operação e **o mesmo** nos seguintes (o gestor reenvia o mesmo corpo); `ts=` força outro |
 | `saida OP LADO MOTIVO [qtd=1]` | `POST /ordens` papel SAIDA; LADO é o lado da ordem de saída |
 | `http METODO /caminho [json]` | requisição livre |
 | `resposta campo=valor ...` | confere o corpo da última resposta HTTP (`parada.modo=BLOQUEAR`; `null`; `*` = presente); `_status` é o código HTTP |

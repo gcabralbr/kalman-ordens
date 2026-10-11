@@ -1,0 +1,32 @@
+cenario 44 Virada de contrato com posição aberta → saída e cancel no símbolo da posição; entrada nova no vigente
+hora 2026-10-13 10:40:00
+# SPEC v1.2 S1–S2: a posição foi aberta em WINZ26 (o vigente na entrada, gravado na operação). O
+# marketdata vira para WINF27: proteção e saída usam WINZ26 (B5.c: último preço de WINZ26 com o
+# colar máximo); a próxima entrada já vai em WINF27.
+
+executa INICIO
+executa COMPRADO OP=4401
+
+preco ticker=WINF27 preco=130900 bid=130895 ask=130905
+avanca 200ms
+alerta CONTRATO_VIGENTE
+alerta SIMBOLO_DIVERGENTE_COM_POSICAO
+saude simbolo=WINF27 simbolo_divergente=true
+
+saida 4401 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-4401-2 41=KM-P-4401-1 55=WINZ26
+envia @ER 11=KM-P-4401-2 41=KM-P-4401-1 37=dsa.4401.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+# venda: último de WINZ26 (130000) − colar máximo (200) = 129800
+recebe 35=D 11=KM-S-4401-1 55=WINZ26 44=129800 54=2 847=1031 1=12345
+envia @ER 11=KM-S-4401-1 37=dsa.4401.S 150=F 39=2 54=2 38=1 44=129800 847=1031 32=1 31=129995 14=1 151=0 6=129995
+evento ZERADA operacao_id=4401 origem=GESTOR
+alerta RESOLVIDO
+saude simbolo_divergente=false
+
+# entrada nova: o contrato vigente
+avanca 61s
+preco ticker=WINF27 preco=130900 bid=130895 ask=130905 idade=100ms
+entrada 4402 C
+resposta aceito=true
+recebe 35=D 11=KM-E-4402-1 55=WINF27 44=130920 54=1 847=1031

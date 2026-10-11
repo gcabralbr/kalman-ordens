@@ -12,8 +12,10 @@ import (
 )
 
 func (m *Motor) pedirSaida(p Pedido) (Resposta, *recusa) {
-	if r := m.verificarUID(p); r != nil {
-		return nil, r
+	// a saída não depende da habilitação atual nem da conta atual do GQ: usa o que a entrada
+	// gravou (v1.2 U4). Só confere que o uid é o da operação.
+	if p.UID == nil {
+		return nil, simples("CAMPO_INVALIDO", "uid ausente")
 	}
 	if p.OperacaoID == nil {
 		return nil, simples("CAMPO_INVALIDO", "operacao_id ausente")
@@ -29,6 +31,10 @@ func (m *Motor) pedirSaida(p Pedido) (Resposta, *recusa) {
 		}
 		return nil, simples("SEM_POSICAO", "operação sem posição real")
 	}
+	if *p.UID != op.UID {
+		return nil, simples("CAMPO_INVALIDO", fmt.Sprintf("uid %d diferente do da operação (%d)", *p.UID, op.UID))
+	}
+	m.conferirConta(op)
 	if !op.SaidaPedidaEm.IsZero() || op.saidaAposEntrada {
 		// saída já iniciada pelo serviço (stop, parada, zeragem...): o pedido do gestor é aceito
 		return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "ja_em_saida": true, "origem": op.OrigemSaida}, nil
@@ -49,9 +55,9 @@ func (m *Motor) pedirSaida(p Pedido) (Resposta, *recusa) {
 		return nil, simples("LADO_INCOMPATIVEL", "a saída aumentaria a posição")
 	}
 	// B5.d: ticker divergente e último preço do símbolo certo antigo → não envia, 1014 fica
-	if m.simboloDiv && !m.ultimoCertoValido() {
+	if m.divergenteOp(op) && !m.ultimoCertoValido(op) {
 		m.al.Emitir("SAIDA_BLOQUEADA_PRECO_ANTIGO", chaveOp("SAIDA_BLOQUEADA", op),
-			fmt.Sprintf("saída da operação %d não enviada: ticker divergente e último preço de %s com mais de %s", op.OperacaoID, m.p.Simbolo, m.p.IdadeMaxPrecoDivergente), op.OperacaoID)
+			fmt.Sprintf("saída da operação %d não enviada: ticker divergente e último preço de %s com mais de %s", op.OperacaoID, op.Simbolo, m.p.IdadeMaxPrecoDivergente), op.OperacaoID)
 		return nil, simples("SIMBOLO_DIVERGENTE", "ticker divergente e sem preço recente do símbolo certo")
 	}
 	if p.Qtd != nil && *p.Qtd < abs(pos) {
@@ -110,11 +116,11 @@ func (m *Motor) enviarSaida(op *operacao) {
 	} else {
 		op.repreco = 0
 	}
-	px, divergente, degradado, ok := m.precoSaida(lado, k)
+	px, divergente, degradado, ok := m.precoSaida(op, lado, k)
 	if !ok {
 		if divergente {
 			m.al.Emitir("SAIDA_BLOQUEADA_PRECO_ANTIGO", chaveOp("SAIDA_BLOQUEADA", op),
-				fmt.Sprintf("saída da operação %d não enviada: ticker divergente e sem preço recente de %s", op.OperacaoID, m.p.Simbolo), op.OperacaoID)
+				fmt.Sprintf("saída da operação %d não enviada: ticker divergente e sem preço recente de %s", op.OperacaoID, op.Simbolo), op.OperacaoID)
 			op.congelada = true
 			return
 		}
@@ -142,18 +148,20 @@ func (m *Motor) enviarSaida(op *operacao) {
 	slog.Info("SAIDA enviada", "clordid", o.ClOrdAtual, "preco", px, "divergente", divergente)
 }
 
-// precoSaida: bid/ask ∓ COLAR_SAIDA × k (B2). Sem bid/ask, o preco. Ticker divergente: último
-// preco do símbolo certo com o colar máximo (B5.c). ok=false: não há preço utilizável.
-func (m *Motor) precoSaida(lado dominio.Lado, k int) (px int64, divergente, degradado, ok bool) {
-	if m.simboloDiv {
-		if !m.ultimoCertoValido() {
+// precoSaida: bid/ask ∓ COLAR_SAIDA × k (B2). Sem bid/ask, o preco. Posição em contrato que não é
+// mais o vigente: último preco do símbolo da posição com o colar máximo (B5.c). ok=false: não há
+// preço utilizável.
+func (m *Motor) precoSaida(op *operacao, lado dominio.Lado, k int) (px int64, divergente, degradado, ok bool) {
+	if m.divergenteOp(op) {
+		if !m.ultimoCertoValido(op) {
 			return 0, true, false, false
 		}
+		ultimo := m.ultimos[op.Simbolo].px
 		colar := decimal.NewFromInt(m.p.ColarSaida * int64(m.p.MaxRepreco+1))
 		if lado == dominio.Venda {
-			return m.abaixo(m.ultimoCerto.Sub(colar)), true, false, true
+			return m.abaixo(ultimo.Sub(colar)), true, false, true
 		}
-		return m.acima(m.ultimoCerto.Add(colar)), true, false, true
+		return m.acima(ultimo.Add(colar)), true, false, true
 	}
 	l := m.precos.Ler()
 	if l.Situacao != preco.OK {
@@ -179,8 +187,10 @@ func (m *Motor) precoSaida(lado dominio.Lado, k int) (px int64, divergente, degr
 	return m.acima(ref.Add(colar)), false, degradado, true
 }
 
-func (m *Motor) ultimoCertoValido() bool {
-	return m.temUltimo && m.agora().Sub(m.ultimoCertoT) <= m.p.IdadeMaxPrecoDivergente
+// ultimoCertoValido: há último preco do símbolo da posição com até IDADE_MAX_PRECO_DIVERGENTE_S.
+func (m *Motor) ultimoCertoValido(op *operacao) bool {
+	u, ok := m.ultimos[op.Simbolo]
+	return ok && m.agora().Sub(u.em) <= m.p.IdadeMaxPrecoDivergente
 }
 
 func (m *Motor) zerada(op *operacao) {
@@ -195,7 +205,7 @@ func (m *Motor) zerada(op *operacao) {
 	}
 	op.PnL = op.pnlRealizado()
 	m.mudar(op, dominio.Zerada)
-	for _, k := range []string{"SEM_PROTECAO", "STOP_FURADO", "SAIDA_ESGOTOU", "CANCEL_SEM_RESPOSTA", "SAIDA_SEM_PRECO", "SAIDA_DIVERGENTE", "SAIDA_BLOQUEADA", "PROTECAO_RECRIADA", "PROTECAO_INSTAVEL", "PROTECAO_EM_ERRO", "PROTECAO_EM_ERRO_PRESA"} {
+	for _, k := range []string{"SEM_PROTECAO", "STOP_FURADO", "SAIDA_ESGOTOU", "CANCEL_SEM_RESPOSTA", "SAIDA_SEM_PRECO", "SAIDA_DIVERGENTE", "SAIDA_BLOQUEADA", "PROTECAO_RECRIADA", "PROTECAO_INSTAVEL", "PROTECAO_EM_ERRO", "PROTECAO_EM_ERRO_PRESA", "CONTA_ALTERADA", "SIMBOLO"} {
 		m.al.Resolver(chaveOp(k, op))
 	}
 	ps, _ := op.medio(false)
@@ -221,7 +231,7 @@ func (m *Motor) tickSaida(op *operacao) {
 				if p.pend != semPendencia || p.Estado == dominio.Enviando || p.Estado == dominio.Pendente || p.Estado == dominio.SemConfirmacao {
 					return
 				}
-				if _, _, _, ok := m.precoSaida(dominio.ParaZerar(op.posicao()), 1); !ok {
+				if _, _, _, ok := m.precoSaida(op, dominio.ParaZerar(op.posicao()), 1); !ok {
 					op.proximaSaidaEm = agora.Add(m.p.TimeoutSaida)
 					return
 				}
@@ -246,7 +256,7 @@ func (m *Motor) tickSaida(op *operacao) {
 	if op.proximoRepreco.IsZero() || agora.Before(op.proximoRepreco) {
 		return
 	}
-	if op.saidaDivergente || m.simboloDiv {
+	if op.saidaDivergente || m.divergenteOp(op) {
 		// B5.c: sem repreço; decisão humana. A saída parada é cancelada para a 1014 poder voltar
 		// (invariante de proteção, v1.1 P5) sem risco de duas saídas executarem.
 		m.al.Emitir("SAIDA_DIVERGENTE_NAO_EXECUTOU", chaveOp("SAIDA_DIVERGENTE", op),
@@ -265,7 +275,7 @@ func (m *Motor) tickSaida(op *operacao) {
 		k = m.p.MaxRepreco
 	}
 	op.proximoRepreco = agora.Add(m.p.TimeoutSaida)
-	px, _, _, ok := m.precoSaida(s.Lado, k+1)
+	px, _, _, ok := m.precoSaida(op, s.Lado, k+1)
 	if !ok {
 		m.al.Emitir("SAIDA_SEM_PRECO", chaveOp("SAIDA_SEM_PRECO", op), fmt.Sprintf("sem preço para reapregoar a saída da operação %d", op.OperacaoID), op.OperacaoID)
 		return
@@ -289,7 +299,7 @@ func (m *Motor) cancelar(o *ordem) {
 	o.ultimoCancel = m.agora()
 	o.pend, o.clPend, o.pendDesde = pendCancel, cl, m.agora()
 	m.porClOrd[cl] = o
-	msg := pnt.Cancelamento(m.id, cl, o.ClOrdAtual, o.OrderID, m.p.Simbolo, o.Lado.FIX(), o.Qtd, m.agora())
+	msg := pnt.Cancelamento(m.idDe(op), cl, o.ClOrdAtual, o.OrderID, op.Simbolo, o.Lado.FIX(), o.Qtd, m.agora())
 	m.salvarOp(op)
 	if !m.enviar(o, msg, cl) {
 		o.pend, o.clPend = semPendencia, ""
@@ -307,8 +317,8 @@ func (m *Motor) replace(o *ordem, qtd int, px, stop, stopLim int64) {
 	o.pend, o.clPend, o.pendDesde = pendReplace, cl, m.agora()
 	o.qtdPend, o.precoPend, o.stopPend, o.stopLimPend = qtd, px, stop, stopLim
 	m.porClOrd[cl] = o
-	novo := pnt.Ordem{ClOrdID: cl, Simbolo: m.p.Simbolo, Lado: o.Lado.FIX(), Qtd: qtd, Preco: px, Estrategia: o.Estrategia, Stop: stop, StopLim: stopLim}
-	msg := pnt.Replace(m.id, novo, o.ClOrdAtual, o.OrderID, m.agora())
+	novo := pnt.Ordem{ClOrdID: cl, Simbolo: op.Simbolo, Lado: o.Lado.FIX(), Qtd: qtd, Preco: px, Estrategia: o.Estrategia, Stop: stop, StopLim: stopLim}
+	msg := pnt.Replace(m.idDe(op), novo, o.ClOrdAtual, o.OrderID, m.agora())
 	m.salvarOp(op)
 	if !m.enviar(o, msg, cl) {
 		limparPendencia(o)
@@ -320,4 +330,29 @@ func (m *Motor) replace(o *ordem, qtd int, px, stop, stopLim int64) {
 func limparPendencia(o *ordem) {
 	o.pend, o.clPend = semPendencia, ""
 	o.qtdPend, o.precoPend, o.stopPend, o.stopLimPend = 0, 0, 0, 0
+}
+
+// conferirConta (v1.2 U4): a configuração do usuário no GQ mudou com posição aberta? A posição
+// segue pela conta gravada na entrada; o alerta é crítico e se resolve ao zerar ou se a
+// configuração voltar. Leitura ilegível do acusuario não conta como mudança.
+func (m *Motor) conferirConta(op *operacao) {
+	if op.Conta == "" || op.Estado.Final() || op.posicao() == 0 {
+		return
+	}
+	r, f := m.contaDoUsuario(op.UID)
+	if f != nil && f.Codigo == "CONFIG_USUARIO_INDISPONIVEL" {
+		return
+	}
+	chave := chaveOp("CONTA_ALTERADA", op)
+	if f == nil && r.Conta == op.Conta && r.Destino == op.Destino {
+		m.al.Resolver(chave)
+		return
+	}
+	agora := r.Conta
+	if f != nil {
+		agora = f.Codigo + " (" + f.Motivo + ")"
+	}
+	m.al.Emitir("CONTA_ALTERADA_COM_POSICAO", chave,
+		fmt.Sprintf("a configuração do uid %d no GQ mudou com posição %d aberta (operação %d): agora %s; a posição segue pela conta %s (destino %d)",
+			op.UID, op.posicao(), op.OperacaoID, agora, op.Conta, op.Destino), op.OperacaoID)
 }

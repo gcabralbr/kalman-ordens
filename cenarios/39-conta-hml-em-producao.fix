@@ -1,0 +1,27 @@
+cenario 39 Instância PRODUCAO: conta de HML recusada (trava cruzada); conta real aceita, vai no 1 e no 116
+hora 2026-10-13 10:10:00
+# SPEC v1.2 U1, U3: em PRODUCAO o serviço lê usutxtconfigprd, e a conta NÃO pode estar em
+# ORDENS_CONTAS_HML → CONTA_AMBIENTE + alerta crítico (resolvido na próxima entrada válida do uid).
+# No logon, a conta de HML do uid habilitado também não entra no mass status: nenhum AF sai.
+config ORDENS_AMBIENTE=PRODUCAO
+usuario 7 prd {"Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+nada 35=AF
+saude sessao_logada=true conciliando=false ambiente=PRODUCAO
+
+entrada 3901 C
+resposta aceito=false codigo=CONTA_AMBIENTE
+alerta CONTA_AMBIENTE
+nada
+
+usuario 7 prd {"Robo":{"CORSeqId":85,"CCONroConta":"7654321"}}
+entrada 3902 C
+resposta aceito=true
+recebe 35=D 11=KM-E-3902-1 1=7654321 116=7654321 55=WINZ26 847=1031
+alerta RESOLVIDO
+http GET /ordens/3902
+resposta conta=7654321 destino=85 simbolo=WINZ26

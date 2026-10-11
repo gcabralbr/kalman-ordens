@@ -3,19 +3,23 @@ package motor
 import (
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/shopspring/decimal"
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/preco"
+	"gammaquant.com.br/kalman-ordens/internal/usuario"
 	"gammaquant.com.br/kalman-ordens/pnt"
 )
 
-// pedirEntrada: precedência de docs/ALERTAS.md — uid → campos → DUPLICADA → PARADA → DIVERGENTE →
-// SEM_SESSAO → SEM_CONFIRMACAO → CONCILIANDO → SIMBOLO_DIVERGENTE → limites → preço.
+// pedirEntrada: precedência de docs/ALERTAS.md — habilitação → campos → DUPLICADA → PARADA →
+// DIVERGENTE → SEM_SESSAO → SEM_CONFIRMACAO → CONCILIANDO → conta e destino → símbolo → limites → preço.
 func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
-	if r := m.verificarUID(p); r != nil {
+	hab, r := m.verificarHabilitacao(p)
+	if r != nil {
 		return nil, r
 	}
 	if p.OperacaoID == nil {
@@ -53,11 +57,18 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if m.conciliando {
 		return nil, simples("CONCILIANDO", "conciliação em andamento")
 	}
-	l := m.precos.Ler()
-	if l.Situacao == preco.OK && l.Ticker != m.p.Simbolo {
-		return nil, simples("SIMBOLO_DIVERGENTE", fmt.Sprintf("marketdata em %s, serviço em %s", l.Ticker, m.p.Simbolo))
+	// conta e destino: lidos só aqui e congelados na operação (v1.2 U4)
+	conta, r := m.contaParaEntrada(*p.UID)
+	if r != nil {
+		return nil, r
 	}
-	if r := m.verificarLimites(*p.Qtd, l); r != nil {
+	// símbolo: o contrato vigente (ticker do /precos/atual), congelado na operação (v1.2 S1)
+	l := m.precos.Ler()
+	if l.Situacao == preco.OK && !reWIN.MatchString(l.Ticker) {
+		m.al.Emitir("SIMBOLO_INVALIDO", "", fmt.Sprintf("ticker do marketdata %q não é um contrato de WIN: entrada recusada", l.Ticker), 0)
+		return nil, simples("SIMBOLO_INVALIDO", fmt.Sprintf("ticker do marketdata %q não é um contrato de WIN", l.Ticker))
+	}
+	if r := m.verificarLimites(*p.Qtd, l, hab, *p.UID); r != nil {
 		return nil, r
 	}
 	if r := m.verificarPrecoEntrada(l); r != nil {
@@ -66,7 +77,8 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 
 	agora := m.agora()
 	op := &operacao{Operacao: dominio.Operacao{
-		Data: m.dia, OperacaoID: *p.OperacaoID, UID: *p.UID, Lado: lado, QtdPedida: *p.Qtd, StopPts: *p.StopPts,
+		Data: m.dia, OperacaoID: *p.OperacaoID, UID: *p.UID, Conta: conta.Conta, Destino: conta.Destino, Simbolo: l.Ticker,
+		Lado: lado, QtdPedida: *p.Qtd, StopPts: *p.StopPts,
 		Estado: dominio.Entrando, MotivoEntrada: p.Motivo, TsDecisao: p.TsDecisao, CriadaEm: agora,
 		ContadorN: map[string]int{},
 	}}
@@ -98,22 +110,70 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 		m.salvarOp(op)
 		return nil, simples("ENVIO_FALHOU", "a ordem não saiu para o PnT")
 	}
-	slog.Info("ENTRADA enviada", "clordid", o.ClOrdAtual, "preco", o.Preco)
+	slog.Info("ENTRADA enviada", "clordid", o.ClOrdAtual, "preco", o.Preco, "conta", op.Conta, "simbolo", op.Simbolo)
 	return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "clordid": o.ClOrdAtual, "preco": o.Preco}, nil
 }
 
-func (m *Motor) verificarUID(p Pedido) *recusa {
-	if m.p.UIDReal == 0 || p.UID == nil || *p.UID != m.p.UIDReal {
-		uid := "?"
-		if p.UID != nil {
-			uid = fmt.Sprint(*p.UID)
-		}
-		return simples("UID_NAO_HABILITADO", "uid "+uid+" não habilitado para ordens reais")
+// reWIN: contrato de WIN (mês FGHJKMNQUVXZ, ano com 2 dígitos). O ticker do /precos/atual vem da
+// tabela de contratos do GQ; isto só barra um ticker absurdo.
+var reWIN = regexp.MustCompile(`^WIN[FGHJKMNQUVXZ][0-9]{2}$`)
+
+// verificarHabilitacao (v1.2 U5): a tabela kalmanordemusuario, lida a cada entrada. Escolher conta
+// no GQ não habilita ordem real.
+func (m *Motor) verificarHabilitacao(p Pedido) (dominio.Habilitacao, *recusa) {
+	if p.UID == nil {
+		return dominio.Habilitacao{}, simples("UID_NAO_HABILITADO", "uid ausente")
 	}
-	return nil
+	h, ok, err := m.repo.Habilitacao(*p.UID)
+	if err != nil {
+		m.al.Emitir("USUARIO_CONFIG", "", fmt.Sprintf("habilitação do uid %d ilegível: %v", *p.UID, err), 0)
+		return h, simples("CONFIG_USUARIO_INDISPONIVEL", "habilitação ilegível")
+	}
+	if !ok || !h.Habilitado {
+		return h, simples("UID_NAO_HABILITADO", fmt.Sprintf("uid %d não habilitado para ordens reais", *p.UID))
+	}
+	return h, nil
 }
 
-func (m *Motor) verificarLimites(qtd int, l preco.Leitura) *recusa {
+// contaDoUsuario lê a configuração do usuário no GQ e resolve conta e destino no ambiente da
+// instância (v1.2 U1–U3). Não emite alerta: quem chama decide.
+func (m *Motor) contaDoUsuario(uid int) (usuario.Resolvido, *usuario.Falha) {
+	hml, prd, achou, err := m.repo.ConfigUsuario(uid)
+	if err != nil {
+		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONFIG_USUARIO_INDISPONIVEL", Motivo: "acusuario ilegível: " + err.Error(), Alerta: "USUARIO_CONFIG"}
+	}
+	if !achou {
+		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONFIG_USUARIO_INVALIDA", Motivo: fmt.Sprintf("uid %d sem linha em acusuario", uid), Alerta: "USUARIO_CONFIG"}
+	}
+	texto := hml
+	if m.p.Ambiente == usuario.Producao {
+		texto = prd
+	}
+	return usuario.Resolver(m.p.Ambiente, texto, m.p.ContasHML)
+}
+
+// contaParaEntrada: contaDoUsuario com os alertas da entrada. A trava cruzada (CONTA_AMBIENTE) é
+// crítica por uid e se resolve na próxima entrada válida do mesmo uid.
+func (m *Motor) contaParaEntrada(uid int) (usuario.Resolvido, *recusa) {
+	r, f := m.contaDoUsuario(uid)
+	chave := "CONTA_AMBIENTE:" + strconv.Itoa(uid)
+	if f == nil {
+		m.al.Resolver(chave)
+		return r, nil
+	}
+	texto := fmt.Sprintf("entrada do uid %d recusada (%s): %s", uid, f.Codigo, f.Motivo)
+	switch f.Alerta {
+	case "":
+		slog.Info("entrada recusada pela configuração do usuário", "uid", uid, "codigo", f.Codigo, "motivo", f.Motivo)
+	case "CONTA_AMBIENTE":
+		m.al.Emitir("CONTA_AMBIENTE", chave, texto, 0)
+	default:
+		m.al.Emitir(f.Alerta, "", texto, 0)
+	}
+	return r, simples(f.Codigo, f.Motivo)
+}
+
+func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitacao, uid int) *recusa {
 	agora := m.agora()
 	h := m.horaDoDia()
 	if h < m.p.JanelaInicio || h >= m.p.JanelaFim {
@@ -131,6 +191,25 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura) *recusa {
 	if comprometido+qtd > m.p.PosicaoMax {
 		return limite("POSICAO_MAXIMA", fmt.Sprintf("posição + entradas pendentes = %d, máximo %d", comprometido, m.p.PosicaoMax))
 	}
+	// limites do uid (v1.2 U5): valem junto com os globais
+	if hab.QtdMaxOrdem > 0 && qtd > hab.QtdMaxOrdem {
+		return limite("QTD_MAXIMA", fmt.Sprintf("qtd %d > %d (limite do uid %d)", qtd, hab.QtdMaxOrdem, uid))
+	}
+	if hab.PosicaoMax > 0 {
+		doUID := 0
+		for _, op := range m.ops {
+			if op.UID != uid {
+				continue
+			}
+			doUID += abs(op.posicao())
+			if e := op.viva(dominio.Entrada); e != nil {
+				doUID += e.Qtd - e.QtdExec
+			}
+		}
+		if doUID+qtd > hab.PosicaoMax {
+			return limite("POSICAO_MAXIMA", fmt.Sprintf("posição + entradas pendentes do uid %d = %d, máximo %d", uid, doUID, hab.PosicaoMax))
+		}
+	}
 	if !m.ultimaEntrada.IsZero() && agora.Sub(m.ultimaEntrada) < m.p.IntervaloEntradas {
 		return limite("INTERVALO_MINIMO", fmt.Sprintf("última entrada há %s", agora.Sub(m.ultimaEntrada)))
 	}
@@ -147,7 +226,7 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura) *recusa {
 		m.al.Emitir("LIMITE", "", fmt.Sprintf("limite de entradas por dia (%d)", m.entradasHoje), 0)
 		return limite("ENTRADAS_POR_DIA", "limite de entradas por dia")
 	}
-	if ultimo := m.precoConfiavel(l); ultimo != nil {
+	if ultimo, ok := m.precoDoDia(l); ok {
 		r := m.resultadoDoDia(ultimo)
 		if r.LessThanOrEqual(decimal.NewFromInt(-m.p.PerdaDiaPts)) {
 			m.ativarParada("BLOQUEAR", "auto", "perda do dia "+r.String()+" pts")
@@ -181,9 +260,10 @@ func (m *Motor) verificarPrecoEntrada(l preco.Leitura) *recusa {
 	return nil
 }
 
-// precoConfiavel: o preco do símbolo certo, fresco; nil se não houver.
-func (m *Motor) precoConfiavel(l preco.Leitura) *decimal.Decimal {
-	if l.Situacao != preco.OK || l.Ticker != m.p.Simbolo || l.Preco == nil || l.Idade(m.agora()) > m.p.IdadeMaxPreco {
+// precoConfiavel: o preco do símbolo pedido, fresco; nil se não houver (ou se o marketdata está
+// em outro contrato).
+func (m *Motor) precoConfiavel(l preco.Leitura, simbolo string) *decimal.Decimal {
+	if l.Situacao != preco.OK || simbolo == "" || l.Ticker != simbolo || l.Preco == nil || l.Idade(m.agora()) > m.p.IdadeMaxPreco {
 		return nil
 	}
 	return l.Preco
@@ -209,15 +289,15 @@ func (m *Motor) novaOrdem(op *operacao, papel dominio.Papel, lado dominio.Lado, 
 	cl := op.clordid(papel, op.proximoN(papel))
 	m.seqOrdens++
 	return &ordem{seq: m.seqOrdens, Ordem: dominio.Ordem{
-		Data: op.Data, UID: op.UID, OperacaoID: op.OperacaoID, Papel: papel, ClOrdBase: cl, ClOrdAtual: cl,
+		Data: op.Data, UID: op.UID, OperacaoID: op.OperacaoID, Papel: papel, Conta: op.Conta, Simbolo: op.Simbolo, ClOrdBase: cl, ClOrdAtual: cl,
 		Estrategia: estrategia, Lado: lado, Qtd: qtd, Estado: dominio.Enviando, CriadaEm: m.agora(),
 	}}
 }
 
 // enviarNova manda o NewOrderSingle de uma ordem já gravada (gravar antes de enviar).
 func (m *Motor) enviarNova(op *operacao, o *ordem) bool {
-	msg := pnt.NovaOrdem(m.id, pnt.Ordem{
-		ClOrdID: o.ClOrdAtual, Simbolo: m.p.Simbolo, Lado: o.Lado.FIX(), Qtd: o.Qtd, Preco: o.Preco,
+	msg := pnt.NovaOrdem(m.idDe(op), pnt.Ordem{
+		ClOrdID: o.ClOrdAtual, Simbolo: op.Simbolo, Lado: o.Lado.FIX(), Qtd: o.Qtd, Preco: o.Preco,
 		Estrategia: o.Estrategia, Stop: o.Stop, StopLim: o.StopLim,
 	}, m.agora())
 	m.salvarOp(op)

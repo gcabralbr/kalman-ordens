@@ -4,6 +4,9 @@ Revisão da [SPEC-ORDENS-v1.md](SPEC-ORDENS-v1.md) (mantida intacta ao lado). Es
 lista **só o que mudou** e, para cada mudança, a parte da v1 afetada e o roteiro que a cobre.
 Onde a v1.1 não diz nada, vale a v1.
 
+**Revista pela [v1.2](SPEC-ORDENS-v1.2.md):** conta, destino e símbolo vêm da operação, não do
+service.env (B3 e a parte de símbolo de B5, P7 e as chaves `ORDENS_*` abaixo foram substituídas).
+
 Os roteiros (`cenarios/*.fix`, formato em `cenarios/FORMATO.md`) são a especificação executável:
 cada decisão abaixo está afirmada em pelo menos um deles.
 

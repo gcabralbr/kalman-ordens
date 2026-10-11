@@ -1,0 +1,22 @@
+cenario 41 Configuração do usuário no GQ com JSON inválido, sem Robo ou sem linha → recusa + alerta
+hora 2026-10-13 10:20:00
+# SPEC v1.2 U1: JSON inválido, sem o grupo Robo ou uid sem linha em acusuario →
+# CONFIG_USUARIO_INVALIDA + alerta USUARIO_CONFIG. O resto do JSON é ignorado.
+
+executa INICIO
+
+usuario 7 hml {"Robo":{"CORSeqId":85,"CCONroConta":"12345"
+entrada 4101 C
+resposta aceito=false codigo=CONFIG_USUARIO_INVALIDA
+alerta USUARIO_CONFIG
+
+usuario 7 hml {"AmbienteDef":"BTG_Simulador","Tela":{"x":1}}
+entrada 4102 C
+resposta aceito=false codigo=CONFIG_USUARIO_INVALIDA
+alerta USUARIO_CONFIG
+
+usuario 7 ausente
+entrada 4103 C
+resposta aceito=false codigo=CONFIG_USUARIO_INVALIDA
+alerta USUARIO_CONFIG
+nada

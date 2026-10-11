@@ -5,10 +5,12 @@
 //	kalman-ordens zerar  -motivo X  parada ZERAR (origem cli)
 //	kalman-ordens retomar -motivo X retira a parada (sempre manual)
 //	kalman-ordens saude             GET /saude
+//	kalman-ordens usuario ...       habilitação por uid (listar | conferir | habilitar | desabilitar)
 //	kalman-ordens versao            commit embutido no binário (scripts/build.sh)
 //
 // Configuração por variáveis de ambiente (EnvironmentFile=/etc/kalman-ordens/service.env).
-// Os subcomandos de CLI só falam com o HTTP local (HTTP_ENDERECO), para uso por SSH.
+// parar/zerar/retomar/saude só falam com o HTTP local (HTTP_ENDERECO), para uso por SSH;
+// usuario fala direto com o banco (não há endpoint que altere habilitação).
 package main
 
 import (
@@ -34,6 +36,7 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
+	"gammaquant.com.br/kalman-ordens/internal/usuario"
 	"gammaquant.com.br/kalman-ordens/pnt"
 )
 
@@ -56,10 +59,12 @@ func main() {
 		err = servir(ctx, cfg)
 	case "parar", "zerar", "retomar", "saude":
 		err = cli(cfg, cmd, args)
+	case "usuario":
+		err = cliUsuario(cfg, args, os.Stdout)
 	case "versao":
 		fmt.Println(versao)
 	default:
-		err = fmt.Errorf("comando desconhecido %q (servir | parar | zerar | retomar | saude | versao)", cmd)
+		err = fmt.Errorf("comando desconhecido %q (servir | parar | zerar | retomar | saude | usuario | versao)", cmd)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "kalman-ordens:", err)
@@ -84,8 +89,22 @@ func obrigatorias(cfg config.Config, chaves ...string) error {
 func servir(ctx context.Context, cfg config.Config) error {
 	motor.Versao = versao
 	slog.Info("kalman-ordens subindo", "versao", versao)
-	if err := obrigatorias(cfg, "DB_DSN", "FIX_SENDER_COMP_ID", "FIX_HOST", "FIX_PORTA", "ORDENS_CONTA", "ORDENS_SIMBOLO"); err != nil {
+	if err := obrigatorias(cfg, "DB_DSN", "FIX_SENDER_COMP_ID", "FIX_HOST", "FIX_PORTA", "ORDENS_AMBIENTE", "ORDENS_CONTAS_HML"); err != nil {
 		return err
+	}
+	if a := cfg.Texto("ORDENS_AMBIENTE", ""); a != usuario.HML && a != usuario.Producao {
+		return fmt.Errorf("ORDENS_AMBIENTE=%q: HML ou PRODUCAO", a)
+	}
+	// v1.2: conta, símbolo e uid vêm da operação e da tabela de habilitação; um service.env antigo
+	// não pode ficar valendo em silêncio
+	var removidas []string
+	for _, k := range []string{"ORDENS_CONTA", "ORDENS_ONBEHALF", "ORDENS_SIMBOLO", "ORDENS_VENCIMENTO", "ORDENS_UID_REAL"} {
+		if cfg.Texto(k, "") != "" {
+			removidas = append(removidas, k)
+		}
+	}
+	if len(removidas) > 0 {
+		return fmt.Errorf("chaves removidas na v1.2 ainda no service.env: %v (conta e símbolo vêm da operação; habilitação: kalman-ordens usuario habilitar; deploy/LEIA.md)", removidas)
 	}
 	endereco := cfg.Texto("HTTP_ENDERECO", "127.0.0.1:9092")
 	if err := soLoopback(endereco); err != nil {
@@ -99,6 +118,20 @@ func servir(ctx context.Context, cfg config.Config) error {
 	defer r.Fechar()
 	if err := r.Migrar(); err != nil {
 		return fmt.Errorf("migração: %w", err)
+	}
+	if t := cfg.Texto("ACUSUARIO_TABELA", ""); t != "" { // só em teste
+		if err := r.UsarTabelaUsuario(t); err != nil {
+			return err
+		}
+	}
+	if hs, err := r.Habilitacoes(); err == nil {
+		var uids []int
+		for _, h := range hs {
+			if h.Habilitado {
+				uids = append(uids, h.UID)
+			}
+		}
+		slog.Info("habilitação", "ambiente", cfg.Texto("ORDENS_AMBIENTE", ""), "contas_hml", cfg.Texto("ORDENS_CONTAS_HML", ""), "uids_habilitados", uids)
 	}
 
 	tg := alerta.NovoTelegram(cfg.Texto("TELEGRAM_TOKEN", ""), cfg.Texto("TELEGRAM_CHAT", ""))
@@ -166,7 +199,7 @@ func servir(ctx context.Context, cfg config.Config) error {
 
 	pronto(endereco)
 	slog.Info("kalman-ordens no ar", "versao", versao, "http", endereco, "fix", cfg.Texto("FIX_HOST", "")+":"+cfg.Texto("FIX_PORTA", ""),
-		"simbolo", cfg.Texto("ORDENS_SIMBOLO", ""), "uid_real", cfg.Texto("ORDENS_UID_REAL", "(nenhum)"))
+		"ambiente", cfg.Texto("ORDENS_AMBIENTE", ""))
 
 	<-ctx.Done()
 	// Parar o processo NÃO cancela a 1014: a posição continua protegida no PnT (Parte 6).

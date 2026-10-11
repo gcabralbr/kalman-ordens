@@ -37,9 +37,13 @@ Atualizar depois: `cd ~/kalman-ordens && git pull && scripts/build.sh` e reinsta
 CREATE DATABASE kalmanordens CHARACTER SET utf8mb4;
 CREATE USER 'kalman_ordens'@'127.0.0.1' IDENTIFIED BY '<senha da .53>';
 GRANT SELECT, INSERT, UPDATE, CREATE, ALTER, INDEX ON kalmanordens.* TO 'kalman_ordens'@'127.0.0.1';
--- conciliação diária (Parte 10): só leitura, só esta tabela; nada mais no dbecotools
+-- conciliação diária (Parte 10): só leitura, só esta tabela
 GRANT SELECT ON dbecotools.kalmanoperacao TO 'kalman_ordens'@'127.0.0.1';
+-- conta e destino do usuário (SPEC v1.2 U1): só estas três colunas; nada mais no dbecotools
+GRANT SELECT (usucodusuario, usutxtconfig, usutxtconfigprd) ON dbecotools.acusuario TO 'kalman_ordens'@'127.0.0.1';
 ```
+
+Instalação que já existia antes da v1.2: rodar só o último `GRANT`.
 
 Sem `DROP` e sem `DELETE`. As tabelas o serviço cria sozinho na primeira subida
 (`kalmanordem_migracao` guarda a versão). O `sql_mode` é fixado pelo serviço em cada conexão
@@ -90,23 +94,39 @@ Preencher `/etc/kalman-ordens/service.env` (`sudoedit`) para a .53 / HML:
 | `FIX_HEARTBEAT` | `30` |
 | `FIX_USUARIO`, `FIX_SENHA` | a senha da HML, preenchida pelo responsável direto no service.env (nunca no repositório); usuário como na config antiga (vazio se ela não tinha) |
 | `FIX_INICIO`, `FIX_FIM` | horário da sessão da HML |
-| `ORDENS_CONTA` | conta de HML, com dígito |
-| `ORDENS_SIMBOLO`, `ORDENS_VENCIMENTO` | `WINV26`, `2026-10-14` — a HML de terça reproduz a sexta (WINV26), igual ao ticker do marketdata da .53 hoje; casa até quarta (vencimento). Ticker diferente → `SIMBOLO_DIVERGENTE` bloqueia as entradas (1.6) |
+| `ORDENS_AMBIENTE` | `HML` — o serviço lê a `usutxtconfig` do usuário no GQ (simulação; no GQ o usuário escolhe "BTG_Simulador") |
+| `ORDENS_CONTAS_HML` | `99999` — a conta de HML; em HML a conta do usuário **tem** de estar aqui (trava cruzada, v1.2 U3) |
+| `ORDENS_SENDER_LOCATION` | `177.124.234.134` (o 142 das ordens do PT no log de HML) |
 | `PRECOS_URL` | rodada 1: `http://172.16.110.53:9090` (marketdata ao vivo); rodada 2: a instância em replay (`http://172.16.110.53:9095`, 1.7). É a única chave de preço (não há `ORDENS_PRECO_URL`) |
-| `ORDENS_UID_REAL` | um uid **de teste**, usado só nos `curl` da F1 (o Kalman não chama o serviço) |
 | `TELEGRAM_TOKEN`, `TELEGRAM_CHAT` | chat de **teste**, não o de produção |
 | `HTTP_ENDERECO` | `127.0.0.1:9092` (o Kalman da .53 está no 9091, o marketdata no 9090) |
+
+Saíram na v1.2 e **o serviço não sobe se estiverem no service.env**: `ORDENS_CONTA`,
+`ORDENS_ONBEHALF`, `ORDENS_SIMBOLO`, `ORDENS_VENCIMENTO`, `ORDENS_UID_REAL`. Conta e destino vêm
+do GQ (`acusuario` do uid, no ambiente), o símbolo é o ticker do marketdata (`WINV26` até quarta,
+o mesmo da HML de terça) e a habilitação é pela CLI (1.5).
 
 `operacao_id` dos testes: usar a faixa `900000000+`, que nunca colide com a `kalmanoperacao`.
 
 ### 1.5 Comandos da F1
+
+Habilitação (v1.2 U5): só pela CLI, direto no banco (lê o `DB_DSN` do service.env; por isso
+`sudo`). No GQ, o usuário de teste (ex.: 1450) escolhe "BTG_Simulador": destino 85, conta 99999 na
+`usutxtconfig`. `usuario conferir` mostra o que uma entrada dele usaria agora.
+
+```
+sudo /opt/kalman-ordens/kalman-ordens usuario conferir    -uid 1450   # destino=85 conta=99999
+sudo /opt/kalman-ordens/kalman-ordens usuario habilitar   -uid 1450 -motivo "F1 rodada 1" -posicao-max 1 -qtd-max 1
+sudo /opt/kalman-ordens/kalman-ordens usuario listar
+sudo /opt/kalman-ordens/kalman-ordens usuario desabilitar -uid 1450 -motivo "fim da rodada"
+```
 
 ```
 sudo systemctl start kalman-ordens
 journalctl -u kalman-ordens -f
 /opt/kalman-ordens/kalman-ordens saude
 
-# entrada de teste (o uid é o ORDENS_UID_REAL de teste)
+# entrada de teste (o uid é o habilitado acima)
 curl -s -XPOST 127.0.0.1:9092/ordens -d '{"operacao_id":900000001,"uid":<uid>,"papel":"ENTRADA","lado":"C","qtd":1,"stop_pts":500,"motivo":"SINAL","ts_decisao":"F1-1"}'
 # saída
 curl -s -XPOST 127.0.0.1:9092/ordens -d '{"operacao_id":900000001,"uid":<uid>,"papel":"SAIDA","lado":"V","qtd":1,"motivo":"SINAL_OPOSTO","ts_decisao":"F1-1s"}'
@@ -129,8 +149,8 @@ de cada sessão de teste (é a evidência das respostas do PnT).
 - A HML de terça reproduz a **sexta**; o marketdata ao vivo da .53 é o de terça. Na rodada 1 o
   preço não importa (só ordens que não executam); o fill fica para a rodada 2, com o marketdata em
   replay da sexta (1.7).
-- Se o símbolo da HML não for o ticker do marketdata, o serviço bloqueia entradas
-  (`SIMBOLO_DIVERGENTE`) por desenho: `WINV26` casa até quarta.
+- Símbolo: o ticker do marketdata da .53 (`WINV26` até quarta), gravado na operação; é o mesmo
+  da HML de terça. Não há símbolo no service.env (v1.2 S1).
 - **BodyLength (9) e CheckSum (10).** A config antiga do PT tinha `ValidateLengthAndChecksum=N`
   e os exemplos do RoE têm 9/10 inconsistentes. O QuickFIX/Go não tem essa opção: o 10 errado é
   aceito (não é conferido); a mensagem com 9 errado é **descartada pela biblioteca** e recuperada
@@ -160,7 +180,8 @@ rodada 1, não há 1014 viva pelo caminho normal: esses dois itens precisam de u
 ## 2. Checklist da F1 (SPEC v1 Parte 11.2)
 
 Antes da rodada 1: processo antigo do PT **desconectado** da HML (sessão `GAMMAQ2`); senha da HML
-no service.env; horário da sessão; `ORDENS_SIMBOLO=WINV26`; `systemctl start`. Para cada item,
+no service.env; horário da sessão; `ORDENS_AMBIENTE=HML` e `ORDENS_CONTAS_HML=99999`; uid de
+teste habilitado e `usuario conferir` mostrando `destino=85 conta=99999`; `systemctl start`. Para cada item,
 anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que ela fecha.
 
 | # | Rodada | Item | Como | Registrar |
@@ -177,6 +198,7 @@ anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que 
 | 2.10 | 1 e 2 | 9/10 errados vindos do PnT (F11, F12) | `grep 'Msg Parse Error'` no log de eventos FIX; alertas `MENSAGEM_ILEGIVEL` | esperado nenhum (log real de 2025: 100% corretos, F16) |
 | 2.10b | 1 | **HML aceita `20856=Y` em 1031 e 1014?** (F14) | toda NewOrderSingle do serviço leva `20856=Y`; ver a resposta das ordens de 2.3 e 2.5 | aceito (`39=A`/`39=0`) ou rejeitado (`39=8`/`35=3`/`35=j`, texto 58). Rejeitado → tirar a tag e perguntar ao PnT como ativar a reativação automática fora da Sniper/multileg |
 | 2.10c | 1 | Estado de erro (39=7) em single-leg | se aparecer algum `39=7`: o texto 58, se veio `150=D/39=0` e em quanto tempo | alertas `PROTECAO_EM_ERRO` / `ENTRADA_EM_ERRO` / `SAIDA_EM_ERRO` (só se não voltou em 2 s) |
+| 2.10e | 1 | Conta e símbolo da operação (v1.2) | no log FIX, a 1031 e o cancel de 2.3 | `1=99999` e `116=99999` (cabeçalho) em D, F e G; `142=177.124.234.134`; `55=WINV26`. O cancel do PT não levava conta: o PnT aceita o nosso com 1/116? |
 | 2.10d | 1 | Senha fora dos arquivos (F15) | depois do logon: `sudo grep -rhoa '554=[^[:cntrl:]]*' /var/lib/kalman-ordens/fix \| sort -u` e `journalctl -u kalman-ordens \| grep -c '<senha>'` | só `554=***` nos arquivos; nada no journal |
 | 2.11 | 2 | 1014 depois de um fill de entrada | fill com o marketdata em replay | 1014 enviada na hora; `ENTRADA_EXECUTADA` → `PROTEGIDA` |
 | 2.12 | 2 | 1014: replace de quantidade | com `LIMITE_POSICAO_MAX=2`/`LIMITE_QTD_ORDEM=2` e entrada de 2 com dois fills | `35=G` da 1014 aceito; um pedido por vez |
@@ -199,9 +221,11 @@ Mesmo procedimento da seção 1, na .51, com:
 | `FIX_HOST`/`FIX_PORTA`/`FIX_TARGET_COMP_ID` | HML | produção (`PNT_DSA`) |
 | `FIX_INICIO`/`FIX_FIM` | da HML | `08:30:00` / `17:55:00` |
 | `PRECOS_URL` | `:9090` (rodada 1) / `:9095` replay (rodada 2) na .53 | **`http://172.16.110.51:9090`** |
-| Banco | `kalmanordens` na .53 | `kalmanordens` na .51 (mesmos grants da 1.2) |
-| `ORDENS_SIMBOLO` | `WINV26` | vencimento vigente (WIN) |
-| `ORDENS_UID_REAL` | uid de teste | F2: uid de teste (ordens que não executam, por `curl`); F3: o usuário real |
+| Banco | `kalmanordens` na .53 | `kalmanordens` na .51 (mesmos grants da 1.2, inclusive as 3 colunas de `acusuario`) |
+| `ORDENS_AMBIENTE` | `HML` (`usutxtconfig`) | **`PRODUCAO`** (`usutxtconfigprd`: a conta real que o usuário escolheu no GQ) |
+| `ORDENS_CONTAS_HML` | `99999` (a conta tem de estar na lista) | `99999` (a conta **não** pode estar na lista) |
+| Símbolo | ticker do marketdata da .53 | ticker do marketdata da .51 (contrato vigente) |
+| Habilitação (CLI) | uid de teste | F2: uid de teste (ordens que não executam, por `curl`); F3: o usuário real |
 | Telegram | chat de teste | chat de produção |
 | Build | `~/kalman-ordens` na .53 | o mesmo commit verificado na F1 (`kalman-ordens versao` igual) |
 

@@ -195,3 +195,79 @@ func TestSQLModeFixoNaConexao(t *testing.T) {
 		t.Fatalf("sql_mode da sessão = %q, esperado %q", sessao, SQLMode)
 	}
 }
+
+// v1.2: conta, destino e símbolo congelados na operação e na ordem sobrevivem à recarga;
+// habilitação por uid (atual + histórico); configuração do usuário do GQ.
+func TestContratoV12(t *testing.T) {
+	for nome, novo := range backends(t) {
+		t.Run(nome, func(t *testing.T) {
+			r := novo(t)
+			em := time.Date(2026, 10, 13, 13, 0, 0, 0, time.UTC)
+			op := &dominio.Operacao{Data: "2026-10-13", OperacaoID: 1450, UID: 1450, Conta: "99999", Destino: 85, Simbolo: "WINV26",
+				Lado: dominio.Compra, QtdPedida: 1, StopPts: 500, Estado: dominio.Entrando, CriadaEm: em, ContadorN: map[string]int{}}
+			if err := r.SalvarOperacao(op); err != nil {
+				t.Fatal(err)
+			}
+			o := &dominio.Ordem{Data: "2026-10-13", UID: 1450, OperacaoID: 1450, Papel: dominio.Entrada, Conta: "99999", Simbolo: "WINV26",
+				ClOrdBase: "KM-E-1450-1", ClOrdAtual: "KM-E-1450-1", Estrategia: 1031, Lado: dominio.Compra, Qtd: 1, Estado: dominio.Enviando, CriadaEm: em}
+			if err := r.SalvarOrdem(o); err != nil {
+				t.Fatal(err)
+			}
+			ops, ords, err := r.CarregarDia("2026-10-13")
+			if err != nil || len(ops) != 1 || len(ords) != 1 {
+				t.Fatalf("%v %d %d", err, len(ops), len(ords))
+			}
+			if ops[0].Conta != "99999" || ops[0].Destino != 85 || ops[0].Simbolo != "WINV26" || ords[0].Conta != "99999" || ords[0].Simbolo != "WINV26" {
+				t.Fatalf("congelados: %+v / %+v", ops[0], ords[0])
+			}
+
+			if _, ok, err := r.Habilitacao(1450); ok || err != nil {
+				t.Fatalf("uid sem habilitação: %v %v", ok, err)
+			}
+			for _, h := range []dominio.Habilitacao{
+				{UID: 1450, Habilitado: true, PosicaoMax: 1, QtdMaxOrdem: 1, Por: "george", Motivo: "F1", Em: em},
+				{UID: 1450, Habilitado: false, Por: "george", Motivo: "fim da F1", Em: em.Add(time.Hour)},
+				{UID: 7, Habilitado: true, Por: "root", Motivo: "teste", Em: em},
+			} {
+				if err := r.GravarHabilitacao(h); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h, ok, err := r.Habilitacao(1450)
+			if err != nil || !ok || h.Habilitado || h.Motivo != "fim da F1" || !h.Em.Equal(em.Add(time.Hour)) {
+				t.Fatalf("habilitação atual: %+v %v %v", h, ok, err)
+			}
+			hs, err := r.Habilitacoes()
+			if err != nil || len(hs) != 2 || hs[0].UID != 7 || hs[1].UID != 1450 {
+				t.Fatalf("habilitações: %+v %v", hs, err)
+			}
+
+			if m, ok := r.(*MariaDB); ok {
+				if err := m.PrepararUsuariosTeste(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			u := r.(UsuariosDeTeste)
+			const cfg = `{"Robo":{"CORSeqId":85,"CCONroConta":"99999"}}`
+			if err := u.DefinirUsuario(1450, "hml", cfg); err != nil {
+				t.Fatal(err)
+			}
+			if err := u.DefinirUsuario(1450, "prd", `{"Robo":{"CORSeqId":85,"CCONroConta":"7654321"}}`); err != nil {
+				t.Fatal(err)
+			}
+			hml, prd, achou, err := r.ConfigUsuario(1450)
+			if err != nil || !achou || hml != cfg || prd == "" {
+				t.Fatalf("config: %q %q %v %v", hml, prd, achou, err)
+			}
+			if _, _, achou, err := r.ConfigUsuario(1451); achou || err != nil {
+				t.Fatalf("uid sem linha: %v %v", achou, err)
+			}
+			if err := u.DefinirUsuario(1450, "ausente", ""); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, achou, _ := r.ConfigUsuario(1450); achou {
+				t.Fatal("ausente")
+			}
+		})
+	}
+}

@@ -1,9 +1,12 @@
 # Carregado antes de todo cenário.
 
-config ORDENS_CONTA=12345
-config ORDENS_SIMBOLO=WINZ26
-config ORDENS_VENCIMENTO=2026-12-16
-config ORDENS_UID_REAL=7
+# v1.2: conta, destino e símbolo vêm da operação. A instância é de HML e a conta de teste 12345
+# está na lista de HML; o uid 7 (o dos pedidos) está habilitado e escolheu no GQ o destino 85
+# (BTG → PnT) com a conta 12345. O símbolo é o ticker do marketdata (WINZ26 no INICIO).
+config ORDENS_AMBIENTE=HML
+config ORDENS_CONTAS_HML=12345
+usuario 7 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 7
 config FIX_RECONEXAO_S=1
 
 # ExecutionReport do PnT (campos fixos da conta e do símbolo)

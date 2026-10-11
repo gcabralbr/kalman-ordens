@@ -1,0 +1,25 @@
+cenario 42 Conta do usuário alterada no GQ com posição aberta → alerta crítico; proteção e saída pela conta original
+hora 2026-10-13 10:25:00
+# SPEC v1.2 U4: destino e conta são lidos só na entrada e congelados na operação. A troca no GQ é
+# vista na conferência periódica (CONFERE_CONTA_S, 60 s) ou no pedido de saída → alerta crítico
+# CONTA_ALTERADA_COM_POSICAO; cancel e saída saem com 1 e 116 da conta original. Resolve ao zerar.
+
+executa INICIO
+executa COMPRADO OP=4201
+
+usuario 7 hml {"Robo":{"CORSeqId":85,"CCONroConta":"55555"}}
+avanca 60s
+alerta CONTA_ALTERADA_COM_POSICAO
+nada
+
+preco bid=130100 ask=130105 preco=130100
+saida 4201 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-4201-2 41=KM-P-4201-1 1=12345 116=12345
+envia @ER 11=KM-P-4201-2 41=KM-P-4201-1 37=dsa.4201.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-4201-1 1=12345 116=12345 55=WINZ26 44=130050 847=1031
+envia @ER 11=KM-S-4201-1 37=dsa.4201.S 150=F 39=2 54=2 38=1 44=130050 847=1031 32=1 31=130100 14=1 151=0 6=130100
+evento ZERADA operacao_id=4201 origem=GESTOR
+alerta RESOLVIDO
+saude posicao=0
+nada

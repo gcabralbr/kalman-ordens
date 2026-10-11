@@ -61,38 +61,46 @@ func (m *Motor) tick() {
 		}
 		m.verificarZeragem()
 		m.verificarPerdaDoDia()
+		if !agora.Before(m.proxConfere) {
+			m.proxConfere = agora.Add(m.p.ConfereConta)
+			for _, op := range m.ops {
+				m.conferirConta(op)
+			}
+		}
 	}
-	m.verificarVencimento()
 }
 
-// observarPreco: estado de ticker divergente (B3/B5) e o último preco do símbolo certo.
+// observarPreco (v1.2 S1–S2): o ticker do /precos/atual é o contrato vigente (o das entradas);
+// guarda o último preco de cada ticker; posição num contrato que deixou de ser o vigente →
+// alerta crítico (B5.b), a 1014 continua.
 func (m *Motor) observarPreco() {
 	l := m.precos.Ler()
 	if l.Situacao != preco.OK || l.Ticker == "" {
 		return
 	}
-	if l.Ticker == m.p.Simbolo {
-		if m.simboloDiv {
-			m.simboloDiv = false
-			m.al.Resolver("SIMBOLO")
+	if l.Preco != nil {
+		em := l.TS
+		if em.IsZero() {
+			em = m.agora().Add(-l.Idade(m.agora()))
 		}
-		if l.Preco != nil {
-			m.ultimoCerto, m.temUltimo = *l.Preco, true
-			m.ultimoCertoT = l.TS
-			if m.ultimoCertoT.IsZero() {
-				m.ultimoCertoT = m.agora().Add(-l.Idade(m.agora()))
-			}
-		}
-		return
+		m.ultimos[l.Ticker] = ultimoPreco{px: *l.Preco, em: em}
 	}
-	if !m.simboloDiv {
-		m.simboloDiv = true
-		codigo, texto := "SIMBOLO_DIVERGENTE", fmt.Sprintf("marketdata em %s, serviço em %s: entradas bloqueadas", l.Ticker, m.p.Simbolo)
-		if m.posicaoTotal() != 0 {
-			codigo = "SIMBOLO_DIVERGENTE_COM_POSICAO"
-			texto += fmt.Sprintf("; posição %d aberta, a 1014 continua", m.posicaoTotal())
+	if l.Ticker != m.vigente {
+		if m.vigente != "" {
+			m.al.Emitir("CONTRATO_VIGENTE", "", fmt.Sprintf("contrato vigente no marketdata: %s → %s (entradas novas vão em %s)", m.vigente, l.Ticker, l.Ticker), 0)
 		}
-		m.al.Emitir(codigo, "SIMBOLO", texto, 0)
+		m.vigente = l.Ticker
+	}
+	for _, op := range m.ops {
+		if op.Estado.Final() || op.posicao() == 0 {
+			continue
+		}
+		if m.divergenteOp(op) {
+			m.al.Emitir("SIMBOLO_DIVERGENTE_COM_POSICAO", chaveOp("SIMBOLO", op),
+				fmt.Sprintf("marketdata em %s, posição %d da operação %d em %s: a 1014 continua; a saída usa %s", m.vigente, op.posicao(), op.OperacaoID, op.Simbolo, op.Simbolo), op.OperacaoID)
+		} else {
+			m.al.Resolver(chaveOp("SIMBOLO", op))
+		}
 	}
 }
 
@@ -212,8 +220,8 @@ func (m *Motor) tratarErros(op *operacao, agora time.Time) {
 // verificarFuro (Parte 3.6): último além do limite da 1014 por mais de ESPERA_STOP_S.
 func (m *Motor) verificarFuro(op *operacao, agora time.Time) {
 	p := op.viva(dominio.Protecao)
-	px := m.precoConfiavel(m.precos.Ler())
-	if m.simboloDiv || p == nil || px == nil || p.StopLim == 0 || op.posicao() == 0 {
+	px := m.precoConfiavel(m.precos.Ler(), op.Simbolo)
+	if m.divergenteOp(op) || p == nil || px == nil || p.StopLim == 0 || op.posicao() == 0 {
 		op.furoDesde = timeZero
 		return
 	}
@@ -257,37 +265,16 @@ func (m *Motor) verificarZeragem() {
 }
 
 func (m *Motor) verificarPerdaDoDia() {
-	if m.parada != nil || m.simboloDiv {
+	if m.parada != nil {
 		return
 	}
-	px := m.precoConfiavel(m.precos.Ler())
-	if px == nil {
+	px, ok := m.precoDoDia(m.precos.Ler())
+	if !ok {
 		return
 	}
 	r := m.resultadoDoDia(px)
 	if r.LessThanOrEqual(decimal.NewFromInt(-m.p.PerdaDiaPts)) {
 		m.ativarParada("BLOQUEAR", "auto", "perda do dia "+r.String()+" pts")
-	}
-}
-
-func (m *Motor) verificarVencimento() {
-	if m.p.Vencimento == "" || m.avisoVencDia == m.dia {
-		return
-	}
-	m.avisoVencDia = m.dia
-	venc, err := time.ParseInLocation("2006-01-02", m.p.Vencimento, relogio.Fuso)
-	if err != nil {
-		return
-	}
-	hoje, _ := time.ParseInLocation("2006-01-02", m.dia, relogio.Fuso)
-	pregoes := 0
-	for d := hoje.AddDate(0, 0, 1); !d.After(venc); d = d.AddDate(0, 0, 1) {
-		if d.Weekday() != time.Saturday && d.Weekday() != time.Sunday {
-			pregoes++
-		}
-	}
-	if !hoje.Before(venc) || pregoes <= m.p.PregoesAvisoVencimento {
-		m.al.Emitir("VENCIMENTO", "", fmt.Sprintf("vencimento de %s em %s (%d pregão(ões))", m.p.Simbolo, m.p.Vencimento, pregoes), 0)
 	}
 }
 

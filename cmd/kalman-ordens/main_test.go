@@ -41,7 +41,25 @@ func TestServirDePontaAPonta(t *testing.T) {
 	if err := limpo.LimparTeste(); err != nil {
 		t.Fatal(err)
 	}
+	// v1.2: uid 7 habilitado e com a conta 12345 (HML) escolhida no GQ — pela CLI, como na .53
+	if err := limpo.Migrar(); err != nil {
+		t.Fatal(err)
+	}
+	if err := limpo.PrepararUsuariosTeste(); err != nil {
+		t.Fatal(err)
+	}
+	if err := limpo.DefinirUsuario(7, "hml", `{"Robo":{"CORSeqId":85,"CCONroConta":"12345"}}`); err != nil {
+		t.Fatal(err)
+	}
 	limpo.Fechar()
+	var saidaCLI bytes.Buffer
+	cfgCLI := config.Novo(map[string]string{"DB_DSN": dsn, "ACUSUARIO_TABELA": "acusuario_teste", "ORDENS_AMBIENTE": "HML", "ORDENS_CONTAS_HML": "12345"})
+	if err := cliUsuario(cfgCLI, []string{"habilitar", "-uid", "7", "-motivo", "fumaça"}, &saidaCLI); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(saidaCLI.String(), "destino=85 conta=12345") {
+		t.Fatalf("usuario habilitar: %s", saidaCLI.String())
+	}
 
 	f, err := falso.Novo(falso.Config{Contraparte: "KALMAN_FUMACA"})
 	if err != nil {
@@ -65,7 +83,7 @@ func TestServirDePontaAPonta(t *testing.T) {
 	cfg := config.Novo(map[string]string{
 		"DB_DSN": dsn, "FIX_SENDER_COMP_ID": "KALMAN_FUMACA", "FIX_HOST": "127.0.0.1", "FIX_PORTA": strconv.Itoa(f.Porta()),
 		"FIX_DIR": dirFix, "FIX_USUARIO": "USUARIO_FUMACA", "FIX_SENHA": senhaFumaca, "FIX_INICIO": "00:00:00", "FIX_FIM": "00:00:00", "FIX_RECONEXAO_S": "1", "FIX_HEARTBEAT": "5",
-		"ORDENS_CONTA": "12345", "ORDENS_SIMBOLO": "WINZ26", "ORDENS_UID_REAL": "7",
+		"ORDENS_AMBIENTE": "HML", "ORDENS_CONTAS_HML": "12345", "ACUSUARIO_TABELA": "acusuario_teste",
 		"JANELA_INICIO": "00:00:00", "JANELA_FIM": "23:59:59", "HORA_ZERAGEM": "23:59:59",
 		"HTTP_ENDERECO": endereco, "PRECOS_URL": md.URL, "MASS_STATUS_SILENCIO_S": "0.5",
 	})
@@ -114,6 +132,12 @@ func TestServirDePontaAPonta(t *testing.T) {
 	}
 	if v, _ := d.Valor(44); v != "170385" { // ask 170370 + 15
 		t.Fatalf("44=%s\n%s", v, d.Bruta)
+	}
+	// v1.2: conta da operação no 1 e no 116, símbolo = ticker do marketdata
+	for tag, quer := range map[int]string{1: "12345", 116: "12345", 55: "WINZ26", 20856: "Y"} {
+		if v, _ := d.Valor(tag); v != quer {
+			t.Fatalf("%d=%s, esperado %s\n%s", tag, v, quer, d.Bruta)
+		}
 	}
 	c := func(tag int, v string) falso.Campo { return falso.Campo{Tag: tag, Valor: v} }
 	er := func(extra ...falso.Campo) []falso.Campo {
@@ -241,4 +265,27 @@ func (b *bufferSeguro) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.b.String()
+}
+
+// v1.2: um service.env antigo (conta, símbolo, uid real) não sobe em silêncio; ambiente obrigatório.
+func TestServirRecusaConfigAntiga(t *testing.T) {
+	base := map[string]string{"DB_DSN": "x", "FIX_SENDER_COMP_ID": "X", "FIX_HOST": "127.0.0.1", "FIX_PORTA": "1",
+		"ORDENS_AMBIENTE": "HML", "ORDENS_CONTAS_HML": "99999"}
+	for _, c := range []struct{ chave, valor, erro string }{
+		{"ORDENS_UID_REAL", "7", "removidas na v1.2"},
+		{"ORDENS_CONTA", "99999", "removidas na v1.2"},
+		{"ORDENS_SIMBOLO", "WINV26", "removidas na v1.2"},
+		{"ORDENS_AMBIENTE", "PROD", "HML ou PRODUCAO"},
+		{"ORDENS_CONTAS_HML", "", "ORDENS_CONTAS_HML"},
+	} {
+		v := map[string]string{}
+		for k, x := range base {
+			v[k] = x
+		}
+		v[c.chave] = c.valor
+		err := servir(context.Background(), config.Novo(v))
+		if err == nil || !strings.Contains(err.Error(), c.erro) {
+			t.Errorf("%s=%q: %v", c.chave, c.valor, err)
+		}
+	}
 }

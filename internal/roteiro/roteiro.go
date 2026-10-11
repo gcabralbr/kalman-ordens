@@ -23,6 +23,9 @@ type Cenario struct {
 	Titulo  string
 	Hora    time.Time         // hora inicial (America/Sao_Paulo)
 	Config  map[string]string // _comum.fix + cabeçalho do cenário
+	// Preparo: usuario/habilita/desabilita do _comum.fix e do cabeçalho, aplicados antes de o
+	// serviço subir (o mass status do logon já sai pelas contas dos habilitados).
+	Preparo []Passo
 	Passos  []Passo
 }
 
@@ -52,6 +55,32 @@ var verbos = map[string]int{
 	"entrada":           -1, "saida": -1, "http": -1, "resposta": -1, "saude": -1,
 	"evento": -1, "sem_evento": -1, "conta_eventos": -1, "alerta": 1, "sem_alerta": 1,
 	"aguarda_logon": 0, "derruba_sessao": 0, "reinicia_servico": 0, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
+	"usuario": -1, "habilita": -1, "desabilita": 1,
+}
+
+// verbosDePreparo também valem no _comum.fix e no cabeçalho (Cenario.Preparo).
+var verbosDePreparo = map[string]bool{"usuario": true, "habilita": true, "desabilita": true}
+
+// passoUsuario: usuario UID hml|prd JSON (o resto da linha, cru) | usuario UID ausente.
+func passoUsuario(texto, origem string) (Passo, error) {
+	partes := strings.SplitN(strings.TrimSpace(texto), " ", 4)
+	if len(partes) == 3 && partes[2] == "ausente" {
+		return Passo{Origem: origem, Verbo: "usuario", Args: partes[1:]}, nil
+	}
+	if len(partes) != 4 || (partes[2] != "hml" && partes[2] != "prd") {
+		return Passo{}, fmt.Errorf("%s: usuario UID hml|prd JSON, ou usuario UID ausente", origem)
+	}
+	return Passo{Origem: origem, Verbo: "usuario", Args: []string{partes[1], partes[2], strings.TrimSpace(partes[3])}}, nil
+}
+
+func passoPreparo(texto, origem string, toks []string) (Passo, error) {
+	if toks[0] == "usuario" {
+		return passoUsuario(texto, origem)
+	}
+	if len(toks) < 2 || (toks[0] == "desabilita" && len(toks) != 2) {
+		return Passo{}, fmt.Errorf("%s: %s UID", origem, toks[0])
+	}
+	return Passo{Origem: origem, Verbo: toks[0], Args: toks[1:]}, nil
 }
 
 var verbosDeMensagem = map[string]bool{"recebe": true, "envia": true, "envia_offline": true, "recebe_sessao": true, "nada": true}
@@ -72,6 +101,7 @@ type leitor struct {
 	modelos map[string][]Campo
 	blocos  map[string]bloco
 	config  map[string]string
+	preparo []Passo
 }
 
 // LerDiretorio lê _comum.fix e todos os NN-*.fix de dir, em ordem.
@@ -106,7 +136,7 @@ func Ler(comum, arquivo string) (Cenario, error) {
 	if err != nil {
 		return Cenario{}, err
 	}
-	c := Cenario{Arquivo: filepath.Base(arquivo), Config: map[string]string{}}
+	c := Cenario{Arquivo: filepath.Base(arquivo), Config: map[string]string{}, Preparo: append([]Passo(nil), l.preparo...)}
 	for k, v := range l.config {
 		c.Config[k] = v
 	}
@@ -143,6 +173,12 @@ func Ler(comum, arquivo string) (Cenario, error) {
 				return c, fmt.Errorf("%s: config CHAVE=valor", ln.origem)
 			}
 			c.Config[k] = v
+		case cabecalho && verbosDePreparo[toks[0]]:
+			p, err := passoPreparo(ln.texto, ln.origem, toks)
+			if err != nil {
+				return c, err
+			}
+			c.Preparo = append(c.Preparo, p)
 		default:
 			cabecalho = false
 			corpo = append(corpo, ln)
@@ -174,6 +210,12 @@ func (l *leitor) definicoes(ls []linha) error {
 				return fmt.Errorf("%s: config CHAVE=valor", ls[i].origem)
 			}
 			l.config[k] = v
+		case "usuario", "habilita", "desabilita":
+			p, err := passoPreparo(ls[i].texto, ls[i].origem, toks)
+			if err != nil {
+				return err
+			}
+			l.preparo = append(l.preparo, p)
 		case "modelo":
 			if len(toks) < 3 {
 				return fmt.Errorf("%s: modelo NOME tag=valor ...", ls[i].origem)
@@ -201,7 +243,7 @@ func (l *leitor) definicoes(ls []linha) error {
 			l.blocos[toks[1]] = b
 			i = j
 		default:
-			return fmt.Errorf("%s: só config, modelo e bloco no arquivo comum", ls[i].origem)
+			return fmt.Errorf("%s: só config, usuario, habilita, modelo e bloco no arquivo comum", ls[i].origem)
 		}
 	}
 	return nil
@@ -283,6 +325,14 @@ func (l *leitor) expandir(ls []linha, params map[string]string, capturas map[str
 			return nil, fmt.Errorf("%s: verbo desconhecido %q", ln.origem, verbo)
 		}
 		p := Passo{Origem: ln.origem, Verbo: verbo}
+		if verbosDePreparo[verbo] {
+			pp, err := passoPreparo(texto, ln.origem, toks)
+			if err != nil {
+				return nil, err
+			}
+			r = append(r, pp)
+			continue
+		}
 		if verbo == "http" {
 			partes := strings.SplitN(strings.TrimSpace(texto), " ", 4)
 			if len(partes) < 3 {

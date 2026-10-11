@@ -59,6 +59,22 @@ type Repositorio interface {
 	GravarEstado(chave, valor string, em time.Time) error
 	// CarregarDia: operações e ordens do dia, em ordem de criação.
 	CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem, error)
+
+	// Habilitação por uid (v1.2 U5): lida a cada entrada, gravada só pela CLI (e pelos roteiros).
+	Habilitacao(uid int) (dominio.Habilitacao, bool, error)
+	Habilitacoes() ([]dominio.Habilitacao, error)
+	// GravarHabilitacao substitui a atual e acrescenta ao histórico.
+	GravarHabilitacao(dominio.Habilitacao) error
+
+	// ConfigUsuario lê a configuração do usuário no GQ (dbecotools.acusuario, v1.2 U1):
+	// usutxtconfig (HML) e usutxtconfigprd (PRODUCAO). achou=false: uid sem linha.
+	ConfigUsuario(uid int) (hml, prd string, achou bool, err error)
+}
+
+// UsuariosDeTeste: os roteiros e testes definem a configuração do GQ (no MariaDB, numa tabela
+// do schema de teste, nunca no dbecotools).
+type UsuariosDeTeste interface {
+	DefinirUsuario(uid int, campo, valor string) error
 }
 
 // ErrDuplicada: operacao_id já existe.
@@ -75,10 +91,73 @@ type Memoria struct {
 	estado    map[string]string
 	proxOp    int64
 	proxOrdem int64
+	habil     map[int]dominio.Habilitacao
+	hist      []dominio.Habilitacao
+	usuarios  map[int]*[2]string // uid → {usutxtconfig, usutxtconfigprd}
 }
 
 func NovaMemoria() *Memoria {
-	return &Memoria{execIDs: map[string]bool{}, estado: map[string]string{}}
+	return &Memoria{execIDs: map[string]bool{}, estado: map[string]string{}, habil: map[int]dominio.Habilitacao{}, usuarios: map[int]*[2]string{}}
+}
+
+func (m *Memoria) Habilitacao(uid int) (dominio.Habilitacao, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h, ok := m.habil[uid]
+	return h, ok, nil
+}
+
+func (m *Memoria) Habilitacoes() ([]dominio.Habilitacao, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var r []dominio.Habilitacao
+	for _, h := range m.habil {
+		r = append(r, h)
+	}
+	sort.Slice(r, func(i, j int) bool { return r[i].UID < r[j].UID })
+	return r, nil
+}
+
+func (m *Memoria) GravarHabilitacao(h dominio.Habilitacao) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.habil[h.UID] = h
+	m.hist = append(m.hist, h)
+	return nil
+}
+
+func (m *Memoria) ConfigUsuario(uid int) (string, string, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	u := m.usuarios[uid]
+	if u == nil {
+		return "", "", false, nil
+	}
+	return u[0], u[1], true, nil
+}
+
+// DefinirUsuario: campo "hml" (usutxtconfig), "prd" (usutxtconfigprd) ou "ausente" (apaga a linha).
+func (m *Memoria) DefinirUsuario(uid int, campo, valor string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if campo == "ausente" {
+		delete(m.usuarios, uid)
+		return nil
+	}
+	u := m.usuarios[uid]
+	if u == nil {
+		u = &[2]string{}
+		m.usuarios[uid] = u
+	}
+	switch campo {
+	case "hml":
+		u[0] = valor
+	case "prd":
+		u[1] = valor
+	default:
+		return errors.New("repo: campo do usuário deve ser hml, prd ou ausente")
+	}
+	return nil
 }
 
 func (m *Memoria) SalvarOperacao(o *dominio.Operacao) error {

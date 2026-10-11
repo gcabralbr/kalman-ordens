@@ -46,7 +46,7 @@ URL base em configuração (`PRECOS_URL`; na .51: `http://172.16.110.51:9090`).
 | `idade_seg > 3` | `PRECO_VELHO` | usa o que houver; alerta `SAIDA_PRECO_DEGRADADO` |
 | `bid >= ask` | `BOOK_INVALIDO` | usa o que houver |
 | \|meio − preco\| > 150 | `BOOK_DESCOLADO` | usa o que houver |
-| `ticker != ORDENS_SIMBOLO` | `SIMBOLO_DIVERGENTE` (entradas bloqueadas enquanto durar) + alerta crítico | limite sobre o último `preco` do símbolo certo, colar máximo, sem repreço; com mais de 60 s não envia (SPEC v1.1 B5) |
+| `ticker` ≠ símbolo da posição aberta (v1.2 S2) | entrada não é afetada (vai no `ticker`, o contrato vigente; S1) + alerta crítico `SIMBOLO_DIVERGENTE_COM_POSICAO` | limite sobre o último `preco` do símbolo certo, colar máximo, sem repreço; com mais de 60 s não envia (SPEC v1.1 B5) |
 
 Ordem das verificações na entrada: resposta vazia/erro → ticker → status84 → campos ausentes →
 idade → bid < ask → descolamento. O primeiro que falhar dá o código.

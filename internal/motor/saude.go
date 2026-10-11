@@ -22,6 +22,7 @@ func (m *Motor) saude() Resposta {
 	m.entradasRec = aparar(m.entradasRec, agora.Add(-time.Minute))
 	m.recusasLimite = aparar(m.recusasLimite, agora.Add(-time.Minute))
 	l := m.precos.Ler()
+	precoDia, _ := m.precoDoDia(l)
 	var idade any
 	if l.Situacao == preco.OK {
 		idade = l.Idade(agora).Milliseconds()
@@ -50,8 +51,9 @@ func (m *Motor) saude() Resposta {
 		"posicao":            m.posicaoTotal(),
 		"parada":             parada,
 		"divergente":         m.divergente,
-		"simbolo":            m.p.Simbolo,
-		"simbolo_divergente": m.simboloDiv,
+		"simbolo":            m.vigente,
+		"simbolo_divergente": m.algumaDivergente(),
+		"ambiente":           m.p.Ambiente,
 		"idade_preco_ms":     idade,
 		"ordens_vivas":       vivas,
 		"alertas_criticos":   m.al.Ativos(),
@@ -61,7 +63,7 @@ func (m *Motor) saude() Resposta {
 			"mensagens_ultimo_minuto":      len(m.enviosRec),
 			"recusas_limite_ultimo_minuto": len(m.recusasLimite),
 			"ultima_entrada":               ult,
-			"resultado_dia_pts":            m.resultadoDoDia(m.precoConfiavel(l)),
+			"resultado_dia_pts":            m.resultadoDoDia(precoDia),
 		},
 	}
 }
@@ -75,6 +77,16 @@ func (m *Motor) descrever(op *operacao) Resposta {
 	pe, _ := op.medio(true)
 	ps, _ := op.medio(false)
 	return Resposta{"existe": true, "operacao_id": op.OperacaoID, "estado": op.Estado, "divergente": op.Divergente, "posicao": op.posicao(),
+		"uid": op.UID, "conta": op.Conta, "destino": op.Destino, "simbolo": op.Simbolo,
 		"preco_medio_entrada": pe, "preco_medio_saida": ps, "motivo_saida": op.MotivoSaida, "origem_saida": op.OrigemSaida,
 		"pnl_pts": op.PnL, "ordens": os}
+}
+
+func (m *Motor) algumaDivergente() bool {
+	for _, op := range m.ops {
+		if !op.Estado.Final() && op.posicao() != 0 && m.divergenteOp(op) {
+			return true
+		}
+	}
+	return false
 }

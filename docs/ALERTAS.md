@@ -43,11 +43,14 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `PARADA` | parada ativada (tela, cli ou auto), com modo e motivo | não |
 | `RETOMADA` | parada retirada (sempre manual) | não |
 | `ZERAGEM` | `HORA_ZERAGEM` com posição: ZERAR | não |
-| `SIMBOLO_DIVERGENTE` | ticker do marketdata ≠ `ORDENS_SIMBOLO`: entradas bloqueadas | sim |
-| `SIMBOLO_DIVERGENTE_COM_POSICAO` | divergência detectada com posição aberta (no lugar de `SIMBOLO_DIVERGENTE`); a 1014 continua | sim |
+| `CONTRATO_VIGENTE` | o ticker do marketdata (contrato vigente) mudou: entradas novas vão no novo (v1.2 S1) | não |
+| `SIMBOLO_DIVERGENTE_COM_POSICAO` | posição aberta num contrato que deixou de ser o vigente (por operação); a 1014 continua, a saída usa o símbolo da posição; resolve ao zerar ou se o ticker voltar | sim |
+| `SIMBOLO_INVALIDO` | o ticker do marketdata não é um contrato de WIN: entrada recusada | não |
+| `USUARIO_CONFIG` | configuração do usuário no GQ inutilizável na entrada: JSON inválido, sem `Robo`, uid sem linha em `acusuario`, destino ≠ 85 e ≠ 88, conta não numérica, `acusuario` ou habilitação ilegíveis | não |
+| `CONTA_AMBIENTE` | trava cruzada: conta fora de `ORDENS_CONTAS_HML` numa instância HML, ou conta da lista numa instância PRODUCAO; por uid, resolvido na próxima entrada válida dele | sim |
+| `CONTA_ALTERADA_COM_POSICAO` | a conta/destino do usuário no GQ mudou com posição aberta; a posição segue pela conta gravada na entrada; resolve ao zerar ou se voltar | sim |
 | `SAIDA_DIVERGENTE_NAO_EXECUTOU` | saída com ticker divergente não executou no timeout: não repete, decisão humana | sim |
 | `SAIDA_BLOQUEADA_PRECO_ANTIGO` | saída com ticker divergente e último preço do símbolo certo com mais de 60 s: não enviada, 1014 fica | sim |
-| `VENCIMENTO` | aviso antecipado: faltam ≤ 3 pregões para o vencimento do símbolo | não |
 | `FIM_DIA_POSICAO` | conciliação diária: posição final do Kalman ≠ 0 | sim |
 | `RESUMO_DIA` | resumo da conciliação diária (operações, contratos, PnL, recusas, alertas) | não |
 | `VIRADA_COM_OPERACAO` | virada de dia com operação não encerrada | sim |
@@ -60,8 +63,15 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 
 | Código | Quando | Por limite | Alerta |
 |---|---|---|---|
-| `UID_NAO_HABILITADO` | uid ≠ `ORDENS_UID_REAL` | não | — |
-| `CAMPO_INVALIDO` | campo ausente ou inválido | não | — |
+| `UID_NAO_HABILITADO` | ENTRADA de uid sem habilitação ativa em `kalmanordemusuario` (só a CLI altera) | não | — |
+| `CONFIG_USUARIO_INDISPONIVEL` | `acusuario` ou a habilitação ilegíveis (banco) | não | `USUARIO_CONFIG` |
+| `CONFIG_USUARIO_INVALIDA` | JSON do ambiente inválido, sem `Robo.CORSeqId`, ou uid sem linha em `acusuario` | não | `USUARIO_CONFIG` |
+| `DESTINO_NAO_SUPORTADO` | `Robo.CORSeqId` = 88 (Capital → Flexscan) | não | — |
+| `DESTINO_INVALIDO` | `Robo.CORSeqId` = 9999 (simulador do GQ) ou outro ≠ 85 | não | `USUARIO_CONFIG` |
+| `CONTA_INVALIDA` | `Robo.CCONroConta` ausente ou não só dígitos (o simulador usa `QUANT`) | não | `USUARIO_CONFIG` |
+| `CONTA_AMBIENTE` | trava cruzada (`ORDENS_AMBIENTE` × `ORDENS_CONTAS_HML`) | não | `CONTA_AMBIENTE` (crítico) |
+| `SIMBOLO_INVALIDO` | ticker do marketdata não é contrato de WIN | não | `SIMBOLO_INVALIDO` |
+| `CAMPO_INVALIDO` | campo ausente ou inválido; SAIDA com uid diferente do da operação | não | — |
 | `SEM_STOP` | ENTRADA sem `stop_pts` | não | — |
 | `DUPLICADA` | `operacao_id` (e papel) já recebido | não | `DUPLICADA_DIFERENTE` se o conteúdo difere |
 | `PARADA` | serviço em parada | não | — |
@@ -69,7 +79,7 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `SEM_SESSAO` | sessão FIX não logada | não | — |
 | `CONCILIANDO` | conciliação do logon em andamento | não | — |
 | `SEM_CONFIRMACAO` | há ordem sem confirmação do PnT | não | — |
-| `SIMBOLO_DIVERGENTE` | ENTRADA: ticker do marketdata ≠ `ORDENS_SIMBOLO`. SAIDA: idem e último preço do símbolo certo com mais de 60 s | não | entrada: o alerta é do estado; saída: `SAIDA_BLOQUEADA_PRECO_ANTIGO` |
+| `SIMBOLO_DIVERGENTE` | SAIDA: a posição está num contrato que não é mais o vigente e o último preço dele tem mais de 60 s (a entrada nunca diverge: vai no vigente) | não | `SAIDA_BLOQUEADA_PRECO_ANTIGO` |
 | `FORA_JANELA` | fora de 09:00–14:00 | sim | — |
 | `QTD_MAXIMA` | qtd > limite por ordem | sim | — |
 | `POSICAO_MAXIMA` | posição + entradas pendentes + qtd > máximo | sim | — |
@@ -88,5 +98,6 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `LADO_INCOMPATIVEL` | SAIDA com o lado que aumentaria a posição | não | `LADO_INCOMPATIVEL` |
 | `RESULTADO_DESCONHECIDO` | (HTTP 503) motor não respondeu a tempo; consultar `GET /ordens/{id}` | não | — |
 
-Precedência na ENTRADA: uid → campos → DUPLICADA → PARADA → DIVERGENTE → SEM_SESSAO →
-SEM_CONFIRMACAO → CONCILIANDO → SIMBOLO_DIVERGENTE → limites → preço.
+Precedência na ENTRADA: habilitação → campos → DUPLICADA → PARADA → DIVERGENTE → SEM_SESSAO →
+SEM_CONFIRMACAO → CONCILIANDO → conta e destino (acusuario) → SIMBOLO_INVALIDO → limites (globais
+e do uid) → preço. A SAIDA não olha habilitação nem a conta atual do GQ: usa o que a entrada gravou.

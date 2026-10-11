@@ -116,6 +116,8 @@ type Ordem struct {
 	UID            int
 	OperacaoID     int64
 	Papel          Papel
+	Conta          string // tag 1 e 116: a da operação, congelada na entrada (v1.2 U4)
+	Simbolo        string // 55: o da operação
 	ClOrdBase      string
 	ClOrdAtual     string
 	OrderID        string // 37
@@ -136,11 +138,15 @@ type Ordem struct {
 
 // Operacao é a operação real (uma por operacao_id do gestor).
 type Operacao struct {
-	ID              int64
-	Data            string
-	OperacaoID      int64
-	UID             int
-	Lado            Lado // da entrada
+	ID         int64
+	Data       string
+	OperacaoID int64
+	UID        int
+	// Congelados na entrada (v1.2 U4, S1): proteção e saída usam estes, nunca releem.
+	Conta           string // Robo.CCONroConta do ambiente
+	Destino         int    // Robo.CORSeqId (85)
+	Simbolo         string // contrato vigente na entrada
+	Lado            Lado   // da entrada
 	QtdPedida       int
 	StopPts         int64
 	Estado          EstadoOperacao
@@ -166,4 +172,16 @@ func (o Operacao) Copia() Operacao {
 		c.ContadorN[k] = v
 	}
 	return c
+}
+
+// Habilitacao: quem pode mandar ordem real (v1.2 U5). Alterada só pela CLI.
+// PosicaoMax e QtdMaxOrdem: limites do uid (0 = só o global); valem junto com o global.
+type Habilitacao struct {
+	UID         int
+	Habilitado  bool
+	PosicaoMax  int
+	QtdMaxOrdem int
+	Por         string // quem alterou (usuário do sistema que rodou a CLI)
+	Motivo      string
+	Em          time.Time
 }

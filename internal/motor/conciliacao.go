@@ -20,16 +20,56 @@ func (m *Motor) aoLogar() {
 
 var contadorMass int
 
+// pedirMassStatus: um AF (585=9) por conta (v1.2 U6) — as contas das operações do dia e as dos
+// usuários habilitados (resolvidas no ambiente, com a trava cruzada). Sem conta: nada a pedir, a
+// conciliação fecha no silêncio.
 func (m *Motor) pedirMassStatus() {
-	contadorMass++
-	m.massReqID = fmt.Sprintf("KM-MS-%d-%d", m.agora().UnixMilli(), contadorMass)
+	m.massReqIDs = map[string]bool{}
 	m.massRespostas = nil
 	m.massCorte = m.seqOrdens
 	m.massUltima = m.agora()
 	m.massProxima = timeZero
-	if !m.enviar(nil, pnt.MassStatus(m.p.Conta, m.massReqID), m.massReqID) {
-		m.massProxima = m.agora().Add(m.p.RetentativaProtecao)
+	contas := m.contasMassStatus()
+	if len(contas) == 0 {
+		slog.Info("mass status: nenhuma conta (sem operação no dia nem usuário habilitado)")
 	}
+	for _, c := range contas {
+		contadorMass++
+		id := fmt.Sprintf("KM-MS-%d-%d", m.agora().UnixMilli(), contadorMass)
+		m.massReqIDs[id] = true
+		if !m.enviar(nil, pnt.MassStatus(c, id), id) {
+			m.massProxima = m.agora().Add(m.p.RetentativaProtecao)
+		}
+	}
+}
+
+func (m *Motor) contasMassStatus() []string {
+	vistas := map[string]bool{}
+	var r []string
+	add := func(c string) {
+		if c != "" && !vistas[c] {
+			vistas[c] = true
+			r = append(r, c)
+		}
+	}
+	for _, op := range m.ops {
+		add(op.Conta)
+	}
+	hs, err := m.repo.Habilitacoes()
+	if err != nil {
+		slog.Warn("mass status: habilitações ilegíveis; só as contas das operações do dia", "erro", err)
+	}
+	for _, h := range hs {
+		if !h.Habilitado {
+			continue
+		}
+		if res, f := m.contaDoUsuario(h.UID); f == nil {
+			add(res.Conta)
+		} else {
+			slog.Warn("mass status: conta do uid habilitado não resolvida", "uid", h.UID, "codigo", f.Codigo, "motivo", f.Motivo)
+		}
+	}
+	return r
 }
 
 // conciliar: Parte 7.2, passos 2 a 5.

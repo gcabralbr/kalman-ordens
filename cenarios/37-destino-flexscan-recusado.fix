@@ -1,0 +1,18 @@
+cenario 37 Usuário com destino 88 (Capital → Flexscan) → recusa DESTINO_NAO_SUPORTADO, nada enviado
+hora 2026-10-13 10:00:00
+# SPEC v1.2 U2: só o destino 85 (BTG → PnT). 88 é recusado sem alerta (é uma escolha válida no GQ,
+# só não é deste serviço). O usuário troca o destino no GQ depois do logon.
+
+executa INICIO
+
+usuario 7 hml {"Robo":{"CORSeqId":88,"CCONroConta":"12345"}}
+entrada 3701 C
+resposta aceito=false codigo=DESTINO_NAO_SUPORTADO
+sem_alerta USUARIO_CONFIG
+nada
+
+# volta para 85: aceita (a recusa não conta como recusa por limite)
+usuario 7 hml {"Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+entrada 3702 C
+resposta aceito=true
+recebe 35=D 11=KM-E-3702-1 1=12345 116=12345 55=WINZ26 847=1031

@@ -1,0 +1,18 @@
+cenario 38 Usuário no simulador do GQ (9999 / conta QUANT) → recusa DESTINO_INVALIDO + alerta
+hora 2026-10-13 10:05:00
+# SPEC v1.2 U2: 9999 (simulador do GQ) ou qualquer destino ≠ 85 → recusa + alerta USUARIO_CONFIG.
+# Conta não numérica (o simulador usa "QUANT") → CONTA_INVALIDA + alerta, mesmo com destino 85.
+
+executa INICIO
+
+usuario 7 hml {"AmbienteDef":"Simulador","Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}
+entrada 3801 C
+resposta aceito=false codigo=DESTINO_INVALIDO
+alerta USUARIO_CONFIG
+
+usuario 7 hml {"Robo":{"CORSeqId":85,"CCONroConta":"QUANT"}}
+entrada 3802 C
+resposta aceito=false codigo=CONTA_INVALIDA
+alerta USUARIO_CONFIG
+saude posicao=0 parada=null
+nada

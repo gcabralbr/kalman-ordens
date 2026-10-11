@@ -98,9 +98,12 @@ func (c Config) Bool(k string, padrao bool) bool {
 
 // Parametros são os valores que o motor usa, já lidos.
 type Parametros struct {
-	Conta, Simbolo, Bolsa, OnBehalfOfSubID, SenderLocationID string
-	UIDReal                                                  int // 0 = ninguém
-	Vencimento                                               string
+	Bolsa, SenderLocationID string
+	// v1.2: conta, destino e símbolo vêm da operação. O ambiente escolhe a coluna do GQ
+	// (HML: usutxtconfig; PRODUCAO: usutxtconfigprd); ContasHML é a trava cruzada.
+	Ambiente     string
+	ContasHML    []string
+	ConfereConta time.Duration
 
 	ColarEntrada, FolgaStop, ColarSaida, Tick int64
 	TimeoutEntrada, TimeoutSaida, EsperaStop  time.Duration
@@ -116,19 +119,16 @@ type Parametros struct {
 	IntervaloEntradas                                                                                 time.Duration
 	PerdaDiaPts, BookDescoladoPts                                                                     int64
 	JanelaInicio, JanelaFim, HoraZeragem                                                              time.Duration
-	PregoesAvisoVencimento                                                                            int
 }
 
 // Parametros lê tudo com os padrões da SPEC (v1 + v1.1).
 func (c Config) Parametros() Parametros {
 	return Parametros{
-		Conta:            c.Texto("ORDENS_CONTA", ""),
-		Simbolo:          c.Texto("ORDENS_SIMBOLO", ""),
 		Bolsa:            c.Texto("ORDENS_BOLSA", "BVMF"),
-		OnBehalfOfSubID:  c.Texto("ORDENS_ONBEHALF", ""),
 		SenderLocationID: c.Texto("ORDENS_SENDER_LOCATION", ""),
-		UIDReal:          c.Inteiro("ORDENS_UID_REAL", 0),
-		Vencimento:       c.Texto("ORDENS_VENCIMENTO", ""),
+		Ambiente:         c.Texto("ORDENS_AMBIENTE", ""),
+		ContasHML:        listaContas(c.Texto("ORDENS_CONTAS_HML", "")),
+		ConfereConta:     c.Segundos("CONFERE_CONTA_S", 60),
 
 		ColarEntrada:            c.Pontos("COLAR_ENTRADA_PTS", 15),
 		FolgaStop:               c.Pontos("FOLGA_STOP_PTS", 100),
@@ -149,18 +149,25 @@ func (c Config) Parametros() Parametros {
 		IdadeMaxPrecoDivergente: c.Segundos("IDADE_MAX_PRECO_DIVERGENTE_S", 60),
 		MaxRepreco:              c.Inteiro("MAX_REPRECO_SAIDA", 3),
 
-		PosicaoMax:             c.Inteiro("LIMITE_POSICAO_MAX", 1),
-		QtdMaxOrdem:            c.Inteiro("LIMITE_QTD_ORDEM", 1),
-		IntervaloEntradas:      c.Segundos("LIMITE_INTERVALO_ENTRADAS_S", 60),
-		EntradasPorMinuto:      c.Inteiro("LIMITE_ENTRADAS_MIN", 1),
-		MensagensPorMinuto:     c.Inteiro("LIMITE_MENSAGENS_MIN", 10),
-		EntradasPorDia:         c.Inteiro("LIMITE_ENTRADAS_DIA", 15),
-		PerdaDiaPts:            c.Pontos("LIMITE_PERDA_DIA_PTS", 1500),
-		BookDescoladoPts:       c.Pontos("LIMITE_BOOK_DESCOLADO_PTS", 150),
-		RecusasParaParada:      c.Inteiro("LIMITE_RECUSAS_PARADA", 3),
-		JanelaInicio:           c.Hora("JANELA_INICIO", "09:00:00"),
-		JanelaFim:              c.Hora("JANELA_FIM", "14:00:00"),
-		HoraZeragem:            c.Hora("HORA_ZERAGEM", "14:30:00"),
-		PregoesAvisoVencimento: c.Inteiro("AVISO_VENCIMENTO_PREGOES", 3),
+		PosicaoMax:         c.Inteiro("LIMITE_POSICAO_MAX", 1),
+		QtdMaxOrdem:        c.Inteiro("LIMITE_QTD_ORDEM", 1),
+		IntervaloEntradas:  c.Segundos("LIMITE_INTERVALO_ENTRADAS_S", 60),
+		EntradasPorMinuto:  c.Inteiro("LIMITE_ENTRADAS_MIN", 1),
+		MensagensPorMinuto: c.Inteiro("LIMITE_MENSAGENS_MIN", 10),
+		EntradasPorDia:     c.Inteiro("LIMITE_ENTRADAS_DIA", 15),
+		PerdaDiaPts:        c.Pontos("LIMITE_PERDA_DIA_PTS", 1500),
+		BookDescoladoPts:   c.Pontos("LIMITE_BOOK_DESCOLADO_PTS", 150),
+		RecusasParaParada:  c.Inteiro("LIMITE_RECUSAS_PARADA", 3),
+		JanelaInicio:       c.Hora("JANELA_INICIO", "09:00:00"),
+		JanelaFim:          c.Hora("JANELA_FIM", "14:00:00"),
+		HoraZeragem:        c.Hora("HORA_ZERAGEM", "14:30:00"),
 	}
+}
+
+func listaContas(s string) []string {
+	var r []string
+	for _, x := range strings.FieldsFunc(s, func(c rune) bool { return c == ',' || c == ' ' || c == ';' }) {
+		r = append(r, x)
+	}
+	return r
 }

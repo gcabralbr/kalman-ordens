@@ -1,0 +1,13 @@
+cenario 40 Instância HML: conta fora de ORDENS_CONTAS_HML (conta real) → recusa CONTA_AMBIENTE + alerta crítico
+hora 2026-10-13 10:15:00
+# SPEC v1.2 U3: em HML a conta TEM de estar na lista; uma conta real na usutxtconfig (o usuário
+# escolheu conta real no GQ numa instância de HML) é recusada.
+
+executa INICIO
+
+usuario 7 hml {"Robo":{"CORSeqId":85,"CCONroConta":"7654321"}}
+entrada 4001 C
+resposta aceito=false codigo=CONTA_AMBIENTE
+alerta CONTA_AMBIENTE
+saude posicao=0
+nada

@@ -19,6 +19,7 @@ import (
 
 	"gammaquant.com.br/kalman-ordens/internal/api"
 	"gammaquant.com.br/kalman-ordens/internal/config"
+	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/motor"
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
@@ -31,6 +32,8 @@ import (
 const (
 	esperaMensagem = 2 * time.Second
 	passoRelogio   = 100 * time.Millisecond
+	// UIDRoteiro: o uid dos pedidos de entrada e saida (uid=N troca); _comum.fix o habilita.
+	UIDRoteiro = 7
 )
 
 // notificador guarda o que iria ao Telegram.
@@ -102,7 +105,10 @@ func MariaDB(dsn string) Backend {
 			if err := r.LimparTeste(); err != nil {
 				return nil, err
 			}
-			return r, r.Migrar()
+			if err := r.Migrar(); err != nil {
+				return nil, err
+			}
+			return r, r.PrepararUsuariosTeste()
 		},
 		Reabrir: func(velho repo.Repositorio) (repo.Repositorio, error) {
 			velho.(*repo.MariaDB).Fechar()
@@ -110,7 +116,10 @@ func MariaDB(dsn string) Backend {
 			if err != nil {
 				return nil, err
 			}
-			return r, r.Migrar()
+			if err := r.Migrar(); err != nil {
+				return nil, err
+			}
+			return r, r.PrepararUsuariosTeste()
 		},
 	}
 }
@@ -152,7 +161,52 @@ func (e *Executor) preparar() error {
 		v[k] = x
 	}
 	e.cfg = config.Novo(v)
+	for _, p := range e.c.Preparo {
+		if err := e.usuario(p); err != nil {
+			return fmt.Errorf("%s: %s: %w", p.Origem, p.Verbo, err)
+		}
+	}
 	return e.subir()
+}
+
+// usuario aplica usuario/habilita/desabilita: a configuração do GQ (acusuario de teste) e a
+// habilitação (o que a CLI faria).
+func (e *Executor) usuario(p roteiro.Passo) error {
+	uid, err := strconv.Atoi(p.Args[0])
+	if err != nil {
+		return fmt.Errorf("uid %q", p.Args[0])
+	}
+	switch p.Verbo {
+	case "usuario":
+		u, ok := e.repo.(repo.UsuariosDeTeste)
+		if !ok {
+			return fmt.Errorf("o backend não aceita usuários de teste")
+		}
+		valor := ""
+		if len(p.Args) > 2 {
+			valor = p.Args[2]
+		}
+		return u.DefinirUsuario(uid, p.Args[1], valor)
+	case "habilita", "desabilita":
+		h := dominio.Habilitacao{UID: uid, Habilitado: p.Verbo == "habilita", Por: "roteiro", Motivo: p.Origem, Em: e.rel.Agora()}
+		for _, a := range p.Args[1:] {
+			k, v, _ := strings.Cut(a, "=")
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return fmt.Errorf("%s", a)
+			}
+			switch k {
+			case "posicao_max":
+				h.PosicaoMax = n
+			case "qtd_max":
+				h.QtdMaxOrdem = n
+			default:
+				return fmt.Errorf("habilita UID [posicao_max=N] [qtd_max=N]: %s", a)
+			}
+		}
+		return e.repo.GravarHabilitacao(h)
+	}
+	return fmt.Errorf("verbo %s", p.Verbo)
 }
 
 func (e *Executor) subir() error {
@@ -301,6 +355,12 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return nil
 	case "entrada", "saida":
 		return e.pedido(p)
+	case "usuario", "habilita", "desabilita":
+		if err := e.usuario(p); err != nil {
+			return err
+		}
+		e.ocioso()
+		return nil
 	case "corrompe":
 		delta := 0
 		if len(p.Args) > 1 {
@@ -472,8 +532,7 @@ func (e *Executor) casa(cs []roteiro.Campo, r falso.Recebida, capturar bool) err
 
 func (e *Executor) pedido(p roteiro.Passo) error {
 	op, _ := strconv.ParseInt(p.Args[0], 10, 64)
-	uid := e.cfg.Inteiro("ORDENS_UID_REAL", 0)
-	b := map[string]any{"operacao_id": op, "uid": uid, "lado": p.Args[1], "qtd": 1}
+	b := map[string]any{"operacao_id": op, "uid": UIDRoteiro, "lado": p.Args[1], "qtd": 1}
 	extras := p.Args[2:]
 	if p.Verbo == "entrada" {
 		b["papel"], b["stop_pts"], b["motivo"] = "ENTRADA", 500, "SINAL"
@@ -499,6 +558,8 @@ func (e *Executor) pedido(p roteiro.Passo) error {
 			b["motivo"] = v
 		case "ts":
 			b["ts_decisao"] = v
+		case "uid":
+			b["uid"], _ = strconv.Atoi(v)
 		}
 	}
 	j, _ := json.Marshal(b)

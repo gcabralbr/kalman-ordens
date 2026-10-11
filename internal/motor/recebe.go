@@ -67,7 +67,7 @@ func (m *Motor) registrarRecebida(o *ordem, msg pnt.Mensagem) bool {
 
 func (m *Motor) execReport(msg pnt.Mensagem) {
 	cl, orig, id37 := msg.Texto(11), msg.Texto(41), msg.Texto(37)
-	if msg.Texto(150) == "I" && m.conciliando && m.massReqID != "" && msg.Texto(584) == m.massReqID {
+	if msg.Texto(150) == "I" && m.conciliando && m.massReqIDs[msg.Texto(584)] {
 		m.massUltima = m.agora()
 		if ehNosso(cl) || ehNosso(orig) {
 			c := msg
@@ -569,7 +569,7 @@ func (m *Motor) decidirProtecaoEmErro(op *operacao, o *ordem) {
 
 func (m *Motor) businessReject(msg pnt.Mensagem) {
 	ref, refID, razao := msg.Texto(372), msg.Texto(379), msg.Texto(380)
-	if ref == "AF" || (m.massReqID != "" && refID == m.massReqID) {
+	if ref == "AF" || m.massReqIDs[refID] {
 		m.registrarRecebida(nil, msg)
 		if razao == "4" {
 			esperas := []time.Duration{1, 2, 5, 10, 10, 30}

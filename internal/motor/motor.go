@@ -115,6 +115,22 @@ type operacao struct {
 	ultimaRecriacao       time.Time
 }
 
+type ultimoPreco struct {
+	px decimal.Decimal
+	em time.Time
+}
+
+// idDe: a identificação das ordens da operação — a conta congelada na entrada vai no 1 e no 116
+// (como o PT faz), o 142 é da instância (v1.2 U4).
+func (m *Motor) idDe(op *operacao) pnt.Identificacao {
+	return pnt.Identificacao{Conta: op.Conta, Bolsa: m.p.Bolsa, OnBehalfOfSubID: op.Conta, SenderLocationID: m.p.SenderLocationID}
+}
+
+// divergenteOp (v1.2 S2): a posição está num contrato que deixou de ser o vigente.
+func (m *Motor) divergenteOp(op *operacao) bool {
+	return m.vigente != "" && op.Simbolo != "" && op.Simbolo != m.vigente
+}
+
 func (op *operacao) posicao() int {
 	s := 0
 	for _, o := range op.ordens {
@@ -214,23 +230,21 @@ type Motor struct {
 	precos preco.Fonte
 	fix    Envio
 	al     *alerta.Alertas
-	id     pnt.Identificacao
 	fila   chan func()
 	fim    chan struct{}
 
-	dia          string
-	ops          []*operacao
-	porOp        map[int64]*operacao
-	porClOrd     map[string]*ordem
-	por37        map[string]*ordem
-	donoDa       map[*ordem]*operacao
-	clordPorSeq  map[int]string
-	parada       *Parada
-	divergente   bool
-	simboloDiv   bool
-	ultimoCerto  decimal.Decimal
-	ultimoCertoT time.Time
-	temUltimo    bool
+	dia         string
+	ops         []*operacao
+	porOp       map[int64]*operacao
+	porClOrd    map[string]*ordem
+	por37       map[string]*ordem
+	donoDa      map[*ordem]*operacao
+	clordPorSeq map[int]string
+	parada      *Parada
+	divergente  bool
+	vigente     string                 // ticker do /precos/atual: o contrato das entradas (v1.2 S1)
+	ultimos     map[string]ultimoPreco // último preco conhecido por ticker (B5.c com a posição em outro)
+	proxConfere time.Time              // próxima conferência da conta das posições abertas (U4)
 
 	ultimaEntrada  time.Time
 	entradasRec    []time.Time
@@ -238,10 +252,9 @@ type Motor struct {
 	recusasLimite  []time.Time
 	entradasHoje   int
 	zeragemFeita   bool
-	avisoVencDia   string
 	jaLogou        bool
 	conciliando    bool
-	massReqID      string
+	massReqIDs     map[string]bool // os 584 do mass status em curso (um AF por conta)
 	massUltima     time.Time
 	massTentativas int
 	massProxima    time.Time
@@ -257,7 +270,7 @@ func Novo(c config.Config, rel relogio.Relogio, r repo.Repositorio, f preco.Font
 	p := c.Parametros()
 	m := &Motor{
 		p: p, rel: rel, repo: r, precos: f,
-		id:   pnt.Identificacao{Conta: p.Conta, Bolsa: p.Bolsa, OnBehalfOfSubID: p.OnBehalfOfSubID, SenderLocationID: p.SenderLocationID},
+		ultimos: map[string]ultimoPreco{}, massReqIDs: map[string]bool{},
 		fila: make(chan func(), 10000),
 		fim:  make(chan struct{}),
 	}
@@ -675,6 +688,18 @@ func (m *Motor) posicaoTotal() int {
 		s += op.posicao()
 	}
 	return s
+}
+
+// precoDoDia: o preco para o resultado do dia (Parte 5) — o do vigente, fresco, e só se nenhuma
+// posição aberta estiver em outro contrato (pendência 2 da v1.1: suspenso durante a divergência).
+func (m *Motor) precoDoDia(l preco.Leitura) (*decimal.Decimal, bool) {
+	for _, op := range m.ops {
+		if !op.Estado.Final() && op.posicao() != 0 && m.divergenteOp(op) {
+			return nil, false
+		}
+	}
+	px := m.precoConfiavel(l, m.vigente)
+	return px, px != nil
 }
 
 func (m *Motor) resultadoDoDia(ultimo *decimal.Decimal) decimal.Decimal {

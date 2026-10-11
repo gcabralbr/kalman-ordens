@@ -1,0 +1,23 @@
+cenario 43 Usuário não habilitado (ou desabilitado pela CLI) → UID_NAO_HABILITADO, mesmo com conta escolhida no GQ
+hora 2026-10-13 10:30:00
+# SPEC v1.2 U5: a habilitação é a tabela kalmanordemusuario (alterada só pela CLI); escolher conta
+# e destino válidos no GQ não habilita ordem real. A saída de uma posição aberta não depende da
+# habilitação atual (usa o que a entrada gravou).
+usuario 8 hml {"Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+
+executa INICIO
+
+entrada 4301 C uid=8
+resposta aceito=false codigo=UID_NAO_HABILITADO
+nada
+
+executa COMPRADO OP=4302
+desabilita 7
+avanca 61s
+entrada 4303 C
+resposta aceito=false codigo=UID_NAO_HABILITADO
+# a posição do uid 7 sai normalmente
+preco bid=130100 ask=130105 preco=130100
+saida 4302 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-4302-2 41=KM-P-4302-1 1=12345
