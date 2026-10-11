@@ -5,6 +5,7 @@
 //	kalman-ordens zerar  -motivo X  parada ZERAR (origem cli)
 //	kalman-ordens retomar -motivo X retira a parada (sempre manual)
 //	kalman-ordens saude             GET /saude
+//	kalman-ordens versao            commit embutido no binário (scripts/build.sh)
 //
 // Configuração por variáveis de ambiente (EnvironmentFile=/etc/kalman-ordens/service.env).
 // Os subcomandos de CLI só falam com o HTTP local (HTTP_ENDERECO), para uso por SSH.
@@ -36,6 +37,9 @@ import (
 	"gammaquant.com.br/kalman-ordens/pnt"
 )
 
+// versao é o commit do build (scripts/build.sh: -ldflags "-X main.versao=...").
+var versao = "dev"
+
 func main() {
 	cmd := "servir"
 	args := os.Args[1:]
@@ -52,8 +56,10 @@ func main() {
 		err = servir(ctx, cfg)
 	case "parar", "zerar", "retomar", "saude":
 		err = cli(cfg, cmd, args)
+	case "versao":
+		fmt.Println(versao)
 	default:
-		err = fmt.Errorf("comando desconhecido %q (servir | parar | zerar | retomar | saude)", cmd)
+		err = fmt.Errorf("comando desconhecido %q (servir | parar | zerar | retomar | saude | versao)", cmd)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "kalman-ordens:", err)
@@ -76,6 +82,8 @@ func obrigatorias(cfg config.Config, chaves ...string) error {
 
 // servir roda até ctx terminar (SIGTERM/SIGINT em produção).
 func servir(ctx context.Context, cfg config.Config) error {
+	motor.Versao = versao
+	slog.Info("kalman-ordens subindo", "versao", versao)
 	if err := obrigatorias(cfg, "DB_DSN", "FIX_SENDER_COMP_ID", "FIX_HOST", "FIX_PORTA", "ORDENS_CONTA", "ORDENS_SIMBOLO"); err != nil {
 		return err
 	}
@@ -157,7 +165,7 @@ func servir(ctx context.Context, cfg config.Config) error {
 	}()
 
 	pronto(endereco)
-	slog.Info("kalman-ordens no ar", "http", endereco, "fix", cfg.Texto("FIX_HOST", "")+":"+cfg.Texto("FIX_PORTA", ""),
+	slog.Info("kalman-ordens no ar", "versao", versao, "http", endereco, "fix", cfg.Texto("FIX_HOST", "")+":"+cfg.Texto("FIX_PORTA", ""),
 		"simbolo", cfg.Texto("ORDENS_SIMBOLO", ""), "uid_real", cfg.Texto("ORDENS_UID_REAL", "(nenhum)"))
 
 	<-ctx.Done()

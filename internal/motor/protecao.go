@@ -78,6 +78,10 @@ func (m *Motor) protecaoAceita(op *operacao, p *ordem) {
 }
 
 func (m *Motor) protecaoRejeitada(op *operacao, texto string) {
+	if p := op.ultimaProtecao(); p != nil && p.recriada && !op.zerarAposProtecao {
+		m.falhaProtecao(op, "1014 recriada rejeitada ("+texto+")")
+		return
+	}
 	if op.zerarAposProtecao {
 		op.zerarAposProtecao = false
 		m.iniciarSaida(op, "ENTRADA_TARDIA", "ENTRADA_TARDIA")
@@ -106,14 +110,39 @@ func (m *Motor) verificarInvariante(agora time.Time) {
 			op.violacaoDesde = agora
 		case agora.Sub(op.violacaoDesde) > 2*time.Second:
 			op.violacaoDesde = timeZero
-			m.recriarProtecao(op)
+			m.falhaProtecao(op, "posição sem 1014 e sem saída viva há mais de 2 s")
 		}
 	}
 }
 
+// janelaRecriacao: uma 1014 recriada que dura isto zera o contador de tentativas (P8).
+const janelaRecriacao = 30 * time.Second
+
+// falhaProtecao (P8): a 1014 caiu sem pedido nosso (cancelada/expirada pelo PnT), a recriada foi
+// rejeitada, ou a invariante achou a posição sem proteção. Recria na hora; até 2 recriações com
+// menos de 30 s entre a falha e a recriação anterior; a terceira falha → PROTECAO_INSTAVEL e zera a
+// posição (como a 3.4: posição sem proteção possível não fica aberta). Sem laço cria/cancela.
+func (m *Motor) falhaProtecao(op *operacao, motivo string) {
+	agora := m.agora()
+	if !op.ultimaRecriacao.IsZero() && agora.Sub(op.ultimaRecriacao) >= janelaRecriacao {
+		op.recriacoes = 0
+	}
+	if op.recriacoes >= 2 {
+		op.recriacoes = 0
+		m.al.Emitir("PROTECAO_INSTAVEL", chaveOp("PROTECAO_INSTAVEL", op),
+			fmt.Sprintf("1014 instável (%s depois de 2 recriações em menos de %s): zerando a operação %d", motivo, janelaRecriacao, op.OperacaoID), op.OperacaoID)
+		m.al.Resolver(chaveOp("PROTECAO_RECRIADA", op))
+		m.iniciarSaida(op, "PROTECAO_INSTAVEL", "PROTECAO_INSTAVEL")
+		return
+	}
+	op.recriacoes++
+	op.ultimaRecriacao = agora
+	m.recriarProtecao(op, motivo)
+}
+
 // recriarProtecao manda uma 1014 nova com o mesmo gatilho e limite da última (não depende do
 // feed); sem 1014 anterior, calcula sobre o preço médio da entrada.
-func (m *Motor) recriarProtecao(op *operacao) {
+func (m *Motor) recriarProtecao(op *operacao, motivo string) {
 	pos := op.posicao()
 	lado := dominio.ParaZerar(pos)
 	var ultima *ordem
@@ -130,10 +159,12 @@ func (m *Motor) recriarProtecao(op *operacao) {
 	}
 	o := m.novaOrdem(op, dominio.Protecao, lado, abs(pos), pnt.EstrategiaStop)
 	o.Stop, o.StopLim, o.Preco = stop, lim, lim
+	o.recriada = true
 	m.salvarOrdem(o)
 	m.indexar(op, o)
+	m.al.Resolver(chaveOp("PROTECAO_RECRIADA", op)) // uma recriação nova reabre o alerta
 	m.al.Emitir("PROTECAO_RECRIADA", chaveOp("PROTECAO_RECRIADA", op),
-		fmt.Sprintf("posição %d sem 1014 e sem saída viva há mais de 2 s: 1014 recriada (gatilho %d, limite %d), operação %d", pos, stop, lim, op.OperacaoID), op.OperacaoID)
+		fmt.Sprintf("%s: 1014 recriada (tentativa %d; gatilho %d, limite %d), posição %d, operação %d", motivo, op.recriacoes, stop, lim, pos, op.OperacaoID), op.OperacaoID)
 	if !m.enviarNova(op, o) {
 		o.Estado = dominio.FalhaEnvio
 		m.salvarOrdem(o)
@@ -153,4 +184,15 @@ func (m *Motor) calcularStop(op *operacao, lado dominio.Lado) (stop, lim int64) 
 	}
 	stop = m.abaixo(medio.Add(stopPts))
 	return stop, m.acima(decimal.NewFromInt(stop).Add(folga))
+}
+
+// ultimaProtecao: a 1014 mais recente da operação (viva ou não).
+func (op *operacao) ultimaProtecao() *ordem {
+	var r *ordem
+	for _, o := range op.ordens {
+		if o.Papel == dominio.Protecao {
+			r = o
+		}
+	}
+	return r
 }

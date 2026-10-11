@@ -6,6 +6,9 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 )
 
+// Versao é o commit do binário em execução (definido pelo main).
+var Versao = "dev"
+
 // Saude (GET /saude).
 func (m *Motor) Saude() Resposta {
 	var r Resposta
@@ -41,6 +44,7 @@ func (m *Motor) saude() Resposta {
 		ult = m.ultimaEntrada.Format(time.RFC3339)
 	}
 	return Resposta{
+		"versao":             Versao,
 		"sessao_logada":      m.fix != nil && m.fix.Logado(),
 		"conciliando":        m.conciliando,
 		"posicao":            m.posicaoTotal(),

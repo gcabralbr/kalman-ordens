@@ -7,9 +7,10 @@ Onde a v1.1 não diz nada, vale a v1.
 Os roteiros (`cenarios/*.fix`, formato em `cenarios/FORMATO.md`) são a especificação executável:
 cada decisão abaixo está afirmada em pelo menos um deles.
 
-Data: 2026-10-10. Decisões confirmadas pelo responsável em cinco rodadas (stack e envio;
+Data: 2026-10-11. Decisões confirmadas pelo responsável em seis rodadas (stack e envio;
 roteiros e preço; fill perdido por 35=3 e saída com ticker divergente; banco, idempotência e
-Telegram; invariante de proteção, sql_mode, permissões e -race).
+Telegram; invariante de proteção, sql_mode, permissões e -race; recriação imediata com limite,
+build e preparação da F1).
 
 ---
 
@@ -49,7 +50,7 @@ de ordem velha no ResendRequest (vira GapFill).
 | A1 | Cancel só com tags do dicionário (= F4). | confirmada | 3.1 | 01 |
 | A2 | Validação estrita das mensagens do serviço em todos os roteiros (= F3). | confirmada | 11.1 | todos |
 | A3 | **Fill depois do cancelamento.** `ENTRADA_ENCERRADA` fica retido por `ESPERA_ENCERRAMENTO_S` (inicial 5 s) depois do 39=4 (e do 39=C). Fill dentro da espera = entrada normal, sem `ENTRADA_ENCERRADA` intermediário; o único sai no fim da espera com a quantidade executada. Fill depois da espera = `ENTRADA_TARDIA`: o serviço cria a 1014 e zera na hora (Parte 3.5), com alerta; o gestor recebe `ENTRADA_EXECUTADA tardio=true` e `SAIDA_EXECUTADA origem=ENTRADA_TARDIA` só para registro e **nunca reabre a operação**. Rejeição (39=8) e execução total (39=2) encerram sem espera. | **ajustada** | 3.3, 4, 2.2, 2.3 | 04, 04b (efeito no tempo: 02, 13, 17, 19) |
-| A4 | **Origens da saída:** `GESTOR`, `STOP_SERVIDOR`, `STOP_FURADO`, `PARADA`, `ZERAGEM`, `PROTECAO_REJEITADA`, `ENTRADA_TARDIA`. O gestor trata tudo o que não é `GESTOR` como operação fechada pelo serviço, com esse motivo. | confirmada | 2.2, 2.3 | 01, 05, 06, 07, 04 |
+| A4 | **Origens da saída:** `GESTOR`, `STOP_SERVIDOR`, `STOP_FURADO`, `PARADA`, `ZERAGEM`, `PROTECAO_REJEITADA`, `PROTECAO_INSTAVEL` (P8), `ENTRADA_TARDIA`. O gestor trata tudo o que não é `GESTOR` como operação fechada pelo serviço, com esse motivo. | confirmada | 2.2, 2.3 | 01, 05, 06, 07, 04 |
 | A5 | **Repreço depois de esgotar:** passados os `MAX_REPRECO_SAIDA` repreços, alerta crítico e continua reapregoando a cada `TIMEOUT_SAIDA_S` no afastamento máximo (`COLAR_SAIDA_PTS × (MAX+1)`, 200 pts) sobre o mercado do momento, sem aumentar mais. | confirmada | 3.5 | 07 |
 | A6 | **SEM_CONFIRMACAO** (= F6). Esclarecimento: ordem achada viva na conciliação volta ao fluxo normal; entrada viva já além do timeout é cancelada na hora. | confirmada, com esclarecimento | 4, 7.2 | 19 |
 | A7 | **Precedência das recusas:** PARADA, DIVERGENTE, SEM_SESSAO, SEM_CONFIRMACAO, CONCILIANDO e SIMBOLO_DIVERGENTE vêm antes dos limites e não contam para "3 recusas por limite em 1 min". Ordem completa em `docs/ALERTAS.md`. | confirmada | 5 | 13, 18, 19, 16f |
@@ -93,6 +94,8 @@ Contrato real do `/precos/atual` em [`docs/referencia/precos-atual.md`](referenc
 | P2 | **Executável:** `kalman-ordens servir` (systemd), `parar`/`zerar`/`retomar -motivo` e `saude` pelo HTTP local; o HTTP recusa subir fora de loopback; SIGTERM faz logout FIX e não cancela nada no PnT. `deploy/` tem a unidade do systemd, o `service.env.example` e o roteiro de instalação. | 1, 6 | `cmd/kalman-ordens/main_test.go` (ponta a ponta com MariaDB) |
 | P3 | **Telegram direto** (`api.telegram.org`, token e chat no service.env). Fila própria, timeout de 3 s, nunca bloqueia o motor. Falha → log + nova tentativa com espera crescente (1, 2, 5, 10, 30, 60 s). **Crítico nunca é descartado**; não crítico desiste após 3 tentativas ou quando a fila passa de 1000. 4xx permanente não se retenta; 429 respeita `retry_after`. O token nunca vai para o log. | 9 | `internal/alerta/telegram_test.go` |
 | P5 | **Invariante de proteção:** "posição ≠ 0 e nenhuma ordem de saída viva ⇒ 1014 viva", verificada a cada 1 s. Violada por mais de 2 s → o serviço recria a 1014 com o **mesmo gatilho e limite da original** (não depende do feed; sem 1014 anterior, calcula sobre o preço médio da entrada) e emite o alerta crítico `PROTECAO_RECRIADA` (resolvido quando a 1014 é aceita). Pega qualquer caminho que deixe a posição sem proteção, previsto ou não. Consequências: (a) 1014 cancelada/expirada pelo PnT sem pedido nosso não tem mais recriação própria — é a invariante que recria; (b) saída com ticker divergente que não executou (B5.c) é **cancelada** no timeout, sem nova saída (decisão humana), e a invariante recria a 1014 (resolve a pendência 1); (c) saída sem preço (B2) deixa a 1014 voltar; quando o preço volta, a saída cancela a 1014 recriada antes de sair (Parte 3.5). | 3.4, 3.5, 4 | 26 (caminho não previsto), 16i, 16b |
+| P8 | **1014 cancelada/expirada pelo PnT sem pedido nosso → recriação imediata, com limite** (substitui a consequência (a) de P5). Recria **na hora**, com o mesmo gatilho e limite, + alerta crítico `PROTECAO_RECRIADA` (resolvido quando a recriada é aceita). Recriada que cai de novo em menos de 30 s, ou que é **rejeitada** → mais uma tentativa. Falhou de novo → alerta crítico **`PROTECAO_INSTAVEL`** e **zera a posição** (origem `PROTECAO_INSTAVEL`; mesma regra da 3.4: posição sem proteção possível não fica aberta). Uma recriada que sobrevive 30 s zera o contador. **A invariante (P5) continua como rede para os demais caminhos e usa o mesmo contador**: não há laço cria/cancela por nenhum caminho. | 3.4, 4 | 26 (recriação imediata; contador zera após 30 s), 27 (PnT cancelando em laço → PROTECAO_INSTAVEL + zeragem) |
+| P9 | **Build e deploy:** `scripts/build.sh` gera binário estático (`CGO_ENABLED=0`, linux/amd64) com o commit embutido (`-X main.versao`), visível em `kalman-ordens versao`, no `/saude` (`versao`) e no log ao subir; árvore suja → sufixo `-sujo`. Roda direto no servidor (Go ≥ 1.24; a .53 tem 1.26) ou com `--container` (`golang:1.24-bookworm`). Deploy = `git clone`/`pull` no servidor + `build.sh` + instalar. Passo a passo da F1 na .53, checklist da terça e diferenças da .51 (F2) em `deploy/LEIA.md`. | 1, 12 | `cmd/kalman-ordens/main_test.go` (versão no /saude) |
 | P6 | **sql_mode fixo na conexão:** `STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION` (valor da .51, conferido; padrão do container), aplicado pelo driver em cada conexão nova. Não depende da configuração global do servidor. | 8 | `internal/repo/contrato_test.go` (global vazio, sessão continua certa) |
 | P7 | **Permissões:** usuário de sistema `kalman-ordens`; `service.env` `root:kalman-ordens 640`; `/var/lib/kalman-ordens` do usuário do serviço. Banco: schema `kalmanordens`, usuário `kalman_ordens` sem DROP/DELETE; **SELECT só em `dbecotools.kalmanoperacao`** (conciliação diária), nada mais no dbecotools. Em `deploy/LEIA.md`. | 1, 8, 10 | — |
 | P4 | **Leitor do /precos/atual** testado com as fixtures reais (`precos-atual-exemplo.json`, `precos-atual-vazio.json`) e contra um servidor HTTP: 404/400 = indisponível, falha de rede nunca mantém o preço antigo. | — | `internal/preco/preco_test.go` |
@@ -175,6 +178,11 @@ não esperava e foi corrigido. Próxima fase: F1 (HML do PnT, Parte 11.2).
    `ENTRADA_ENCERRADA`, a recusa `SIMBOLO_DIVERGENTE` na SAIDA (B5.d: a operação continua aberta,
    protegida pela 1014) e o 503 (C2: reenviar o mesmo corpo; `repetido=true` na resposta).
 6. ~~Schema de produção, sql_mode e usuário do systemd.~~ **Confirmados** (P6, P7).
+7. **Ferramenta de bancada para a SwingTrade exploratória** (11.2, [PnT-9, PnT-10]): não existe.
+   Por desenho fica fora do serviço; decidir se é feita antes da F1.
+8. **HML com dados de ontem × marketdata da .53 com o dia:** o preço da entrada sai do marketdata
+   e pode não executar na HML; e o símbolo da HML tem de casar com o ticker do marketdata, senão
+   `SIMBOLO_DIVERGENTE` bloqueia entradas. Combinar com o PnT antes da terça (`deploy/LEIA.md` 1.6).
 
 ## 9. Cobertura dos roteiros
 
@@ -202,4 +210,5 @@ não esperava e foi corrigido. Próxima fase: F1 (HML do PnT, Parte 11.2).
 | 23 | C1 (reenvio idêntico: entrada, saída e saída depois de zerada) |
 | 24 | C2 (503 e reenvio do mesmo pedido) |
 | 25 | C1 (par repetido com conteúdo diferente → DUPLICADA + alerta) |
-| 26 | P5 (1014 cancelada pelo PnT sem pedido nosso → recriada pela invariante) |
+| 26 | P8 (1014 cancelada pelo PnT sem pedido nosso → recriada na hora; contador zera após 30 s) |
+| 27 | P8 (PnT cancelando a 1014 em laço → PROTECAO_INSTAVEL e zeragem) |

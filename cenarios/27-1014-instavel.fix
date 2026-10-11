@@ -1,0 +1,33 @@
+cenario 27 PnT cancelando a 1014 em laço → PROTECAO_INSTAVEL e zeragem
+hora 2026-10-13 12:55:00
+# SPEC v1.1 P8: recria na hora uma vez; caiu de novo em menos de 30 s, ou a recriação foi
+# rejeitada → mais uma tentativa; falhou de novo → alerta crítico PROTECAO_INSTAVEL e zera a
+# posição (Parte 3.4: posição sem proteção possível não fica aberta). Sem laço cria/cancela.
+
+executa INICIO
+executa COMPRADO OP=2701
+
+# 1ª queda: recriada na hora
+envia @ER 11=KM-P-2701-1 37=dsa.2701.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-P-2701-2 38=1 54=2 847=1014 20828=129510 20829=129410
+alerta PROTECAO_RECRIADA
+envia @ER 11=KM-P-2701-2 37=dsa.2701.P2 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+
+# 2ª queda em menos de 30 s: mais uma tentativa
+avanca 5s
+envia @ER 11=KM-P-2701-2 37=dsa.2701.P2 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-P-2701-3 38=1 54=2 847=1014 20828=129510 20829=129410
+alerta PROTECAO_RECRIADA
+sem_alerta PROTECAO_INSTAVEL
+
+# 3ª falha: a recriação é rejeitada → PROTECAO_INSTAVEL e zera; bid 130000 − 50
+envia @ER 11=KM-P-2701-3 37=dsa.2701.P3 150=8 39=8 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0 58="[DSA-xx] Rejected"
+alerta PROTECAO_INSTAVEL
+recebe 35=D 11=KM-S-2701-1 38=1 44=129950 54=2 847=1031
+envia @ER 11=KM-S-2701-1 37=dsa.2701.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=2701 origem=PROTECAO_INSTAVEL pnl_pts=-10
+saude posicao=0
+nada
+# sem laço: nada mais sai
+avanca 10s
+nada

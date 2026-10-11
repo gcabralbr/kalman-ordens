@@ -72,6 +72,7 @@ type ordem struct {
 	enviada         time.Time
 	pendenteDesde   time.Time
 	alertouPendente bool
+	recriada        bool  // 1014 recriada (P5/P8): rejeição conta no limite de recriações
 	seq             int64 // ordem de criação neste processo (0 = carregada do banco)
 }
 
@@ -102,6 +103,8 @@ type operacao struct {
 	saidaDivergente       bool
 	congelada             bool
 	violacaoDesde         time.Time // invariante de proteção violada desde
+	recriacoes            int       // recriações da 1014 na janela de 30 s (P8)
+	ultimaRecriacao       time.Time
 }
 
 func (op *operacao) posicao() int {

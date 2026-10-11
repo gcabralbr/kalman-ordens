@@ -101,6 +101,7 @@ Catálogo único em `docs/ALERTAS.md`. Um roteiro só usa códigos que estão l�
 
 `GESTOR` (pedida pelo gestor), `STOP_SERVIDOR` (fill da 1014), `STOP_FURADO` (Parte 3.6),
 `PARADA` (ZERAR), `ZERAGEM` (HORA_ZERAGEM), `PROTECAO_REJEITADA` (1014 rejeitada duas vezes),
+`PROTECAO_INSTAVEL` (1014 recriada caiu de novo, v1.1 P8),
 `ENTRADA_TARDIA` (fill de entrada depois da espera de encerramento; só registro, o gestor nunca
 reabre a operação). O gestor trata tudo o que não é `GESTOR` como operação fechada pelo serviço,
 com esse motivo.

@@ -120,6 +120,9 @@ func TestServirDePontaAPonta(t *testing.T) {
 	}
 	var s map[string]any
 	obter(t, base+"/saude", &s)
+	if s["versao"] != "dev" {
+		t.Fatalf("versão no /saude: %v", s["versao"])
+	}
 	if pa, _ := s["parada"].(map[string]any); pa == nil || pa["modo"] != "BLOQUEAR" || pa["origem"] != "cli" || s["posicao"] != float64(1) {
 		t.Fatalf("saúde: %v", s)
 	}
