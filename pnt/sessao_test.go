@@ -1,6 +1,10 @@
 package pnt
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -172,5 +176,85 @@ func TestBodyLengthErradoAvisado(t *testing.T) {
 	r, _ := o.copia()
 	if r[0].Texto(11) != "X-1" || !r[0].PossDup() {
 		t.Fatalf("reenvio: %s", r[0].Bruta)
+	}
+}
+
+// A senha vai no logon (no fio, inteira) e não aparece em nenhum arquivo do diretório FIX do
+// serviço: log de mensagens, log de eventos e store. O log antigo do PT gravava 553/554 em texto puro.
+func TestSenhaForaDosArquivos(t *testing.T) {
+	const senha = "Segredo-HML-7f3a"
+	f, err := falso.Novo(falso.Config{Contraparte: "CLIENTE", Dir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Iniciar(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(f.Parar)
+	dir, _ := os.MkdirTemp("", "pnt-senha") // o FileLog do QuickFIX/Go não fecha: não apagar no Windows
+	o := &ouvinteTeste{}
+	s, err := NovaSessao(ConfigSessao{SenderCompID: "CLIENTE", Host: "127.0.0.1", Porta: f.Porta(), Dir: dir,
+		Inicio: "00:00:00", Fim: "00:00:00", HeartBtInt: 5, ReconexaoS: 1, Usuario: "USUARIO_HML", Senha: senha}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Iniciar(); err != nil {
+		t.Fatal(err)
+	}
+	esperar(t, "logon", s.Logado)
+	// uma ordem e um evento de sessão a mais, para o log e o store terem conteúdo além do logon
+	if _, err := s.Enviar(NovaOrdem(id, Ordem{ClOrdID: "KM-E-1-1", Simbolo: "WINZ26", Lado: Compra, Qtd: 1, Preco: 130000, Estrategia: EstrategiaAgendada}, time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Proxima(5 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	s.Parar()
+
+	noFio := false
+	for _, m := range f.Sessao() {
+		if m.Tipo == "A" && strings.Contains(m.Bruta, "|554="+senha+"|") {
+			noFio = true
+		}
+	}
+	if !noFio {
+		t.Fatal("o logon não levou a senha no fio")
+	}
+	arquivos, comLogon := 0, 0
+	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		arquivos++
+		if strings.Contains(string(b), senha) {
+			t.Errorf("senha em texto puro em %s", p)
+		}
+		if strings.Contains(string(b), "554=***") {
+			comLogon++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if arquivos < 3 || comLogon < 2 {
+		t.Fatalf("conferência fraca: %d arquivos, %d com o logon mascarado (esperado log e store)", arquivos, comLogon)
+	}
+}
+
+func TestMascarar(t *testing.T) {
+	for _, c := range []struct{ de, para string }{
+		{"8=FIX.4.435=A553=U554=abc10=000", "8=FIX.4.435=A553=U554=***10=000"},
+		{"35=A|554=abc|925=nova|", "35=A|554=***|925=***|"},
+		{"554=x|", "554=***|"},
+		{"35=8|5540=1|1554=2|", "35=8|5540=1|1554=2|"},
+	} {
+		if r := MascararTexto(c.de); r != c.para {
+			t.Errorf("%q → %q, esperado %q", c.de, r, c.para)
+		}
 	}
 }

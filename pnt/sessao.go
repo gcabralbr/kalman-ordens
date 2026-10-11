@@ -172,12 +172,13 @@ type fabricaStore struct {
 
 func (f *fabricaStore) Create(id quickfix.SessionID) (quickfix.MessageStore, error) {
 	st, err := f.base.Create(id)
-	if err == nil {
-		f.mu.Lock()
-		f.abertos = append(f.abertos, st)
-		f.mu.Unlock()
+	if err != nil {
+		return nil, err
 	}
-	return st, err
+	f.mu.Lock()
+	f.abertos = append(f.abertos, st)
+	f.mu.Unlock()
+	return storeMascarado{st}, nil
 }
 
 func (f *fabricaStore) fechar() {
@@ -279,7 +280,8 @@ func sn(b bool) string {
 
 // O QuickFIX/Go descarta em silêncio a mensagem que não consegue ler (BodyLength errado, por
 // exemplo): só escreve "Msg Parse Error" no log de eventos da sessão. O espião repassa esse evento
-// ao ouvinte, para nunca haver perda silenciosa (SPEC v1.1 F11).
+// ao ouvinte, para nunca haver perda silenciosa (SPEC v1.1 F12). Também mascara a senha (554/925)
+// em tudo o que vai para o log (mascara.go).
 type fabricaLogEspia struct {
 	base  quickfix.LogFactory
 	aviso func(string)
@@ -300,15 +302,17 @@ type logEspia struct {
 	aviso func(string)
 }
 
-func (l logEspia) OnIncoming(b []byte) { l.base.OnIncoming(b) }
-func (l logEspia) OnOutgoing(b []byte) { l.base.OnOutgoing(b) }
+func (l logEspia) OnIncoming(b []byte) { l.base.OnIncoming(Mascarar(b)) }
+func (l logEspia) OnOutgoing(b []byte) { l.base.OnOutgoing(Mascarar(b)) }
 func (l logEspia) OnEvent(s string) {
+	s = MascararTexto(s)
 	l.base.OnEvent(s)
 	l.verificar(s)
 }
 func (l logEspia) OnEventf(formato string, v ...interface{}) {
-	l.base.OnEventf(formato, v...)
-	l.verificar(fmt.Sprintf(formato, v...))
+	s := MascararTexto(fmt.Sprintf(formato, v...))
+	l.base.OnEvent(s)
+	l.verificar(s)
 }
 
 func (l logEspia) verificar(s string) {

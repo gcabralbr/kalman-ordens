@@ -5,11 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/fs"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,11 +64,17 @@ func TestServirDePontaAPonta(t *testing.T) {
 	dirFix, _ := os.MkdirTemp("", "fumaca-fix") // o FileLog do QuickFIX/Go não fecha: não apagar no Windows
 	cfg := config.Novo(map[string]string{
 		"DB_DSN": dsn, "FIX_SENDER_COMP_ID": "KALMAN_FUMACA", "FIX_HOST": "127.0.0.1", "FIX_PORTA": strconv.Itoa(f.Porta()),
-		"FIX_DIR": dirFix, "FIX_INICIO": "00:00:00", "FIX_FIM": "00:00:00", "FIX_RECONEXAO_S": "1", "FIX_HEARTBEAT": "5",
+		"FIX_DIR": dirFix, "FIX_USUARIO": "USUARIO_FUMACA", "FIX_SENHA": senhaFumaca, "FIX_INICIO": "00:00:00", "FIX_FIM": "00:00:00", "FIX_RECONEXAO_S": "1", "FIX_HEARTBEAT": "5",
 		"ORDENS_CONTA": "12345", "ORDENS_SIMBOLO": "WINZ26", "ORDENS_UID_REAL": "7",
 		"JANELA_INICIO": "00:00:00", "JANELA_FIM": "23:59:59", "HORA_ZERAGEM": "23:59:59",
 		"HTTP_ENDERECO": endereco, "PRECOS_URL": md.URL, "MASS_STATUS_SILENCIO_S": "0.5",
 	})
+
+	// todo log do serviço (slog) também é conferido contra a senha
+	var logServico bufferSeguro
+	anterior := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, &logServico), nil)))
+	defer slog.SetDefault(anterior)
 
 	ok := make(chan struct{})
 	pronto = func(string) { close(ok) }
@@ -152,6 +164,22 @@ func TestServirDePontaAPonta(t *testing.T) {
 		}
 	}
 
+	// a senha foi no logon e não está em nenhum arquivo do FIX_DIR (log e store) nem no log do serviço
+	if !senhaNoFio(f) {
+		t.Fatal("o logon não levou a senha")
+	}
+	_ = filepath.WalkDir(dirFix, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			if b, _ := os.ReadFile(p); strings.Contains(string(b), senhaFumaca) {
+				t.Errorf("senha em texto puro em %s", p)
+			}
+		}
+		return nil
+	})
+	if strings.Contains(logServico.String(), senhaFumaca) {
+		t.Error("senha em texto puro no log do serviço")
+	}
+
 	// o estado ficou no banco
 	db, err := repo.AbrirMariaDB(dsn)
 	if err != nil {
@@ -185,4 +213,32 @@ func obter(t *testing.T, url string, v any) {
 	}
 	defer r.Body.Close()
 	_ = json.NewDecoder(r.Body).Decode(v)
+}
+
+const senhaFumaca = "Senha-Fumaca-91c2"
+
+func senhaNoFio(f *falso.Falso) bool {
+	for _, m := range f.Sessao() {
+		if m.Tipo == "A" && strings.Contains(m.Bruta, "|554="+senhaFumaca+"|") {
+			return true
+		}
+	}
+	return false
+}
+
+type bufferSeguro struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *bufferSeguro) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+
+func (b *bufferSeguro) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.String()
 }

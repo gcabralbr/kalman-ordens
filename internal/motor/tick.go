@@ -134,6 +134,7 @@ func (m *Motor) verificarSemConfirmacao(agora time.Time) bool {
 }
 
 func (m *Motor) acoesDeTempo(op *operacao, agora time.Time) {
+	m.tratarErros(op, agora)
 	if e := op.viva(dominio.Entrada); e != nil && e.Estado != dominio.Enviando && e.Estado != dominio.SemConfirmacao &&
 		!e.enviada.IsZero() && e.pend == semPendencia && agora.Sub(e.enviada) >= m.p.TimeoutEntrada {
 		switch {
@@ -173,6 +174,38 @@ func (m *Motor) acoesDeTempo(op *operacao, agora time.Time) {
 		}
 	case dominio.Saindo:
 		m.tickSaida(op)
+	}
+}
+
+// tratarErros (v1.1 F14): ordem em estado de erro (39=7) que não voltou em ESPERA_ERRO_S.
+// 1014 = proteção ausente: cancela e, confirmado o cancelamento, recria sob o limite da P8.
+// Entrada: cancela. Saída: cancela e a saída seguinte sai com o próximo repreço. O texto 58 do
+// 39=7 vai sempre no alerta.
+func (m *Motor) tratarErros(op *operacao, agora time.Time) {
+	for _, o := range op.ordens {
+		if o.emErroDesde.IsZero() || o.erroTratado || !o.viva() || agora.Sub(o.emErroDesde) < m.p.EsperaErro {
+			continue
+		}
+		o.erroTratado = true
+		texto := ""
+		if o.erroTexto != "" {
+			texto = " (" + o.erroTexto + ")"
+		}
+		switch o.Papel {
+		case dominio.Protecao:
+			o.canceladaPorErro = true
+			m.al.Emitir("PROTECAO_EM_ERRO", chaveOp("PROTECAO_EM_ERRO", op),
+				fmt.Sprintf("1014 %s em estado de erro no PnT%s há %s sem reativação: cancelando e recriando, operação %d", o.ClOrdAtual, texto, m.p.EsperaErro, op.OperacaoID), op.OperacaoID)
+		case dominio.Entrada:
+			m.al.Emitir("ENTRADA_EM_ERRO", "",
+				fmt.Sprintf("entrada %s em estado de erro no PnT%s há %s sem reativação: cancelando, operação %d", o.ClOrdAtual, texto, m.p.EsperaErro, op.OperacaoID), op.OperacaoID)
+		case dominio.Saida:
+			op.continuarRepreco = true
+			m.al.Emitir("SAIDA_EM_ERRO", "",
+				fmt.Sprintf("saída %s em estado de erro no PnT%s há %s sem reativação: cancelando; a saída segue com o próximo repreço, operação %d", o.ClOrdAtual, texto, m.p.EsperaErro, op.OperacaoID), op.OperacaoID)
+		}
+		m.salvarOp(op)
+		m.cancelar(o)
 	}
 }
 

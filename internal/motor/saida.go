@@ -97,7 +97,20 @@ func (m *Motor) enviarSaida(op *operacao) {
 		return
 	}
 	lado := dominio.ParaZerar(pos)
-	px, divergente, degradado, ok := m.precoSaida(lado, 1)
+	k := 1
+	if op.continuarRepreco {
+		// a anterior foi cancelada por estado de erro (F14): segue do repreço seguinte
+		op.continuarRepreco = false
+		op.repreco++
+		if op.repreco > m.p.MaxRepreco {
+			m.al.Emitir("SAIDA_ESGOTOU", chaveOp("SAIDA_ESGOTOU", op),
+				fmt.Sprintf("saída da operação %d esgotou %d repreços; continua reapregoando", op.OperacaoID, m.p.MaxRepreco), op.OperacaoID)
+		}
+		k = min(op.repreco, m.p.MaxRepreco) + 1
+	} else {
+		op.repreco = 0
+	}
+	px, divergente, degradado, ok := m.precoSaida(lado, k)
 	if !ok {
 		if divergente {
 			m.al.Emitir("SAIDA_BLOQUEADA_PRECO_ANTIGO", chaveOp("SAIDA_BLOQUEADA", op),
@@ -118,7 +131,6 @@ func (m *Motor) enviarSaida(op *operacao) {
 	o.MotivoGestor = op.MotivoSaida
 	m.salvarOrdem(o)
 	m.indexar(op, o)
-	op.repreco = 0
 	op.saidaDivergente = divergente
 	op.proximoRepreco = m.agora().Add(m.p.TimeoutSaida)
 	if !m.enviarNova(op, o) {
@@ -183,7 +195,7 @@ func (m *Motor) zerada(op *operacao) {
 	}
 	op.PnL = op.pnlRealizado()
 	m.mudar(op, dominio.Zerada)
-	for _, k := range []string{"SEM_PROTECAO", "STOP_FURADO", "SAIDA_ESGOTOU", "CANCEL_SEM_RESPOSTA", "SAIDA_SEM_PRECO", "SAIDA_DIVERGENTE", "SAIDA_BLOQUEADA", "PROTECAO_RECRIADA", "PROTECAO_INSTAVEL"} {
+	for _, k := range []string{"SEM_PROTECAO", "STOP_FURADO", "SAIDA_ESGOTOU", "CANCEL_SEM_RESPOSTA", "SAIDA_SEM_PRECO", "SAIDA_DIVERGENTE", "SAIDA_BLOQUEADA", "PROTECAO_RECRIADA", "PROTECAO_INSTAVEL", "PROTECAO_EM_ERRO"} {
 		m.al.Resolver(chaveOp(k, op))
 	}
 	ps, _ := op.medio(false)
@@ -228,8 +240,8 @@ func (m *Motor) tickSaida(op *operacao) {
 		}
 		return
 	}
-	if s.pend != semPendencia || s.Estado == dominio.Enviando || s.Estado == dominio.SemConfirmacao {
-		return
+	if s.pend != semPendencia || s.Estado == dominio.Enviando || s.Estado == dominio.SemConfirmacao || !s.emErroDesde.IsZero() {
+		return // em erro (F14): não reapregoa; tratarErros cancela se não voltar
 	}
 	if op.proximoRepreco.IsZero() || agora.Before(op.proximoRepreco) {
 		return

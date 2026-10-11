@@ -1,0 +1,22 @@
+cenario 32 Entrada em estado de erro (39=7) sem reativação → cancelada
+hora 2026-10-13 13:40:00
+# SPEC v1.1 F14: entrada em 39=7 que não volta em ESPERA_ERRO_S (2 s) → cancel, alerta
+# ENTRADA_EM_ERRO com o texto 58. O timeout da entrada (3 s) não manda um segundo cancel.
+
+executa INICIO
+
+entrada 3201 C
+resposta aceito=true
+recebe 35=D 11=KM-E-3201-1 54=1 847=1031 20856=Y
+envia @ER 11=KM-E-3201-1 37=dsaGQ2.3201 198=PNT-6112403201 150=0 39=0 54=1 38=1 44=130020 847=1031 151=1 14=0 6=0
+envia @ER 11=KM-E-3201-1 37=dsaGQ2.3201 198=PNT-6112403201 17=Stop_3201:b8.A 150=7 39=7 54=1 38=1 44=130020 847=1031 151=1 14=0 6=0 58="Sel. Coef. -84646.1875 is too agressive for market Coef. -84980"
+avanca 2s
+alerta ENTRADA_EM_ERRO
+recebe 35=F 11=KM-E-3201-2 41=KM-E-3201-1 37=dsaGQ2.3201 38=1 54=1
+avanca 2s
+nada 35=F
+envia @ER 11=KM-E-3201-2 41=KM-E-3201-1 37=dsaGQ2.3201 198=PNT-6112403201 150=4 39=4 54=1 38=1 44=130020 847=1031 151=0 14=0 6=0
+avanca 6s
+evento ENTRADA_ENCERRADA operacao_id=3201 qtd_final=0 motivo=CANCELADA
+saude posicao=0
+nada

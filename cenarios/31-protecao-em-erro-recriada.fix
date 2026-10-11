@@ -1,0 +1,27 @@
+cenario 31 1014 em estado de erro (39=7) sem reativação → cancelada e recriada sob o limite da P8
+hora 2026-10-13 13:30:00
+# SPEC v1.1 F14: 39=7 que não volta em ESPERA_ERRO_S (2 s) = proteção ausente. Cancela a 1014 em
+# erro; com o 39=4, recria com o mesmo gatilho e limite (P8: conta no limite de recriações).
+# Alerta crítico PROTECAO_EM_ERRO com o texto 58; resolvido quando a recriada é aceita.
+
+executa INICIO
+executa COMPRADO OP=3101
+
+envia @ER 11=KM-P-3101-1 37=dsa.3101.P 17=Stop_3101:b8.A 150=7 39=7 54=2 38=1 44=129410 847=1014 151=1 14=0 6=0 58="Sel. Coef. 85485.0859375 is too agressive for market Coef. 84988"
+# dentro da espera: só registra
+avanca 1500ms
+sem_alerta PROTECAO_EM_ERRO
+nada
+avanca 500ms
+alerta PROTECAO_EM_ERRO
+recebe 35=F 11=KM-P-3101-2 41=KM-P-3101-1 37=dsa.3101.P 38=1 54=2
+envia @ER 11=KM-P-3101-2 41=KM-P-3101-1 37=dsa.3101.P 150=4 39=4 54=2 38=1 44=129410 847=1014 151=0 14=0 6=0
+recebe 35=D 11=KM-P-3101-3 38=1 54=2 847=1014 20828=129510 20829=129410 20856=Y
+alerta PROTECAO_RECRIADA
+envia @ER 11=KM-P-3101-3 37=dsa.3101.P2 150=0 39=0 54=2 38=1 44=129410 847=1014 151=1 14=0 6=0
+evento PROTEGIDA operacao_id=3101 preco_stop=129510 preco_limite=129410
+alerta RESOLVIDO
+alerta RESOLVIDO
+sem_alerta PROTECAO_INSTAVEL
+saude posicao=1 divergente=false
+nada

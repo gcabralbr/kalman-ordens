@@ -47,7 +47,7 @@ func (m *Motor) ajustarProtecao(op *operacao) {
 		slog.Info("PROTEÇÃO enviada", "clordid", o.ClOrdAtual, "stop", stop, "limite", lim, "qtd", qtd)
 		return
 	}
-	if p.pend != semPendencia || p.Estado == dominio.Enviando || p.Estado == dominio.SemConfirmacao || p.Estado == dominio.Pendente {
+	if p.pend != semPendencia || p.Estado == dominio.Enviando || p.Estado == dominio.SemConfirmacao || p.Estado == dominio.Pendente || !p.emErroDesde.IsZero() {
 		// um pedido por vez: manda só o estado final quando o atual responder
 		op.protecaoDesatualizada = true
 		return
@@ -62,6 +62,7 @@ func (m *Motor) protecaoAceita(op *operacao, p *ordem) {
 	op.semProtecaoDesde = timeZero
 	m.al.Resolver(chaveOp("SEM_PROTECAO", op))
 	m.al.Resolver(chaveOp("PROTECAO_RECRIADA", op))
+	m.al.Resolver(chaveOp("PROTECAO_EM_ERRO", op))
 	if op.Estado == dominio.PosicionadaSemProtecao || op.Estado == dominio.Entrando {
 		m.mudar(op, dominio.Protegida)
 	}

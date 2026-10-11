@@ -1,0 +1,27 @@
+cenario 30 Entrada em estado de erro (39=7) reativada pelo PnT em 15 ms → só registra, segue para o fill
+hora 2026-10-13 13:20:00
+# Caso real do log de HML do PT (cenarios/referencia/fixpnt-hml-mascarado.log, 37=dsaGQ2.28461):
+# 5/5 → 7/7 → D/0 → F/1 → F/2, com 20856=Y (ActivateErrorStatusStrategy) a ordem volta sozinha
+# em 0–16 ms. Tags e textos 58 copiados do log; 37 no formato real do nosso usuário (dsaGQ2.N).
+# SPEC v1.1 F14: nada acontece — sem alerta, sem cancel.
+
+executa INICIO
+
+entrada 3001 C
+resposta aceito=true
+recebe 35=D 11=KM-E-3001-1 54=1 847=1031 20856=Y
+envia @ER 11=KM-E-3001-1 37=dsaGQ2.3001 17=PendNew_3001:b8.A 150=A 39=A 54=1 38=1 44=130020 847=1031 151=1 14=0 6=0 58="NEW DSA Order request sent to Robot"
+envia @ER 11=KM-E-3001-1 37=dsaGQ2.3001 198=PNT-6112403001 17=Acc_3001:b8.B 150=0 39=0 54=1 38=1 44=130020 847=1031 151=1 14=0 6=0
+envia @ER 11=KM-E-3001-1 37=dsaGQ2.3001 198=PNT-6112403001 17=Stop_3001:b8.C 150=7 39=7 54=1 38=1 44=130020 847=1031 151=1 14=0 6=0 58="Sel. Coef. 1094242.75 is too agressive for market Coef. 1085907"
+avanca 15ms
+envia @ER 11=KM-E-3001-1 37=dsaGQ2.3001 198=PNT-6112403001 17=Warn_3001:b8.D 150=D 39=0 378=99 54=1 38=1 44=130020 847=1031 151=1 14=0 6=0 58="DSA order was in Error state activated by user - ActivateErrorStatusStrategy is present in DSA creation order and set as True;  Order restated"
+envia @ER 11=KM-E-3001-1 37=dsaGQ2.3001 198=PNT-6112403001 17=3001 150=F 39=2 54=1 38=1 32=1 31=130010 151=0 14=1 6=130010 1057=N
+evento ENTRADA_EXECUTADA operacao_id=3001 qtd=1 preco=130010
+recebe 35=D 11=KM-P-3001-1 54=2 847=1014 20828=129510 20829=129410 20856=Y
+envia @ER 11=KM-P-3001-1 37=dsaGQ2.3002 198=PNT-6112403002 150=0 39=0 54=2 38=1 44=129410 847=1014 151=1 14=0 6=0
+evento PROTEGIDA operacao_id=3001
+avanca 5s
+sem_alerta ENTRADA_EM_ERRO
+sem_alerta PROTECAO_EM_ERRO
+nada 35=F
+saude posicao=1 divergente=false

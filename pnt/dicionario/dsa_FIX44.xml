@@ -1233,6 +1233,7 @@
         <field name="ParticipationRateLevel" required="N"/>
         <field name="ParticipationPriceLevel" required="N"/>
       </group>
+      <field name="ActivateErrorStatusStrategy" required="N"/>
     </message>
     <message name="ExecutionReport" msgtype="8" msgcat="app">
       <field name="ApplID" required="N"/>
@@ -6918,6 +6919,7 @@
     <field number="20814" name="ParticipationPriceLevel" type="PRICE"/>
     <field number="20836" name="StopTriggerSpread" type="FLOAT"/>
     <field number="20837" name="StopSendSpread" type="FLOAT"/>
+    <field number="20856" name="ActivateErrorStatusStrategy" type="BOOLEAN"/>
     <field number="35001" name="ProtectionPrice" type="PRICE"/>
     <field number="35002" name="CancelOnDisconnectType" type="INT" />
     <field number="35003" name="CODTimeoutWindow" type="INT" />

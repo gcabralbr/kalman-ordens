@@ -13,6 +13,9 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `SESSAO_VOLTOU` | sessão FIX logou de novo após uma queda | não |
 | `SESSAO_REJEITOU_MENSAGEM` | o serviço enviou 35=3 (a biblioteca descartou uma mensagem do PnT); dispara mass status | sim |
 | `MENSAGEM_ILEGIVEL` | a biblioteca descartou em silêncio bytes do PnT que não conseguiu ler (ex.: BodyLength errado); dispara mass status | sim |
+| `PROTECAO_EM_ERRO` | 1014 em estado de erro (39=7) sem reativação em `ESPERA_ERRO_S`: cancelada e recriada sob o limite da P8; leva o texto 58; resolvido quando a recriada é aceita | sim |
+| `SAIDA_EM_ERRO` | saída em estado de erro (39=7) sem reativação: cancelada, a saída segue com o próximo repreço; leva o texto 58 | sim |
+| `ENTRADA_EM_ERRO` | entrada em estado de erro (39=7) sem reativação: cancelada; leva o texto 58 | não |
 | `CONCILIACAO` | resultado da conciliação do logon (ordens KM, ignoradas, divergências, posição) | não |
 | `MASS_STATUS_REJEITADO` | mass status rejeitado por motivo diferente de 380=4; entradas bloqueadas | sim |
 | `DESCONHECIDA` | ordem viva na tabela e ausente no mass status | não |

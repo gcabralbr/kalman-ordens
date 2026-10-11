@@ -166,7 +166,10 @@ anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que 
 | 2.7 | 1 | Mass status: o que volta [PnT-13] | restart com uma ordem viva e uma encerrada no dia | só as ativas? o `150=I` traz o `14` certo (a HML de 2025 trouxe `39=2` com `14=0`)? |
 | 2.8 | 1 | Comprimento do ClOrdID [PnT-4] | os enviados: `KM-E-900000001-1` (16), `KM-MS-<ms>-<n>` (~22) | aceitos (o RoE diz máximo 28; ambos abaixo) |
 | 2.9 | 1 | Códigos de erro [PnT-15] | qualquer rejeição que aparecer | texto 58 e 103/102 gravados |
-| 2.10 | 1 e 2 | 9/10 errados vindos do PnT (F11, F12) | `grep 'Msg Parse Error'` no log de eventos FIX; alertas `MENSAGEM_ILEGIVEL` | quantas e quais mensagens; se o reenvio veio certo |
+| 2.10 | 1 e 2 | 9/10 errados vindos do PnT (F11, F12) | `grep 'Msg Parse Error'` no log de eventos FIX; alertas `MENSAGEM_ILEGIVEL` | esperado nenhum (log real de 2025: 100% corretos, F16) |
+| 2.10b | 1 | **HML aceita `20856=Y` em 1031 e 1014?** (F14) | toda NewOrderSingle do serviço leva `20856=Y`; ver a resposta das ordens de 2.3 e 2.5 | aceito (`39=A`/`39=0`) ou rejeitado (`39=8`/`35=3`/`35=j`, texto 58). Rejeitado → tirar a tag e perguntar ao PnT como ativar a reativação automática fora da Sniper/multileg |
+| 2.10c | 1 | Estado de erro (39=7) em single-leg | se aparecer algum `39=7`: o texto 58, se veio `150=D/39=0` e em quanto tempo | alertas `PROTECAO_EM_ERRO` / `ENTRADA_EM_ERRO` / `SAIDA_EM_ERRO` (só se não voltou em 2 s) |
+| 2.10d | 1 | Senha fora dos arquivos (F15) | depois do logon: `sudo grep -rhoa '554=[^[:cntrl:]]*' /var/lib/kalman-ordens/fix \| sort -u` e `journalctl -u kalman-ordens \| grep -c '<senha>'` | só `554=***` nos arquivos; nada no journal |
 | 2.11 | 2 | 1014 depois de um fill de entrada | fill com o marketdata em replay | 1014 enviada na hora; `ENTRADA_EXECUTADA` → `PROTEGIDA` |
 | 2.12 | 2 | 1014: replace de quantidade | com `LIMITE_POSICAO_MAX=2`/`LIMITE_QTD_ORDEM=2` e entrada de 2 com dois fills | `35=G` da 1014 aceito; um pedido por vez |
 | 2.13 | 2 | 1014: disparo | preço do replay atravessa o gatilho | fills da 1014 com o mesmo 37 [PnT-5]; disparo com folga |

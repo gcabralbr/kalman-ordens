@@ -124,9 +124,13 @@ type Ordem struct {
 }
 
 // NovaOrdem monta o NewOrderSingle (35=D). Para 1014, o 44 é igual ao 20829 (exemplo do RoE).
+// 20856=Y (ActivateErrorStatusStrategy) em toda ordem nova: a ordem que entra em estado de erro
+// (39=7) é reativada sozinha pelo PnT (150=D/39=0), como no log real de HML (SPEC v1.1 F14). O RoE
+// só lista a tag na Sniper e no multileg; a rodada 1 da F1 confirma se a HML aceita em 1031/1014.
 func NovaOrdem(id Identificacao, o Ordem, agora time.Time) *quickfix.Message {
 	m := base(id, "D")
 	corpoOrdem(m, id, o, agora)
+	m.Body.SetString(quickfix.Tag(20856), "Y")
 	return m
 }
 

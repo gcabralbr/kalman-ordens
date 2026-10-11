@@ -72,8 +72,14 @@ type ordem struct {
 	enviada         time.Time
 	pendenteDesde   time.Time
 	alertouPendente bool
-	recriada        bool  // 1014 recriada (P5/P8): rejeição conta no limite de recriações
-	seq             int64 // ordem de criação neste processo (0 = carregada do banco)
+	recriada        bool // 1014 recriada (P5/P8): rejeição conta no limite de recriações
+	// estado de erro do PnT (39=7, v1.1 F14): desde quando, o texto 58, se o motor já agiu e se o
+	// cancelamento foi por causa do erro (1014: recriar sob o limite da P8)
+	emErroDesde      time.Time
+	erroTexto        string
+	erroTratado      bool
+	canceladaPorErro bool
+	seq              int64 // ordem de criação neste processo (0 = carregada do banco)
 }
 
 func (o *ordem) viva() bool { return !o.Estado.Final() && o.Estado != dominio.Desconhecida }
@@ -91,6 +97,7 @@ type operacao struct {
 	proximoRepreco        time.Time
 	proximaSaidaEm        time.Time
 	repreco               int
+	continuarRepreco      bool // a próxima saída segue do repreço seguinte (saída cancelada em erro, F14)
 	rejeicoesProtecao     int
 	retentativaProtEm     time.Time
 	furoDesde             time.Time

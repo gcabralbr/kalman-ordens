@@ -15,6 +15,7 @@ import (
 // Catalogo: código → crítico. Fonte: docs/ALERTAS.md (alerta_test.go confere).
 var Catalogo = map[string]bool{
 	"SESSAO_CAIU": false, "SESSAO_VOLTOU": false, "SESSAO_REJEITOU_MENSAGEM": true, "MENSAGEM_ILEGIVEL": true,
+	"PROTECAO_EM_ERRO": true, "SAIDA_EM_ERRO": true, "ENTRADA_EM_ERRO": false,
 	"CONCILIACAO": false, "MASS_STATUS_REJEITADO": true, "DESCONHECIDA": false, "DIVERGENTE": true,
 	"SEM_CONFIRMACAO": true, "PENDENTE_39A": false, "RECUSA_PNT": false, "CANCEL_STOP_REJEITADO": false,
 	"CANCEL_SEM_RESPOSTA": true, "SEM_PROTECAO": true, "PROTECAO_REJEITADA": false, "PROTECAO_RECRIADA": true, "PROTECAO_INSTAVEL": true, "STOP_FURADO": true,

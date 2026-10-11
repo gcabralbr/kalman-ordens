@@ -1,0 +1,32 @@
+cenario 33 Saída em estado de erro (39=7) sem reativação → cancelada; a nova saída segue do repreço seguinte
+hora 2026-10-13 13:50:00
+# SPEC v1.1 F14: a saída em erro não é reapregoada (o replace pode ser o que pôs a ordem em erro,
+# como no log real); depois de ESPERA_ERRO_S (2 s) é cancelada, alerta crítico SAIDA_EM_ERRO, e a
+# saída seguinte sai com o próximo colar (bid − 2 × COLAR_SAIDA), não do começo.
+
+executa INICIO
+executa COMPRADO OP=3301
+
+preco bid=130100 ask=130105 preco=130100
+saida 3301 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-3301-2 41=KM-P-3301-1 37=dsa.3301.P
+envia @ER 11=KM-P-3301-2 41=KM-P-3301-1 37=dsa.3301.P 150=4 39=4 54=2 38=1 44=129410 847=1014 151=0 14=0 6=0
+recebe 35=D 11=KM-S-3301-1 38=1 44=130050 54=2 847=1031 20856=Y
+envia @ER 11=KM-S-3301-1 37=dsa.3301.S 150=0 39=0 54=2 38=1 44=130050 847=1031 151=1 14=0 6=0
+envia @ER 11=KM-S-3301-1 37=dsa.3301.S 17=Stop_3301:b8.A 150=7 39=7 54=2 38=1 44=130050 847=1031 151=1 14=0 6=0 58="Sel. Coef. -137864.375 is too agressive for market Coef. -138520"
+avanca 2s
+alerta SAIDA_EM_ERRO
+# em erro: nenhum replace; só o cancel
+recebe 35=F 11=KM-S-3301-2 41=KM-S-3301-1 37=dsa.3301.S
+nada 35=G
+envia @ER 11=KM-S-3301-2 41=KM-S-3301-1 37=dsa.3301.S 150=4 39=4 54=2 38=1 44=130050 847=1031 151=0 14=0 6=0
+# no tick seguinte, repreço 1: bid 130100 − 2 × 50 = 130000
+avanca 100ms
+recebe 35=D 11=KM-S-3301-3 38=1 44=130000 54=2 847=1031 20856=Y
+envia @ER 11=KM-S-3301-3 37=dsa.3301.S2 150=0 39=0 54=2 38=1 44=130000 847=1031 151=1 14=0 6=0
+envia @ER 11=KM-S-3301-3 37=dsa.3301.S2 150=F 39=2 54=2 38=1 44=130000 847=1031 32=1 31=130100 151=0 14=1 6=130100
+evento SAIDA_EXECUTADA operacao_id=3301 qtd=1 preco=130100 origem=GESTOR
+evento ZERADA operacao_id=3301 origem=GESTOR
+saude posicao=0
+nada

@@ -125,6 +125,7 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 	if et != "I" {
 		m.confirmar(op, o)
 	}
+	m.observarErro(o, st, msg)
 
 	cum, temCum := msg.Inteiro(14)
 	last, temLast := msg.Inteiro(32)
@@ -152,8 +153,13 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 		if o.Papel == dominio.Protecao && !op.Estado.Final() {
 			m.protecaoAceita(op, o)
 		}
-	case "5", "D":
+	case "5":
 		m.replaceConfirmado(op, o, msg.Texto(11))
+	case "D":
+		// Restated (ex.: reativação depois do estado de erro, F14): só atualiza o estado, sem efeito
+		if !o.Estado.Final() && (st == "0" || st == "1") {
+			o.Estado = ativaOuParcial(o)
+		}
 	case "4":
 		limparPendencia(o)
 		o.Estado = dominio.Cancelada
@@ -195,6 +201,25 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 	m.salvarOp(op)
 }
 
+// observarErro (v1.1 F14): 39=7 é o estado de erro do PnT. Com 20856=Y a ordem volta sozinha
+// (150=D/39=0) em milissegundos — no log real de HML, 0 a 16 ms. O motor só registra; age se
+// não voltar em ESPERA_ERRO_S (tratarErros, tick.go). Qualquer outro 39 encerra o estado de erro.
+func (m *Motor) observarErro(o *ordem, st string, msg pnt.Mensagem) {
+	if st == "7" {
+		if o.emErroDesde.IsZero() {
+			o.emErroDesde = m.agora()
+			o.erroTexto = strings.TrimSpace(msg.Texto(58))
+			o.erroTratado = false
+			slog.Warn("ordem em estado de erro no PnT (39=7)", "clordid", o.ClOrdAtual, "texto", o.erroTexto)
+		}
+		return
+	}
+	if !o.emErroDesde.IsZero() && st != "" {
+		slog.Info("ordem saiu do estado de erro", "clordid", o.ClOrdAtual, "39", st, "150", msg.Texto(150), "depois_de", m.agora().Sub(o.emErroDesde))
+		o.emErroDesde, o.erroTratado = timeZero, false
+	}
+}
+
 func ativaOuParcial(o *ordem) dominio.EstadoOrdem {
 	if o.QtdExec > 0 {
 		return dominio.Parcial
@@ -204,7 +229,7 @@ func ativaOuParcial(o *ordem) dominio.EstadoOrdem {
 
 // statusDaOrdem: 150=I (mass status) — concilia o estado.
 func (m *Motor) statusDaOrdem(op *operacao, o *ordem, st string, estavaEncerrada bool) {
-	viva := st == "0" || st == "1" || st == "A" || st == "E" || st == "6"
+	viva := st == "0" || st == "1" || st == "A" || st == "E" || st == "6" || st == "7"
 	final := st == "4" || st == "8" || st == "C"
 	switch {
 	case viva && estavaEncerrada:
@@ -381,10 +406,15 @@ func (m *Motor) ordemEncerrada(op *operacao, o *ordem, motivo string) {
 		case !op.Estado.Saindo() && !op.Estado.Final() && op.posicao() != 0:
 			// 1014 encerrada sem pedido nosso (cancelada ou expirada pelo PnT): recria na hora, com o
 			// limite de tentativas (v1.1 P8)
-			slog.Warn("1014 encerrada sem pedido nosso com posição aberta", "op", op.OperacaoID, "motivo", motivo, "clordid", o.ClOrdAtual)
+			causa := "1014 " + strings.ToLower(motivo) + " pelo PnT sem pedido nosso"
+			if o.canceladaPorErro {
+				// cancelada por nós porque ficou em erro (F14): proteção ausente, mesma regra
+				causa = "1014 em estado de erro no PnT, cancelada"
+			}
+			slog.Warn("1014 encerrada com posição aberta: recriando", "op", op.OperacaoID, "motivo", causa, "clordid", o.ClOrdAtual)
 			m.mudar(op, dominio.PosicionadaSemProtecao)
 			op.semProtecaoDesde = m.agora()
-			m.falhaProtecao(op, "1014 "+strings.ToLower(motivo)+" pelo PnT sem pedido nosso")
+			m.falhaProtecao(op, causa)
 		}
 	case dominio.Saida:
 		if op.Estado == dominio.Saindo && op.posicao() != 0 {

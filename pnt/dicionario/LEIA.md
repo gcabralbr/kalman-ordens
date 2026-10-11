@@ -13,6 +13,9 @@
   3. o enum de `MassStatusReqType (585)` ganhou o valor `9` (orders for account), que o RoE 2025
      manda usar no mass status por conta e o dicionário de 2020 não tem (o FIX 4.4 padrão vai até
      8). Sem ele, o próprio mass status do serviço falha na validação estrita (SPEC v1.1 F10).
+  4. o campo `ActivateErrorStatusStrategy (20856)`, BOOLEAN, declarado e incluído (opcional) no
+     **NewOrderSingle (D)**. O serviço manda `20856=Y` em toda ordem nova (SPEC v1.1 F14); o RoE
+     2025 só lista a tag na Sniper e no multileg, e o log real de HML do PT a mostra no 35=AB.
 
   Conferir com `diff --strip-trailing-cr dsa_FIX44.original.xml dsa_FIX44.xml`. A prova está em
   `dicionario_test.go` (aceito na cópia, rejeitado no original).
