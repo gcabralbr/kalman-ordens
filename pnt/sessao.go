@@ -3,6 +3,8 @@ package pnt
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -144,12 +146,18 @@ func (s *Sessao) Iniciar() error {
 		}
 	}
 	lf = fabricaLogEspia{base: lf, aviso: s.ouvinte.MensagemIlegivel}
+	if err := os.MkdirAll(s.cfg.Dir, 0o700); err != nil {
+		return err
+	}
 	s.stores = &fabricaStore{base: filestore.NewStoreFactory(st)}
 	s.init, err = quickfix.NewInitiator(s, s.stores, st, lf)
 	if err != nil {
 		return err
 	}
-	return s.init.Start()
+	if err := s.init.Start(); err != nil {
+		return err
+	}
+	return ApertarPermissoes(s.cfg.Dir)
 }
 
 // Parar faz logout e desconecta. Não cancela nada no PnT.
@@ -319,4 +327,21 @@ func (l logEspia) verificar(s string) {
 	if strings.HasPrefix(s, "Msg Parse Error") {
 		l.aviso(s)
 	}
+}
+
+// ApertarPermissoes deixa o diretório FIX (log e store) só para o usuário do serviço: diretórios
+// 700, arquivos 600. O QuickFIX/Go cria o log com os.ModePerm e o store com 0660 (com o umask
+// padrão, log legível por todos); a unidade systemd usa UMask=0077 e isto aperta o que já
+// existia. O log é fiel ao fio: o 9 do logon revela o tamanho da senha (SPEC v1.1 F15).
+func ApertarPermissoes(dir string) error {
+	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		modo := fs.FileMode(0o600)
+		if d.IsDir() {
+			modo = 0o700
+		}
+		return os.Chmod(p, modo)
+	})
 }

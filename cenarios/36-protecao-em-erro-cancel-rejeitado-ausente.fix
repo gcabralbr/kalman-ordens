@@ -1,0 +1,26 @@
+cenario 36 1014 em erro, cancel rejeitado por outro motivo, mass status: ausente → recriada (P8)
+hora 2026-10-13 11:20:00
+# SPEC v1.1 F17: 35=9 por outro motivo → mass status imediato. A 1014 não volta no mass status: não
+# existe mais → recria sob o limite da P8. Não conta como divergência (a ordem era nossa, em erro,
+# com cancel pedido). Terminal no mass status (39=4/C/8) segue o mesmo caminho da P8.
+
+executa INICIO
+executa COMPRADO OP=3601
+
+envia @ER 11=KM-P-3601-1 37=dsa.3601.P 150=7 39=7 54=2 38=1 44=129410 847=1014 151=1 14=0 6=0 58="Sel. Coef. -222515.5625 is too agressive for market Coef. -223500"
+avanca 2s
+alerta PROTECAO_EM_ERRO
+recebe 35=F 11=KM-P-3601-2 41=KM-P-3601-1 37=dsa.3601.P
+envia 35=9 11=KM-P-3601-2 41=KM-P-3601-1 37=dsa.3601.P 39=7 434=1 102=99 58="Order in error state"
+recebe 35=AF 585=9 584=>MS
+envia @ER 11=KM-E-3601-1 37=dsa.3601.E 150=I 39=2 584=$MS 54=1 38=1 44=130020 847=1031 151=0 14=1 6=130010
+avanca 3s
+alerta CONCILIACAO
+recebe 35=D 11=KM-P-3601-3 38=1 54=2 847=1014 20828=129510 20829=129410 20856=Y
+alerta PROTECAO_RECRIADA
+envia @ER 11=KM-P-3601-3 37=dsa.3601.P2 150=0 39=0 54=2 38=1 44=129410 847=1014 151=1 14=0 6=0
+evento PROTEGIDA operacao_id=3601 preco_stop=129510 preco_limite=129410
+sem_alerta DIVERGENTE
+sem_alerta PROTECAO_EM_ERRO_PRESA
+saude posicao=1 divergente=false parada=null
+nada

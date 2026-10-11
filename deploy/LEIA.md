@@ -50,13 +50,21 @@ valor da .51); não depende da configuração global.
 
 ```
 sudo useradd --system --home /var/lib/kalman-ordens --shell /usr/sbin/nologin kalman-ordens
-sudo install -d -o kalman-ordens -g kalman-ordens -m 750 /var/lib/kalman-ordens /var/lib/kalman-ordens/fix
+sudo install -d -o kalman-ordens -g kalman-ordens -m 700 /var/lib/kalman-ordens /var/lib/kalman-ordens/fix
 sudo install -d -o root -g root -m 755 /opt/kalman-ordens
 sudo install -d -o root -g kalman-ordens -m 750 /etc/kalman-ordens
 ```
 
 Permissões: binário `root:root 755`; `/etc/kalman-ordens/service.env` `root:kalman-ordens 640`
-(o serviço lê, não escreve); `/var/lib/kalman-ordens` do usuário do serviço (store e log FIX).
+(o serviço lê, não escreve); `/var/lib/kalman-ordens` (store e log FIX) **só do usuário do
+serviço: diretórios 700, arquivos 600, dono `kalman-ordens`**. O log FIX é fiel ao fio: a senha
+sai mascarada (`554=***`), mas o 9 do logon revela o tamanho dela (SPEC v1.1 F15). A unidade usa
+`UMask=0077` e `StateDirectoryMode=0700`, e o serviço aperta as permissões ao subir. Conferir
+depois da primeira subida:
+
+```
+sudo find /var/lib/kalman-ordens -printf '%m %u:%g %p\n'   # só 700 (diretórios) e 600 (arquivos), kalman-ordens
+```
 
 ### 1.4 Binário, service.env e unidade — instalada e PARADA
 

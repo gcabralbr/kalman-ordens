@@ -1,0 +1,22 @@
+cenario 34 1014 em erro, cancel rejeitado com "Robot Order not found" → a 1014 não existe mais: recriada (P8)
+hora 2026-10-13 11:00:00
+# SPEC v1.1 F17: 35=9 de "não encontrada" (37=NONE ou "Robot Order not found", texto real do log
+# de HML: [DSA-40]) ao cancel da 1014 em erro → a ordem não existe mais no PnT → recria com o
+# mesmo gatilho e limite, sob o limite de recriações da P8. Sem divergência, sem parada.
+
+executa INICIO
+executa COMPRADO OP=3401
+
+envia @ER 11=KM-P-3401-1 37=dsa.3401.P 150=7 39=7 54=2 38=1 44=129410 847=1014 151=1 14=0 6=0 58="Sel. Coef. 139629.171875 is too agressive for market Coef. 138538"
+avanca 2s
+alerta PROTECAO_EM_ERRO
+recebe 35=F 11=KM-P-3401-2 41=KM-P-3401-1 37=dsa.3401.P
+envia 35=9 11=KM-P-3401-2 41=KM-P-3401-1 37=NONE 39=8 434=1 102=1 58="[DSA-40] Field OrigClOrderID or OrderId are required from cancel/replace request. Robot Order not found;  "
+recebe 35=D 11=KM-P-3401-3 38=1 54=2 847=1014 20828=129510 20829=129410 20856=Y
+alerta PROTECAO_RECRIADA
+envia @ER 11=KM-P-3401-3 37=dsa.3401.P2 150=0 39=0 54=2 38=1 44=129410 847=1014 151=1 14=0 6=0
+evento PROTEGIDA operacao_id=3401 preco_stop=129510 preco_limite=129410
+nada 35=AF
+sem_alerta DIVERGENTE
+saude posicao=1 divergente=false parada=null
+nada

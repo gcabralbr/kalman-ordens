@@ -17,6 +17,12 @@ TimeoutStopSec=20
 Restart=on-failure
 RestartSec=5
 
+# Arquivos novos só do usuário do serviço (o QuickFIX/Go cria o log com 0777 & ~umask): log e
+# store FIX ficam 600, diretórios 700. O serviço também aperta o que já existia ao subir.
+UMask=0077
+StateDirectory=kalman-ordens
+StateDirectoryMode=0700
+
 # Endurecimento: só escreve em /var/lib/kalman-ordens (store e log FIX).
 NoNewPrivileges=yes
 ProtectSystem=strict

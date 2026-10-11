@@ -79,6 +79,7 @@ type ordem struct {
 	erroTexto        string
 	erroTratado      bool
 	canceladaPorErro bool
+	decidirNoMass    bool  // cancel da 1014 em erro rejeitado por outro motivo: o mass status decide (F17)
 	seq              int64 // ordem de criação neste processo (0 = carregada do banco)
 }
 

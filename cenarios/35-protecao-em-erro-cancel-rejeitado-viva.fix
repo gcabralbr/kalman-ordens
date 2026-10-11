@@ -1,0 +1,33 @@
+cenario 35 1014 em erro, cancel rejeitado por outro motivo, mass status: ainda viva em 39=7 → não recria, não zera, BLOQUEAR
+hora 2026-10-13 11:10:00
+# SPEC v1.1 F17: 35=9 por outro motivo → mass status imediato; o estado real decide. Ainda viva em
+# 39=7: pode reativar sozinha pelo 20856 — recriar daria duas proteções; zerar sem precisar
+# também não. Alerta crítico repetido PROTECAO_EM_ERRO_PRESA + BLOQUEAR; decisão humana.
+# Quando ela reativa, o alerta resolve (a parada continua até o retomar).
+
+executa INICIO
+executa COMPRADO OP=3501
+
+envia @ER 11=KM-P-3501-1 37=dsa.3501.P 150=7 39=7 54=2 38=1 44=129410 847=1014 151=1 14=0 6=0 58="Sel. Coef. 225114.265625 is too agressive for market Coef. 223526"
+avanca 2s
+alerta PROTECAO_EM_ERRO
+recebe 35=F 11=KM-P-3501-2 41=KM-P-3501-1 37=dsa.3501.P
+envia 35=9 11=KM-P-3501-2 41=KM-P-3501-1 37=dsa.3501.P 39=7 434=1 102=99 58="Order in error state"
+recebe 35=AF 585=9 584=>MS
+envia @ER 11=KM-P-3501-1 37=dsa.3501.P 150=I 39=7 584=$MS 54=2 38=1 44=129410 847=1014 151=1 14=0 6=0
+envia @ER 11=KM-E-3501-1 37=dsa.3501.E 150=I 39=2 584=$MS 54=1 38=1 44=130020 847=1031 151=0 14=1 6=130010
+avanca 3s
+alerta CONCILIACAO
+alerta PROTECAO_EM_ERRO_PRESA
+alerta PARADA
+nada 35=D
+nada 35=F
+saude posicao=1 parada.modo=BLOQUEAR divergente=false
+# o crítico repete no Telegram enquanto durar; nada é enviado ao PnT
+avanca 30s
+nada 35=D
+# reativou sozinha: o alerta resolve; nada é enviado; a parada continua (decisão humana)
+envia @ER 11=KM-P-3501-1 37=dsa.3501.P 150=D 39=0 378=99 54=2 38=1 44=129410 847=1014 151=1 14=0 6=0 58="DSA order was in Error state activated by user - ActivateErrorStatusStrategy is present in DSA creation order and set as True;"
+alerta RESOLVIDO
+nada
+saude posicao=1 parada.modo=BLOQUEAR

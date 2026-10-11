@@ -195,7 +195,7 @@ func (m *Motor) zerada(op *operacao) {
 	}
 	op.PnL = op.pnlRealizado()
 	m.mudar(op, dominio.Zerada)
-	for _, k := range []string{"SEM_PROTECAO", "STOP_FURADO", "SAIDA_ESGOTOU", "CANCEL_SEM_RESPOSTA", "SAIDA_SEM_PRECO", "SAIDA_DIVERGENTE", "SAIDA_BLOQUEADA", "PROTECAO_RECRIADA", "PROTECAO_INSTAVEL", "PROTECAO_EM_ERRO"} {
+	for _, k := range []string{"SEM_PROTECAO", "STOP_FURADO", "SAIDA_ESGOTOU", "CANCEL_SEM_RESPOSTA", "SAIDA_SEM_PRECO", "SAIDA_DIVERGENTE", "SAIDA_BLOQUEADA", "PROTECAO_RECRIADA", "PROTECAO_INSTAVEL", "PROTECAO_EM_ERRO", "PROTECAO_EM_ERRO_PRESA"} {
 		m.al.Resolver(chaveOp(k, op))
 	}
 	ps, _ := op.medio(false)

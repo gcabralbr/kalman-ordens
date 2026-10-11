@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -240,6 +241,23 @@ func TestSenhaForaDosArquivos(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" {
+		// diretório FIX só do usuário do serviço: 700/600 (no Windows o modo não se aplica)
+		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			info, _ := d.Info()
+			esperado := fs.FileMode(0o600)
+			if d.IsDir() {
+				esperado = 0o700
+			}
+			if info.Mode().Perm() != esperado {
+				t.Errorf("%s com modo %o, esperado %o", p, info.Mode().Perm(), esperado)
+			}
+			return nil
+		})
 	}
 	if arquivos < 3 || comLogon < 2 {
 		t.Fatalf("conferência fraca: %d arquivos, %d com o logon mascarado (esperado log e store)", arquivos, comLogon)

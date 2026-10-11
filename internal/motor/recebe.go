@@ -126,6 +126,9 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 		m.confirmar(op, o)
 	}
 	m.observarErro(o, st, msg)
+	if o.Papel == dominio.Protecao && o.emErroDesde.IsZero() {
+		m.al.Resolver(chaveOp("PROTECAO_EM_ERRO_PRESA", op)) // a 1014 saiu do erro
+	}
 
 	cum, temCum := msg.Inteiro(14)
 	last, temLast := msg.Inteiro(32)
@@ -496,6 +499,8 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 				m.mudar(op, dominio.AguardandoStop)
 				op.aguardandoStopDesde = m.agora()
 			}
+		case o.Papel == dominio.Protecao && o.canceladaPorErro:
+			m.cancelProtecaoEmErroRejeitado(op, o, msg, texto)
 		default:
 			m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("cancel rejeitado (%s): %s", texto, o.ClOrdAtual), op.OperacaoID)
 		}
@@ -510,6 +515,56 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 	}
 	m.salvarOrdem(o)
 	m.salvarOp(op)
+}
+
+// cancelProtecaoEmErroRejeitado (v1.1 F17): o cancel da 1014 em erro voltou 35=9.
+// "Não encontrada" (37=NONE ou "Robot Order not found") → a 1014 não existe mais: recria sob o
+// limite da P8. Outro motivo → mass status agora e o estado real decide (conciliar).
+func (m *Motor) cancelProtecaoEmErroRejeitado(op *operacao, o *ordem, msg pnt.Mensagem, texto string) {
+	if msg.Texto(37) == "NONE" || strings.Contains(msg.Texto(58), "Robot Order not found") {
+		o.Estado = dominio.Desconhecida
+		m.salvarOrdem(o)
+		m.recriarProtecaoAusente(op, "1014 em erro: cancel rejeitado, ordem não encontrada no PnT "+texto)
+		return
+	}
+	m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("cancel da 1014 em erro rejeitado %s: %s; mass status para decidir", texto, o.ClOrdAtual), op.OperacaoID)
+	o.decidirNoMass = true
+	if !m.conciliando && m.fix != nil && m.fix.Logado() {
+		m.conciliando = true
+		m.massTentativas = 0
+		m.pedirMassStatus()
+	}
+}
+
+// recriarProtecaoAusente: a 1014 não existe mais no PnT → recria (mesmo gatilho e limite) sob o
+// limite de tentativas da P8.
+func (m *Motor) recriarProtecaoAusente(op *operacao, causa string) {
+	if op.Estado.Saindo() || op.Estado.Final() || op.posicao() == 0 {
+		return
+	}
+	slog.Warn("1014 ausente no PnT com posição aberta: recriando", "op", op.OperacaoID, "motivo", causa)
+	m.mudar(op, dominio.PosicionadaSemProtecao)
+	op.semProtecaoDesde = m.agora()
+	m.falhaProtecao(op, causa)
+}
+
+// decidirProtecaoEmErro (F17), depois do mass status: terminal já foi recriada (ordemEncerrada,
+// P8); ainda viva em 39=7 → não recria (pode reativar sozinha pelo 20856) e não zera: alerta
+// crítico repetido + BLOQUEAR, decisão humana; reativada → a proteção voltou.
+func (m *Motor) decidirProtecaoEmErro(op *operacao, o *ordem) {
+	switch {
+	case !o.viva():
+	case !o.emErroDesde.IsZero():
+		texto := ""
+		if o.erroTexto != "" {
+			texto = " (" + o.erroTexto + ")"
+		}
+		m.al.Emitir("PROTECAO_EM_ERRO_PRESA", chaveOp("PROTECAO_EM_ERRO_PRESA", op),
+			fmt.Sprintf("1014 %s continua em estado de erro no PnT%s e o cancel foi rejeitado: não recriada (pode reativar sozinha), posição %d mantida; entradas bloqueadas, decisão humana, operação %d", o.ClOrdAtual, texto, op.posicao(), op.OperacaoID), op.OperacaoID)
+		m.ativarParada("BLOQUEAR", "auto", fmt.Sprintf("1014 em erro sem cancel possível, operação %d", op.OperacaoID))
+	default:
+		m.al.Resolver(chaveOp("PROTECAO_EM_ERRO", op))
+	}
 }
 
 func (m *Motor) businessReject(msg pnt.Mensagem) {

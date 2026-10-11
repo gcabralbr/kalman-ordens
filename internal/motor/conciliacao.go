@@ -60,6 +60,15 @@ func (m *Motor) conciliar() {
 			if !o.viva() || vistas[o] || o.seq > m.massCorte {
 				continue
 			}
+			if o.decidirNoMass {
+				// 1014 em erro com cancel rejeitado e ausente no mass status: não existe mais (F17)
+				o.decidirNoMass = false
+				o.Estado = dominio.Desconhecida
+				limparPendencia(o)
+				m.salvarOrdem(o)
+				m.recriarProtecaoAusente(op, "1014 em erro ausente no mass status")
+				continue
+			}
 			// [PnT-13] o mass status traz só as ativas: viva aqui e ausente lá
 			divergencias++
 			op.Divergente = true
@@ -69,6 +78,14 @@ func (m *Motor) conciliar() {
 			m.salvarOrdem(o)
 			if o.Papel == dominio.Entrada {
 				m.encerrarEntrada(op, "DESCONHECIDA", true)
+			}
+		}
+	}
+	for _, op := range m.ops {
+		for _, o := range op.ordens {
+			if o.decidirNoMass {
+				o.decidirNoMass = false
+				m.decidirProtecaoEmErro(op, o)
 			}
 		}
 	}
