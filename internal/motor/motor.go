@@ -472,6 +472,9 @@ func (m *Motor) Caiu() {
 }
 func (m *Motor) Recebeu(msg pnt.Mensagem)          { m.fila <- func() { m.processadas++; m.processar(msg) } }
 func (m *Motor) RejeicaoRecebida(msg pnt.Mensagem) { m.fila <- func() { m.rejeicaoSessao(msg) } }
+func (m *Motor) MensagemIlegivel(texto string) {
+	m.fila <- func() { m.processadas++; m.mensagemIlegivel(texto) }
+}
 func (m *Motor) RejeicaoEnviada(msg pnt.Mensagem) {
 	m.fila <- func() { m.processadas++; m.rejeicaoEnviada(msg) }
 }

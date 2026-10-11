@@ -41,6 +41,9 @@ de ordem velha no ResendRequest (vira GapFill).
 | F7 | **Posição pelo maior CumQty (14) por ordem, com chave no 37** (não no ClOrdID): um replace da 1014 muda o ClOrdID e não pode zerar a conta. Fill repetido (reconexão, ResendRequest, mass status) não muda nada. | 8 | 02, 09 |
 | F8 | **A biblioteca não descarta fill.** Mesmo com `RejectInvalidMessage=N`, o QuickFIX/Go rejeita com 35=3 (e não entrega à aplicação) mensagem sem campo obrigatório. Na cópia `pnt/dicionario/dsa_FIX44.xml`, o corpo de ExecutionReport (8) e OrderCancelReject (9) passa a ter **todo campo `required="N"`** (cabeçalho, trailer e MsgType intactos; lista em `pnt/dicionario/LEIA.md`). O motor valida o conteúdo e decide. A sessão do serviço também usa `ValidateFieldsHaveValues=N` (campo vazio não vira 35=3). O que ainda gera 35=3: tipo de mensagem desconhecido, cabeçalho inválido. Prova: `pnt/dicionario/dicionario_test.go`. | 7.1 | 21 |
 | F10 | **Enum 585=9 no dicionário.** O mass status por conta usa `585=9` (RoE 2025), valor que o `dsa_FIX44.xml` de 2020 não declara; a validação estrita reprovava o próprio AF do serviço. A cópia ganhou o valor 9 (terceira diferença, `pnt/dicionario/LEIA.md`). Achado pelo teste da sessão contra o PnT falso. | 7.2 | todos (INICIO) |
+| F11 | **CheckSum (10) errado é aceito.** A config antiga do PT na HML tinha `ValidateLengthAndChecksum=N` e os exemplos do RoE têm 9/10 inconsistentes. O QuickFIX/Go v0.9.12 não confere o valor do 10 na recepção (só usa o `10=` para achar o fim da mensagem): a mensagem é aplicada normalmente, sem 35=3. Não há opção equivalente ao `ValidateLengthAndChecksum=N`. | 7.1 | 28 |
+| F12 | **BodyLength (9) errado: nunca perda silenciosa.** A biblioteca usa o 9 para enquadrar e, se não bate, **descarta a mensagem em silêncio** (só `Msg Parse Error` no log de eventos; sem 35=3, nada chega à aplicação). 9 menor que o real perde aquela mensagem; 9 maior perde aquela e a seguinte (enquadramento emendado). A recuperação vem quando a mensagem ou o heartbeat seguinte revela o buraco de sequência: ResendRequest e reenvio com 43=Y, aplicado uma vez (F7). Como isso pode levar até um `HeartBtInt` (30 s), a camada PnT intercepta o evento do log da biblioteca e avisa o motor: alerta crítico **`MENSAGEM_ILEGIVEL`** + mass status na hora (resolvido ao fim da conciliação). Risco aberto: se o reenvio do PnT também vier com 9 errado, a biblioteca entra em laço de ResendRequest (pendência 9). | 7.1, 9 | 29 |
+| F13 | **Listeners de teste só em 127.0.0.1.** O QuickFIX/Go lê o `SocketAcceptHost` só nas configurações globais (na sessão é ignorado e o acceptor escuta em todas as interfaces, o que disparava o aviso do Firewall do Windows a cada `go test`). Acceptor do PnT falso, proxy de queda, marketdata falso e HTTP do serviço escutam em loopback; `pnt/loopback` confere em tempo de execução (conexão por um IP externo da máquina tem de falhar) e varre o código (todo listener com `127.0.0.1` literal). | — | `pnt/loopback`, `pnt/falso`, fumaça do executável |
 | F9 | **Todo 35=3 enviado pelo serviço** → alerta crítico `SESSAO_REJEITOU_MENSAGEM` + mass status para reconciliar (a mensagem descartada pode ter sido um fill). | 7.1, 9 | 22 |
 
 ## 3. Decisões dos roteiros (Parte A)
@@ -179,10 +182,17 @@ não esperava e foi corrigido. Próxima fase: F1 (HML do PnT, Parte 11.2).
    protegida pela 1014) e o 503 (C2: reenviar o mesmo corpo; `repetido=true` na resposta).
 6. ~~Schema de produção, sql_mode e usuário do systemd.~~ **Confirmados** (P6, P7).
 7. **Ferramenta de bancada para a SwingTrade exploratória** (11.2, [PnT-9, PnT-10]): não existe.
-   Por desenho fica fora do serviço; decidir se é feita antes da F1.
-8. **HML com dados de ontem × marketdata da .53 com o dia:** o preço da entrada sai do marketdata
-   e pode não executar na HML; e o símbolo da HML tem de casar com o ticker do marketdata, senão
-   `SIMBOLO_DIVERGENTE` bloqueia entradas. Combinar com o PnT antes da terça (`deploy/LEIA.md` 1.6).
+   Por desenho fica fora do serviço. **Decidido:** fica para depois da rodada 2 da F1.
+8. ~~HML com dados de ontem × marketdata da .53.~~ **Resolvida:** a HML de terça reproduz a sexta
+   (`WINV26`, igual ao marketdata; casa até quarta). F1 em duas rodadas (`deploy/LEIA.md` 1.7):
+   rodada 1 só protocolo, sem depender de preço; rodada 2 com o marketdata em replay da sexta
+   (porta própria, ex. 9095), trocando só o `PRECOS_URL` — a detalhar.
+9. **BodyLength errado vindo do PnT (F12).** Proposta, se os logs reais da HML do PT mostrarem
+   que o PnT de fato erra o 9: **normalizador** na camada PnT — um re-enquadrador em processo entre
+   o socket e o QuickFIX/Go que acha o fim da mensagem pelo `<SOH>10=nnn<SOH>`, recalcula 9 e 10 e
+   entrega a mensagem certa à biblioteca (registrando cada correção no log). Elimina o descarte, o
+   atraso e o laço de ResendRequest. Não implementado até os logs confirmarem; o detector (F12)
+   já garante que não há perda silenciosa. Os logs servirão também de fixture.
 
 ## 9. Cobertura dos roteiros
 
@@ -212,3 +222,5 @@ não esperava e foi corrigido. Próxima fase: F1 (HML do PnT, Parte 11.2).
 | 25 | C1 (par repetido com conteúdo diferente → DUPLICADA + alerta) |
 | 26 | P8 (1014 cancelada pelo PnT sem pedido nosso → recriada na hora; contador zera após 30 s) |
 | 27 | P8 (PnT cancelando a 1014 em laço → PROTECAO_INSTAVEL e zeragem) |
+| 28 | F11 (fill com CheckSum errado → aplicado, sem 35=3) |
+| 29 | F12 (fill com BodyLength errado → MENSAGEM_ILEGIVEL + mass status; aplicado uma vez pelo reenvio) |

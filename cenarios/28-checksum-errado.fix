@@ -1,0 +1,19 @@
+cenario 28 Fill com CheckSum (10) errado no fio → aplicado normalmente, sem 35=3
+hora 2026-10-13 13:00:00
+# A config antiga do PT na HML tinha ValidateLengthAndChecksum=N, e os exemplos do RoE têm
+# CheckSum inconsistente. O QuickFIX/Go não confere o valor do 10 na recepção (só usa o 10= para
+# achar o fim da mensagem): o fill é aplicado. SPEC v1.1 F11.
+
+executa INICIO
+
+entrada 2801 C
+resposta aceito=true
+recebe 35=D 11=KM-E-2801-1 54=1 847=1031
+envia @ER 11=KM-E-2801-1 37=dsa.2801.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+corrompe checksum
+envia @ER 11=KM-E-2801-1 37=dsa.2801.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=2801 qtd=1 preco=130010
+recebe 35=D 11=KM-P-2801-1 38=1 54=2 847=1014 20828=129510 20829=129410
+nada 35=3
+sem_alerta SESSAO_REJEITOU_MENSAGEM
+saude posicao=1

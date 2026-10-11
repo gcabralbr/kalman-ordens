@@ -11,6 +11,7 @@ import (
 	"github.com/quickfixgo/quickfix/config"
 
 	"gammaquant.com.br/kalman-ordens/pnt/dicionario"
+	"gammaquant.com.br/kalman-ordens/pnt/loopback"
 )
 
 // cliente é um initiator mínimo no papel do serviço (só para testar o falso).
@@ -223,4 +224,17 @@ func TestQuedaEResend(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// Acceptor interno e proxy só em 127.0.0.1 (sem aviso do Firewall do Windows).
+func TestSoLoopback(t *testing.T) {
+	f, err := Novo(Config{CompID: "PNT_DSA", Contraparte: "KALMAN"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Iniciar(); err != nil {
+		t.Fatal(err)
+	}
+	defer f.Parar()
+	loopback.Exigir(t, f.PortasEscuta()...)
 }

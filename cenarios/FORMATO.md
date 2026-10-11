@@ -81,6 +81,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 |---|---|
 | `aguarda_logon` | espera o serviço logar (tempo real, até 10 s) |
 | `derruba_sessao` | o PnT falso derruba a conexão; o serviço reconecta sozinho |
+| `corrompe checksum` / `corrompe bodylength N` | a próxima mensagem de aplicação do PnT falso sai no fio com o 10 errado, ou com o 9 somado de N (e o 10 recalculado); o store do falso guarda a certa, então um ResendRequest a entrega íntegra |
 | `reinicia_servico` | encerra o processo do serviço e sobe de novo com o mesmo banco (no MariaDB, numa conexão nova) e o mesmo store FIX; o relógio continua de onde estava |
 | `motor_lento` / `motor_normal` | trava / solta a fila do motor (os pedidos HTTP ficam esperando; com `HTTP_ESPERA_S` curto, dá o 503) |
 

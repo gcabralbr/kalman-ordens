@@ -14,6 +14,7 @@ type ouvinteTeste struct {
 	quedas    int
 	recebidas []Mensagem
 	enviadas3 []Mensagem
+	ilegiveis []string
 }
 
 func (o *ouvinteTeste) Logou() { o.mu.Lock(); o.logons++; o.mu.Unlock() }
@@ -24,6 +25,11 @@ func (o *ouvinteTeste) Recebeu(m Mensagem) {
 	o.mu.Unlock()
 }
 func (o *ouvinteTeste) RejeicaoRecebida(Mensagem) {}
+func (o *ouvinteTeste) MensagemIlegivel(s string) {
+	o.mu.Lock()
+	o.ilegiveis = append(o.ilegiveis, s)
+	o.mu.Unlock()
+}
 func (o *ouvinteTeste) RejeicaoEnviada(m Mensagem) {
 	o.mu.Lock()
 	o.enviadas3 = append(o.enviadas3, m)
@@ -143,5 +149,28 @@ func TestEnviarComSessaoCaida(t *testing.T) {
 	defer o.mu.Unlock()
 	if o.quedas != 1 || o.logons != 2 {
 		t.Fatalf("quedas=%d logons=%d", o.quedas, o.logons)
+	}
+}
+
+// BodyLength errado: a biblioteca descarta em silêncio; o espião avisa na hora, e o reenvio
+// (ResendRequest, quando a sequência revela o buraco) entrega a mensagem uma vez.
+func TestBodyLengthErradoAvisado(t *testing.T) {
+	f, _, o := subir(t)
+	if err := f.Corromper("bodylength", -3); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Enviar([]falso.Campo{c(35, "8"), c(11, "X-1"), c(37, "d.1"), c(150, "F"), c(39, "2"), c(14, "1"), c(32, "1"), c(31, "1"), c(17, "E1")}); err != nil {
+		t.Fatal(err)
+	}
+	esperar(t, "aviso de mensagem ilegível", func() bool { o.mu.Lock(); defer o.mu.Unlock(); return len(o.ilegiveis) == 1 })
+	if r, _ := o.copia(); len(r) != 0 {
+		t.Fatalf("a mensagem corrompida não devia chegar à aplicação: %v", r)
+	}
+	// a mensagem seguinte revela o buraco: ResendRequest e reenvio com 43=Y
+	_ = f.Enviar([]falso.Campo{c(35, "8"), c(11, "X-2"), c(37, "d.2"), c(150, "0"), c(39, "0"), c(14, "0"), c(17, "E2")})
+	esperar(t, "reenvio", func() bool { r, _ := o.copia(); return len(r) == 2 })
+	r, _ := o.copia()
+	if r[0].Texto(11) != "X-1" || !r[0].PossDup() {
+		t.Fatalf("reenvio: %s", r[0].Bruta)
 	}
 }

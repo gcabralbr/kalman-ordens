@@ -51,7 +51,7 @@ var verbos = map[string]int{
 	"em_qualquer_ordem": 0,
 	"entrada":           -1, "saida": -1, "http": -1, "resposta": -1, "saude": -1,
 	"evento": -1, "sem_evento": -1, "conta_eventos": -1, "alerta": 1, "sem_alerta": 1,
-	"aguarda_logon": 0, "derruba_sessao": 0, "reinicia_servico": 0, "motor_lento": 0, "motor_normal": 0,
+	"aguarda_logon": 0, "derruba_sessao": 0, "reinicia_servico": 0, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
 }
 
 var verbosDeMensagem = map[string]bool{"recebe": true, "envia": true, "envia_offline": true, "recebe_sessao": true, "nada": true}

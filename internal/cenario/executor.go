@@ -168,7 +168,7 @@ func (e *Executor) subir() error {
 	if err := m.Iniciar(); err != nil {
 		return err
 	}
-	e.svc = &servico{motor: m, sessao: s, http: api.Handler(m, e.cfg.Segundos("HTTP_ESPERA_S", 5)), baseEnv: e.pnt.EnviadasApp(), baseRec: e.pnt.RecebidasApp()}
+	e.svc = &servico{motor: m, sessao: s, http: api.Handler(m, e.cfg.Segundos("HTTP_ESPERA_S", 5)), baseEnv: e.pnt.EnviadasApp() + e.pnt.Reentregas(), baseRec: e.pnt.RecebidasApp()}
 	return s.Iniciar()
 }
 
@@ -205,7 +205,7 @@ func (e *Executor) ocioso() {
 	fim := time.Now().Add(3 * time.Second)
 	for time.Now().Before(fim) {
 		proc := e.svc.motor.Processadas()
-		dentro := !e.pnt.Logado() || proc >= e.pnt.EnviadasApp()-e.svc.baseEnv
+		dentro := !e.pnt.Logado() || proc >= e.pnt.EnviadasApp()+e.pnt.Reentregas()-e.svc.baseEnv
 		fora := e.pnt.RecebidasApp()-e.svc.baseRec >= e.svc.sessao.Enviadas()
 		if dentro && fora {
 			if e.svc.motor.Processadas() == proc {
@@ -301,6 +301,12 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return nil
 	case "entrada", "saida":
 		return e.pedido(p)
+	case "corrompe":
+		delta := 0
+		if len(p.Args) > 1 {
+			delta, _ = strconv.Atoi(p.Args[1])
+		}
+		return e.pnt.Corromper(p.Args[0], delta)
 	case "motor_lento":
 		e.travado = make(chan struct{})
 		trava := e.travado

@@ -553,6 +553,25 @@ func (m *Motor) rejeicaoEnviada(msg pnt.Mensagem) {
 	}
 }
 
+// mensagemIlegivel: a biblioteca descartou bytes do PnT que não conseguiu ler (F11). Pode ter sido
+// um fill: alerta crítico e mass status na hora, sem esperar o heartbeat revelar o buraco.
+func (m *Motor) mensagemIlegivel(texto string) {
+	_, _ = m.repo.RegistrarEvento(repo.EventoFIX{Direcao: "REC", MsgType: "?", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
+	m.al.Emitir("MENSAGEM_ILEGIVEL", "MENSAGEM_ILEGIVEL", "a sessão descartou uma mensagem ilegível do PnT: "+cortarTexto(texto, 300), 0)
+	if !m.conciliando && m.fix != nil && m.fix.Logado() {
+		m.conciliando = true
+		m.massTentativas = 0
+		m.pedirMassStatus()
+	}
+}
+
+func cortarTexto(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
+
 func (m *Motor) marcarDivergente(op *operacao, motivo string) {
 	op.Divergente = true
 	m.divergente = true

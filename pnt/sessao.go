@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -48,6 +49,9 @@ type Ouvinte interface {
 	RejeicaoRecebida(Mensagem)
 	// RejeicaoEnviada: 35=3 enviado pela nossa biblioteca (descartou uma mensagem do PnT).
 	RejeicaoEnviada(Mensagem)
+	// MensagemIlegivel: a biblioteca descartou em silêncio bytes recebidos que não conseguiu ler
+	// (ex.: BodyLength errado). Ela só registra no log de eventos; aqui vira aviso. texto = o evento.
+	MensagemIlegivel(texto string)
 }
 
 // ErrSemSessao: a sessão não está logada; a mensagem não foi enviada.
@@ -139,6 +143,7 @@ func (s *Sessao) Iniciar() error {
 			return err
 		}
 	}
+	lf = fabricaLogEspia{base: lf, aviso: s.ouvinte.MensagemIlegivel}
 	s.stores = &fabricaStore{base: filestore.NewStoreFactory(st)}
 	s.init, err = quickfix.NewInitiator(s, s.stores, st, lf)
 	if err != nil {
@@ -270,4 +275,44 @@ func sn(b bool) string {
 		return "Y"
 	}
 	return "N"
+}
+
+// O QuickFIX/Go descarta em silêncio a mensagem que não consegue ler (BodyLength errado, por
+// exemplo): só escreve "Msg Parse Error" no log de eventos da sessão. O espião repassa esse evento
+// ao ouvinte, para nunca haver perda silenciosa (SPEC v1.1 F11).
+type fabricaLogEspia struct {
+	base  quickfix.LogFactory
+	aviso func(string)
+}
+
+func (f fabricaLogEspia) Create() (quickfix.Log, error) {
+	l, err := f.base.Create()
+	return logEspia{base: l, aviso: f.aviso}, err
+}
+
+func (f fabricaLogEspia) CreateSessionLog(id quickfix.SessionID) (quickfix.Log, error) {
+	l, err := f.base.CreateSessionLog(id)
+	return logEspia{base: l, aviso: f.aviso}, err
+}
+
+type logEspia struct {
+	base  quickfix.Log
+	aviso func(string)
+}
+
+func (l logEspia) OnIncoming(b []byte) { l.base.OnIncoming(b) }
+func (l logEspia) OnOutgoing(b []byte) { l.base.OnOutgoing(b) }
+func (l logEspia) OnEvent(s string) {
+	l.base.OnEvent(s)
+	l.verificar(s)
+}
+func (l logEspia) OnEventf(formato string, v ...interface{}) {
+	l.base.OnEventf(formato, v...)
+	l.verificar(fmt.Sprintf(formato, v...))
+}
+
+func (l logEspia) verificar(s string) {
+	if strings.HasPrefix(s, "Msg Parse Error") {
+		l.aviso(s)
+	}
 }

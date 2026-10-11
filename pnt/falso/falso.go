@@ -18,6 +18,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,6 +80,7 @@ type Falso struct {
 	estrito   quickfix.Validator
 	acceptor  *quickfix.Acceptor
 	proxy     *proxy
+	interna   int // porta do acceptor (o proxy fica na pública)
 	sessao    quickfix.SessionID
 	logado    atomic.Bool
 	logons    atomic.Int64
@@ -139,12 +141,15 @@ func (f *Falso) Iniciar() error {
 		return err
 	}
 	s := quickfix.NewSettings()
+	// Só em loopback. O QuickFIX/Go lê o SocketAcceptHost apenas nas configurações globais: na
+	// sessão ele é ignorado e o acceptor escuta em todas as interfaces (aviso do Firewall do Windows).
+	s.GlobalSettings().Set(config.SocketAcceptHost, "127.0.0.1")
+	f.interna = interna
 	ss := quickfix.NewSessionSettings()
 	ss.Set(config.BeginString, quickfix.BeginStringFIX44)
 	ss.Set(config.SenderCompID, f.cfg.CompID)
 	ss.Set(config.TargetCompID, f.cfg.Contraparte)
 	ss.Set(config.SocketAcceptPort, strconv.Itoa(interna))
-	ss.Set(config.SocketAcceptHost, "127.0.0.1")
 	ss.Set(config.StartTime, "00:00:00")
 	ss.Set(config.EndTime, "00:00:00")
 	ss.Set(config.DataDictionary, caminho)
@@ -196,6 +201,9 @@ func (f *Falso) Parar() {
 // Porta em que o serviço deve conectar.
 func (f *Falso) Porta() int { return f.cfg.Porta }
 
+// PortasEscuta: todas as portas em que o falso escuta (proxy e acceptor interno).
+func (f *Falso) PortasEscuta() []int { return []int{f.proxy.porta(), f.interna} }
+
 // Logado diz se a sessão está logada do lado do PnT.
 func (f *Falso) Logado() bool { return f.logado.Load() }
 
@@ -224,6 +232,18 @@ func (f *Falso) EsperarQueda(limite time.Duration) error {
 		time.Sleep(10 * time.Millisecond)
 	}
 	return fmt.Errorf("falso: a sessão não caiu em %s", limite)
+}
+
+// Corromper faz a próxima mensagem de aplicação do falso sair com o CheckSum errado ("checksum")
+// ou com o BodyLength somado de delta ("bodylength"; o CheckSum é recalculado sobre os bytes novos).
+func (f *Falso) Corromper(tipo string, delta int) error {
+	if tipo != "checksum" && tipo != "bodylength" {
+		return fmt.Errorf("falso: corrupção desconhecida %q", tipo)
+	}
+	f.proxy.mu.Lock()
+	f.proxy.corrupcao = &corrupcao{tipo: tipo, delta: delta}
+	f.proxy.mu.Unlock()
+	return nil
 }
 
 // Derrubar corta a conexão TCP (queda de rede). O serviço reconecta sozinho.
@@ -261,6 +281,10 @@ func (f *Falso) enviar(campos []Campo) error {
 	f.enviadas.Add(1)
 	return nil
 }
+
+// Reentregas conta as mensagens que o serviço descartou por BodyLength corrompido e recebeu de
+// novo por ResendRequest: o serviço processa cada uma duas vezes (o aviso e o reenvio).
+func (f *Falso) Reentregas() int64 { return f.proxy.reentregas.Load() }
 
 // EnviadasApp conta as mensagens de aplicação enviadas pelo falso (inclusive offline).
 func (f *Falso) EnviadasApp() int64 { return f.enviadas.Load() }
@@ -462,6 +486,18 @@ type proxy struct {
 	destino string
 	mu      sync.Mutex
 	pares   [][2]net.Conn
+	// corrupção pendente para a próxima mensagem de aplicação PnT → contraparte (testes de
+	// BodyLength/CheckSum errados no fio)
+	corrupcao *corrupcao
+	// descartadas: MsgSeqNum das mensagens com BodyLength corrompido (o serviço as descarta e as
+	// recebe de novo por ResendRequest); reentregas conta esses reenvios ao passarem pelo proxy.
+	descartadas map[string]bool
+	reentregas  atomic.Int64
+}
+
+type corrupcao struct {
+	tipo  string // "checksum" | "bodylength"
+	delta int
 }
 
 func novoProxy(porta int, destino string) (*proxy, error) {
@@ -491,7 +527,7 @@ func (p *proxy) aceitar() {
 		p.pares = append(p.pares, [2]net.Conn{c, d})
 		p.mu.Unlock()
 		go copiar(c, d)
-		go copiar(d, c)
+		go p.copiarEnquadrando(d, c)
 	}
 }
 
@@ -499,6 +535,107 @@ func copiar(de, para net.Conn) {
 	_, _ = io.Copy(para, de)
 	de.Close()
 	para.Close()
+}
+
+// copiarEnquadrando repassa mensagem a mensagem (de 8=FIX até 10=xxx<SOH>), para poder corromper a
+// próxima mensagem de aplicação quando pedido.
+func (p *proxy) copiarEnquadrando(de, para net.Conn) {
+	defer de.Close()
+	defer para.Close()
+	var buf []byte
+	tmp := make([]byte, 64*1024)
+	for {
+		n, err := de.Read(tmp)
+		if n > 0 {
+			buf = append(buf, tmp[:n]...)
+			for {
+				msg, resto, ok := proximaMensagem(buf)
+				if !ok {
+					break
+				}
+				buf = resto
+				if _, err := para.Write(p.talvezCorromper(msg)); err != nil {
+					return
+				}
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+var fimMensagem = []byte("10=")
+
+func proximaMensagem(buf []byte) (msg, resto []byte, ok bool) {
+	i := bytes.Index(buf, fimMensagem)
+	if i < 0 {
+		return nil, buf, false
+	}
+	j := bytes.IndexByte(buf[i+1:], 0x01)
+	if j < 0 {
+		return nil, buf, false
+	}
+	fim := i + 1 + j + 1
+	return append([]byte(nil), buf[:fim]...), buf[fim:], true
+}
+
+func (p *proxy) talvezCorromper(msg []byte) []byte {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	c := p.corrupcao
+	tipo := ""
+	if m := regexp35.FindSubmatch(msg); m != nil {
+		tipo = string(m[1])
+	}
+	seq := ""
+	if m := regexp34.FindSubmatch(msg); m != nil {
+		seq = string(m[1])
+	}
+	if p.descartadas[seq] && regexp43.Match(msg) {
+		delete(p.descartadas, seq)
+		p.reentregas.Add(1)
+	}
+	if c == nil || tiposSessao[tipo] {
+		return msg
+	}
+	p.corrupcao = nil
+	if c.tipo == "bodylength" {
+		if p.descartadas == nil {
+			p.descartadas = map[string]bool{}
+		}
+		p.descartadas[seq] = true
+	}
+	return corromper(msg, *c)
+}
+
+var (
+	regexp35 = regexp.MustCompile("35=([^]*)")
+	regexp9  = regexp.MustCompile("^8=[^]*9=([0-9]+)")
+	regexp10 = regexp.MustCompile("10=([0-9]{3})$")
+	regexp34 = regexp.MustCompile("34=([0-9]+)")
+	regexp43 = regexp.MustCompile("43=Y")
+)
+
+// corromper altera o 9 (e recalcula o 10 sobre os bytes novos) ou só o 10.
+func corromper(msg []byte, c corrupcao) []byte {
+	switch c.tipo {
+	case "checksum":
+		m := regexp10.FindSubmatchIndex(msg)
+		v, _ := strconv.Atoi(string(msg[m[2]:m[3]]))
+		return append(append(append([]byte(nil), msg[:m[2]]...), []byte(fmt.Sprintf("%03d", (v+1)%256))...), msg[m[3]:]...)
+	case "bodylength":
+		m := regexp9.FindSubmatchIndex(msg)
+		v, _ := strconv.Atoi(string(msg[m[2]:m[3]]))
+		out := append(append(append([]byte(nil), msg[:m[2]]...), []byte(strconv.Itoa(v+c.delta))...), msg[m[3]:]...)
+		k := regexp10.FindSubmatchIndex(out)
+		soma := 0
+		for _, b := range out[:k[0]+1] {
+			soma += int(b)
+		}
+		return append(append([]byte(nil), out[:k[2]]...), []byte(fmt.Sprintf("%03d", soma%256))...)
+	}
+	return msg
 }
 
 func (p *proxy) derrubar() {

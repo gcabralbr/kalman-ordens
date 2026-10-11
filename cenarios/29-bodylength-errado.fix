@@ -1,0 +1,30 @@
+cenario 29 Fill com BodyLength (9) errado no fio → alerta crítico e mass status na hora, fill aplicado uma vez
+hora 2026-10-13 13:10:00
+# O QuickFIX/Go descarta em silêncio a mensagem com 9 errado (só registra "Msg Parse Error" no
+# log de eventos) e não há opção equivalente ao ValidateLengthAndChecksum=N. O buraco de sequência
+# só apareceria na próxima mensagem ou heartbeat (até 30 s). O espião do log avisa o motor, que
+# emite MENSAGEM_ILEGIVEL e pede mass status sem esperar. SPEC v1.1 F12.
+
+executa INICIO
+
+entrada 2901 C
+resposta aceito=true
+recebe 35=D 11=KM-E-2901-1 54=1 847=1031
+envia @ER 11=KM-E-2901-1 37=dsa.2901.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+corrompe bodylength -3
+envia @ER 11=KM-E-2901-1 37=dsa.2901.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+alerta MENSAGEM_ILEGIVEL
+recebe 35=AF 585=9 1=12345 584=>MS
+# o 150=I revela o buraco: a biblioteca pede reenvio e o fill original chega com 43=Y
+envia @ER 11=KM-E-2901-1 37=dsa.2901.E 150=I 39=2 584=$MS 54=1 38=1 44=130020 847=1031 14=1 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=2901 qtd=1 preco=130010
+recebe 35=D 11=KM-P-2901-1 38=1 54=2 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-2901-1 37=dsa.2901.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+avanca 3s
+alerta CONCILIACAO
+# a transição para PROTEGIDA espera a conciliação terminar
+evento PROTEGIDA operacao_id=2901
+conta_eventos ENTRADA_EXECUTADA operacao_id=2901 = 1
+sem_alerta SEM_CONFIRMACAO
+nada 35=3
+saude posicao=1 divergente=false

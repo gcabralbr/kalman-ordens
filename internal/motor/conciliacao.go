@@ -86,6 +86,7 @@ func (m *Motor) conciliar() {
 		m.salvarOp(op)
 	}
 	m.al.Resolver("SESSAO_REJEITOU_MENSAGEM")
+	m.al.Resolver("MENSAGEM_ILEGIVEL")
 	m.al.Resolver("MASS_STATUS_REJEITADO")
 	if divergencias > 0 {
 		m.divergente = true

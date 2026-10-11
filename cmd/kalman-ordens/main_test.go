@@ -17,6 +17,7 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
 	"gammaquant.com.br/kalman-ordens/pnt/falso"
+	"gammaquant.com.br/kalman-ordens/pnt/loopback"
 )
 
 // Fumaça do executável de ponta a ponta, com relógio real: MariaDB (container), HTTP real na
@@ -78,6 +79,11 @@ func TestServirDePontaAPonta(t *testing.T) {
 	if err := f.EsperarLogon(0, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
+	// nenhum listener (API do serviço, PnT falso, marketdata falso) fora do loopback
+	_, portaHTTP, _ := net.SplitHostPort(endereco)
+	pHTTP, _ := strconv.Atoi(portaHTTP)
+	pMD := md.Listener.Addr().(*net.TCPAddr).Port
+	loopback.Exigir(t, append(f.PortasEscuta(), pHTTP, pMD)...)
 	if af, err := f.Proxima(5 * time.Second); err != nil || af.Tipo != "AF" {
 		t.Fatalf("esperava o mass status do logon: %v %s", err, af.Bruta)
 	}
