@@ -37,22 +37,23 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if cfg.Texto("DB_DSN", "") == "" {
-		c, err := lerServiceEnv(*arqEnv, cfg)
-		if err != nil {
-			return err
-		}
-		cfg = c
-	}
-	r, err := repo.AbrirMariaDB(cfg.Texto("DB_DSN", ""))
+	r, cfg, err := abrirBancoCLI(cfg, *arqEnv)
 	if err != nil {
 		return err
 	}
 	defer r.Fechar()
-	if t := cfg.Texto("ACUSUARIO_TABELA", ""); t != "" {
-		if err := r.UsarTabelaUsuario(t); err != nil {
-			return err
+	// o schema tem de estar na versão do binário: a CLI não migra sozinha
+	pend, err := r.MigracoesPendentes()
+	if err != nil {
+		return err
+	}
+	if len(pend) > 0 {
+		var nomes []string
+		for _, m := range pend {
+			nomes = append(nomes, m.Nome)
 		}
+		return fmt.Errorf("schema do banco atrás do binário (%d migração(ões) pendente(s): %s): rode kalman-ordens migrar",
+			len(pend), strings.Join(nomes, ", "))
 	}
 	precisaUID := func() error {
 		if *uid <= 0 {
@@ -95,6 +96,54 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 		return nil
 	}
 	return fmt.Errorf("usuario %s: ação desconhecida (listar | conferir | habilitar | desabilitar)", acao)
+}
+
+// cliMigrar: aplica as migrações pendentes, registra em kalmanordem_migracao e sai — sem FIX nem
+// HTTP. Rodar de novo não faz nada. Instalação: logo depois do binário e do service.env.
+func cliMigrar(cfg config.Config, args []string, saida io.Writer) error {
+	fs := flag.NewFlagSet("migrar", flag.ContinueOnError)
+	arqEnv := fs.String("env", "/etc/kalman-ordens/service.env", "service.env, se DB_DSN não estiver no ambiente")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	r, _, err := abrirBancoCLI(cfg, *arqEnv)
+	if err != nil {
+		return err
+	}
+	defer r.Fechar()
+	aplicadas, err := r.MigrarRelatando()
+	for _, n := range aplicadas {
+		fmt.Fprintf(saida, "aplicada: %s\n", n)
+	}
+	if err != nil {
+		return err
+	}
+	if len(aplicadas) == 0 {
+		fmt.Fprintln(saida, "nenhuma migração pendente: o schema já está na versão do binário")
+	}
+	return nil
+}
+
+// abrirBancoCLI: DB_DSN do ambiente ou do service.env; ACUSUARIO_TABELA só em teste.
+func abrirBancoCLI(cfg config.Config, arqEnv string) (*repo.MariaDB, config.Config, error) {
+	if cfg.Texto("DB_DSN", "") == "" {
+		c, err := lerServiceEnv(arqEnv, cfg)
+		if err != nil {
+			return nil, cfg, err
+		}
+		cfg = c
+	}
+	r, err := repo.AbrirMariaDB(cfg.Texto("DB_DSN", ""))
+	if err != nil {
+		return nil, cfg, err
+	}
+	if t := cfg.Texto("ACUSUARIO_TABELA", ""); t != "" {
+		if err := r.UsarTabelaUsuario(t); err != nil {
+			r.Fechar()
+			return nil, cfg, err
+		}
+	}
+	return r, cfg, nil
 }
 
 // conferirUsuario mostra o que uma entrada desse uid usaria agora neste ambiente.

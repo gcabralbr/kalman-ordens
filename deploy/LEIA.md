@@ -29,7 +29,8 @@ scripts/build.sh                 # dist/kalman-ordens + sha256
 dist/kalman-ordens versao        # tem de ser o commit, sem -sujo
 ```
 
-Atualizar depois: `cd ~/kalman-ordens && git pull && scripts/build.sh` e reinstalar o binário (1.4).
+Atualizar depois: `cd ~/kalman-ordens && git pull && scripts/build.sh`, reinstalar o binário e
+rodar `kalman-ordens migrar` antes de reiniciar (1.4).
 
 ### 1.2 Banco (schema próprio, local na .53)
 
@@ -45,8 +46,9 @@ GRANT SELECT (usucodusuario, usutxtconfig, usutxtconfigprd) ON dbecotools.acusua
 
 Instalação que já existia antes da v1.2: rodar só o último `GRANT`.
 
-Sem `DROP` e sem `DELETE`. As tabelas o serviço cria sozinho na primeira subida
-(`kalmanordem_migracao` guarda a versão). O `sql_mode` é fixado pelo serviço em cada conexão
+Sem `DROP` e sem `DELETE`. As tabelas nascem com `kalman-ordens migrar` (1.4), sem subir o
+serviço; `kalmanordem_migracao` guarda a versão (o serviço também aplica as pendentes ao subir, e
+a CLI `usuario` recusa trabalhar com o schema atrás do binário). O `sql_mode` é fixado pelo serviço em cada conexão
 (`STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION`, o
 valor da .51); não depende da configuração global.
 
@@ -105,6 +107,16 @@ Saíram na v1.2 e **o serviço não sobe se estiverem no service.env**: `ORDENS_
 `ORDENS_ONBEHALF`, `ORDENS_SIMBOLO`, `ORDENS_VENCIMENTO`, `ORDENS_UID_REAL`. Conta e destino vêm
 do GQ (`acusuario` do uid, no ambiente), o símbolo é o ticker do marketdata (`WINV26` até quarta,
 o mesmo da HML de terça) e a habilitação é pela CLI (1.5).
+
+**Migrar logo em seguida** (com o binário e o service.env instalados; só banco, sem FIX nem HTTP):
+
+```
+sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql
+sudo /opt/kalman-ordens/kalman-ordens migrar   # de novo: nenhuma migração pendente
+```
+
+O binário **sem comando não sobe o serviço**: mostra a ajuda e sai com erro. O serviço só sobe
+com `servir` (o `ExecStart` da unidade).
 
 `operacao_id` dos testes: usar a faixa `900000000+`, que nunca colide com a `kalmanoperacao`.
 

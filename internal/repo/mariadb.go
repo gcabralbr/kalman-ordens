@@ -74,33 +74,63 @@ func (r *MariaDB) Fechar() error { return r.db.Close() }
 
 // Migrar aplica as migrações pendentes (tabela kalmanordem_migracao).
 func (r *MariaDB) Migrar() error {
+	_, err := r.MigrarRelatando()
+	return err
+}
+
+// MigrarRelatando aplica as migrações pendentes e devolve os nomes das que aplicou (nenhuma = o
+// schema já estava na versão do binário).
+func (r *MariaDB) MigrarRelatando() ([]string, error) {
 	if _, err := r.db.Exec(`CREATE TABLE IF NOT EXISTS kalmanordem_migracao (
 		versao INT NOT NULL PRIMARY KEY, nome VARCHAR(100) NOT NULL, aplicada_em DATETIME(3) NOT NULL
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
-		return err
+		return nil, err
 	}
-	ms, err := migracoes.Todas()
+	pend, err := r.MigracoesPendentes()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	for _, m := range ms {
-		var n int
-		if err := r.db.QueryRow("SELECT COUNT(*) FROM kalmanordem_migracao WHERE versao=?", m.Versao).Scan(&n); err != nil {
-			return err
-		}
-		if n > 0 {
-			continue
-		}
+	var aplicadas []string
+	for _, m := range pend {
 		for _, inst := range m.Instrucoes {
 			if _, err := r.db.Exec(inst); err != nil {
-				return fmt.Errorf("migração %s: %w", m.Nome, err)
+				return aplicadas, fmt.Errorf("migração %s: %w", m.Nome, err)
 			}
 		}
 		if _, err := r.db.Exec("INSERT INTO kalmanordem_migracao (versao, nome, aplicada_em) VALUES (?,?,?)", m.Versao, m.Nome, time.Now().UTC()); err != nil {
-			return err
+			return aplicadas, err
+		}
+		aplicadas = append(aplicadas, m.Nome)
+	}
+	return aplicadas, nil
+}
+
+// MigracoesPendentes: as migrações embutidas no binário que o banco ainda não tem. Só lê (sem
+// kalmanordem_migracao, todas estão pendentes).
+func (r *MariaDB) MigracoesPendentes() ([]migracoes.Migracao, error) {
+	ms, err := migracoes.Todas()
+	if err != nil {
+		return nil, err
+	}
+	var existe int
+	if err := r.db.QueryRow(`SELECT COUNT(*) FROM information_schema.tables
+		WHERE table_schema = DATABASE() AND table_name = 'kalmanordem_migracao'`).Scan(&existe); err != nil {
+		return nil, err
+	}
+	if existe == 0 {
+		return ms, nil
+	}
+	var pend []migracoes.Migracao
+	for _, m := range ms {
+		var n int
+		if err := r.db.QueryRow("SELECT COUNT(*) FROM kalmanordem_migracao WHERE versao=?", m.Versao).Scan(&n); err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			pend = append(pend, m)
 		}
 	}
-	return nil
+	return pend, nil
 }
 
 // LimparTeste apaga as tabelas do serviço — só num schema cujo nome termina em _teste.

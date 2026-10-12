@@ -1,16 +1,12 @@
 // kalman-ordens: ordens reais do Kalman no PnT (DSA, FIX 4.4).
 //
-//	kalman-ordens servir            sobe o serviço (systemd)
-//	kalman-ordens parar  -motivo X  parada BLOQUEAR (origem cli)
-//	kalman-ordens zerar  -motivo X  parada ZERAR (origem cli)
-//	kalman-ordens retomar -motivo X retira a parada (sempre manual)
-//	kalman-ordens saude             GET /saude
-//	kalman-ordens usuario ...       habilitação por uid (listar | conferir | habilitar | desabilitar)
-//	kalman-ordens versao            commit embutido no binário (scripts/build.sh)
+// Comandos em ajuda, abaixo. Sem comando, o binário só mostra a ajuda e sai com erro: o serviço
+// sobe apenas com "servir" explícito (o ExecStart da unidade).
 //
 // Configuração por variáveis de ambiente (EnvironmentFile=/etc/kalman-ordens/service.env).
 // parar/zerar/retomar/saude só falam com o HTTP local (HTTP_ENDERECO), para uso por SSH;
-// usuario fala direto com o banco (não há endpoint que altere habilitação).
+// migrar e usuario falam direto com o banco (não há endpoint que altere habilitação) e, sem
+// DB_DSN no ambiente, leem o service.env.
 package main
 
 import (
@@ -43,33 +39,59 @@ import (
 // versao é o commit do build (scripts/build.sh: -ldflags "-X main.versao=...").
 var versao = "dev"
 
+const ajuda = `uso: kalman-ordens <comando> [opções]
+
+  servir                          sobe o serviço (o ExecStart da unidade systemd)
+  migrar [-env ARQ]               aplica as migrações pendentes do banco e sai (sem FIX nem HTTP)
+  usuario listar                  habilitação por uid, direto no banco
+  usuario conferir    -uid N
+  usuario habilitar   -uid N -motivo X [-posicao-max N] [-qtd-max N]
+  usuario desabilitar -uid N -motivo X
+  parar   -motivo X               parada BLOQUEAR (HTTP local)
+  zerar   -motivo X               parada ZERAR (HTTP local)
+  retomar -motivo X               retira a parada (sempre manual)
+  saude                           GET /saude
+  versao                          commit embutido no binário
+`
+
 func main() {
-	cmd := "servir"
-	args := os.Args[1:]
-	if len(args) > 0 {
-		cmd, args = args[0], args[1:]
-	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
-	cfg := config.DoAmbiente()
+	os.Exit(executar(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// executar devolve o código de saída. Sem comando: ajuda e 2, sem ler configuração nem abrir
+// conexão — o binário chamado à toa não pode virar o serviço.
+func executar(args []string, saida, erros io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprint(erros, "kalman-ordens: falta o comando (o serviço só sobe com \"servir\")\n\n"+ajuda)
+		return 2
+	}
+	cmd, args := args[0], args[1:]
 	var err error
 	switch cmd {
 	case "servir":
 		ctx, parar := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer parar()
-		err = servir(ctx, cfg)
+		err = servir(ctx, config.DoAmbiente())
+	case "migrar":
+		err = cliMigrar(config.DoAmbiente(), args, saida)
 	case "parar", "zerar", "retomar", "saude":
-		err = cli(cfg, cmd, args)
+		err = cli(config.DoAmbiente(), cmd, args)
 	case "usuario":
-		err = cliUsuario(cfg, args, os.Stdout)
+		err = cliUsuario(config.DoAmbiente(), args, saida)
 	case "versao":
-		fmt.Println(versao)
+		fmt.Fprintln(saida, versao)
+	case "ajuda", "help", "-h", "--help":
+		fmt.Fprint(saida, ajuda)
 	default:
-		err = fmt.Errorf("comando desconhecido %q (servir | parar | zerar | retomar | saude | usuario | versao)", cmd)
+		fmt.Fprintf(erros, "kalman-ordens: comando desconhecido %q\n\n%s", cmd, ajuda)
+		return 2
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "kalman-ordens:", err)
-		os.Exit(1)
+		fmt.Fprintln(erros, "kalman-ordens:", err)
+		return 1
 	}
+	return 0
 }
 
 func obrigatorias(cfg config.Config, chaves ...string) error {

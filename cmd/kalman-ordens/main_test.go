@@ -41,8 +41,9 @@ func TestServirDePontaAPonta(t *testing.T) {
 	if err := limpo.LimparTeste(); err != nil {
 		t.Fatal(err)
 	}
-	// v1.2: uid 7 habilitado e com a conta 12345 (HML) escolhida no GQ — pela CLI, como na .53
-	if err := limpo.Migrar(); err != nil {
+	// como na instalação da .53: migrar pela CLI, depois o uid 7 habilitado pela CLI, com a conta
+	// 12345 (HML) escolhida no GQ
+	if err := cliMigrar(config.Novo(map[string]string{"DB_DSN": dsn}), nil, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if err := limpo.PrepararUsuariosTeste(); err != nil {
