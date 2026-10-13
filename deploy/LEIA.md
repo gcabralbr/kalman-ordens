@@ -218,7 +218,8 @@ anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que 
 | 2.14 | depois da 2 | SwingTrade 2028 exploratória [PnT-9, PnT-10] | ferramenta de bancada (fora do serviço) | fica para depois da rodada 2 |
 
 Depois: ajustar na SPEC cada ponto `[PnT-n]` respondido; se mudar comportamento, roteiro novo antes
-do código. Dicionário novo do PnT [PnT-2], se vier: substituir a cópia e rodar a suíte.
+do código. Dicionário novo do PnT [PnT-2]: recebido em 13/10/2026, cópia regenerada (SPEC v1.2
+seção 7). Pendente [PnT-17]: a 1014 é suportada no DSA? (2.5 e 2.11–2.13 respondem na prática).
 
 ---
 

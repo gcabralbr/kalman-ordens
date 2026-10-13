@@ -455,7 +455,7 @@ entre execução real e paper.
 | Ref. | Ponto da spec | Padrão adotado até a resposta |
 |---|---|---|
 | PnT-1 | usuário novo, IP da .51 | HML com usuário de homologação |
-| PnT-2 | `FIX44.xml` atual | dicionário antigo + `ValidateUserDefinedFields=N` |
+| PnT-2 | `FIX44.xml` atual | **recebido em 13/10/2026** (SPEC v1.2 seção 7) |
 | PnT-3 | campos de identificação | os mesmos do `createSO` (116, 142, 1) |
 | PnT-4 | tamanho do ClOrdID | aceito na prática (> 28) |
 | PnT-5 | fills da 1014 após disparo | mesmo 37; origem detectada pelo papel `P` |
@@ -467,6 +467,7 @@ entre execução real e paper.
 | PnT-13 | mass status | assumir que traz só ativas; ordens sumidas viram `DESCONHECIDA` |
 | PnT-15 | códigos de erro | gravar 102/103 e o texto 58 sem interpretar |
 | PnT-16 | self-trade | registrar; tratar como rejeição comum |
+| PnT-17 | a 1014 é suportada no DSA? (o dicionário de 13/10 não a tem) | 1014 (D2) até a resposta; se não for, D2 é reaberta (SPEC v1.2 pendência 4) |
 
 ---
 

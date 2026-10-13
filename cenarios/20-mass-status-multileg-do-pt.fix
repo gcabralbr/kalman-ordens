@@ -1,8 +1,9 @@
 cenario 20 Mass status com ordens multileg do PT → ignoradas, sem 35=3 enviado
 hora 2026-10-13 09:10:00
-# Estas mensagens falham no dsa_FIX44.xml (grupo 555 com tags que o dicionário não declara,
-# perna sem o delimitador 600) nas duas bibliotecas. Com RejectInvalidMessage=N o serviço
-# registra no log e o filtro de prefixo KM- descarta. Nenhum 35=3 volta ao PnT.
+# Com o dicionário de 2020 as duas falhavam na validação (grupo 555 com tags não declaradas,
+# perna sem o delimitador 600). Com o do PnT de 2026-10-13 a 1 passa; a 2 continua falhando.
+# Com RejectInvalidMessage=N o serviço registra no log e o filtro de prefixo KM- descarta as
+# duas. Nenhum 35=3 volta ao PnT.
 # Mensagem 1: mass status SwingTrade 2028 do RoE 2025 (HML, WINQ25), com 11 de PT e a conta.
 # Mensagem 2: multileg no formato do rejected.message (pernas sem 600).
 

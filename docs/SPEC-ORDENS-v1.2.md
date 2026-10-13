@@ -6,7 +6,7 @@ mudou**; onde a v1.2 não diz nada, vale a v1.1.
 Tema único: **conta, destino e símbolo vêm da operação, não do service.env**. Feito antes da
 rodada 1 da F1, para a HML testar o caminho de produção.
 
-Data: 2026-10-11.
+Data: 2026-10-11. Seção 7 (dicionário novo do PnT): 2026-10-13.
 
 ---
 
@@ -65,6 +65,11 @@ diferente do da operação → `CAMPO_INVALIDO`. `GET /ordens/{id}` traz `uid`, 
    replicado na 1031/1014. Perguntar ao PnT se a single-leg exige PartyID [PnT-3].
 3. **Conta no cancel:** o PT não manda conta no 35=F; o serviço manda 1 e 116. Confirmar na
    rodada 1 que o PnT aceita (checklist 2.10e).
+4. **A 1014 é suportada no DSA? [PnT-17]** O dicionário novo do PnT não tem nenhuma tag da 1014
+   e a NewOrderSingle dele traz os campos da SwingTrade com OCO (F22). Pergunta enviada ao PnT em
+   13/10: "a 1014 é suportada no DSA?". Até a resposta, a v1 segue com a 1014 (D2) e a HML a testa
+   (rodada 1, 2.5; rodada 2, 2.11–2.13). Se não for suportada, a proteção da v1 muda: a decisão D2
+   é reaberta, com roteiro novo antes do código.
 
 ## 6. Cobertura dos roteiros
 
@@ -84,3 +89,17 @@ diferente do da operação → `CAMPO_INVALIDO`. `GET /ordens/{id}` traz `uid`, 
 Testes de unidade: `internal/usuario` (JSON, destinos, conta, trava cruzada),
 `internal/repo` `TestContratoV12` (memória e MariaDB), `cmd/kalman-ordens`
 `TestServirRecusaConfigAntiga` e a fumaça (CLI `usuario habilitar` + 1/116/55 no fio).
+
+## 7. Dicionário do PnT de 2026-10-13 (F)
+
+Chegou o dicionário novo [PnT-2]. Revisa F1, F8, F10 e F14 da v1.1; a numeração continua a da
+v1.1 (que vai até F17).
+
+| # | Regra | Substitui | Prova |
+|---|---|---|---|
+| F18 | **Original do PnT guardado byte a byte e cópia gerada.** `pnt/dicionario/dsa_FIX44.pnt-2026-10-13.xml` (`-text` no git, sha256 em `pnt/dicionario/LEIA.md`); o de 2020 (`dsa_FIX44.original.xml`) sai do repositório. A cópia `dsa_FIX44.xml` é `Derivar(original)` (`go generate ./pnt/dicionario`), não editada à mão. `Derivar` confere cada premissa e falha se o dicionário do PnT já trouxer uma diferença ou mudar o trecho: o próximo dicionário não passa em silêncio. | F1 (original ao lado) | `TestCopiaDerivadaDoOriginal` |
+| F19 | **Diferenças que ficam** (lista completa em `pnt/dicionario/LEIA.md`): (1) `type="FIX"` na raiz (F1); (2) corpo de 8 e 9 sem obrigatórios — a lista do PnT é a mesma de 2020 (F8); (3) `585=9`, que o PnT continua sem declarar (F10). | — | `TestFillIncompletoNaoEDescartado`; sessão contra o PnT falso (AF `585=9`) |
+| F20 | **Tags da 1014 declaradas pela cópia (diferença 4).** O dicionário do PnT não tem 20828–20835 (nem 20828–20831, que o exemplo de SwingTrade do RoE 2025 também usa). A cópia as declara (20828–20833 PRICE, 20834 FLOAT, 20835 BOOLEAN; nomes do RoE 2025) e as põe, opcionais, no corpo do 35=D e do 35=G. Antes passavam como tag de usuário não declarada; agora a 1014 e o replace dela passam também na validação estrita com `ValidateUserDefinedFields=Y`. No 35=8 não entram: o PnT não lista lá as tags de estratégia (nem as dele); o eco passa como tag de usuário. | — | `TestProtecao1014Declarada` |
+| F21 | **Erro no dicionário do PnT (diferença 5).** O componente `InstrumentLeg` declara campos dentro dele (`<field number=… type=…>`) e refere a 20798 como `LegLastQty` (QTY), mas em `<fields>` a 20798 é `LegLastShares` (INT). O QuickFIX/Go não carrega o arquivo como veio (`unknown field LegLastQty`). A cópia refere `LegLastShares`; a tag no fio é a mesma. Avisar o PnT. | — | `TestDicionarioDoPnTNaoCarregaSemADiferenca5` |
+| F22 | **20856 deixa de ser diferença.** O PnT declara `ActivateErrorStatusStrategy (20856)` no 35=D (e no AB/AC/G); a declaração da cópia (quarta diferença da v1.1) sai. A regra da F14 não muda: `20856=Y` em toda NewOrderSingle; o teste 2.10b da HML continua. **A NewOrderSingle do PnT traz os campos da SwingTrade com OCO**: 20865 EntryTrigger, 20866 EntrySend, 20872–20876 (NumOCOGains, OCOGainsID, PricesStartGains, PricesSendOrderGains, GainsQtys), 20877–20881 (NumOCOLosses, OCOLossesID, PricesStopLosses, PricesSendOrderLosses, LossesQtys) — e nenhuma tag da 1014 → pendência 4 [PnT-17]. | F14 (quarta diferença) | `TestProtecao1014Declarada` (35=D sem 20828/20829 passa no dicionário do PnT) |
+| F23 | **Efeito na recepção.** Tags de usuário que o PnT agora declara passam a ter o tipo validado (ex.: 20870 BOOLEAN, 20850 FLOAT). O log real de HML (194 mensagens de aplicação) continua passando inteiro na sessão, sem 35=3. Cenário 20: a mensagem 1 (mass status SwingTrade 2028, grupo 555 com tags do PnT) passa a ser válida; a mensagem 2 (pernas sem o 600) continua inválida — `RejectInvalidMessage=N` (F2) fica. O cenário não muda: as duas são ignoradas pelo filtro `KM-`. | — | `TestLogRealPassaNaSessao`, cenário 20 |

@@ -1,4 +1,5 @@
-// Package dicionario embute o dicionário FIX do PnT DSA (dsa_FIX44.xml, com type="FIX" na raiz).
+// Package dicionario embute o dicionário FIX do PnT DSA: a cópia do serviço (dsa_FIX44.xml),
+// derivada do dicionário recebido do PnT (Original) por Derivar.
 //
 // O QuickFIX/Go lê o dicionário de um caminho de arquivo (configuração DataDictionary), então
 // Gravar materializa a cópia embutida num diretório. Ver LEIA.md.
@@ -13,6 +14,8 @@ import (
 
 	"github.com/quickfixgo/quickfix/datadictionary"
 )
+
+//go:generate go run ./gerar
 
 //go:embed dsa_FIX44.xml
 var XML []byte

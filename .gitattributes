@@ -1,5 +1,5 @@
 * text=auto eol=lf
 *.message -text
 *.fix text eol=lf
-pnt/dicionario/dsa_FIX44.original.xml -text
+pnt/dicionario/dsa_FIX44.pnt-*.xml -text
 cenarios/referencia/*.log -text
