@@ -21,9 +21,12 @@ Data: 2026-10-14. Itens A–G vindos do responsável; A2, F2 (propostas desta im
 | 2.10b `20856=Y` | aceito na 1031 e na 1014. | regra (1) da F14 |
 | 2.10e Conta e símbolo | `1`/`116`/`142`/`55=WINZ26` como esperado. | — |
 | 2.2 Restart com logout limpo | logon com a sequência contínua, `141=N`; o buraco do lado do PnT coberto por ResendRequest/SequenceReset. O PnT não exige reset. | [PnT-11] |
-| 2.6 Cancel-on-Disconnect | **parcial**: com logout limpo a 1014 sobrevive. Em queda abrupta não deu para verificar (A); novo teste depois do deploy desta versão. | — |
+| 2.6 / 2.6b Cancel-on-Disconnect | com logout limpo (manhã) e com **SIGKILL** (2.6b, tarde, `6866df3`) a 1014 sobreviveu: **não há COD para o usuário de HML**. Sessão presa no PnT depois da queda abrupta: 18 s na da tarde, ~3,5 min na da manhã. Na mesma subida, o reparo do store recalculou 74 logons (A1) e a janela de sincronia de 500 ms teve 1 ResendRequest dentro (A2). | [PnT-12] na HML (produção: confirmar com o usuário novo) |
 | 2.7 Mass status | traz **todas** as ordens do dia, inclusive as encerradas (`39=4`; `39=2` com `14=1`, `6=211560` corretos), com 911/912. | [PnT-13], pendência 3 da v1.1 |
 | Execução no livro | venda limite 208355 executou a 211560: a HML é o pregão de ontem (~3400 pts acima de hoje). Preço de teste na rodada 2 vem do replay. | — |
+| 2.4 Saída do gestor (tarde) | cancel da 1014: `39=6` → `39=4` em 3,7 s; saída 1031; replace aceito (`39=E` → `39=5`); o replace seguinte rejeitado com **`35=9 39=2 "[IS-72] Replacing quantity must be bigger than current cumul..."`**: a ordem já tinha executado no PnT, e o fill chegou 100 ms depois do 35=9. O motor zerou sem saída duplicada. `[IS-72]` entra no catálogo de rejeições do PnT (`docs/ALERTAS.md`). | — |
+| Operação 900000002 | venda 211560, compra 211685: −125 pts, `ZERADA`. | — |
+| Detalhes da saída (log FIX da .53) | o 35=9 traz **dois códigos** no 58: `[IS-72]` e `[DSA-56]` "Pure status replace was not possible because of tag SenderLocationID (142)" — o DSA-56 é consequência do IS-72 (o PnT tentou tratar o pedido como replace só de estado); o primeiro replace, com o mesmo 142, foi aceito. Veio com `434=2` e `102=99`: o motor não decide pelo 102. O **198 fica estável** no replace da 1031 (`PNT-7101400015` antes e depois). O **fill veio no ClOrdID vigente** (`-2`), não no do replace rejeitado (`-3`). O **17 dos fills é uma sequência do dia** (`481141000000003`, …, `…009`): reforça a chave (37, 17) de H1. Mensagens reais em `cenarios/referencia/saida-is72-hml-2026-10-14.log`; roteiro 51. | — |
 
 ## 2. Sessão FIX (A–D)
 
@@ -77,8 +80,10 @@ Observado na HML em 14/10; nada muda no serviço por enquanto.
 
 ## 6. Pendências
 
-1. **Cancel-on-Disconnect em queda abrupta (2.6, [PnT-12])**: repetir na .53 com esta versão
-   (`deploy/LEIA.md` 2.6b). Com A1–D1, a sessão volta sozinha depois dos ~3,5 min do PnT.
+1. ~~Cancel-on-Disconnect em queda abrupta (2.6, [PnT-12]).~~ **Fechada na HML** (2.6b, 14/10): a 1014
+   sobrevive ao SIGKILL. Em produção, conferir com o usuário novo (F2).
+4. **Rodada 2**: 2.12 (replace de quantidade da 1014) e 2.13 (disparo da 1014), com o marketdata em
+   replay (`deploy/LEIA.md` 1.7).
 2. ~~ExecID (17) único no banco inteiro.~~ **Resolvida por H1.**
 3. **911/912 no mass status**: o PnT manda `TotNumReports`/`LastRptRequested`; a conciliação ainda
    fecha no silêncio (`MASS_STATUS_SILENCIO_S`). Fechar pelo 912 é melhoria possível, sem roteiro.
@@ -93,4 +98,5 @@ Observado na HML em 14/10; nada muda no serviço por enquanto.
 | 48 | C1 (logout "MsgSeqNum too low, expecting N": logon seguinte já com N) |
 | 49 | B1 (store ilegível no reenvio: `FIX_STORE_ILEGIVEL`, reparo, reconexão, sessão de pé) |
 | 50 | H1 (mesmo 17 na entrada e na saída → os dois fills; repetido na mesma ordem → uma vez) |
+| 51 | saída da operação 900000002 da HML com as mensagens reais: replace aceito, replace seguinte rejeitado `[IS-72]`/`[DSA-56]`, fill 100 ms depois no ClOrdID vigente → zera sem saída duplicada |
 | 02, 04, 04b, 13, 17, 19, 32 | `ESPERA_ENCERRAMENTO_S` = 8 s (04b: fill aos 6 s, além dos 5 s antigos, ainda dentro da espera) |

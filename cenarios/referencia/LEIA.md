@@ -17,3 +17,15 @@ O que ele mostra (SPEC v1.1 F14, F16):
 
 Usado por `pnt/logreal_test.go` (9/10 byte a byte; as 194 mensagens de aplicação do PnT passam
 pela sessão do serviço sem 35=3 e sem descarte) e como modelo dos roteiros 30–33.
+
+# Referência: saída com `[IS-72]` na HML (14/10/2026)
+
+`saida-is72-hml-2026-10-14.log` — trecho do log FIX do serviço na .53 (binário `6866df3`, sessão
+`GAMMAQ2 → PNT_DSA`): a saída da operação 900000002. Nove mensagens, uma por linha, com o carimbo
+do log antes: o 35=D da saída, os dois 35=G, os ERs do PnT (`39=A`, `39=0`, `39=E`, `39=5`), o
+35=9 `[IS-72]`/`[DSA-56]` e o fill no ClOrdID vigente. SOH de volta no lugar do `|` da cópia;
+9 e 10 conferem byte a byte (inclusive os espaços no fim do 58 do 35=9). Sem logon: nenhuma senha.
+Gravado com `-text`.
+
+Usado por `pnt/logreal_test.go` (`TestLogSaidaIS72`) e pelo roteiro 51 (mesmos campos, na ordem
+do fio).

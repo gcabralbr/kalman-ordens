@@ -103,3 +103,15 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 Precedência na ENTRADA: habilitação → campos → DUPLICADA → PARADA → DIVERGENTE → SEM_SESSAO →
 SEM_CONFIRMACAO → CONCILIANDO → conta e destino (acusuario) → SIMBOLO_INVALIDO → limites (globais
 e do uid) → preço. A SAIDA não olha habilitação nem a conta atual do GQ: usa o que a entrada gravou.
+
+## Rejeições conhecidas do PnT
+
+Códigos vistos nas respostas do PnT (o `[XXX-n]` no começo do 58 de 35=9 e 35=8 39=8), o que
+significam e o que o motor faz. Todo 35=9 ou 39=8 vira alerta `RECUSA_PNT` com o texto 58; esta
+lista é só para ler os logs e os alertas. Código novo visto na HML ou em produção entra aqui.
+
+| Código | Texto (58) | Em resposta a | Significado | O que o motor faz | Visto em |
+|---|---|---|---|---|---|
+| `[DSA-40]` | `Robot Order not found` | cancel (35=F) | a ordem não existe mais no PnT (ou o cancel foi sem 37) | 1014 em erro: recria sob a P8 (v1.1 F17, roteiro 34); demais: `RECUSA_PNT` | log de HML do PT, 2025 |
+| `[IS-72]` | `Replacing quantity must be bigger than current cumulative quantity. Cumulative Quantity: '1' OrderQty (38): '1'.` (35=9 com `39=2 434=2 102=99`) | replace (35=G) | a quantidade do replace não é maior que a já executada: **a ordem já executou no PnT**; o fill pode chegar depois do 35=9 (na HML, 100 ms), no ClOrdID vigente, não no do replace rejeitado | `RECUSA_PNT` com o 58; a pendência do replace cai e a ordem fica no ClOrdID vigente; quem encerra é o fill (ou o mass status). O motor não decide pelo 102 (`99` = outro) nem pelo 39 do 35=9 | HML 14/10, saída da operação 900000002 (roteiro 51; `cenarios/referencia/saida-is72-hml-2026-10-14.log`) |
+| `[DSA-56]` | `Pure status replace was not possible because of tag SenderLocationID (142);` (no mesmo 58, depois do `[IS-72]`) | replace (35=G) | consequência do IS-72: sem quantidade a mudar, o PnT tentou tratar o pedido como replace só de estado e recusou por causa do 142. Não é problema do 142 em si: o replace anterior da mesma ordem, com o mesmo 142, foi aceito | o mesmo do IS-72 (vêm juntos) | HML 14/10, idem |

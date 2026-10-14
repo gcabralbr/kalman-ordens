@@ -233,10 +233,10 @@ anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que 
 | 2.1 | 1 | Logon e mass status | subir; `/saude` com `sessao_logada=true`; no log, o `35=AF 585=9` e a resposta | se o `585=9` é aceito (F10); se volta `35=j` / `35=3` |
 | 2.2 | 1 | Sequência e reconexão no meio do dia [PnT-11] | `systemctl restart kalman-ordens` com a sessão no ar; repetir mais tarde | o logon volta sem `141=Y`? Há `ResendRequest`/`GapFill`? O PnT exige reset? |
 | 2.3 | 1 | 1031 limite longe: aceite e cancelamento | entrada por `curl` com limite longe do livro; o serviço cancela no timeout (3 s) | `39=A`→`39=0`; o `35=F` **só com as tags do dicionário** (F4) é aceito? `39=6`→`39=4` |
-| 2.4 | 1 | 1031: replace | 1031 longe viva + replace (saída que não executa: reapregoa a cada 2 s) | `35=G` aceito (`39=E`→`39=5`); o 198 muda? |
+| 2.4 | 1 | 1031: replace | 1031 longe viva + replace (saída que não executa: reapregoa a cada 2 s) | `35=G` aceito (`39=E`→`39=5`); o 198 muda? **14/10: replace da saída aceito (`39=E` → `39=5`); o replace seguinte rejeitado com `35=9 39=2 [IS-72]` porque a ordem já tinha executado (o fill chegou 100 ms depois do 35=9) — o motor zerou sem saída duplicada (SPEC v1.3 seção 1).** |
 | 2.5 | 1 | 1014 com gatilho longe: envio, replace e cancel | protocolo da 1014 sem fill: gatilho longe do livro, replace de preço, cancel | `44` = `20829` aceito; `40=2` devolvido [PnT-6]; ecos 20828/20829; `35=G` e `39=4` da 1014 |
 | 2.6 | 1 | Cancel-on-Disconnect [PnT-12] | com uma 1014 viva (gatilho longe), `systemctl stop` e `start` | **14/10: logout limpo, a 1014 sobreviveu.** |
-| 2.6b | 1 (repetir) | COD em queda abrupta, com a v1.3 (1.8) | com uma 1014 viva: `sudo systemctl kill -s SIGKILL kalman-ordens` e `sudo systemctl start kalman-ordens` logo em seguida | no journal: "logon recusado" com espera crescente, `SESSAO_PRESA_NO_PNT` depois de 60 s, logon aceito (quanto tempo?), ResendRequest respondido com gap fill, sem `Resend Msg Parse Error`, `FIX_STORE_ILEGIVEL` ou laço. Na conciliação: **a 1014 continua viva?** (se morrer: pedir exceção [PnT-12]) |
+| 2.6b | 1 (repetir) | COD em queda abrupta, com a v1.3 (1.8) | com uma 1014 viva: `sudo systemctl kill -s SIGKILL kalman-ordens` e `sudo systemctl start kalman-ordens` logo em seguida | **14/10 (`6866df3`): a 1014 sobreviveu ao SIGKILL — sem COD para o usuário de HML, fecha [PnT-12] na HML.** Sessão presa no PnT por 18 s (na queda da manhã, ~3,5 min); store reparado na subida (74 logons recalculados); janela de sincronia de 500 ms com 1 ResendRequest dentro. |
 | 2.7 | 1 | Mass status: o que volta [PnT-13] | restart com uma ordem viva e uma encerrada no dia | só as ativas? o `150=I` traz o `14` certo (a HML de 2025 trouxe `39=2` com `14=0`)? |
 | 2.8 | 1 | Comprimento do ClOrdID [PnT-4] | os enviados: `KM-E-900000001-1` (16), `KM-MS-<ms>-<n>` (~22) | aceitos (o RoE diz máximo 28; ambos abaixo) |
 | 2.9 | 1 | Códigos de erro [PnT-15] | qualquer rejeição que aparecer | texto 58 e 103/102 gravados |
@@ -244,8 +244,7 @@ anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que 
 | 2.10b | 1 | **HML aceita `20856=Y` em 1031 e 1014?** (F14) | toda NewOrderSingle do serviço leva `20856=Y`; ver a resposta das ordens de 2.3 e 2.5 | aceito (`39=A`/`39=0`) ou rejeitado (`39=8`/`35=3`/`35=j`, texto 58). Rejeitado → tirar a tag e perguntar ao PnT como ativar a reativação automática fora da Sniper/multileg |
 | 2.10c | 1 | Estado de erro (39=7) em single-leg | se aparecer algum `39=7`: o texto 58, se veio `150=D/39=0` e em quanto tempo | alertas `PROTECAO_EM_ERRO` / `ENTRADA_EM_ERRO` / `SAIDA_EM_ERRO` (só se não voltou em 2 s) |
 | 2.10e | 1 | Conta e símbolo da operação (v1.2) | no log FIX, a 1031 e o cancel de 2.3 | `1=99999` e `116=99999` (cabeçalho) em D, F e G; `142=177.124.234.134`; `55=WINV26`. O cancel do PT não levava conta: o PnT aceita o nosso com 1/116? |
-| 2.10d | 1 | Senha fora dos logs (F15; store: v1.3 A1) | depois do logon: `sudo grep -rhoa '554=[^[:cntrl:]]*' /var/lib/kalman-ordens/fix/log \| sort -u`, `journalctl -u kalman-ordens \| grep -c '<senha>'` e `sudo find /var/lib/kalman-ordens/fix/store -printf '%m %u %p
-'` | só `554=***` no log; nada no journal; store (com a senha) só `600 kalman-ordens` |
+| 2.10d | 1 | Senha fora dos logs (F15; store: v1.3 A1) | depois do logon: `sudo grep -rhoa '554=[^[:cntrl:]]*' /var/lib/kalman-ordens/fix/log \| sort -u`, `journalctl -u kalman-ordens \| grep -c '<senha>'` e `sudo find /var/lib/kalman-ordens/fix/store -printf '%m %u %p\n'` | só `554=***` no log; nada no journal; store (com a senha) só `600 kalman-ordens` |
 | 2.11 | 2 | 1014 depois de um fill de entrada | fill com o marketdata em replay | 1014 enviada na hora; `ENTRADA_EXECUTADA` → `PROTEGIDA` |
 | 2.12 | 2 | 1014: replace de quantidade | com `LIMITE_POSICAO_MAX=2`/`LIMITE_QTD_ORDEM=2` e entrada de 2 com dois fills | `35=G` da 1014 aceito; um pedido por vez |
 | 2.13 | 2 | 1014: disparo | preço do replay atravessa o gatilho | fills da 1014 com o mesmo 37 [PnT-5]; disparo com folga |
@@ -254,7 +253,8 @@ anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que 
 Depois: ajustar na SPEC cada ponto `[PnT-n]` respondido; se mudar comportamento, roteiro novo antes
 do código. Dicionário novo do PnT [PnT-2]: recebido em 13/10/2026, cópia regenerada (SPEC v1.2
 seção 7). Rodada 1 (14/10): resultados e correções na [SPEC v1.3](../docs/SPEC-ORDENS-v1.3.md)
-seção 1 — fechadas [PnT-11], [PnT-13] e [PnT-17] (a 1014 funciona no DSA); falta o 2.6b.
+seção 1 — **rodada 1 concluída**: fechadas [PnT-11], [PnT-12] (na HML), [PnT-13] e [PnT-17] (a 1014
+funciona no DSA). Pendentes para a rodada 2: 2.12 (replace de quantidade da 1014) e 2.13 (disparo).
 
 ---
 

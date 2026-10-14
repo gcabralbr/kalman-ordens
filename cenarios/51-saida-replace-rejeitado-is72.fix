@@ -1,0 +1,80 @@
+cenario 51 Saída: replace rejeitado com [IS-72] porque a ordem já executou; o fill chega 100 ms depois → zera sem saída duplicada
+hora 2026-10-14 13:30:00
+config ORDENS_CONTAS_HML=99999
+usuario 7 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"99999"}}
+# HML 14/10 (F1, rodada 1, binário 6866df3), operação 900000002: venda a 211560, saída do gestor
+# com compra 1031 a 211240, um replace aceito (39=E → 39=5) e o replace seguinte rejeitado com
+# 35=9 39=2 434=2 102=99 "[IS-72] Replacing quantity must be bigger than current cumulative
+# quantity ... [DSA-56] Pure status replace was not possible because of tag SenderLocationID
+# (142)": a ordem já tinha executado no PnT. O fill chegou 100 ms depois do 35=9, no ClOrdID
+# vigente (-2), não no do replace rejeitado (-3). Resultado real: −125 pts, ZERADA, sem saída
+# duplicada.
+# As mensagens do PnT da saída são as reais (cenarios/referencia/saida-is72-hml-2026-10-14.log; o
+# cabeçalho, inclusive o 116, é do PnT falso). Entrada e 1014 não estão no trecho do log: 37 e
+# preços delas são inventados, com a entrada executada a 211560 como na HML. Os tempos entre as
+# mensagens são os reais (repreço a cada TIMEOUT_SAIDA_S = 2 s; 39=4 da 1014 3,7 s depois do 39=6).
+# SPEC v1.3 seção 1; rejeições [IS-72] e [DSA-56] em docs/ALERTAS.md.
+
+preco ticker=WINZ26 bid=208370 ask=208375 preco=208370 status84=0 idade=100ms
+aguarda_logon
+recebe 35=AF 585=9 1=99999
+avanca 3s
+alerta CONCILIACAO
+
+# venda: bid 208370 − 15 = 208355 (o limite real); executou a 211560 (a HML é o pregão de ontem)
+entrada 900000002 V
+resposta aceito=true
+recebe 35=D 11=KM-E-900000002-1 1=99999 44=208355 54=2 55=WINZ26 847=1031 20856=Y
+envia @ER 1=99999 11=KM-E-900000002-1 37=dsaGQ2.28617 198=PNT-7101400013 150=0 39=0 54=2 38=1 40=2 44=208355 847=1031 59=6 151=1 14=0 6=0
+envia @ER 1=99999 11=KM-E-900000002-1 37=dsaGQ2.28617 198=PNT-7101400013 17=481141000000003 150=F 39=2 54=2 38=1 32=1 31=211560 151=0 14=1 6=211560 1057=N
+evento ENTRADA_EXECUTADA operacao_id=900000002 qtd=1 preco=211560
+# 1014 de compra: gatilho 211560 + 500 = 212060, limite + 100 = 212160
+recebe 35=D 11=KM-P-900000002-1 1=99999 38=1 44=212160 54=1 847=1014 20828=212060 20829=212160 20856=Y
+envia @ER 1=99999 11=KM-P-900000002-1 37=dsaGQ2.28618 198=PNT-7101400014 150=0 39=0 54=1 38=1 40=2 44=212160 847=1014 59=6 151=1 14=0 6=0 20828=212060 20829=212160
+evento PROTEGIDA operacao_id=900000002 preco_stop=212060 preco_limite=212160
+saude posicao=-1
+
+# saída do gestor: cancel da 1014, 39=6 → 39=4 em 3,7 s
+avanca 30s
+preco bid=211185 ask=211190 preco=211190
+saida 900000002 C SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-900000002-2 41=KM-P-900000002-1 37=dsaGQ2.28618 1=99999 54=1
+envia @ER 1=99999 11=KM-P-900000002-2 41=KM-P-900000002-1 37=dsaGQ2.28618 150=6 39=6 54=1 38=1 44=212160 847=1014 151=1 14=0 6=0
+avanca 3700ms
+nada 35=D
+sem_alerta CANCEL_SEM_RESPOSTA
+envia @ER 1=99999 11=KM-P-900000002-1 41=KM-P-900000002-1 37=dsaGQ2.28618 150=4 39=4 54=1 38=1 44=212160 847=1014 151=0 14=0 6=0
+
+# a saída real: compra 1031 a 211240 (ask 211190 + 50)
+recebe 35=D 11=KM-S-900000002-1 1=99999 21=4 38=1 40=2 44=211240 54=1 55=WINZ26 59=0 207=BVMF 847=1031 20856=Y
+envia 35=8 37=dsaGQ2.28619 11=KM-S-900000002-1 17=PendNew_2037006:hA.Okh 150=A 39=A 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=211240 847=1031 59=6 168=20261014-00:00:01 126=20261014-21:25:00 151=1 14=0 20807=0 20806=0 6=0 58="NEW DSA Order request sent to Robot" 20770=Y 20871=N 20882=N 20856=Y
+envia 35=8 37=dsaGQ2.28619 198=PNT-7101400015 11=KM-S-900000002-1 17=Acc_2037007:hA.Oki 150=0 39=0 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=211240 847=1031 59=6 168=20261014-16:34:35 126=20261014-21:25:00 151=1 14=0 20807=0 20806=0 6=0 20770=Y 20773=N 20871=N 20882=N 20856=Y
+
+# repreço 1 (2 s depois): ask 212115 + 2 × 50 = 212215; aceito (39=E → 39=5), 198 estável
+preco bid=212110 ask=212115 preco=212115
+avanca 2s
+recebe 35=G 11=KM-S-900000002-2 41=KM-S-900000002-1 37=dsaGQ2.28619 1=99999 21=4 38=1 40=2 44=212215 54=1 55=WINZ26 59=0 207=BVMF 847=1031
+envia 35=8 37=dsaGQ2.28619 198=PNT-7101400015 11=KM-S-900000002-2 41=KM-S-900000002-1 17=PendRep_2037008:hA.Okj 150=E 39=E 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=212215 847=1031 59=6 168=20261014-16:34:35 126=20261014-21:25:00 151=1 14=0 20807=1 20806=211240 6=0 20770=Y 20773=Y 20871=N 20882=N
+envia 35=8 37=dsaGQ2.28619 198=PNT-7101400015 11=KM-S-900000002-2 41=KM-S-900000002-1 17=Rep_2037009:hA.Okk 150=5 39=5 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=212215 847=1031 59=6 168=20261014-16:34:35 126=20261014-21:25:00 151=1 14=0 20807=1 20806=211240 6=0 20770=Y 20773=N 20871=N 20882=N
+
+# repreço 2 (2 s depois): ask 213090 + 3 × 50 = 213240; a ordem já executou no PnT → 35=9 IS-72
+preco bid=213085 ask=213090 preco=213090
+avanca 2s
+recebe 35=G 11=KM-S-900000002-3 41=KM-S-900000002-2 37=dsaGQ2.28619 38=1 44=213240 54=1 847=1031
+envia 35=9 37=dsaGQ2.28619 11=KM-S-900000002-3 41=KM-S-900000002-2 39=2 1=99999 434=2 102=99 58="[IS-72] Replacing quantity must be bigger than current cumulative quantity. Cumulative Quantity: '1' OrderQty (38): '1'.    [DSA-56] Pure status replace was not possible because of tag SenderLocationID (142);    "
+alerta RECUSA_PNT
+# 100 ms depois, o fill no ClOrdID vigente (-2)
+avanca 100ms
+nada
+envia 35=8 37=dsaGQ2.28619 198=PNT-7101400015 11=KM-S-900000002-2 17=481141000000009 150=F 39=2 1=99999 55=WINZ26 54=1 38=1 32=1 31=211685 151=0 14=1 6=211685 60=20261014-16:34:38 1057=N
+evento SAIDA_EXECUTADA operacao_id=900000002 qtd=1 preco=211685 origem=GESTOR
+evento ZERADA operacao_id=900000002 pnl_pts=-125 origem=GESTOR
+saude posicao=0
+
+# nenhuma saída nova, nenhum replace a mais
+avanca 5s
+conta_eventos SAIDA_EXECUTADA operacao_id=900000002 = 1
+sem_alerta SAIDA_ESGOTOU
+saude posicao=0
+nada

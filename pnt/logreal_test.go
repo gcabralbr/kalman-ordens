@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,5 +130,75 @@ func TestLogRealPassaNaSessao(t *testing.T) {
 		if chave != esperadas[i] {
 			t.Fatalf("mensagem %d: %q, esperada %q", i, chave, esperadas[i])
 		}
+	}
+}
+
+// Saída da operação 900000002 na HML de 14/10 (binário 6866df3): D, dois G, os ERs do PnT, o
+// 35=9 [IS-72]/[DSA-56] e o fill — como no log FIX da .53. Base do roteiro 51.
+const logSaidaIS72 = "../cenarios/referencia/saida-is72-hml-2026-10-14.log"
+
+var reLinhaLog = regexp.MustCompile(`(?m)^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d\.\d+ (8=FIX\.4\.4\x01.*\x0110=\d{3}\x01)$`)
+
+// 9 e 10 conferidos byte a byte (a fixture é fiel ao fio, inclusive os espaços no fim do 58 do
+// 35=9), e as 6 mensagens do PnT (5 ERs e o 35=9) passam pela sessão do serviço sem descarte.
+func TestLogSaidaIS72(t *testing.T) {
+	b, err := os.ReadFile(logSaidaIS72)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := reLinhaLog.FindAllSubmatch(b, -1)
+	if len(ms) != 9 {
+		t.Fatalf("a fixture tem 9 mensagens; lidas %d", len(ms))
+	}
+	f, _, o := subir(t)
+	var esperadas []string
+	for _, m := range ms {
+		b := m[1]
+		i9 := bytes.Index(b, []byte("\x019=")) + 3
+		j9 := i9 + bytes.IndexByte(b[i9:], 1)
+		fim := bytes.LastIndex(b, []byte("\x0110=")) + 1
+		nove, _ := strconv.Atoi(string(b[i9:j9]))
+		dez, _ := strconv.Atoi(string(b[fim+3 : fim+6]))
+		soma := 0
+		for _, c := range b[:fim] {
+			soma += int(c)
+		}
+		if nove != fim-(j9+1) || dez != soma%256 {
+			t.Fatalf("9/10 errado: %s", bytes.ReplaceAll(b, []byte{1}, []byte("|")))
+		}
+		if !bytes.Contains(b, []byte("\x0149=PNT_DSA\x01")) {
+			continue
+		}
+		var campos []falso.Campo
+		for _, c := range bytes.Split(bytes.TrimSuffix(b, []byte{1}), []byte{1}) {
+			k, v, _ := bytes.Cut(c, []byte("="))
+			tag, _ := strconv.Atoi(string(k))
+			if tag == 35 {
+				campos = append([]falso.Campo{{Tag: 35, Valor: string(v)}}, campos...)
+			} else if !tagsDeEnvelope[tag] {
+				campos = append(campos, falso.Campo{Tag: tag, Valor: string(v)})
+			}
+		}
+		if err := f.Enviar(campos); err != nil {
+			t.Fatal(err)
+		}
+		esperadas = append(esperadas, string(b))
+	}
+	if len(esperadas) != 6 {
+		t.Fatalf("esperava 6 mensagens do PnT; montadas %d", len(esperadas))
+	}
+	esperar(t, "as 6 mensagens", func() bool { r, _ := o.copia(); return len(r) >= 6 })
+	time.Sleep(200 * time.Millisecond)
+	r, rej := o.copia()
+	if len(rej) > 0 || len(r) != 6 {
+		t.Fatalf("entregues %d (esperadas 6), 35=3 enviados %d", len(r), len(rej))
+	}
+	is72 := r[4]
+	if is72.Tipo != "9" || is72.Texto(39) != "2" || is72.Texto(434) != "2" || is72.Texto(102) != "99" ||
+		!strings.HasPrefix(is72.Texto(58), "[IS-72] ") || !strings.HasSuffix(is72.Texto(58), "(142);    ") {
+		t.Fatalf("35=9 IS-72: %s", is72.Bruta)
+	}
+	if fill := r[5]; fill.Texto(150) != "F" || fill.Texto(11) != "KM-S-900000002-2" || fill.Texto(17) != "481141000000009" {
+		t.Fatalf("fill: %s", fill.Bruta)
 	}
 }
