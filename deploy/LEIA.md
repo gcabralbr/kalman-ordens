@@ -288,9 +288,32 @@ Mesmo procedimento da seção 1, na .51, com:
 
 ## 4. Testes antes de subir (critério da F0)
 
-Na máquina de desenvolvimento, com Docker:
+Nativo na .53 (sem Docker): MariaDB local (10.11.15), schema `kalmanordens_teste`, usuário de
+teste só com esse schema. Uma vez, como root do MariaDB:
+
+```sql
+CREATE DATABASE IF NOT EXISTS kalmanordens_teste CHARACTER SET utf8mb4;
+CREATE USER IF NOT EXISTS 'kalman_ordens_teste'@'127.0.0.1' IDENTIFIED BY '<senha de teste>';
+-- os testes criam, alteram e apagam as tabelas (LimparTeste: DROP TABLE, só em *_teste)
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX ON kalmanordens_teste.* TO 'kalman_ordens_teste'@'127.0.0.1';
+```
+
+O DSN fica fora do repositório, em `~/.config/kalman-ordens/teste-mariadb.dsn` (600):
+`kalman_ordens_teste:<senha de teste>@tcp(127.0.0.1:3306)/kalmanordens_teste` (ou na variável
+`KALMAN_TESTE_MARIADB`, que tem precedência). O script recusa schema que não termine em `_teste`.
 
 ```
-scripts/teste-completo.sh          # dois backends (memória e mariadb:10.11.15)
-scripts/teste-completo.sh --race   # o mesmo com -race, em golang:1.24-bookworm
+scripts/teste-completo.sh                    # dois backends (memória e MariaDB local), com -race (gcc)
+scripts/teste-completo.sh --sem-race         # o mesmo sem -race
+```
+
+Sem privilégio global, `TestLimparTesteRecusaProducao` (cria outro schema) e
+`TestSQLModeFixoNaConexao` (muda o `sql_mode` global) se pulam no modo nativo — de propósito: o
+MariaDB da .53 é o do Kalman e do dbecotools. Os dois rodam no modo container.
+
+Com Docker (máquina de desenvolvimento):
+
+```
+scripts/teste-completo.sh --container          # dois backends (memória e mariadb:10.11.15)
+scripts/teste-completo.sh --container --race   # o mesmo com -race, em golang:1.24-bookworm
 ```
