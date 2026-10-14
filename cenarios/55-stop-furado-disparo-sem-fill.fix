@@ -1,0 +1,32 @@
+cenario 55 Stop furado pelo disparo: 1014 em 39=B com 20807>0 e sem fill em ESPERA_STOP_S → STOP_FURADO
+hora 2026-10-14 11:20:00
+# SPEC v1.3 J2: o disparo da 1014 é o 150=I 39=B com 20807>0 (quantidade enviada ao mercado; na HML
+# de 14/10 o fill veio 0,5 s depois, roteiro 05). Disparada e sem fill em ESPERA_STOP_S (5 s) →
+# stop furado (Parte 3.6): cancela a 1014 e sai com a 1031. A detecção pelo preço (último além do
+# limite por ESPERA_STOP_S, roteiro 07) fica como reserva. Aqui o mercado fica entre o gatilho e o
+# limite: só o gatilho explícito vê o furo. Mensagens do PnT no formato real (fixture do 05).
+
+executa INICIO
+executa COMPRADO OP=5501
+
+# o mercado cai abaixo do gatilho (129510), acima do limite (129410): a 1014 dispara no PnT
+preco bid=129500 ask=129505 preco=129500
+envia @ER 11=KM-P-5501-1 41=KM-P-5501-1 37=dsa.5501.P 198=PNT-5501 150=I 39=B 54=2 38=1 44=129410 847=1014 151=0 14=0 20807=1 20806=129410 6=0 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1." 20828=129510 20829=129410
+evento PROTECAO_DISPARADA operacao_id=5501 qtd_enviada=1 preco_enviado=129410 preco_stop=129510 preco_limite=129410
+saude posicao=1
+
+# sem fill: nada por ESPERA_STOP_S
+avanca 4900ms
+nada
+sem_alerta STOP_FURADO
+avanca 200ms
+alerta STOP_FURADO
+recebe 35=F 11=KM-P-5501-2 41=KM-P-5501-1 37=dsa.5501.P
+envia @ER 11=KM-P-5501-1 41=KM-P-5501-1 37=dsa.5501.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0 20807=0 20806=0
+# saída: bid 129500 − 50 = 129450
+recebe 35=D 11=KM-S-5501-1 38=1 44=129450 54=2 847=1031
+envia @ER 11=KM-S-5501-1 37=dsa.5501.S 150=F 39=2 54=2 38=1 44=129450 847=1031 32=1 31=129495 14=1 151=0 6=129495
+evento SAIDA_EXECUTADA operacao_id=5501 qtd=1 preco=129495 origem=STOP_FURADO
+evento ZERADA operacao_id=5501 origem=STOP_FURADO pnl_pts=-515
+saude posicao=0
+nada

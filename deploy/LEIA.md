@@ -247,14 +247,15 @@ anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que 
 | 2.10d | 1 | Senha fora dos logs (F15; store: v1.3 A1) | depois do logon: `sudo grep -rhoa '554=[^[:cntrl:]]*' /var/lib/kalman-ordens/fix/log \| sort -u`, `journalctl -u kalman-ordens \| grep -c '<senha>'` e `sudo find /var/lib/kalman-ordens/fix/store -printf '%m %u %p\n'` | só `554=***` no log; nada no journal; store (com a senha) só `600 kalman-ordens` |
 | 2.11 | 2 | 1014 depois de um fill de entrada | fill com o marketdata em replay | 1014 enviada na hora; `ENTRADA_EXECUTADA` → `PROTEGIDA` |
 | 2.12 | 2 | 1014: replace de quantidade | com `LIMITE_POSICAO_MAX=2`/`LIMITE_QTD_ORDEM=2` e entrada de 2 com dois fills | `35=G` da 1014 aceito; um pedido por vez |
-| 2.13 | 2 | 1014: disparo | preço do replay atravessa o gatilho | fills da 1014 com o mesmo 37 [PnT-5]; disparo com folga |
+| 2.13 | 2 | 1014: disparo | preço do replay atravessa o gatilho | fills da 1014 com o mesmo 37 [PnT-5]; disparo com folga. **14/10 (operação 900000003): disparo `150=I 39=B` com `20807=1`/`20806=211525` e `[DSA-122]`; fill 0,5 s depois a 211430 (gatilho 211425, limite 211525) no 37 e no ClOrdID da 1014 — fecha [PnT-5]; `39=B` "Delaying final state" e `39=2` final 3 s depois (SPEC v1.3 J1–J3).** |
 | 2.14 | depois da 2 | SwingTrade 2028 exploratória [PnT-9, PnT-10] | ferramenta de bancada (fora do serviço) | fica para depois da rodada 2 |
 
 Depois: ajustar na SPEC cada ponto `[PnT-n]` respondido; se mudar comportamento, roteiro novo antes
 do código. Dicionário novo do PnT [PnT-2]: recebido em 13/10/2026, cópia regenerada (SPEC v1.2
 seção 7). Rodada 1 (14/10): resultados e correções na [SPEC v1.3](../docs/SPEC-ORDENS-v1.3.md)
 seção 1 — **rodada 1 concluída**: fechadas [PnT-11], [PnT-12] (na HML), [PnT-13] e [PnT-17] (a 1014
-funciona no DSA). Pendentes para a rodada 2: 2.12 (replace de quantidade da 1014) e 2.13 (disparo).
+funciona no DSA). Rodada 2: 2.13 (disparo) concluído em 14/10, fecha [PnT-5]; pendente o 2.12 (replace de quantidade
+da 1014).
 
 ---
 

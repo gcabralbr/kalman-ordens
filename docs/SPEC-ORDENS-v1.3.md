@@ -29,6 +29,13 @@ Data: 2026-10-14. Itens A–G vindos do responsável; A2, F2 (propostas desta im
 | Operação 900000002 | venda 211560, compra 211685: −125 pts, `ZERADA`. | — |
 | Detalhes da saída (log FIX da .53) | o 35=9 traz **dois códigos** no 58: `[IS-72]` e `[DSA-56]` "Pure status replace was not possible because of tag SenderLocationID (142)" — o DSA-56 é consequência do IS-72 (o PnT tentou tratar o pedido como replace só de estado); o primeiro replace, com o mesmo 142, foi aceito. Veio com `434=2` e `102=99`: o motor não decide pelo 102. O **198 fica estável** no replace da 1031 (`PNT-7101400015` antes e depois). O **fill veio no ClOrdID vigente** (`-2`), não no do replace rejeitado (`-3`). O **17 dos fills é uma sequência do dia** (`481141000000003`, …, `…009`): reforça a chave (37, 17) de H1. Mensagens reais em `cenarios/referencia/saida-is72-hml-2026-10-14.log`; roteiro 51. | — |
 
+### Rodada 2 (14/10, `6866df3`+)
+
+| Item | Resultado | Fecha |
+|---|---|---|
+| 2.13 Disparo da 1014 (operação 900000003) | posição vendida, 1014 de compra com gatilho 211425 e limite 211525. O mercado passou do gatilho e **a 1014 disparou dentro do PnT**: quatro `150=I 39=B` com `20807=1` (OpenQty: quantidade enviada ao mercado), `20806=211525` (OpenPx: preço enviado) e o aviso `[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1.`; **o fill 0,5 s depois, a 211430 (+1 tick do gatilho), no próprio 37 e no ClOrdID da 1014**; 8,7 s depois dois `39=B` "Delaying final state 'Finished' for 3.00 s" (com `20807=0`, `14=1`) e, 3 s depois, o `150=I 39=2` final. Mensagens reais em `cenarios/referencia/disparo-1014-hml-2026-10-14.log`. O 20807/20806 também aparecem no `39=6` do cancel da 1031 (a ordem filha no mercado). | [PnT-5] |
+| Pendente | 2.12 (replace de quantidade da 1014) | — |
+
 ## 2. Sessão FIX (A–D)
 
 | # | Regra | Substitui | Roteiro / teste |
@@ -58,6 +65,17 @@ do QuickFIX/Go não tem Close).
 | # | Regra | Substitui | Roteiro |
 |---|---|---|---|
 | I1 | **35=9 em resposta a replace da SAÍDA com 39=2, 4 ou 8** (a ordem já está terminal no PnT; HML 14/10: `[IS-72]`, o fill chegou 100 ms depois): **suspende o repreço daquela saída** (nenhum 35=G a mais) e espera o fill ou o 39=4 por `ESPERA_FILL_POS_RECUSA_S` (3 s). Chegou → fluxo normal (o fill zera; o 39=4 encerra a ordem e a saída segue o repreço com ordem nova). Não chegou → **mass status na hora**, e o estado real decide; depois do mass status, a ordem ainda viva (viva lá ou ausente) = sem resposta coerente → alerta crítico **`SAIDA_SEM_FILL`**, saída suspensa (a ordem pode ter executado), decisão humana; resolve quando a ordem encerra ou a posição zera. O `RECUSA_PNT` do 35=9 é informativo (não crítico), como já era. Antes, o motor só derrubava a pendência do replace e reapregoava 2 s depois. | — | 52 (fill 5 s depois: nenhum 35=G, mass status em 3 s, fill aplicado uma vez), 53 (mass status incoerente → `SAIDA_SEM_FILL`; o fill tardio zera e resolve), 51 (fill em 100 ms: fluxo normal) |
+
+## 3d. Disparo da 1014 (J)
+
+| # | Regra | Substitui | Roteiro / teste |
+|---|---|---|---|
+| J1 | **[PnT-5] fechado**: os fills da 1014 chegam no próprio 37 e no ClOrdID da 1014 (na HML, um fill, 0,5 s depois do disparo, 1 tick além do gatilho e 95 pts dentro do limite). | — | 05; `pnt` `TestLogDisparo1014` |
+| J2 | **Disparo = `150=I 39=B` com `20807>0`** (e `20806` = preço enviado; texto `[DSA-122]`). O `39=B` não é terminal. O primeiro com `20807>0` publica o evento **`PROTECAO_DISPARADA`** (`qtd_enviada`, `preco_enviado`, `preco_stop`, `preco_limite`); os seguintes não mudam nada. **Stop furado (3.6) com gatilho explícito**: disparada e sem fill em `ESPERA_STOP_S` (5 s) → `STOP_FURADO` (cancela a 1014, sai com a 1031). A detecção pelo preço (último além do limite por `ESPERA_STOP_S`) fica como reserva — ex.: o disparo não visto num restart. | Parte 3.6 (só pelo preço) | 05 (fill em 0,5 s: nada de furo), 55 (sem fill, mercado dentro do limite: furo só pelo gatilho explícito), 07 (reserva pelo preço) |
+| J3 | **Estado final**: `39=B` "Delaying final state 'Finished' for 3.00 s" (`20807=0`) e o `150=I 39=2` 3 s depois. O motor decide pelos fills; o `39=2` final só confirma (posição pelo maior CumQty, F7 da v1.1). | — | 05 |
+
+Evento novo para o gestor: `PROTECAO_DISPARADA` (só informação: a operação continua `PROTEGIDA`
+até os fills, que geram `SAIDA_EXECUTADA`/`ZERADA` com origem `STOP_SERVIDOR`).
 
 ## 3c. Módulo (M) — parte de dados da v2
 
@@ -104,8 +122,8 @@ Observado na HML em 14/10; nada muda no serviço por enquanto.
 
 1. ~~Cancel-on-Disconnect em queda abrupta (2.6, [PnT-12]).~~ **Fechada na HML** (2.6b, 14/10): a 1014
    sobrevive ao SIGKILL. Em produção, conferir com o usuário novo (F2).
-4. **Rodada 2**: 2.12 (replace de quantidade da 1014) e 2.13 (disparo da 1014), com o marketdata em
-   replay (`deploy/LEIA.md` 1.7).
+4. **Rodada 2**: 2.13 (disparo da 1014) concluído em 14/10 (J1–J3). Falta 2.12 (replace de
+   quantidade da 1014).
 2. ~~ExecID (17) único no banco inteiro.~~ **Resolvida por H1.**
 3. **911/912 no mass status**: o PnT manda `TotNumReports`/`LastRptRequested`; a conciliação ainda
    fecha no silêncio (`MASS_STATUS_SILENCIO_S`). Fechar pelo 912 é melhoria possível, sem roteiro.
@@ -123,5 +141,7 @@ Observado na HML em 14/10; nada muda no serviço por enquanto.
 | 51 | saída da operação 900000002 da HML com as mensagens reais: replace aceito, replace seguinte rejeitado `[IS-72]`/`[DSA-56]`, fill 100 ms depois no ClOrdID vigente → zera sem saída duplicada |
 | 52 | I1: a mesma sequência com o fill 5 s depois do 35=9 → nenhum 35=G a mais, mass status em 3 s, fill aplicado uma vez |
 | 53 | I1: sem fill e mass status com a saída viva → `SAIDA_SEM_FILL`, saída suspensa; o fill tardio zera e resolve |
+| 05 | J1–J3 (reescrito com a sequência real da 1014 da operação 900000003: disparo 39=B, `PROTECAO_DISPARADA`, fill 0,5 s depois, 39=B "Delaying" e 39=2 final só confirmam) |
+| 55 | J2 (1014 disparada sem fill em 5 s, mercado dentro do limite → `STOP_FURADO` pelo gatilho explícito, cancel, saída 1031) |
 | 54 | M1–M3: o mesmo `operacao_id` no KALMAN e no PT → as duas aceitas (ClOrdID `KM-E-…` e `KM-PT-E-…`), consulta e reenvio por módulo, a saída do PT zera só a dele; módulo inválido → `CAMPO_INVALIDO` |
 | 02, 04, 04b, 13, 17, 19, 32 | `ESPERA_ENCERRAMENTO_S` = 8 s (04b: fill aos 6 s, além dos 5 s antigos, ainda dentro da espera) |

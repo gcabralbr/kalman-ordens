@@ -16,8 +16,8 @@ func TestTodosOsRoteirosLeem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cs) != 64 {
-		t.Fatalf("esperava 64 roteiros, li %d", len(cs))
+	if len(cs) != 65 {
+		t.Fatalf("esperava 65 roteiros, li %d", len(cs))
 	}
 	for _, c := range cs {
 		if len(c.Passos) == 0 {

@@ -80,6 +80,9 @@ type ordem struct {
 	// cancelamento foi por causa do erro (1014: recriar sob o limite da P8)
 	// saída com replace recusado pela ordem já terminal no PnT (35=9 com 39=2/4/8, v1.3 I1): desde
 	// quando (repreço suspenso), se o mass status já foi pedido e se ele não foi coerente
+	// 1014 disparada no PnT (150=I 39=B com 20807>0, v1.3 J2): quando, e quanto já tinha executado
+	disparadaEm      time.Time
+	qtdNoDisparo     int
 	recusaTerminalEm time.Time
 	recusaTerminal39 string
 	saidaNoMass      bool

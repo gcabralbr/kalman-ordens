@@ -29,3 +29,11 @@ Gravado com `-text`.
 
 Usado por `pnt/logreal_test.go` (`TestLogSaidaIS72`) e pelo roteiro 51 (mesmos campos, na ordem
 do fio).
+
+# Referência: disparo da 1014 na HML (14/10/2026)
+
+`disparo-1014-hml-2026-10-14.log` — trecho do log FIX do serviço na .53, as dez mensagens do PnT
+da 1014 da operação 900000003 (`37=dsaGQ2.28621`): `39=A`, `39=0`, quatro `150=I 39=B` com
+`20807=1`/`20806=211525` e `[DSA-122]` (o disparo), o fill (`150=F`, 211430), dois `150=I 39=B`
+"Delaying final state 'Finished'" e o `150=I 39=2` final. Mesmo formato da anterior; 9 e 10
+conferem byte a byte. Usado por `pnt/logreal_test.go` (`TestLogDisparo1014`) e pelo roteiro 05.

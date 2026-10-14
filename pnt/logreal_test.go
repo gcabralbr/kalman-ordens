@@ -133,25 +133,32 @@ func TestLogRealPassaNaSessao(t *testing.T) {
 	}
 }
 
-// Saída da operação 900000002 na HML de 14/10 (binário 6866df3): D, dois G, os ERs do PnT, o
-// 35=9 [IS-72]/[DSA-56] e o fill — como no log FIX da .53. Base do roteiro 51.
-const logSaidaIS72 = "../cenarios/referencia/saida-is72-hml-2026-10-14.log"
+// Trechos do log FIX do serviço na .53 (HML de 14/10, um carimbo e uma mensagem por linha):
+//   - saída da operação 900000002 (binário 6866df3): D, dois G, os ERs do PnT, o 35=9
+//     [IS-72]/[DSA-56] e o fill. Base do roteiro 51.
+//   - disparo da 1014 da operação 900000003: 39=A, 39=0, quatro 39=B com 20807=1 [DSA-122], o
+//     fill, dois 39=B "Delaying final state" e o 39=2 final. Base do roteiro 05.
+const (
+	logSaidaIS72   = "../cenarios/referencia/saida-is72-hml-2026-10-14.log"
+	logDisparo1014 = "../cenarios/referencia/disparo-1014-hml-2026-10-14.log"
+)
 
 var reLinhaLog = regexp.MustCompile(`(?m)^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d\.\d+ (8=FIX\.4\.4\x01.*\x0110=\d{3}\x01)$`)
 
-// 9 e 10 conferidos byte a byte (a fixture é fiel ao fio, inclusive os espaços no fim do 58 do
-// 35=9), e as 6 mensagens do PnT (5 ERs e o 35=9) passam pela sessão do serviço sem descarte.
-func TestLogSaidaIS72(t *testing.T) {
-	b, err := os.ReadFile(logSaidaIS72)
+// passarTrecho confere 9 e 10 de cada mensagem byte a byte (a fixture é fiel ao fio) e passa as
+// do PnT pela sessão do serviço: todas entregues, na ordem, sem descarte nem 35=3.
+func passarTrecho(t *testing.T, caminho string, total, doPnT int) []Mensagem {
+	t.Helper()
+	b, err := os.ReadFile(caminho)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ms := reLinhaLog.FindAllSubmatch(b, -1)
-	if len(ms) != 9 {
-		t.Fatalf("a fixture tem 9 mensagens; lidas %d", len(ms))
+	if len(ms) != total {
+		t.Fatalf("%s: %d mensagens, lidas %d", caminho, total, len(ms))
 	}
 	f, _, o := subir(t)
-	var esperadas []string
+	enviadas := 0
 	for _, m := range ms {
 		b := m[1]
 		i9 := bytes.Index(b, []byte("\x019=")) + 3
@@ -182,17 +189,23 @@ func TestLogSaidaIS72(t *testing.T) {
 		if err := f.Enviar(campos); err != nil {
 			t.Fatal(err)
 		}
-		esperadas = append(esperadas, string(b))
+		enviadas++
 	}
-	if len(esperadas) != 6 {
-		t.Fatalf("esperava 6 mensagens do PnT; montadas %d", len(esperadas))
+	if enviadas != doPnT {
+		t.Fatalf("esperava %d mensagens do PnT; montadas %d", doPnT, enviadas)
 	}
-	esperar(t, "as 6 mensagens", func() bool { r, _ := o.copia(); return len(r) >= 6 })
+	esperar(t, "as mensagens do PnT", func() bool { r, _ := o.copia(); return len(r) >= doPnT })
 	time.Sleep(200 * time.Millisecond)
 	r, rej := o.copia()
-	if len(rej) > 0 || len(r) != 6 {
-		t.Fatalf("entregues %d (esperadas 6), 35=3 enviados %d", len(r), len(rej))
+	if len(rej) > 0 || len(r) != doPnT {
+		t.Fatalf("entregues %d (esperadas %d), 35=3 enviados %d", len(r), doPnT, len(rej))
 	}
+	return r
+}
+
+// Saída com [IS-72]: 9 mensagens, 6 do PnT (5 ERs e o 35=9, com os espaços no fim do 58).
+func TestLogSaidaIS72(t *testing.T) {
+	r := passarTrecho(t, logSaidaIS72, 9, 6)
 	is72 := r[4]
 	if is72.Tipo != "9" || is72.Texto(39) != "2" || is72.Texto(434) != "2" || is72.Texto(102) != "99" ||
 		!strings.HasPrefix(is72.Texto(58), "[IS-72] ") || !strings.HasSuffix(is72.Texto(58), "(142);    ") {
@@ -200,5 +213,22 @@ func TestLogSaidaIS72(t *testing.T) {
 	}
 	if fill := r[5]; fill.Texto(150) != "F" || fill.Texto(11) != "KM-S-900000002-2" || fill.Texto(17) != "481141000000009" {
 		t.Fatalf("fill: %s", fill.Bruta)
+	}
+}
+
+// Disparo da 1014: as 10 mensagens são do PnT. 39=B com 20807/20806 chega inteiro à aplicação
+// (o dicionário do PnT declara as tags), e o fill vem no 37 e no ClOrdID da 1014 [PnT-5].
+func TestLogDisparo1014(t *testing.T) {
+	r := passarTrecho(t, logDisparo1014, 10, 10)
+	b := r[2]
+	if b.Texto(150) != "I" || b.Texto(39) != "B" || b.Texto(20807) != "1" || b.Texto(20806) != "211525" ||
+		!strings.HasPrefix(b.Texto(58), "[DSA-122] ") {
+		t.Fatalf("disparo: %s", b.Bruta)
+	}
+	if fill := r[6]; fill.Texto(150) != "F" || fill.Texto(37) != "dsaGQ2.28621" || fill.Texto(11) != "KM-P-900000003-1" || fill.Texto(31) != "211430" {
+		t.Fatalf("fill: %s", fill.Bruta)
+	}
+	if fim := r[9]; fim.Texto(150) != "I" || fim.Texto(39) != "2" || fim.Texto(14) != "1" {
+		t.Fatalf("estado final: %s", fim.Bruta)
 	}
 }

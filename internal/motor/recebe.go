@@ -121,6 +121,7 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 	if s := msg.Texto(198); s != "" {
 		o.SecID = s
 	}
+	m.observarDisparo(op, o, st, msg)
 	estavaEncerrada := o.Estado.Final() && o.Estado != dominio.FalhaEnvio
 	if et != "I" {
 		m.confirmar(op, o)
@@ -207,6 +208,25 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 	}
 	m.salvarOrdem(o)
 	m.salvarOp(op)
+}
+
+// observarDisparo (v1.3 J2): a 1014 dispara dentro do PnT — 150=I 39=B com 20807 (quantidade
+// enviada ao mercado) > 0 e 20806 (preço enviado), texto [DSA-122] (HML 14/10, roteiro 05). O 39=B
+// não é terminal: quem encerra são os fills. O primeiro vira o evento PROTECAO_DISPARADA e arma o
+// gatilho explícito do stop furado (verificarFuro). Os 39=B seguintes, e os de 20807=0 ("Delaying
+// final state 'Finished'", depois do fill), não mudam nada.
+func (m *Motor) observarDisparo(op *operacao, o *ordem, st string, msg pnt.Mensagem) {
+	if o.Papel != dominio.Protecao || st != "B" || !o.disparadaEm.IsZero() {
+		return
+	}
+	q, ok := msg.Inteiro(20807)
+	if !ok || q <= 0 {
+		return
+	}
+	o.disparadaEm, o.qtdNoDisparo = m.agora(), o.QtdExec
+	px, _ := msg.Decimal(20806)
+	slog.Info("1014 disparada no PnT", "op", op.OperacaoID, "clordid", o.ClOrdAtual, "qtd_enviada", q, "preco_enviado", px, "58", msg.Texto(58))
+	m.publicar("PROTECAO_DISPARADA", op, map[string]any{"qtd_enviada": q, "preco_enviado": px, "preco_stop": o.Stop, "preco_limite": o.StopLim})
 }
 
 // observarErro (v1.1 F14): 39=7 é o estado de erro do PnT. Com 20856=Y a ordem volta sozinha

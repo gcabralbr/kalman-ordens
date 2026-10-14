@@ -32,7 +32,7 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `PROTECAO_REJEITADA` | 1014 rejeitada (1ª vez: nova tentativa; 2ª: zera a posição) | não |
 | `PROTECAO_RECRIADA` | 1014 recriada com o mesmo gatilho e limite: cancelada/expirada pelo PnT sem pedido nosso (na hora), recriada rejeitada, ou invariante violada (posição ≠ 0 sem 1014 e sem saída viva por mais de 2 s) | sim |
 | `PROTECAO_INSTAVEL` | 1014 falhou de novo depois de 2 recriações em menos de 30 s: a posição é zerada | sim |
-| `STOP_FURADO` | último além do limite da 1014 por mais de `ESPERA_STOP_S` com posição | sim |
+| `STOP_FURADO` | a 1014 disparou no PnT (39=B com 20807>0) e nenhum fill chegou em `ESPERA_STOP_S` (v1.3 J2); reserva: último além do limite da 1014 por mais de `ESPERA_STOP_S` com posição | sim |
 | `SAIDA_ESGOTOU` | saída esgotou `MAX_REPRECO_SAIDA` e continua reapregoando | sim |
 | `SAIDA_SEM_FILL` | o PnT recusou o replace da saída dizendo que a ordem já está terminal (35=9 com 39=2/4/8), não veio fill nem 39=4 em `ESPERA_FILL_POS_RECUSA_S` e o mass status não mostrou um estado coerente (a ordem viva ou ausente): a saída fica suspensa, decisão humana; resolve quando a ordem encerra ou a posição zera (v1.3 I1) | sim |
 | `SAIDA_SEM_PRECO` | saída sem nenhum preço para calcular o limite | sim |
@@ -105,14 +105,17 @@ Precedência na ENTRADA: habilitação → campos → DUPLICADA → PARADA → D
 SEM_CONFIRMACAO → CONCILIANDO → conta e destino (acusuario) → SIMBOLO_INVALIDO → limites (globais
 e do uid) → preço. A SAIDA não olha habilitação nem a conta atual do GQ: usa o que a entrada gravou.
 
-## Rejeições conhecidas do PnT
+## Rejeições e avisos conhecidos do PnT
 
-Códigos vistos nas respostas do PnT (o `[XXX-n]` no começo do 58 de 35=9 e 35=8 39=8), o que
-significam e o que o motor faz. Todo 35=9 ou 39=8 vira alerta `RECUSA_PNT` com o texto 58; esta
-lista é só para ler os logs e os alertas. Código novo visto na HML ou em produção entra aqui.
+Códigos e textos vistos nas respostas do PnT (o `[XXX-n]` no 58 de 35=9, 35=8 39=8 e dos avisos
+em 150=I), o que significam e o que o motor faz. Todo 35=9 ou 39=8 vira alerta `RECUSA_PNT` com o
+texto 58; os avisos são só informativos. Esta lista é para ler os logs e os alertas; código novo
+visto na HML ou em produção entra aqui.
 
 | Código | Texto (58) | Em resposta a | Significado | O que o motor faz | Visto em |
 |---|---|---|---|---|---|
 | `[DSA-40]` | `Robot Order not found` | cancel (35=F) | a ordem não existe mais no PnT (ou o cancel foi sem 37) | 1014 em erro: recria sob a P8 (v1.1 F17, roteiro 34); demais: `RECUSA_PNT` | log de HML do PT, 2025 |
 | `[IS-72]` | `Replacing quantity must be bigger than current cumulative quantity. Cumulative Quantity: '1' OrderQty (38): '1'.` (35=9 com `39=2 434=2 102=99`) | replace (35=G) | a quantidade do replace não é maior que a já executada: **a ordem já executou no PnT**; o fill pode chegar depois do 35=9 (na HML, 100 ms), no ClOrdID vigente, não no do replace rejeitado `RECUSA_PNT` informativo com o 58; a ordem fica no ClOrdID vigente. **Na saída, o 39 terminal do 35=9 (2, 4 ou 8) suspende o repreço** e o motor espera o fill ou o 39=4 por `ESPERA_FILL_POS_RECUSA_S`; sem eles, mass status, e sem estado coerente `SAIDA_SEM_FILL` (v1.3 I1). O motor não decide pelo 102 (`99` = outro) | HML 14/10, saída da operação 900000002 (roteiro 51; `cenarios/referencia/saida-is72-hml-2026-10-14.log`) |
 | `[DSA-56]` | `Pure status replace was not possible because of tag SenderLocationID (142);` (no mesmo 58, depois do `[IS-72]`) | replace (35=G) | consequência do IS-72: sem quantidade a mudar, o PnT tentou tratar o pedido como replace só de estado e recusou por causa do 142. Não é problema do 142 em si: o replace anterior da mesma ordem, com o mesmo 142, foi aceito | o mesmo do IS-72 (vêm juntos) | HML 14/10, idem |
+| `[DSA-122]` | `Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1.` (em `150=I 39=B`, com `20807`/`20806` > 0) | — (aviso) | a 1014 disparou: a ordem filha está no mercado (`20807` = OpenQty, `20806` = OpenPx), e o PnT espera ela terminar antes do estado final. **Informativo** | o primeiro com `20807>0` publica `PROTECAO_DISPARADA` e arma o gatilho do stop furado (sem fill em `ESPERA_STOP_S` → `STOP_FURADO`); os seguintes, nada (v1.3 J2) | HML 14/10, 1014 da operação 900000003 (roteiro 05; `cenarios/referencia/disparo-1014-hml-2026-10-14.log`) |
+| — | `Delaying final state 'Finished' for 3.00 s, timer started.` / `… for 9.19 ms / 3.00 s.` (em `150=I 39=B`, `20807=0`) | — (aviso) | depois do fill, o PnT segura o estado final por 3 s; o `150=I 39=2` vem em seguida. **Informativo** | nada: quem decide são os fills (v1.3 J3) | HML 14/10, idem |

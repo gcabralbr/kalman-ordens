@@ -227,9 +227,16 @@ func (m *Motor) tratarErros(op *operacao, agora time.Time) {
 	}
 }
 
-// verificarFuro (Parte 3.6): último além do limite da 1014 por mais de ESPERA_STOP_S.
+// verificarFuro (Parte 3.6). Gatilho explícito (v1.3 J2): a 1014 disparou no PnT (39=B com
+// 20807>0) e nenhum fill chegou em ESPERA_STOP_S. Reserva: último além do limite da 1014 por
+// mais de ESPERA_STOP_S (o disparo pode não ter sido visto, ex.: num restart).
 func (m *Motor) verificarFuro(op *operacao, agora time.Time) {
 	p := op.viva(dominio.Protecao)
+	if p != nil && !p.disparadaEm.IsZero() && p.QtdExec == p.qtdNoDisparo && op.posicao() != 0 && agora.Sub(p.disparadaEm) >= m.p.EsperaStop {
+		m.stopFurado(op, p, agora, fmt.Sprintf("stop furado: a 1014 %s disparou no PnT há %s (39=B) e nenhum fill chegou, posição %d, operação %d",
+			p.ClOrdAtual, agora.Sub(p.disparadaEm).Truncate(100*time.Millisecond), op.posicao(), op.OperacaoID))
+		return
+	}
 	px := m.precoConfiavel(m.precos.Ler(), op.Simbolo)
 	if m.divergenteOp(op) || p == nil || px == nil || p.StopLim == 0 || op.posicao() == 0 {
 		op.furoDesde = timeZero
@@ -248,8 +255,13 @@ func (m *Motor) verificarFuro(op *operacao, agora time.Time) {
 	if agora.Sub(op.furoDesde) < m.p.EsperaStop {
 		return
 	}
+	m.stopFurado(op, p, agora, fmt.Sprintf("stop furado: último %s além do limite %d com posição %d, operação %d", px, p.StopLim, op.posicao(), op.OperacaoID))
+}
+
+// stopFurado: cancela a 1014 e sai com a 1031 (Parte 3.6).
+func (m *Motor) stopFurado(op *operacao, p *ordem, agora time.Time, texto string) {
 	op.furado = true
-	m.al.Emitir("STOP_FURADO", chaveOp("STOP_FURADO", op), fmt.Sprintf("stop furado: último %s além do limite %d com posição %d, operação %d", px, p.StopLim, op.posicao(), op.OperacaoID), op.OperacaoID)
+	m.al.Emitir("STOP_FURADO", chaveOp("STOP_FURADO", op), texto, op.OperacaoID)
 	op.MotivoSaida, op.OrigemSaida, op.SaidaPedidaEm = "STOP_FURADO", "STOP_FURADO", agora
 	m.mudar(op, dominio.CancelandoProtecao)
 	op.cancelProtEm = agora

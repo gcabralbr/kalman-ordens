@@ -1,19 +1,81 @@
-cenario 05 1014 dispara sozinha → fill → ZERADA com origem STOP_SERVIDOR
-hora 2026-10-13 10:35:00
-# [PnT-5] fills da 1014 com o mesmo 37; a origem vem do papel P.
+cenario 05 1014 dispara sozinha no PnT (39=B, 20807>0) → fill → ZERADA com origem STOP_SERVIDOR
+hora 2026-10-14 13:00:00
+config ORDENS_CONTAS_HML=99999
+usuario 7 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"99999"}}
+# HML 14/10 (F1, rodada 2, item 2.13), operação 900000003: posição vendida, 1014 de compra com
+# gatilho 211425 e limite 211525. As mensagens do PnT da 1014 são as reais
+# (cenarios/referencia/disparo-1014-hml-2026-10-14.log; o cabeçalho, inclusive o 116, é do PnT
+# falso), com os intervalos reais: 39=A → 39=0 em 0,2 s; ~10 min depois o disparo, quatro 150=I
+# 39=B com 20807=1 (quantidade enviada ao mercado) e 20806=211525 (preço enviado) e o aviso
+# [DSA-122]; o fill 0,5 s depois, no próprio 37 e no ClOrdID da 1014, a 211430 (+1 tick do
+# gatilho) — fecha [PnT-5]; 8,7 s depois dois 39=B "Delaying final state 'Finished'" (20807=0)
+# e, 3 s depois, o 150=I 39=2 final, que só confirma: quem decide são os fills.
+# SPEC v1.3 J1–J3. A entrada não está no trecho do log: 37, preço e ClOrdID dela são inventados,
+# com a entrada a 210925 (gatilho − 500).
 
-executa INICIO
-executa COMPRADO OP=1005
+preco ticker=WINZ26 bid=210940 ask=210945 preco=210940 status84=0 idade=100ms
+aguarda_logon
+recebe 35=AF 585=9 1=99999
+avanca 3s
+alerta CONCILIACAO
 
-preco bid=129500 ask=129505 preco=129505
-envia @ER 11=KM-P-1005-1 37=dsa.1005.P 150=F 39=2 54=2 38=1 44=129410 847=1014 32=1 31=129505 14=1 151=0 6=129505
-evento SAIDA_EXECUTADA operacao_id=1005 qtd=1 preco=129505 origem=STOP_SERVIDOR
-evento ZERADA operacao_id=1005 origem=STOP_SERVIDOR pnl_pts=-505
+# venda: bid 210940 − 15 = 210925
+entrada 900000003 V
+resposta aceito=true
+recebe 35=D 11=KM-E-900000003-1 1=99999 44=210925 54=2 55=WINZ26 847=1031
+envia @ER 1=99999 11=KM-E-900000003-1 37=dsaGQ2.28620 198=PNT-7101400016 150=0 39=0 54=2 38=1 44=210925 847=1031 151=1 14=0 6=0
+envia @ER 1=99999 11=KM-E-900000003-1 37=dsaGQ2.28620 198=PNT-7101400016 17=481141000000011 150=F 39=2 54=2 38=1 44=210925 847=1031 32=1 31=210925 151=0 14=1 6=210925 1057=N
+evento ENTRADA_EXECUTADA operacao_id=900000003 qtd=1 preco=210925
+# a 1014 real: compra, gatilho 210925 + 500 = 211425, limite + 100 = 211525
+recebe 35=D 11=KM-P-900000003-1 1=99999 38=1 40=2 44=211525 54=1 55=WINZ26 847=1014 20828=211425 20829=211525 20856=Y
+envia 35=8 37=dsaGQ2.28621 11=KM-P-900000003-1 17=PendNew_2037016:hA.PCd 150=A 39=A 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=211525 847=1014 59=6 168=20261014-00:00:01 126=20261014-21:25:00 151=1 14=0 20807=0 20806=0 6=0 58="NEW DSA Order request sent to Robot" 20871=N 20882=N 20828=211425 20829=211525 20856=Y
+avanca 200ms
+envia 35=8 37=dsaGQ2.28621 198=PNT-7101400017 11=KM-P-900000003-1 17=Acc_2037017:hA.PCe 150=0 39=0 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=211525 847=1014 59=6 168=20261014-17:06:38 126=20261014-21:25:00 151=1 14=0 20807=0 20806=0 6=0 20871=N 20882=N 20828=211425 20829=211525 20856=Y
+evento PROTEGIDA operacao_id=900000003 preco_stop=211425 preco_limite=211525 qtd=1
+saude posicao=-1
+
+# ~10 min com a 1014 parada no PnT, o mercado abaixo do gatilho
+preco bid=211000 ask=211005 preco=211000
+avanca 10m
+nada
+sem_evento PROTECAO_DISPARADA
+
+# o mercado passa do gatilho: a 1014 dispara dentro do PnT (39=B, 20807=1, 20806=211525, [DSA-122])
+preco bid=211425 ask=211430 preco=211430
+envia 35=8 37=dsaGQ2.28621 198=PNT-7101400017 11=KM-P-900000003-1 41=KM-P-900000003-1 17=PendFin_2037018:hA.PMB 150=I 39=B 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=211525 847=1014 59=6 168=20261014-17:06:38 126=20261014-21:25:00 151=0 14=0 20807=1 20806=211525 6=0 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1." 20871=N 20882=N 20828=211425 20829=211525 20856=Y
+envia 35=8 37=dsaGQ2.28621 198=PNT-7101400017 11=KM-P-900000003-1 41=KM-P-900000003-1 17=PendFin_2037019:hA.PMC 150=I 39=B 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=211525 847=1014 59=6 168=20261014-17:06:38 126=20261014-21:25:00 151=0 14=0 20807=1 20806=211525 6=0 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1." 20871=N 20882=N 20828=211425 20829=211525 20856=Y
+avanca 200ms
+envia 35=8 37=dsaGQ2.28621 198=PNT-7101400017 11=KM-P-900000003-1 41=KM-P-900000003-1 17=PendFin_2037020:hA.PMD 150=I 39=B 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=211525 847=1014 59=6 168=20261014-17:06:38 126=20261014-21:25:00 151=0 14=0 20807=1 20806=211525 6=0 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1." 20871=N 20882=N 20828=211425 20829=211525 20856=Y
+envia 35=8 37=dsaGQ2.28621 198=PNT-7101400017 11=KM-P-900000003-1 41=KM-P-900000003-1 17=PendFin_2037021:hA.PME 150=I 39=B 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=211525 847=1014 59=6 168=20261014-17:06:38 126=20261014-21:25:00 151=0 14=0 20807=1 20806=211525 6=0 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1." 20871=N 20882=N 20828=211425 20829=211525 20856=Y
+evento PROTECAO_DISPARADA operacao_id=900000003 qtd_enviada=1 preco_enviado=211525 preco_stop=211425 preco_limite=211525
+conta_eventos PROTECAO_DISPARADA operacao_id=900000003 = 1
+saude posicao=-1
+nada
+
+# 0,5 s depois do disparo: o fill, no 37 e no ClOrdID da 1014 [PnT-5]
+avanca 300ms
+envia 35=8 37=dsaGQ2.28621 198=PNT-7101400017 11=KM-P-900000003-1 17=481141000000013 150=F 39=2 1=99999 55=WINZ26 54=1 38=1 32=1 31=211430 151=0 14=1 6=211430 60=20261014-17:16:49 1057=N 20856=Y
+evento SAIDA_EXECUTADA operacao_id=900000003 qtd=1 preco=211430 origem=STOP_SERVIDOR
+evento ZERADA operacao_id=900000003 origem=STOP_SERVIDOR pnl_pts=-505
 saude posicao=0
+sem_alerta STOP_FURADO
+
+# o estado final do PnT: 39=B "Delaying final state" (20807=0) e o 39=2 só confirmam
+avanca 8700ms
+envia 35=8 37=dsaGQ2.28621 198=PNT-7101400017 11=KM-P-900000003-1 41=KM-P-900000003-1 17=PendFin_2037022:hA.PML 150=I 39=B 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=211525 847=1014 59=6 168=20261014-17:06:38 126=20261014-21:25:00 151=0 14=1 20807=0 20806=0 6=211430 58="Delaying final state 'Finished' for 3.00 s, timer started." 20871=N 20882=N 20828=211425 20829=211525 20856=Y
+envia 35=8 37=dsaGQ2.28621 198=PNT-7101400017 11=KM-P-900000003-1 41=KM-P-900000003-1 17=PendFin_2037023:hA.PM? 150=I 39=B 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=211525 847=1014 59=6 168=20261014-17:06:38 126=20261014-21:25:00 151=0 14=1 20807=0 20806=0 6=211430 58="Delaying final state 'Finished' for 9.19 ms / 3.00 s." 20871=N 20882=N 20828=211425 20829=211525 20856=Y
+avanca 3s
+envia 35=8 37=dsaGQ2.28621 198=PNT-7101400017 11=KM-P-900000003-1 41=KM-P-900000003-1 17=Dsa_2037024:hA.PMN 150=I 39=2 1=99999 55=WINZ26 207=XBMF 54=1 38=1 40=2 44=211525 847=1014 59=6 168=20261014-17:06:38 126=20261014-21:25:00 151=0 14=1 20807=0 20806=0 6=211430 20871=N 20882=N 20828=211425 20829=211525 20856=Y
+conta_eventos PROTECAO_DISPARADA operacao_id=900000003 = 1
+conta_eventos SAIDA_EXECUTADA operacao_id=900000003 = 1
+sem_alerta FILL_ORDEM_ENCERRADA
+sem_alerta DIVERGENTE
+sem_alerta STOP_FURADO
+saude posicao=0 divergente=false
 nada
 
 # o gestor, atrasado, pede a saída: reduce-only recusa e nenhuma ordem sai
-saida 1005 V STOP
+saida 900000003 C STOP
 resposta aceito=false codigo=SEM_POSICAO
 nada
 avanca 10s
