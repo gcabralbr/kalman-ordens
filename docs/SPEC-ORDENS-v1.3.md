@@ -3,8 +3,9 @@
 Revisão da [SPEC-ORDENS-v1.2.md](SPEC-ORDENS-v1.2.md) (que revisa a v1.1 e a v1). Lista **só o
 que mudou**; onde a v1.3 não diz nada, vale a v1.2.
 
-Tema único: **resultado da rodada 1 da F1** na .53 (14/10/2026, HML do PnT, binário `03c7e05`) e
-as correções que ela pediu antes de qualquer novo start na .53.
+Tema: **resultado da rodada 1 da F1** na .53 (14/10/2026, HML do PnT, binário `03c7e05`) e
+as correções que ela pediu antes de qualquer novo start na .53. Mais a parte de dados da diretriz
+da [v2](SPEC-ORDENS-v2.md) (serviço para qualquer módulo do GQ; seção 3c).
 
 Data: 2026-10-14. Itens A–G vindos do responsável; A2, F2 (propostas desta implementação) e H1
 (a pendência do ExecID) confirmados pelo responsável no mesmo dia.
@@ -58,6 +59,20 @@ do QuickFIX/Go não tem Close).
 |---|---|---|---|
 | I1 | **35=9 em resposta a replace da SAÍDA com 39=2, 4 ou 8** (a ordem já está terminal no PnT; HML 14/10: `[IS-72]`, o fill chegou 100 ms depois): **suspende o repreço daquela saída** (nenhum 35=G a mais) e espera o fill ou o 39=4 por `ESPERA_FILL_POS_RECUSA_S` (3 s). Chegou → fluxo normal (o fill zera; o 39=4 encerra a ordem e a saída segue o repreço com ordem nova). Não chegou → **mass status na hora**, e o estado real decide; depois do mass status, a ordem ainda viva (viva lá ou ausente) = sem resposta coerente → alerta crítico **`SAIDA_SEM_FILL`**, saída suspensa (a ordem pode ter executado), decisão humana; resolve quando a ordem encerra ou a posição zera. O `RECUSA_PNT` do 35=9 é informativo (não crítico), como já era. Antes, o motor só derrubava a pendência do replace e reapregoava 2 s depois. | — | 52 (fill 5 s depois: nenhum 35=G, mass status em 3 s, fill aplicado uma vez), 53 (mass status incoerente → `SAIDA_SEM_FILL`; o fill tardio zera e resolve), 51 (fill em 100 ms: fluxo normal) |
 
+## 3c. Módulo (M) — parte de dados da v2
+
+Diretriz de 14/10: o serviço de ordens no PnT será usado por qualquer módulo do GQ, não só pelo
+Kalman. O desenho completo está na [v2](SPEC-ORDENS-v2.md); aqui, o que já vale.
+
+| # | Regra | Substitui | Roteiro / teste |
+|---|---|---|---|
+| M1 | **Coluna `modulo`** (padrão `'KALMAN'`) em `kalmanordemoperacao`, `kalmanordem`, `kalmanordemevento`, `kalmanordempub`, `kalmanordemusuario` e `kalmanordemusuariohist` (migração `0004_modulo.sql`, só `ALTER`). A operação é única por **(modulo, operacao_id)**. Habilitação e limites continuam por uid (a coluna fica `KALMAN`; por (modulo, uid) na v2). | operação única por `operacao_id` | `internal/repo` `TestContrato` (memória e MariaDB) |
+| M2 | **`modulo` no contrato**, opcional por enquanto: no `POST /ordens` (ausente = `KALMAN`; nome com 2 a 8 letras maiúsculas e dígitos, senão `CAMPO_INVALIDO`), no `GET /ordens/{id}?modulo=` (ausente = KALMAN; a resposta traz `modulo`) e no `GET /eventos?modulo=` (ausente = todos; filtro no banco, a paginação por `seq` continua certa). Todo evento publicado traz `modulo`; o alerta traz o da operação do dia com aquele id. **Idempotência por (modulo, operacao_id, papel)**; `"modulo":"KALMAN"` e sem `modulo` são o mesmo pedido (o reenvio de um pedido de antes da v1.3 continua idêntico). | idempotência por (operacao_id, papel) | 54; 23, 25 (sem mudança) |
+| M3 | **ClOrdID provisório**: o do KALMAN não muda (`KM-E-<op>-<n>`); os outros módulos levam o nome depois do `KM-` (`KM-PT-E-<op>-<n>`, até 27 caracteres com o módulo de 8, abaixo dos 28 [PnT-4]) — sem isso, o mesmo `operacao_id` em dois módulos daria o mesmo ClOrdID. O filtro do mass status pelo `KM-` continua valendo. Chaves dos alertas críticos por operação também levam o módulo (fora do KALMAN). A v2 troca por um prefixo por módulo (V3). | — | 54 |
+
+Posição e reduce-only seguem **por operação**: a saída de um módulo não reduz a posição do outro
+(roteiro 54). Por (modulo, uid, conta, símbolo) é a V1 da v2.
+
 ## 3b. Persistência (H)
 
 | # | Regra | Substitui | Roteiro / teste |
@@ -108,4 +123,5 @@ Observado na HML em 14/10; nada muda no serviço por enquanto.
 | 51 | saída da operação 900000002 da HML com as mensagens reais: replace aceito, replace seguinte rejeitado `[IS-72]`/`[DSA-56]`, fill 100 ms depois no ClOrdID vigente → zera sem saída duplicada |
 | 52 | I1: a mesma sequência com o fill 5 s depois do 35=9 → nenhum 35=G a mais, mass status em 3 s, fill aplicado uma vez |
 | 53 | I1: sem fill e mass status com a saída viva → `SAIDA_SEM_FILL`, saída suspensa; o fill tardio zera e resolve |
+| 54 | M1–M3: o mesmo `operacao_id` no KALMAN e no PT → as duas aceitas (ClOrdID `KM-E-…` e `KM-PT-E-…`), consulta e reenvio por módulo, a saída do PT zera só a dele; módulo inválido → `CAMPO_INVALIDO` |
 | 02, 04, 04b, 13, 17, 19, 32 | `ESPERA_ENCERRAMENTO_S` = 8 s (04b: fill aos 6 s, além dos 5 s antigos, ainda dentro da espera) |

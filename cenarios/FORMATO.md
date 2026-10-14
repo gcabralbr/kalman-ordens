@@ -66,8 +66,8 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 
 | Instrução | Efeito |
 |---|---|
-| `entrada OP LADO [qtd=1] [stop=500] [motivo=SINAL] [ts=...] [uid=N]` | `POST /ordens` papel ENTRADA, uid 7 (o habilitado no `_comum.fix`; `uid=` troca); `ts_decisao` = hora do relógio no primeiro pedido da operação e **o mesmo** nos seguintes (o gestor reenvia o mesmo corpo); `ts=` força outro |
-| `saida OP LADO MOTIVO [qtd=1]` | `POST /ordens` papel SAIDA; LADO é o lado da ordem de saída |
+| `entrada OP LADO [qtd=1] [stop=500] [motivo=SINAL] [ts=...] [uid=N] [modulo=M]` | `POST /ordens` papel ENTRADA, uid 7 (o habilitado no `_comum.fix`; `uid=` troca; `modulo=` põe o campo no corpo — sem ele, KALMAN); `ts_decisao` = hora do relógio no primeiro pedido da operação e **o mesmo** nos seguintes (o gestor reenvia o mesmo corpo); `ts=` força outro |
+| `saida OP LADO MOTIVO [qtd=1] [modulo=M]` | `POST /ordens` papel SAIDA; LADO é o lado da ordem de saída |
 | `http METODO /caminho [json]` | requisição livre |
 | `resposta campo=valor ...` | confere o corpo da última resposta HTTP (`parada.modo=BLOQUEAR`; `null`; `*` = presente); `_status` é o código HTTP |
 | `saude campo=valor ...` | `GET /saude` e confere |

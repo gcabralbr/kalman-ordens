@@ -1,0 +1,58 @@
+cenario 54 Dois módulos com o mesmo operacao_id → as duas operações aceitas; a saída de um não mexe na posição do outro
+hora 2026-10-14 10:00:00
+config LIMITE_POSICAO_MAX=2
+# SPEC v2 (diretriz de 14/10): o serviço de ordens no PnT não é só do Kalman. Já na v1.3 (M1–M3):
+# coluna `modulo` (padrão KALMAN) nas tabelas; campo `modulo` opcional no POST /ordens, no
+# GET /ordens/{id} e no /eventos; idempotência por (modulo, operacao_id, papel). ClOrdID: o do
+# KALMAN não muda (KM-E-…); os outros módulos levam o nome depois do KM- (KM-PT-E-…). A posição
+# é por operação, logo a saída de um módulo não reduz a do outro. Posição e reduce-only por
+# (modulo, uid, conta, símbolo) ficam para a v2.
+
+executa INICIO
+# KALMAN (sem modulo no pedido = KALMAN)
+executa COMPRADO OP=5401
+conta_eventos ENTRADA_EXECUTADA operacao_id=5401 modulo=KALMAN = 1
+
+# outro módulo, o mesmo operacao_id: operação nova, não DUPLICADA
+avanca 61s
+entrada 5401 C modulo=PT
+resposta aceito=true
+recebe 35=D 11=KM-PT-E-5401-1 1=12345 44=130020 54=1 55=WINZ26 847=1031
+envia @ER 11=KM-PT-E-5401-1 37=dsa.PT5401.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-PT-E-5401-1 37=dsa.PT5401.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130015 14=1 151=0 6=130015
+evento ENTRADA_EXECUTADA operacao_id=5401 modulo=PT qtd=1 preco=130015
+recebe 35=D 11=KM-PT-P-5401-1 38=1 54=2 847=1014 20828=129515 20829=129415
+envia @ER 11=KM-PT-P-5401-1 37=dsa.PT5401.P 150=0 39=0 54=2 38=1 44=129415 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=5401 modulo=PT preco_stop=129515
+saude posicao=2
+
+# consulta e reenvio por módulo
+http GET /ordens/5401?modulo=PT
+resposta existe=true modulo=PT
+http GET /ordens/5401
+resposta existe=true modulo=KALMAN
+entrada 5401 C
+resposta aceito=true repetido=true estado_atual.modulo=KALMAN
+entrada 5401 C modulo=PT
+resposta aceito=true repetido=true estado_atual.modulo=PT
+http GET /ordens/5401?modulo=XX
+resposta existe=false
+
+# a saída do PT zera só a operação do PT; a do KALMAN continua com a 1014 dela
+preco bid=130100 ask=130105 preco=130100
+saida 5401 V SINAL_OPOSTO modulo=PT
+resposta aceito=true
+recebe 35=F 11=KM-PT-P-5401-2 41=KM-PT-P-5401-1 37=dsa.PT5401.P
+envia @ER 11=KM-PT-P-5401-2 41=KM-PT-P-5401-1 37=dsa.PT5401.P 150=4 39=4 54=2 38=1 44=129415 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-PT-S-5401-1 38=1 44=130050 54=2 847=1031
+envia @ER 11=KM-PT-S-5401-1 37=dsa.PT5401.S 150=F 39=2 54=2 38=1 44=130050 847=1031 32=1 31=130100 14=1 151=0 6=130100
+evento ZERADA operacao_id=5401 modulo=PT pnl_pts=85
+sem_evento ZERADA operacao_id=5401 modulo=KALMAN
+saude posicao=1
+http GET /ordens/5401
+resposta existe=true modulo=KALMAN estado=PROTEGIDA
+nada
+
+# módulo inválido no pedido
+entrada 5402 C modulo=kalman-teste
+resposta aceito=false codigo=CAMPO_INVALIDO

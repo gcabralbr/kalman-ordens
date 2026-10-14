@@ -58,14 +58,27 @@ func TestContrato(t *testing.T) {
 			if err := r.SalvarOperacao(dup); err != ErrDuplicada {
 				t.Fatalf("operação duplicada: %v", err)
 			}
+			// v1.3 M1: o mesmo operacao_id em outro módulo é outra operação
+			pt := &dominio.Operacao{Data: "2026-10-13", Modulo: "PT", OperacaoID: 77, UID: 7, Lado: dominio.Venda, Estado: dominio.Entrando, CriadaEm: em}
+			if err := r.SalvarOperacao(pt); err != nil || pt.ID == 0 || pt.ID == op.ID {
+				t.Fatalf("mesmo operacao_id em outro módulo: id=%d err=%v", pt.ID, err)
+			}
+			if op.Modulo != dominio.ModuloPadrao {
+				t.Fatalf("módulo padrão: %q", op.Modulo)
+			}
 			op.Estado, op.EncerrouEntrada, op.PnL = dominio.Zerada, true, decimal.RequireFromString("-505.5")
 			op.ContadorN["P"] = 3
 			op.SaidaPedidaEm = em.Add(time.Minute)
 			if err := r.SalvarOperacao(op); err != nil {
 				t.Fatal(err)
 			}
-			if ok, _ := r.OperacaoExiste(77); !ok {
-				t.Fatal("OperacaoExiste")
+			for _, c := range []struct {
+				mod  string
+				quer bool
+			}{{"", true}, {"KALMAN", true}, {"PT", true}, {"XX", false}} {
+				if ok, _ := r.OperacaoExiste(c.mod, 77); ok != c.quer {
+					t.Fatalf("OperacaoExiste(%q, 77) = %v", c.mod, ok)
+				}
 			}
 
 			o := &dominio.Ordem{Data: "2026-10-13", UID: 7, OperacaoID: 77, Papel: dominio.Protecao, ClOrdBase: "KM-P-77-1",
@@ -80,13 +93,19 @@ func TestContrato(t *testing.T) {
 			}
 
 			ops, ords, err := r.CarregarDia("2026-10-13")
-			if err != nil || len(ops) != 1 || len(ords) != 1 {
+			if err != nil || len(ops) != 2 || len(ords) != 1 {
 				t.Fatalf("carregar: %d ops %d ordens err=%v", len(ops), len(ords), err)
+			}
+			if ops[1].Modulo != "PT" || ops[1].OperacaoID != 77 || ops[1].Lado != dominio.Venda {
+				t.Fatalf("operação do PT lida diferente: %+v", ops[1])
 			}
 			g := ops[0]
 			if g.Estado != dominio.Zerada || !g.EncerrouEntrada || !g.PnL.Equal(op.PnL) || g.ContadorN["P"] != 3 ||
 				!g.CriadaEm.Equal(em) || !g.SaidaPedidaEm.Equal(em.Add(time.Minute)) || g.RespostaEntrada != `{"aceito":true}` || g.Lado != dominio.Compra {
 				t.Fatalf("operação lida diferente: %+v", g)
+			}
+			if g.Modulo != dominio.ModuloPadrao || ords[0].Modulo != dominio.ModuloPadrao {
+				t.Fatalf("módulo lido: operação %q ordem %q", g.Modulo, ords[0].Modulo)
 			}
 			go_ := ords[0]
 			if go_.ClOrdAtual != "KM-P-77-2" || go_.OrderID != "dsa.9" || go_.Estado != dominio.Executada || !go_.PrecoMedio.Equal(o.PrecoMedio) ||
@@ -132,13 +151,23 @@ func TestContrato(t *testing.T) {
 
 			for i := 0; i < 3; i++ {
 				b, _ := json.Marshal(map[string]any{"i": i})
-				if s, err := r.Publicar("ALERTA", 77, b, em); err != nil || s != int64(i+1) {
+				if s, err := r.Publicar("ALERTA", "", 77, b, em); err != nil || s != int64(i+1) {
 					t.Fatalf("publicar: seq=%d err=%v", s, err)
 				}
 			}
-			ps, _ := r.Publicados(1, 10)
-			if len(ps) != 2 || ps[0].Seq != 2 || ps[0].OperacaoID != 77 || string(ps[1].Dados) != `{"i":2}` {
+			if s, err := r.Publicar("ZERADA", "PT", 77, []byte(`{"i":3}`), em); err != nil || s != 4 {
+				t.Fatalf("publicar PT: seq=%d err=%v", s, err)
+			}
+			ps, _ := r.Publicados(1, 10, "")
+			if len(ps) != 3 || ps[0].Seq != 2 || ps[0].OperacaoID != 77 || ps[0].Modulo != dominio.ModuloPadrao || string(ps[1].Dados) != `{"i":2}` {
 				t.Fatalf("publicados: %+v", ps)
+			}
+			// filtro por módulo (no banco: a paginação por seq continua certa)
+			if ps, _ := r.Publicados(0, 10, "PT"); len(ps) != 1 || ps[0].Seq != 4 || ps[0].Modulo != "PT" {
+				t.Fatalf("publicados do PT: %+v", ps)
+			}
+			if ps, _ := r.Publicados(0, 2, "KALMAN"); len(ps) != 2 || ps[1].Seq != 2 {
+				t.Fatalf("publicados do KALMAN: %+v", ps)
 			}
 
 			if _, ok, _ := r.LerEstado("parada"); ok {

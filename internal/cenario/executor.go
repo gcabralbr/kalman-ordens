@@ -598,6 +598,8 @@ func (e *Executor) pedido(p roteiro.Passo) error {
 			b["ts_decisao"] = v
 		case "uid":
 			b["uid"], _ = strconv.Atoi(v)
+		case "modulo":
+			b["modulo"] = v
 		}
 	}
 	j, _ := json.Marshal(b)
@@ -629,7 +631,7 @@ func (e *Executor) publicados() ([]repo.Publicado, error) {
 	var todos []repo.Publicado
 	var desde int64
 	for {
-		ps, err := e.repo.Publicados(desde, 1000)
+		ps, err := e.repo.Publicados(desde, 1000, "")
 		if err != nil {
 			return nil, err
 		}

@@ -2,6 +2,7 @@
 package dominio
 
 import (
+	"regexp"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -113,6 +114,7 @@ func (e EstadoOperacao) Saindo() bool {
 type Ordem struct {
 	ID             int64
 	Data           string
+	Modulo         string // o da operação
 	UID            int
 	OperacaoID     int64
 	Papel          Papel
@@ -140,6 +142,7 @@ type Ordem struct {
 type Operacao struct {
 	ID         int64
 	Data       string
+	Modulo     string // módulo do GQ dono da operação (v1.3 M1); a chave é (Modulo, OperacaoID)
 	OperacaoID int64
 	UID        int
 	// Congelados na entrada (v1.2 U4, S1): proteção e saída usam estes, nunca releem.
@@ -185,3 +188,13 @@ type Habilitacao struct {
 	Motivo      string
 	Em          time.Time
 }
+
+// ModuloPadrao: o módulo de quem não diz qual é (o Kalman, o primeiro cliente do serviço).
+const ModuloPadrao = "KALMAN"
+
+var reModulo = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,7}$`)
+
+// ModuloValido: 2 a 8 letras maiúsculas e dígitos, começando por letra. O nome entra no ClOrdID
+// dos módulos que não são o KALMAN (KM-<MODULO>-E-<operacao_id>-<n>), que tem de caber em 28
+// caracteres [PnT-4].
+func ModuloValido(m string) bool { return reModulo.MatchString(m) }

@@ -35,11 +35,11 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if p.StopPts == nil || *p.StopPts <= 0 {
 		return nil, simples("SEM_STOP", "stop_pts ausente na ENTRADA: sem stop, não há ordem")
 	}
-	if m.porOp[*p.OperacaoID] != nil {
+	if m.operacaoDo(p) != nil {
 		// a idempotência (repetido) já tratou o reenvio; aqui só chega operação sem pedido guardado
 		return nil, simples("DUPLICADA", "operação já recebida")
 	}
-	if existe, _ := m.repo.OperacaoExiste(*p.OperacaoID); existe {
+	if existe, _ := m.repo.OperacaoExiste(p.modulo(), *p.OperacaoID); existe {
 		return nil, simples("DUPLICADA", "operação já recebida (outro dia)")
 	}
 	if m.parada != nil {
@@ -77,14 +77,14 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 
 	agora := m.agora()
 	op := &operacao{Operacao: dominio.Operacao{
-		Data: m.dia, OperacaoID: *p.OperacaoID, UID: *p.UID, Conta: conta.Conta, Destino: conta.Destino, Simbolo: l.Ticker,
+		Data: m.dia, Modulo: p.modulo(), OperacaoID: *p.OperacaoID, UID: *p.UID, Conta: conta.Conta, Destino: conta.Destino, Simbolo: l.Ticker,
 		Lado: lado, QtdPedida: *p.Qtd, StopPts: *p.StopPts,
 		Estado: dominio.Entrando, MotivoEntrada: p.Motivo, TsDecisao: p.TsDecisao, CriadaEm: agora,
 		ContadorN: map[string]int{},
 	}}
 	m.salvarOp(op)
 	m.ops = append(m.ops, op)
-	m.porOp[op.OperacaoID] = op
+	m.porOp[chaveOperacao{op.Modulo, op.OperacaoID}] = op
 
 	var ref decimal.Decimal
 	if lado == dominio.Compra {
@@ -274,7 +274,7 @@ func (m *Motor) recusar(p Pedido, r *recusa) Resposta {
 	if p.OperacaoID != nil {
 		op = fmt.Sprint(*p.OperacaoID)
 	}
-	slog.Info("pedido recusado", "papel", p.Papel, "operacao", op, "codigo", r.codigo, "motivo", r.motivo)
+	slog.Info("pedido recusado", "papel", p.Papel, "modulo", p.modulo(), "operacao", op, "codigo", r.codigo, "motivo", r.motivo)
 	if r.porLimite {
 		agora := m.agora()
 		m.recusasLimite = append(aparar(m.recusasLimite, agora.Add(-time.Minute)), agora)
@@ -289,7 +289,7 @@ func (m *Motor) novaOrdem(op *operacao, papel dominio.Papel, lado dominio.Lado, 
 	cl := op.clordid(papel, op.proximoN(papel))
 	m.seqOrdens++
 	return &ordem{seq: m.seqOrdens, Ordem: dominio.Ordem{
-		Data: op.Data, UID: op.UID, OperacaoID: op.OperacaoID, Papel: papel, Conta: op.Conta, Simbolo: op.Simbolo, ClOrdBase: cl, ClOrdAtual: cl,
+		Data: op.Data, Modulo: op.Modulo, UID: op.UID, OperacaoID: op.OperacaoID, Papel: papel, Conta: op.Conta, Simbolo: op.Simbolo, ClOrdBase: cl, ClOrdAtual: cl,
 		Estrategia: estrategia, Lado: lado, Qtd: qtd, Estado: dominio.Enviando, CriadaEm: m.agora(),
 	}}
 }

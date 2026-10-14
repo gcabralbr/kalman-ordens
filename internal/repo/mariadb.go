@@ -170,11 +170,12 @@ func (r *MariaDB) SalvarOperacao(o *dominio.Operacao) error {
 	agora := time.Now().UTC()
 	pnl := o.PnL.String()
 	if o.ID == 0 {
-		res, err := r.db.Exec(`INSERT INTO kalmanordemoperacao (data, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida,
+		o.Modulo = modulo(o.Modulo) // o padrão da coluna
+		res, err := r.db.Exec(`INSERT INTO kalmanordemoperacao (data, modulo, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida,
 			stop_pts, estado, motivo_entrada, ts_decisao, motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts,
 			encerrou_entrada, contador_n, pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, criado_em, atualizado_em)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			o.Data, o.OperacaoID, o.UID, nulo(o.Conta), o.Destino, nulo(o.Simbolo), o.Lado.Letra(), o.QtdPedida, o.StopPts, string(o.Estado),
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(o.Conta), o.Destino, nulo(o.Simbolo), o.Lado.Letra(), o.QtdPedida, o.StopPts, string(o.Estado),
 			nulo(o.MotivoEntrada), nulo(o.TsDecisao), nulo(o.MotivoSaida), nulo(o.OrigemSaida), utc(o.SaidaPedidaEm),
 			o.Divergente, pnl, o.EncerrouEntrada, string(cn), nulo(o.PedidoEntrada), nulo(o.RespostaEntrada),
 			nulo(o.PedidoSaida), nulo(o.RespostaSaida), utc(o.CriadaEm), agora)
@@ -197,19 +198,20 @@ func (r *MariaDB) SalvarOperacao(o *dominio.Operacao) error {
 	return err
 }
 
-func (r *MariaDB) OperacaoExiste(id int64) (bool, error) {
+func (r *MariaDB) OperacaoExiste(mod string, id int64) (bool, error) {
 	var n int
-	err := r.db.QueryRow("SELECT COUNT(*) FROM kalmanordemoperacao WHERE operacao_id=?", id).Scan(&n)
+	err := r.db.QueryRow("SELECT COUNT(*) FROM kalmanordemoperacao WHERE modulo=? AND operacao_id=?", modulo(mod), id).Scan(&n)
 	return n > 0, err
 }
 
 func (r *MariaDB) SalvarOrdem(o *dominio.Ordem) error {
 	agora := time.Now().UTC()
 	if o.ID == 0 {
-		res, err := r.db.Exec(`INSERT INTO kalmanordem (data, uid, operacao_id, papel, conta, simbolo, clordid_base, clordid_atual,
+		o.Modulo = modulo(o.Modulo)
+		res, err := r.db.Exec(`INSERT INTO kalmanordem (data, modulo, uid, operacao_id, papel, conta, simbolo, clordid_base, clordid_atual,
 			orderid37, secid198, estrategia, lado, qtd, preco, preco_stop, preco_stop_lim, estado, qtd_exec, preco_medio,
-			motivo_gestor, motivo_rejeicao, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			o.Data, o.UID, o.OperacaoID, o.Papel.String(), nulo(o.Conta), nulo(o.Simbolo), o.ClOrdBase, o.ClOrdAtual, nulo(o.OrderID), nulo(o.SecID),
+			motivo_gestor, motivo_rejeicao, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			o.Data, modulo(o.Modulo), o.UID, o.OperacaoID, o.Papel.String(), nulo(o.Conta), nulo(o.Simbolo), o.ClOrdBase, o.ClOrdAtual, nulo(o.OrderID), nulo(o.SecID),
 			o.Estrategia, o.Lado.Letra(), o.Qtd, o.Preco, o.Stop, o.StopLim, string(o.Estado), o.QtdExec, o.PrecoMedio.String(),
 			nulo(o.MotivoGestor), nulo(cortar(o.MotivoRejeicao, 500)), utc(o.CriadaEm), agora)
 		if err != nil {
@@ -244,9 +246,9 @@ func (r *MariaDB) RegistrarEvento(e EventoFIX) (bool, error) {
 	if e.OrdemID != 0 {
 		ordem = e.OrdemID
 	}
-	_, err := r.db.Exec(`INSERT INTO kalmanordemevento (ordem_id, direcao, msgtype, exectype, ordstatus, clordid, orderid37,
-		execid, lastqty, lastpx, cumqty, avgpx, texto, codigo, fix_raw, em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		ordem, e.Direcao, e.MsgType, nulo(e.ExecType), nulo(e.OrdStatus), nulo(cortar(e.ClOrdID, 60)), nulo(e.OrderID),
+	_, err := r.db.Exec(`INSERT INTO kalmanordemevento (ordem_id, modulo, direcao, msgtype, exectype, ordstatus, clordid, orderid37,
+		execid, lastqty, lastpx, cumqty, avgpx, texto, codigo, fix_raw, em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		ordem, modulo(e.Modulo), e.Direcao, e.MsgType, nulo(e.ExecType), nulo(e.OrdStatus), nulo(cortar(e.ClOrdID, 60)), nulo(e.OrderID),
 		nulo(e.ExecID), lq, lp, cq, ap, nulo(cortar(e.Texto, 1000)), nulo(cortar(e.Codigo, 20)), nulo(e.Bruta), utc(e.Em))
 	if err != nil {
 		var me *mysql.MySQLError
@@ -264,20 +266,21 @@ func (r *MariaDB) EnviosDesde(t time.Time) (int, error) {
 	return n, err
 }
 
-func (r *MariaDB) Publicar(tipo string, op int64, dados []byte, em time.Time) (int64, error) {
+func (r *MariaDB) Publicar(tipo, mod string, op int64, dados []byte, em time.Time) (int64, error) {
 	var opv any
 	if op != 0 {
 		opv = op
 	}
-	res, err := r.db.Exec("INSERT INTO kalmanordempub (tipo, operacao_id, dados, em) VALUES (?,?,?,?)", tipo, opv, string(dados), utc(em))
+	res, err := r.db.Exec("INSERT INTO kalmanordempub (tipo, modulo, operacao_id, dados, em) VALUES (?,?,?,?,?)", tipo, modulo(mod), opv, string(dados), utc(em))
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-func (r *MariaDB) Publicados(desde int64, limite int) ([]Publicado, error) {
-	rows, err := r.db.Query("SELECT seq, tipo, operacao_id, dados, em FROM kalmanordempub WHERE seq > ? ORDER BY seq LIMIT ?", desde, limite)
+func (r *MariaDB) Publicados(desde int64, limite int, mod string) ([]Publicado, error) {
+	rows, err := r.db.Query("SELECT seq, tipo, modulo, operacao_id, dados, em FROM kalmanordempub WHERE seq > ? AND (? = '' OR modulo = ?) ORDER BY seq LIMIT ?",
+		desde, mod, mod, limite)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +290,7 @@ func (r *MariaDB) Publicados(desde int64, limite int) ([]Publicado, error) {
 		var p Publicado
 		var op sql.NullInt64
 		var d string
-		if err := rows.Scan(&p.Seq, &p.Tipo, &op, &d, &p.Em); err != nil {
+		if err := rows.Scan(&p.Seq, &p.Tipo, &p.Modulo, &op, &d, &p.Em); err != nil {
 			return nil, err
 		}
 		p.OperacaoID, p.Dados = op.Int64, json.RawMessage(d)
@@ -312,7 +315,7 @@ func (r *MariaDB) GravarEstado(k, v string, em time.Time) error {
 }
 
 func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem, error) {
-	rows, err := r.db.Query(`SELECT id, data, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida, stop_pts, estado, motivo_entrada, ts_decisao,
+	rows, err := r.db.Query(`SELECT id, data, modulo, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida, stop_pts, estado, motivo_entrada, ts_decisao,
 		motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts, encerrou_entrada, contador_n, pedido_entrada,
 		resposta_entrada, pedido_saida, resposta_saida, criado_em FROM kalmanordemoperacao WHERE data=? ORDER BY id`, data)
 	if err != nil {
@@ -326,7 +329,7 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 		var me, ts, ms, os, pe, re, ps, rs, pnl, conta, simb sql.NullString
 		var dest sql.NullInt64
 		var sp sql.NullTime
-		if err := rows.Scan(&o.ID, &d, &o.OperacaoID, &o.UID, &conta, &dest, &simb, &lado, &o.QtdPedida, &o.StopPts, &estado, &me, &ts, &ms, &os,
+		if err := rows.Scan(&o.ID, &d, &o.Modulo, &o.OperacaoID, &o.UID, &conta, &dest, &simb, &lado, &o.QtdPedida, &o.StopPts, &estado, &me, &ts, &ms, &os,
 			&sp, &o.Divergente, &pnl, &o.EncerrouEntrada, &cn, &pe, &re, &ps, &rs, &o.CriadaEm); err != nil {
 			rows.Close()
 			return nil, nil, err
@@ -351,7 +354,7 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
-	rows, err = r.db.Query(`SELECT id, data, uid, operacao_id, papel, conta, simbolo, clordid_base, clordid_atual, orderid37, secid198,
+	rows, err = r.db.Query(`SELECT id, data, modulo, uid, operacao_id, papel, conta, simbolo, clordid_base, clordid_atual, orderid37, secid198,
 		estrategia, lado, qtd, preco, preco_stop, preco_stop_lim, estado, qtd_exec, preco_medio, motivo_gestor,
 		motivo_rejeicao, criado_em FROM kalmanordem WHERE data=? ORDER BY id`, data)
 	if err != nil {
@@ -364,7 +367,7 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 		var d time.Time
 		var papel, lado, estado, pm string
 		var oid, sid, mg, mr, conta, simb sql.NullString
-		if err := rows.Scan(&o.ID, &d, &o.UID, &o.OperacaoID, &papel, &conta, &simb, &o.ClOrdBase, &o.ClOrdAtual, &oid, &sid, &o.Estrategia,
+		if err := rows.Scan(&o.ID, &d, &o.Modulo, &o.UID, &o.OperacaoID, &papel, &conta, &simb, &o.ClOrdBase, &o.ClOrdAtual, &oid, &sid, &o.Estrategia,
 			&lado, &o.Qtd, &o.Preco, &o.Stop, &o.StopLim, &estado, &o.QtdExec, &pm, &mg, &mr, &o.CriadaEm); err != nil {
 			return nil, nil, err
 		}
@@ -495,4 +498,12 @@ func cortar(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// modulo: vazio = o padrão (KALMAN).
+func modulo(m string) string {
+	if m == "" {
+		return dominio.ModuloPadrao
+	}
+	return m
 }

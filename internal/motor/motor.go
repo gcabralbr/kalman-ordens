@@ -33,8 +33,10 @@ type Envio interface {
 	Logado() bool
 }
 
-// Pedido é o corpo do POST /ordens (Parte 2.1).
+// Pedido é o corpo do POST /ordens (Parte 2.1). Modulo: o módulo do GQ que pede (v1.3 M2;
+// opcional por enquanto, ausente = KALMAN).
 type Pedido struct {
+	Modulo     string `json:"modulo,omitempty"`
 	OperacaoID *int64 `json:"operacao_id"`
 	UID        *int   `json:"uid"`
 	Papel      string `json:"papel"`
@@ -217,8 +219,36 @@ func (op *operacao) proximoN(p dominio.Papel) int {
 	return op.ContadorN[p.String()]
 }
 
+// clordid: KM-<papel>-<operacao_id>-<n> no KALMAN (como sempre); nos outros módulos o nome vem
+// depois do KM- (KM-PT-E-…), para o ClOrdID não colidir entre operações de mesmo operacao_id
+// (v1.3 M3; a v2 troca por um prefixo por módulo).
 func (op *operacao) clordid(p dominio.Papel, n int) string {
+	if op.Modulo != dominio.ModuloPadrao {
+		return fmt.Sprintf("KM-%s-%s-%d-%d", op.Modulo, p, op.OperacaoID, n)
+	}
 	return fmt.Sprintf("KM-%s-%d-%d", p, op.OperacaoID, n)
+}
+
+// chaveOperacao: a operação é única por (módulo, operacao_id) (v1.3 M1).
+type chaveOperacao struct {
+	modulo string
+	id     int64
+}
+
+// modulo do pedido: ausente = KALMAN.
+func (p Pedido) modulo() string {
+	if p.Modulo == "" {
+		return dominio.ModuloPadrao
+	}
+	return p.Modulo
+}
+
+// operacaoDo: a operação do pedido (módulo e operacao_id), ou nil.
+func (m *Motor) operacaoDo(p Pedido) *operacao {
+	if p.OperacaoID == nil {
+		return nil
+	}
+	return m.porOp[chaveOperacao{p.modulo(), *p.OperacaoID}]
 }
 
 // Parada (Parte 6).
@@ -242,7 +272,7 @@ type Motor struct {
 
 	dia         string
 	ops         []*operacao
-	porOp       map[int64]*operacao
+	porOp       map[chaveOperacao]*operacao
 	porClOrd    map[string]*ordem
 	por37       map[string]*ordem
 	donoDa      map[*ordem]*operacao
@@ -360,6 +390,9 @@ func (m *Motor) PedirAssincrono(p Pedido) <-chan Resposta {
 func (m *Motor) Enfileirar(f func()) { m.fila <- f }
 
 func (m *Motor) pedir(p Pedido) Resposta {
+	if p.Modulo != "" && !dominio.ModuloValido(p.Modulo) {
+		return m.recusar(p, simples("CAMPO_INVALIDO", fmt.Sprintf("modulo %q inválido (2 a 8 letras maiúsculas e dígitos)", p.Modulo)))
+	}
 	if r, ok := m.repetido(p); ok {
 		return r
 	}
@@ -380,19 +413,20 @@ func (m *Motor) pedir(p Pedido) Resposta {
 	return r
 }
 
-// impressao: o pedido canônico (todos os campos), para comparar reenvios.
+// impressao: o pedido canônico (todos os campos), para comparar reenvios. "modulo":"KALMAN" e
+// sem modulo são o mesmo pedido (e o mesmo de antes da v1.3 M2).
 func impressao(p Pedido) string {
+	if p.Modulo == dominio.ModuloPadrao {
+		p.Modulo = ""
+	}
 	b, _ := json.Marshal(p)
 	return string(b)
 }
 
-// repetido: mesmo (operacao_id, papel) já existente. Idêntico → resultado original + repetido=true +
+// repetido: mesmo (modulo, operacao_id, papel) já existente. Idêntico → resultado original + repetido=true +
 // estado atual, sem alerta. Diferente → DUPLICADA + alerta (bug no gestor).
 func (m *Motor) repetido(p Pedido) (Resposta, bool) {
-	if p.OperacaoID == nil {
-		return nil, false
-	}
-	op := m.porOp[*p.OperacaoID]
+	op := m.operacaoDo(p)
 	if op == nil {
 		return nil, false
 	}
@@ -409,7 +443,7 @@ func (m *Motor) repetido(p Pedido) (Resposta, bool) {
 		return nil, false
 	}
 	if pedido != impressao(p) {
-		m.al.Emitir("DUPLICADA_DIFERENTE", "", fmt.Sprintf("%s repetida com conteúdo diferente: operação %d", p.Papel, op.OperacaoID), op.OperacaoID)
+		m.al.Emitir("DUPLICADA_DIFERENTE", "", fmt.Sprintf("%s repetida com conteúdo diferente: operação %d (%s)", p.Papel, op.OperacaoID, op.Modulo), op.OperacaoID)
 		return m.recusar(p, simples("DUPLICADA", "operação já recebida com outro conteúdo")), true
 	}
 	r := Resposta{}
@@ -419,13 +453,10 @@ func (m *Motor) repetido(p Pedido) (Resposta, bool) {
 	return r, true
 }
 
-// guardarOriginal grava pedido e resposta quando o par (operacao_id, papel) passa a existir.
+// guardarOriginal grava pedido e resposta quando o (modulo, operacao_id, papel) passa a existir.
 // Entrada: sempre que a operação foi criada (aceita ou ENVIO_FALHOU). Saída: só aceita.
 func (m *Motor) guardarOriginal(p Pedido, r Resposta) {
-	if p.OperacaoID == nil {
-		return
-	}
-	op := m.porOp[*p.OperacaoID]
+	op := m.operacaoDo(p)
 	if op == nil {
 		return
 	}
@@ -472,11 +503,11 @@ func (m *Motor) Retomar(origem, motivo string) Resposta {
 	return Resposta{"aceito": true}
 }
 
-// Consultar (GET /ordens/{id}).
-func (m *Motor) Consultar(id int64) Resposta {
+// Consultar (GET /ordens/{id}?modulo=; sem modulo = KALMAN).
+func (m *Motor) Consultar(modulo string, id int64) Resposta {
 	var r Resposta
 	m.Fazer(func() {
-		op := m.porOp[id]
+		op := m.operacaoDo(Pedido{Modulo: modulo, OperacaoID: &id})
 		if op == nil {
 			r = Resposta{"existe": false}
 			return
@@ -486,9 +517,9 @@ func (m *Motor) Consultar(id int64) Resposta {
 	return r
 }
 
-// Eventos (GET /eventos).
-func (m *Motor) Eventos(desde int64, limite int) ([]repo.Publicado, error) {
-	return m.repo.Publicados(desde, limite)
+// Eventos (GET /eventos?modulo=; sem modulo = todos).
+func (m *Motor) Eventos(desde int64, limite int, modulo string) ([]repo.Publicado, error) {
+	return m.repo.Publicados(desde, limite, modulo)
 }
 
 // ---------------------------------------------------------------- pnt.Ouvinte (só enfileira)
@@ -515,7 +546,7 @@ func (m *Motor) StoreIlegivel(texto string) { m.fila <- func() { m.storeIlegivel
 
 func (m *Motor) carregarDia() error {
 	m.dia = m.hoje()
-	m.ops, m.porOp = nil, map[int64]*operacao{}
+	m.ops, m.porOp = nil, map[chaveOperacao]*operacao{}
 	m.porClOrd, m.por37, m.donoDa, m.clordPorSeq = map[string]*ordem{}, map[string]*ordem{}, map[*ordem]*operacao{}, map[int]string{}
 	ops, ords, err := m.repo.CarregarDia(m.dia)
 	if err != nil {
@@ -524,13 +555,13 @@ func (m *Motor) carregarDia() error {
 	for i := range ops {
 		op := &operacao{Operacao: ops[i]}
 		m.ops = append(m.ops, op)
-		m.porOp[op.OperacaoID] = op
+		m.porOp[chaveOperacao{op.Modulo, op.OperacaoID}] = op
 		if op.Estado == dominio.PosicionadaSemProtecao {
 			op.semProtecaoDesde = m.agora()
 		}
 	}
 	for i := range ords {
-		op := m.porOp[ords[i].OperacaoID]
+		op := m.porOp[chaveOperacao{ords[i].Modulo, ords[i].OperacaoID}]
 		if op == nil {
 			continue
 		}
@@ -628,8 +659,10 @@ func (m *Motor) mudar(op *operacao, e dominio.EstadoOperacao) {
 func (m *Motor) publicar(tipo string, op *operacao, dados map[string]any) {
 	d := map[string]any{}
 	var id int64
+	mod := ""
 	if op != nil {
-		id = op.OperacaoID
+		id, mod = op.OperacaoID, op.Modulo
+		d["modulo"] = op.Modulo
 		d["operacao_id"] = op.OperacaoID
 		d["uid"] = op.UID
 	}
@@ -641,7 +674,7 @@ func (m *Motor) publicar(tipo string, op *operacao, dados map[string]any) {
 		slog.Error("publicar", "tipo", tipo, "erro", err)
 		return
 	}
-	seq, err := m.repo.Publicar(tipo, id, b, m.agora())
+	seq, err := m.repo.Publicar(tipo, mod, id, b, m.agora())
 	if err != nil {
 		slog.Error("publicar", "tipo", tipo, "erro", err)
 		return
@@ -649,13 +682,23 @@ func (m *Motor) publicar(tipo string, op *operacao, dados map[string]any) {
 	slog.Info("evento", "tipo", tipo, "seq", seq, "dados", string(b))
 }
 
+// publicarAlerta: o alerta só traz o operacao_id; o módulo é o da operação do dia com esse id
+// (com o mesmo id em dois módulos, o primeiro — alerta com módulo próprio é da v2).
 func (m *Motor) publicarAlerta(codigo, texto string, op int64) {
 	d := map[string]any{"codigo": codigo, "texto": texto}
+	mod := ""
 	if op != 0 {
 		d["operacao_id"] = op
+		for _, x := range m.ops {
+			if x.OperacaoID == op {
+				mod = x.Modulo
+				d["modulo"] = mod
+				break
+			}
+		}
 	}
 	b, _ := json.Marshal(d)
-	_, _ = m.repo.Publicar("ALERTA", op, b, m.agora())
+	_, _ = m.repo.Publicar("ALERTA", mod, op, b, m.agora())
 }
 
 // enviar manda pela sessão e registra o evento ENV. Devolve false se não saiu.
@@ -674,7 +717,7 @@ func (m *Motor) enviar(o *ordem, msg *quickfix.Message, clordid string) bool {
 	}
 	ev := repo.EventoFIX{Direcao: "ENV", MsgType: tipo, ClOrdID: clordid, Bruta: msg.String(), Em: m.agora()}
 	if o != nil {
-		ev.OrdemID, ev.OrderID = o.ID, o.OrderID
+		ev.OrdemID, ev.OrderID, ev.Modulo = o.ID, o.OrderID, o.Modulo
 	}
 	if !ok {
 		ev.Texto = "NAO_ENVIADA"
@@ -751,6 +794,9 @@ func aparar(ts []time.Time, limite time.Time) []time.Time {
 }
 
 func chaveOp(prefixo string, op *operacao) string {
+	if op.Modulo != dominio.ModuloPadrao {
+		return prefixo + ":" + op.Modulo + ":" + strconv.FormatInt(op.OperacaoID, 10)
+	}
 	return prefixo + ":" + strconv.FormatInt(op.OperacaoID, 10)
 }
 

@@ -37,7 +37,7 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 			escrever(w, http.StatusBadRequest, motor.Resposta{"existe": false})
 			return
 		}
-		escrever(w, http.StatusOK, m.Consultar(id))
+		escrever(w, http.StatusOK, m.Consultar(r.URL.Query().Get("modulo"), id))
 	})
 	mux.HandleFunc("GET /eventos", func(w http.ResponseWriter, r *http.Request) {
 		desde, _ := strconv.ParseInt(r.URL.Query().Get("desde"), 10, 64)
@@ -45,7 +45,7 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		if limite <= 0 || limite > 1000 {
 			limite = 500
 		}
-		evs, err := m.Eventos(desde, limite)
+		evs, err := m.Eventos(desde, limite, r.URL.Query().Get("modulo"))
 		if err != nil {
 			escrever(w, http.StatusInternalServerError, motor.Resposta{"erro": err.Error()})
 			return

@@ -17,6 +17,7 @@ import (
 // EventoFIX é uma linha de kalmanordemevento.
 type EventoFIX struct {
 	OrdemID   int64
+	Modulo    string // o da ordem; vazio = KALMAN
 	Direcao   string // ENV | REC
 	MsgType   string
 	ExecType  string
@@ -38,6 +39,7 @@ type EventoFIX struct {
 type Publicado struct {
 	Seq        int64           `json:"seq"`
 	Tipo       string          `json:"tipo"`
+	Modulo     string          `json:"modulo"`
 	OperacaoID int64           `json:"operacao_id,omitempty"`
 	Dados      json.RawMessage `json:"dados"`
 	Em         time.Time       `json:"em"`
@@ -47,15 +49,17 @@ type Publicado struct {
 type Repositorio interface {
 	// SalvarOperacao insere (ID == 0, preenche o ID) ou atualiza.
 	SalvarOperacao(*dominio.Operacao) error
-	OperacaoExiste(operacaoID int64) (bool, error)
+	OperacaoExiste(modulo string, operacaoID int64) (bool, error)
 	// SalvarOrdem insere (ID == 0) ou atualiza.
 	SalvarOrdem(*dominio.Ordem) error
 	// RegistrarEvento devolve novo=false se o par (OrderID, ExecID) já existe (fill repetido na
 	// mesma ordem). O mesmo ExecID em outra ordem é outro evento (v1.3 H1).
 	RegistrarEvento(EventoFIX) (novo bool, err error)
 	EnviosDesde(t time.Time) (int, error)
-	Publicar(tipo string, operacaoID int64, dados []byte, em time.Time) (int64, error)
-	Publicados(desde int64, limite int) ([]Publicado, error)
+	// Publicar: modulo vazio = KALMAN (eventos do serviço, alertas sem operação).
+	Publicar(tipo, modulo string, operacaoID int64, dados []byte, em time.Time) (int64, error)
+	// Publicados: modulo vazio = todos.
+	Publicados(desde int64, limite int, modulo string) ([]Publicado, error)
 	LerEstado(chave string) (string, bool, error)
 	GravarEstado(chave, valor string, em time.Time) error
 	// CarregarDia: operações e ordens do dia, em ordem de criação.
@@ -165,8 +169,9 @@ func (m *Memoria) SalvarOperacao(o *dominio.Operacao) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if o.ID == 0 {
+		o.Modulo = modulo(o.Modulo) // como o padrão da coluna
 		for _, x := range m.ops {
-			if x.OperacaoID == o.OperacaoID {
+			if x.Modulo == o.Modulo && x.OperacaoID == o.OperacaoID {
 				return ErrDuplicada
 			}
 		}
@@ -184,11 +189,11 @@ func (m *Memoria) SalvarOperacao(o *dominio.Operacao) error {
 	return errors.New("repo: operação inexistente")
 }
 
-func (m *Memoria) OperacaoExiste(id int64) (bool, error) {
+func (m *Memoria) OperacaoExiste(mod string, id int64) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, x := range m.ops {
-		if x.OperacaoID == id {
+		if x.Modulo == modulo(mod) && x.OperacaoID == id {
 			return true, nil
 		}
 	}
@@ -199,6 +204,7 @@ func (m *Memoria) SalvarOrdem(o *dominio.Ordem) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if o.ID == 0 {
+		o.Modulo = modulo(o.Modulo)
 		m.proxOrdem++
 		o.ID = m.proxOrdem
 		m.ordens = append(m.ordens, *o)
@@ -240,20 +246,20 @@ func (m *Memoria) EnviosDesde(t time.Time) (int, error) {
 	return n, nil
 }
 
-func (m *Memoria) Publicar(tipo string, op int64, dados []byte, em time.Time) (int64, error) {
+func (m *Memoria) Publicar(tipo, mod string, op int64, dados []byte, em time.Time) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	p := Publicado{Seq: int64(len(m.pubs) + 1), Tipo: tipo, OperacaoID: op, Dados: append(json.RawMessage(nil), dados...), Em: em}
+	p := Publicado{Seq: int64(len(m.pubs) + 1), Tipo: tipo, Modulo: modulo(mod), OperacaoID: op, Dados: append(json.RawMessage(nil), dados...), Em: em}
 	m.pubs = append(m.pubs, p)
 	return p.Seq, nil
 }
 
-func (m *Memoria) Publicados(desde int64, limite int) ([]Publicado, error) {
+func (m *Memoria) Publicados(desde int64, limite int, mod string) ([]Publicado, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var r []Publicado
 	for _, p := range m.pubs {
-		if p.Seq > desde {
+		if p.Seq > desde && (mod == "" || p.Modulo == mod) {
 			r = append(r, p)
 			if len(r) == limite {
 				break

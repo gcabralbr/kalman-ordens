@@ -55,7 +55,7 @@ func (m *Motor) registrarRecebida(o *ordem, msg pnt.Mensagem) bool {
 		ev.AvgPx = &d
 	}
 	if o != nil {
-		ev.OrdemID = o.ID
+		ev.OrdemID, ev.Modulo = o.ID, o.Modulo
 	}
 	novo, err := m.repo.RegistrarEvento(ev)
 	if err != nil {

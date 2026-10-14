@@ -113,7 +113,7 @@ o mesmo da HML de terça) e a habilitação é pela CLI (1.5).
 **Migrar logo em seguida** (com o binário e o service.env instalados; só banco, sem FIX nem HTTP):
 
 ```
-sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql, 0003_execid_por_ordem.sql
+sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql, 0003_execid_por_ordem.sql, 0004_modulo.sql
 sudo /opt/kalman-ordens/kalman-ordens migrar   # de novo: nenhuma migração pendente
 ```
 
@@ -204,7 +204,7 @@ store sozinha na subida.
 cd ~/kalman-ordens && git pull && scripts/build.sh
 dist/kalman-ordens versao                      # o commit novo, sem -sujo
 sudo install -o root -g root -m 755 dist/kalman-ordens /opt/kalman-ordens/kalman-ordens
-sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0003_execid_por_ordem.sql (ExecID único por ordem, v1.3 H1)
+sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicadas: 0003_execid_por_ordem.sql (ExecID por ordem, v1.3 H1) e 0004_modulo.sql (módulo, v1.3 M1)
 sudo /opt/kalman-ordens/kalman-ordens migrar   # de novo: nenhuma migração pendente
 sudo systemctl start kalman-ordens
 journalctl -u kalman-ordens | grep -E 'store reparado|logon recusado|sincronia|ALERTA'

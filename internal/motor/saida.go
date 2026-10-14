@@ -25,7 +25,7 @@ func (m *Motor) pedirSaida(p Pedido) (Resposta, *recusa) {
 	if !ok {
 		return nil, simples("CAMPO_INVALIDO", "lado deve ser C ou V")
 	}
-	op := m.porOp[*p.OperacaoID]
+	op := m.operacaoDo(p)
 	if op == nil || op.Estado.Final() {
 		if op == nil || op.OrigemSaida != "STOP_SERVIDOR" {
 			m.al.Emitir("SEM_POSICAO", "", fmt.Sprintf("SAIDA sem posição: operação %d", *p.OperacaoID), *p.OperacaoID)

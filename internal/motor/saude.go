@@ -76,7 +76,7 @@ func (m *Motor) descrever(op *operacao) Resposta {
 	}
 	pe, _ := op.medio(true)
 	ps, _ := op.medio(false)
-	return Resposta{"existe": true, "operacao_id": op.OperacaoID, "estado": op.Estado, "divergente": op.Divergente, "posicao": op.posicao(),
+	return Resposta{"existe": true, "modulo": op.Modulo, "operacao_id": op.OperacaoID, "estado": op.Estado, "divergente": op.Divergente, "posicao": op.posicao(),
 		"uid": op.UID, "conta": op.Conta, "destino": op.Destino, "simbolo": op.Simbolo,
 		"preco_medio_entrada": pe, "preco_medio_saida": ps, "motivo_saida": op.MotivoSaida, "origem_saida": op.OrigemSaida,
 		"pnl_pts": op.PnL, "ordens": os}
