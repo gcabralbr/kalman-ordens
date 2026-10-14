@@ -52,6 +52,12 @@ do QuickFIX/Go não tem Close).
 | F1 | **Cancel: o `39=4` volta com 11 = 41 = ClOrdID original** (não o do pedido de cancel) e chega **~5 s depois do `39=6`**. A ordem é achada pelo 37 (e pelo ClOrdID original): nada muda no motor. **`ESPERA_ENCERRAMENTO_S` passa a 8 s** (contados do 39=4). | A3 da v1.1 (5 s) | 46; 02, 04, 04b, 13, 17, 19, 32 com o tempo novo |
 | F2 | **O `39=6` é resposta ao cancel** *(confirmado)*. Com o `39=4` 5 s depois do `39=6`, o `CANCEL_SEM_RESPOSTA` (crítico, `ESPERA_STOP_S` = 5 s desde o cancel) disparava em todo cancel da HML. Agora: sem `39=6` nem `39=4` em `ESPERA_STOP_S` → alerta (como antes); com `39=6`, só se o `39=4` não vier em `ESPERA_ENCERRAMENTO_S` (8 s) depois dele. A pendência do cancel continua até o `39=4` (nada de novo replace/cancel no meio). | — | 46 (partes 1–3) |
 
+## 3a. Saída com o replace recusado pela ordem terminal (I)
+
+| # | Regra | Substitui | Roteiro |
+|---|---|---|---|
+| I1 | **35=9 em resposta a replace da SAÍDA com 39=2, 4 ou 8** (a ordem já está terminal no PnT; HML 14/10: `[IS-72]`, o fill chegou 100 ms depois): **suspende o repreço daquela saída** (nenhum 35=G a mais) e espera o fill ou o 39=4 por `ESPERA_FILL_POS_RECUSA_S` (3 s). Chegou → fluxo normal (o fill zera; o 39=4 encerra a ordem e a saída segue o repreço com ordem nova). Não chegou → **mass status na hora**, e o estado real decide; depois do mass status, a ordem ainda viva (viva lá ou ausente) = sem resposta coerente → alerta crítico **`SAIDA_SEM_FILL`**, saída suspensa (a ordem pode ter executado), decisão humana; resolve quando a ordem encerra ou a posição zera. O `RECUSA_PNT` do 35=9 é informativo (não crítico), como já era. Antes, o motor só derrubava a pendência do replace e reapregoava 2 s depois. | — | 52 (fill 5 s depois: nenhum 35=G, mass status em 3 s, fill aplicado uma vez), 53 (mass status incoerente → `SAIDA_SEM_FILL`; o fill tardio zera e resolve), 51 (fill em 100 ms: fluxo normal) |
+
 ## 3b. Persistência (H)
 
 | # | Regra | Substitui | Roteiro / teste |
@@ -77,6 +83,7 @@ Observado na HML em 14/10; nada muda no serviço por enquanto.
 | `FIX_SINCRONIA_MS` | 500 | A2 |
 | `SESSAO_PRESA_ALERTA_S` | 60 | D1 |
 | `ESPERA_ENCERRAMENTO_S` | **8** (era 5) | F1, F2 |
+| `ESPERA_FILL_POS_RECUSA_S` | 3 | I1 |
 
 ## 6. Pendências
 
@@ -99,4 +106,6 @@ Observado na HML em 14/10; nada muda no serviço por enquanto.
 | 49 | B1 (store ilegível no reenvio: `FIX_STORE_ILEGIVEL`, reparo, reconexão, sessão de pé) |
 | 50 | H1 (mesmo 17 na entrada e na saída → os dois fills; repetido na mesma ordem → uma vez) |
 | 51 | saída da operação 900000002 da HML com as mensagens reais: replace aceito, replace seguinte rejeitado `[IS-72]`/`[DSA-56]`, fill 100 ms depois no ClOrdID vigente → zera sem saída duplicada |
+| 52 | I1: a mesma sequência com o fill 5 s depois do 35=9 → nenhum 35=G a mais, mass status em 3 s, fill aplicado uma vez |
+| 53 | I1: sem fill e mass status com a saída viva → `SAIDA_SEM_FILL`, saída suspensa; o fill tardio zera e resolve |
 | 02, 04, 04b, 13, 17, 19, 32 | `ESPERA_ENCERRAMENTO_S` = 8 s (04b: fill aos 6 s, além dos 5 s antigos, ainda dentro da espera) |

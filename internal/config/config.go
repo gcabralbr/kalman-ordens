@@ -107,7 +107,7 @@ type Parametros struct {
 
 	ColarEntrada, FolgaStop, ColarSaida, Tick int64
 	TimeoutEntrada, TimeoutSaida, EsperaStop  time.Duration
-	EsperaErro                                time.Duration
+	EsperaErro, EsperaFillPosRecusa           time.Duration
 	PrazoConfirmacao, EsperaEncerramento      time.Duration
 	RetentativaProtecao, AlertaSemProtecao    time.Duration
 	AlertaPendente, RepeticaoAlerta           time.Duration
@@ -138,6 +138,7 @@ func (c Config) Parametros() Parametros {
 		TimeoutSaida:            c.Segundos("TIMEOUT_SAIDA_S", 2),
 		EsperaStop:              c.Segundos("ESPERA_STOP_S", 5),
 		EsperaErro:              c.Segundos("ESPERA_ERRO_S", 2),
+		EsperaFillPosRecusa:     c.Segundos("ESPERA_FILL_POS_RECUSA_S", 3),
 		PrazoConfirmacao:        c.Segundos("PRAZO_CONFIRMACAO_S", 3),
 		EsperaEncerramento:      c.Segundos("ESPERA_ENCERRAMENTO_S", 8),
 		RetentativaProtecao:     c.Segundos("RETENTATIVA_PROTECAO_S", 1),

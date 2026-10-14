@@ -3,6 +3,7 @@ package motor
 import (
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -205,7 +206,7 @@ func (m *Motor) zerada(op *operacao) {
 	}
 	op.PnL = op.pnlRealizado()
 	m.mudar(op, dominio.Zerada)
-	for _, k := range []string{"SEM_PROTECAO", "STOP_FURADO", "SAIDA_ESGOTOU", "CANCEL_SEM_RESPOSTA", "SAIDA_SEM_PRECO", "SAIDA_DIVERGENTE", "SAIDA_BLOQUEADA", "PROTECAO_RECRIADA", "PROTECAO_INSTAVEL", "PROTECAO_EM_ERRO", "PROTECAO_EM_ERRO_PRESA", "CONTA_ALTERADA", "SIMBOLO"} {
+	for _, k := range []string{"SEM_PROTECAO", "STOP_FURADO", "SAIDA_ESGOTOU", "CANCEL_SEM_RESPOSTA", "SAIDA_SEM_PRECO", "SAIDA_SEM_FILL", "SAIDA_DIVERGENTE", "SAIDA_BLOQUEADA", "PROTECAO_RECRIADA", "PROTECAO_INSTAVEL", "PROTECAO_EM_ERRO", "PROTECAO_EM_ERRO_PRESA", "CONTA_ALTERADA", "SIMBOLO"} {
 		m.al.Resolver(chaveOp(k, op))
 	}
 	ps, _ := op.medio(false)
@@ -213,6 +214,24 @@ func (m *Motor) zerada(op *operacao) {
 }
 
 // tickSaida: repreço (A5) e nova saída quando a anterior acabou sem zerar.
+// esperarFimDaSaida (v1.3 I1): o replace da saída foi recusado com a ordem já terminal no PnT.
+// Sem repreço; o fill ou o 39=4 encerram a ordem pelo fluxo normal. Passado
+// ESPERA_FILL_POS_RECUSA_S, mass status na hora (conciliar decide); depois de um mass status sem
+// estado coerente (SAIDA_SEM_FILL), a saída fica suspensa: decisão humana.
+func (m *Motor) esperarFimDaSaida(op *operacao, s *ordem, agora time.Time) {
+	if s.saidaNoMass || s.saidaSemFill || agora.Sub(s.recusaTerminalEm) < m.p.EsperaFillPosRecusa {
+		return
+	}
+	s.saidaNoMass = true
+	slog.Warn("saída com replace recusado (ordem terminal no PnT) sem fill nem 39=4: mass status",
+		"op", op.OperacaoID, "clordid", s.ClOrdAtual, "39", s.recusaTerminal39, "espera", m.p.EsperaFillPosRecusa)
+	if !m.conciliando {
+		m.conciliando = true
+		m.massTentativas = 0
+		m.pedirMassStatus()
+	}
+}
+
 func (m *Motor) tickSaida(op *operacao) {
 	if op.posicao() == 0 {
 		m.zerada(op)
@@ -248,6 +267,10 @@ func (m *Motor) tickSaida(op *operacao) {
 			op.proximaSaidaEm = agora
 			m.enviarSaida(op)
 		}
+		return
+	}
+	if !s.recusaTerminalEm.IsZero() {
+		m.esperarFimDaSaida(op, s, agora)
 		return
 	}
 	if s.pend != semPendencia || s.Estado == dominio.Enviando || s.Estado == dominio.SemConfirmacao || !s.emErroDesde.IsZero() {

@@ -76,6 +76,12 @@ type ordem struct {
 	recriada         bool // 1014 recriada (P5/P8): rejeição conta no limite de recriações
 	// estado de erro do PnT (39=7, v1.1 F14): desde quando, o texto 58, se o motor já agiu e se o
 	// cancelamento foi por causa do erro (1014: recriar sob o limite da P8)
+	// saída com replace recusado pela ordem já terminal no PnT (35=9 com 39=2/4/8, v1.3 I1): desde
+	// quando (repreço suspenso), se o mass status já foi pedido e se ele não foi coerente
+	recusaTerminalEm time.Time
+	recusaTerminal39 string
+	saidaNoMass      bool
+	saidaSemFill     bool
 	emErroDesde      time.Time
 	erroTexto        string
 	erroTratado      bool

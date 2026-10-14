@@ -425,6 +425,7 @@ func (m *Motor) ordemEncerrada(op *operacao, o *ordem, motivo string) {
 			m.falhaProtecao(op, causa)
 		}
 	case dominio.Saida:
+		m.al.Resolver(chaveOp("SAIDA_SEM_FILL", op))
 		if op.Estado == dominio.Saindo && op.posicao() != 0 {
 			op.proximaSaidaEm = m.agora()
 		}
@@ -510,6 +511,17 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 			m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("cancel rejeitado (%s): %s", texto, o.ClOrdAtual), op.OperacaoID)
 		}
 	} else {
+		st := msg.Texto(39)
+		if o.Papel == dominio.Saida && o.viva() && (st == "2" || st == "4" || st == "8") {
+			// v1.3 I1: a ordem já está terminal no PnT (HML 14/10: [IS-72], o fill veio 100 ms
+			// depois). Repreço suspenso; espera o fill ou o 39=4; sem eles, mass status.
+			o.recusaTerminalEm, o.recusaTerminal39 = m.agora(), st
+			m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("replace da saída rejeitado com a ordem terminal no PnT (39=%s) (%s): %s; repreço suspenso, aguardando o fill ou o 39=4 por %s",
+				st, texto, o.ClOrdAtual, m.p.EsperaFillPosRecusa), op.OperacaoID)
+			m.salvarOrdem(o)
+			m.salvarOp(op)
+			return
+		}
 		m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("replace rejeitado (%s): %s", texto, o.ClOrdAtual), op.OperacaoID)
 		if o.Papel == dominio.Protecao {
 			m.protecaoRejeitada(op, texto)

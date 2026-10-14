@@ -100,8 +100,8 @@ func (m *Motor) conciliar() {
 	for _, op := range m.ops {
 		for _, o := range op.ordens {
 			// só julga as que já existiam quando o mass status foi pedido
-			if !o.viva() || vistas[o] || o.seq > m.massCorte {
-				continue
+			if !o.viva() || vistas[o] || o.seq > m.massCorte || o.saidaNoMass {
+				continue // a saída com recusa terminal é decidida abaixo (v1.3 I1)
 			}
 			if o.decidirNoMass {
 				// 1014 em erro com cancel rejeitado e ausente no mass status: não existe mais (F17)
@@ -130,6 +130,23 @@ func (m *Motor) conciliar() {
 				o.decidirNoMass = false
 				m.decidirProtecaoEmErro(op, o)
 			}
+		}
+	}
+	// v1.3 I1: a saída que o PnT deu como terminal (35=9 do replace) continua viva depois do mass
+	// status (viva lá, ou ausente): sem resposta coerente, alerta crítico e a saída fica suspensa
+	for _, op := range m.ops {
+		for _, o := range op.ordens {
+			if !o.saidaNoMass {
+				continue
+			}
+			o.saidaNoMass = false
+			if !o.viva() {
+				continue
+			}
+			o.saidaSemFill = true
+			m.al.Emitir("SAIDA_SEM_FILL", chaveOp("SAIDA_SEM_FILL", op),
+				fmt.Sprintf("saída %s: o PnT recusou o replace dizendo que a ordem está terminal (39=%s), mas não veio fill nem 39=4 e o mass status não confirma (%s); posição %d, saída suspensa, decisão humana, operação %d",
+					o.ClOrdAtual, o.recusaTerminal39, map[bool]string{true: "a ordem aparece viva", false: "a ordem não aparece"}[vistas[o]], op.posicao(), op.OperacaoID), op.OperacaoID)
 		}
 	}
 	// posição ≠ 0 sem 1014 viva → cria a 1014 (7.2.4)

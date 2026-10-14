@@ -1,0 +1,48 @@
+cenario 53 Saída: replace rejeitado com a ordem terminal (39=2), sem fill e mass status incoerente → SAIDA_SEM_FILL
+hora 2026-10-14 11:10:00
+# SPEC v1.3 I1, caminho sem resposta coerente: o 35=9 do replace da saída diz que a ordem já está
+# executada (39=2); em ESPERA_FILL_POS_RECUSA_S (3 s) não chega fill nem 39=4; o mass status a
+# traz viva (39=0, 14=0). Alerta crítico SAIDA_SEM_FILL; a saída continua suspensa (nenhum 35=G nem
+# saída nova: a ordem pode ter executado); decisão humana. O fill que chega depois zera e resolve.
+
+executa INICIO
+executa COMPRADO OP=5301
+
+saida 5301 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-5301-2 41=KM-P-5301-1 37=dsa.5301.P
+envia @ER 11=KM-P-5301-1 41=KM-P-5301-1 37=dsa.5301.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+# venda: bid 130000 − 50 = 129950
+recebe 35=D 11=KM-S-5301-1 38=1 44=129950 54=2 847=1031
+envia @ER 11=KM-S-5301-1 37=dsa.5301.S 198=PNT-5301 150=0 39=0 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+
+# repreço 1 (2 s): bid 130000 − 2 × 50 = 129900; o PnT recusa dizendo que a ordem já executou
+avanca 2s
+recebe 35=G 11=KM-S-5301-2 41=KM-S-5301-1 37=dsa.5301.S 44=129900
+envia 35=9 37=dsa.5301.S 11=KM-S-5301-2 41=KM-S-5301-1 39=2 1=12345 434=2 102=99 58="[IS-72] Replacing quantity must be bigger than current cumulative quantity. Cumulative Quantity: '1' OrderQty (38): '1'."
+alerta RECUSA_PNT
+avanca 2900ms
+nada
+avanca 100ms
+recebe 35=AF 585=9 1=12345 584=>MS
+# o PnT traz a saída viva, sem execução: incoerente com o 39=2 do 35=9
+envia @ER 11=KM-S-5301-1 37=dsa.5301.S 198=PNT-5301 150=I 39=0 584=$MS 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-P-5301-1 37=dsa.5301.P 150=I 39=4 584=$MS 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+avanca 3s
+alerta CONCILIACAO
+alerta SAIDA_SEM_FILL
+saude posicao=1 divergente=false
+
+# saída suspensa: nenhum replace, nenhuma saída nova, nenhum mass status a mais
+avanca 10s
+nada
+sem_evento SAIDA_EXECUTADA
+
+# o fill chega afinal (na ordem original): zera e resolve
+envia @ER 11=KM-S-5301-1 37=dsa.5301.S 198=PNT-5301 17=T-5301-1 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=129950 14=1 151=0 6=129950
+evento SAIDA_EXECUTADA operacao_id=5301 qtd=1 preco=129950 origem=GESTOR
+evento ZERADA operacao_id=5301 pnl_pts=-60 origem=GESTOR
+alerta RESOLVIDO
+saude posicao=0
+avanca 5s
+nada
