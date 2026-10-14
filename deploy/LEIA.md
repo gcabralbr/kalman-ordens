@@ -246,7 +246,7 @@ anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que 
 | 2.10e | 1 | Conta e símbolo da operação (v1.2) | no log FIX, a 1031 e o cancel de 2.3 | `1=99999` e `116=99999` (cabeçalho) em D, F e G; `142=177.124.234.134`; `55=WINV26`. O cancel do PT não levava conta: o PnT aceita o nosso com 1/116? |
 | 2.10d | 1 | Senha fora dos logs (F15; store: v1.3 A1) | depois do logon: `sudo grep -rhoa '554=[^[:cntrl:]]*' /var/lib/kalman-ordens/fix/log \| sort -u`, `journalctl -u kalman-ordens \| grep -c '<senha>'` e `sudo find /var/lib/kalman-ordens/fix/store -printf '%m %u %p\n'` | só `554=***` no log; nada no journal; store (com a senha) só `600 kalman-ordens` |
 | 2.11 | 2 | 1014 depois de um fill de entrada | fill com o marketdata em replay | 1014 enviada na hora; `ENTRADA_EXECUTADA` → `PROTEGIDA` |
-| 2.12 | 2 | 1014: replace de quantidade | com `LIMITE_POSICAO_MAX=2`/`LIMITE_QTD_ORDEM=2` e entrada de 2 com dois fills | `35=G` da 1014 aceito; um pedido por vez |
+| 2.12 | 2 | 1014: replace de quantidade | com `LIMITE_POSICAO_MAX=2`/`LIMITE_QTD_ORDEM=2` e entrada de 2 com dois fills | `35=G` da 1014 aceito; um pedido por vez. **14/10: não testável na HML — a entrada de 5 (operação 900000004) executou num único fill (`32=5` a 211330) e a 1014 nasceu com 5; a HML não respeita a profundidade do livro. Coberto só pelo roteiro 02; teste real na F4.** Operação 900000004: venda 5 a 211330, `ZERADA`, +115 pts. |
 | 2.13 | 2 | 1014: disparo | preço do replay atravessa o gatilho | fills da 1014 com o mesmo 37 [PnT-5]; disparo com folga. **14/10 (operação 900000003): disparo `150=I 39=B` com `20807=1`/`20806=211525` e `[DSA-122]`; fill 0,5 s depois a 211430 (gatilho 211425, limite 211525) no 37 e no ClOrdID da 1014 — fecha [PnT-5]; `39=B` "Delaying final state" e `39=2` final 3 s depois (SPEC v1.3 J1–J3).** |
 | 2.14 | depois da 2 | SwingTrade 2028 exploratória [PnT-9, PnT-10] | ferramenta de bancada (fora do serviço) | fica para depois da rodada 2 |
 
@@ -254,12 +254,18 @@ Depois: ajustar na SPEC cada ponto `[PnT-n]` respondido; se mudar comportamento,
 do código. Dicionário novo do PnT [PnT-2]: recebido em 13/10/2026, cópia regenerada (SPEC v1.2
 seção 7). Rodada 1 (14/10): resultados e correções na [SPEC v1.3](../docs/SPEC-ORDENS-v1.3.md)
 seção 1 — **rodada 1 concluída**: fechadas [PnT-11], [PnT-12] (na HML), [PnT-13] e [PnT-17] (a 1014
-funciona no DSA). Rodada 2: 2.13 (disparo) concluído em 14/10, fecha [PnT-5]; pendente o 2.12 (replace de quantidade
-da 1014).
+funciona no DSA). Rodada 2: 2.13 (disparo) concluído em 14/10, fecha [PnT-5]; 2.12 não testável na HML (fica para a
+F4). **F1 concluída em 14/10/2026: checklist fechado.** Estado de cada `[PnT-n]`: tabela de
+pendências da [SPEC v1](../docs/SPEC-ORDENS-v1.md). Próxima fase: F2 (seção 3), bloqueada.
 
 ---
 
 ## 3. O que muda na .51 (F2)
+
+**Estado (14/10/2026): bloqueada** pelo usuário FIX de produção e pela liberação do IP da .51 no
+PnT [PnT-1]. Na F2 (ordens que não executam, 3 pregões sem alerta inesperado, SPEC v1 Parte 12),
+conferir com o usuário de produção o que a HML fechou: identificação (1, 116, 142) [PnT-3] e COD
+[PnT-12].
 
 Mesmo procedimento da seção 1, na .51, com:
 

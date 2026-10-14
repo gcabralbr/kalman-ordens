@@ -450,10 +450,29 @@ entre execução real e paper.
 
 ---
 
-## Pendências que dependem do PnT (ajustar na terça)
+## Pendências que dependem do PnT
 
-| Ref. | Ponto da spec | Padrão adotado até a resposta |
-|---|---|---|
+Estado no fim da F1 (HML do PnT, 14/10/2026; detalhes na [SPEC v1.3](SPEC-ORDENS-v1.3.md) seção 1).
+
+| Ref. | Ponto da spec | Padrão adotado | Fim da F1 (14/10) |
+|---|---|---|---|
+| PnT-1 | usuário novo, IP da .51 | HML com usuário de homologação | **aberta — bloqueia a F2**: usuário FIX de produção e liberação do IP da .51 |
+| PnT-2 | `FIX44.xml` atual | **recebido em 13/10/2026** (SPEC v1.2 seção 7) | fechada |
+| PnT-3 | campos de identificação | os mesmos do `createSO` (116, 142, 1) | fechada na HML: 1, 116 e 142 aceitos em D, F e G, sem PartyID na 1031/1014; conferir com o usuário de produção na F2 |
+| PnT-4 | tamanho do ClOrdID | aceito na prática (> 28) | fechada na HML para os do KALMAN (até 22 caracteres); os de outros módulos (até 27, v1.3 M3) não foram ao PnT |
+| PnT-5 | fills da 1014 após disparo | mesmo 37; origem detectada pelo papel `P` | **fechada** (v1.3 J1): fill no próprio 37 e no ClOrdID da 1014; disparo = `150=I 39=B` com 20807>0 |
+| PnT-6 | 40=1 na 1014 | não usar; sempre 40=2 com folga | fechada: 40=2 com `44` = `20829` aceito |
+| PnT-7 | disparo em leilão | não assumir nada; stop furado (3.6) cobre o pior caso | aberta (não testável na HML); o stop furado tem gatilho explícito desde a v1.3 J2 |
+| PnT-8 | 1014 no fim do dia | zeragem às 14:30 torna isso irrelevante na v1 | sem mudança |
+| PnT-9, PnT-10 | SwingTrade exploratória | fora do serviço (bancada) | para a F4 |
+| PnT-11 | sequência na reconexão | sem reset intradiário | **fechada**: logon com sequência contínua, `141=N`; queda abrupta tratada (v1.3 A–D) |
+| PnT-12 | COD | não pedir; se vier ligado por padrão, a 1014 precisa sobreviver (pedir exceção) | **fechada na HML**: sem COD (a 1014 sobreviveu a logout limpo e a SIGKILL); conferir com o usuário de produção na F2 |
+| PnT-13 | mass status | assumir que traz só ativas; ordens sumidas viram `DESCONHECIDA` | **fechada**: traz todas as ordens do dia, inclusive encerradas, com `14`/`6` certos; vazio = `35=j 380=101` |
+| PnT-15 | códigos de erro | gravar 102/103 e o texto 58 sem interpretar | catálogo em `docs/ALERTAS.md` ("Rejeições e avisos conhecidos do PnT"): `[DSA-40]`, `[IS-72]`, `[DSA-56]`, `[DSA-122]`; continua aberto a códigos novos |
+| PnT-16 | self-trade | registrar; tratar como rejeição comum | não observado |
+| PnT-17 | a 1014 é suportada no DSA? (o dicionário de 13/10 não a tem) | 1014 (D2) até a resposta | **fechada**: a 1014 funciona no DSA; D2 fica |
+
+---|---|---|
 | PnT-1 | usuário novo, IP da .51 | HML com usuário de homologação |
 | PnT-2 | `FIX44.xml` atual | **recebido em 13/10/2026** (SPEC v1.2 seção 7) |
 | PnT-3 | campos de identificação | os mesmos do `createSO` (116, 142, 1) |

@@ -34,7 +34,13 @@ Data: 2026-10-14. Itens A–G vindos do responsável; A2, F2 (propostas desta im
 | Item | Resultado | Fecha |
 |---|---|---|
 | 2.13 Disparo da 1014 (operação 900000003) | posição vendida, 1014 de compra com gatilho 211425 e limite 211525. O mercado passou do gatilho e **a 1014 disparou dentro do PnT**: quatro `150=I 39=B` com `20807=1` (OpenQty: quantidade enviada ao mercado), `20806=211525` (OpenPx: preço enviado) e o aviso `[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1.`; **o fill 0,5 s depois, a 211430 (+1 tick do gatilho), no próprio 37 e no ClOrdID da 1014**; 8,7 s depois dois `39=B` "Delaying final state 'Finished' for 3.00 s" (com `20807=0`, `14=1`) e, 3 s depois, o `150=I 39=2` final. Mensagens reais em `cenarios/referencia/disparo-1014-hml-2026-10-14.log`. O 20807/20806 também aparecem no `39=6` do cancel da 1031 (a ordem filha no mercado). | [PnT-5] |
-| Pendente | 2.12 (replace de quantidade da 1014) | — |
+| 2.12 Replace de quantidade da 1014 (operação 900000004) | **não testável na HML**: a entrada de 5 contratos executou num único fill (`32=5` a 211330), e a 1014 nasceu com 5 — a HML não respeita a profundidade do livro. O replace de quantidade da 1014 fica coberto só pelo roteiro 02; teste real na F4 (posição máxima > 1, bolsa de verdade). Na v1 (posição máxima 1) não há fill parcial. | — |
+| Operação 900000004 | venda 5 a 211330, saída `ZERADA`, +115 pts. | — |
+
+**F1 concluída em 14/10/2026.** Checklist fechado (`deploy/LEIA.md` seção 2); estado de cada
+`[PnT-n]` na tabela de pendências da [SPEC v1](SPEC-ORDENS-v1.md). Próxima fase: **F2** (produção,
+usuário novo, ordens que não executam), **bloqueada** pelo usuário FIX de produção e pela
+liberação do IP da .51 [PnT-1].
 
 ## 2. Sessão FIX (A–D)
 
@@ -122,8 +128,11 @@ Observado na HML em 14/10; nada muda no serviço por enquanto.
 
 1. ~~Cancel-on-Disconnect em queda abrupta (2.6, [PnT-12]).~~ **Fechada na HML** (2.6b, 14/10): a 1014
    sobrevive ao SIGKILL. Em produção, conferir com o usuário novo (F2).
-4. **Rodada 2**: 2.13 (disparo da 1014) concluído em 14/10 (J1–J3). Falta 2.12 (replace de
-   quantidade da 1014).
+4. ~~Rodada 2.~~ **F1 concluída** (14/10): 2.13 fechado (J1–J3); 2.12 não testável na HML (a
+   entrada de 5 executou num único fill) — o replace de quantidade da 1014 fica no roteiro 02 até
+   a F4.
+5. **F2 bloqueada** pelo usuário FIX de produção e pela liberação do IP da .51 [PnT-1]. Na F2,
+   conferir com o usuário de produção o que a HML fechou: identificação [PnT-3] e COD [PnT-12].
 2. ~~ExecID (17) único no banco inteiro.~~ **Resolvida por H1.**
 3. **911/912 no mass status**: o PnT manda `TotNumReports`/`LastRptRequested`; a conciliação ainda
    fecha no silêncio (`MASS_STATUS_SILENCIO_S`). Fechar pelo 912 é melhoria possível, sem roteiro.
