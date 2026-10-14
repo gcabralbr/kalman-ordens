@@ -178,6 +178,10 @@ func servir(ctx context.Context, cfg config.Config) error {
 		Fim:          cfg.Texto("FIX_FIM", "17:55:00"),
 		HeartBtInt:   cfg.Inteiro("FIX_HEARTBEAT", 30),
 		ReconexaoS:   cfg.Inteiro("FIX_RECONEXAO_S", 5),
+		// espera crescente depois de logon recusado ou store ilegível (SPEC v1.3 B1, D1)
+		ReconexaoMaxS: cfg.Inteiro("FIX_RECONEXAO_MAX_S", 60),
+		// envio liberado só depois do reenvio que o PnT pede logo após o logon (v1.3 A2)
+		SincroniaMs:  cfg.Inteiro("FIX_SINCRONIA_MS", 500),
 		ResetOnLogon: cfg.Bool("FIX_RESET_ON_LOGON", false),
 	}, m)
 	if err != nil {

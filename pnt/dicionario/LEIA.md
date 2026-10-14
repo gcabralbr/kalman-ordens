@@ -9,9 +9,11 @@
   exatamente `Derivar(original)`. Diferenças em relação ao original (e só estas; SPEC v1.2 seção 7):
   1. a raiz ganhou `type="FIX"`, sem o qual o QuickFIX/Go recusa o arquivo
      (`type attribute must be FIX or FIXT`);
-  2. no corpo de **ExecutionReport (8)** e **OrderCancelReject (9)**, todo `required="Y"` virou
-     `required="N"` (8: OrderID, ExecID, ExecType, OrdStatus, Instrument, Side, LeavesQty, CumQty,
-     AvgPx; 9: OrderID, ClOrdID, OrigClOrdID, OrdStatus, CxlRejResponseTo). Mesmo com
+  2. no corpo de **ExecutionReport (8)**, **OrderCancelReject (9)** e **BusinessMessageReject (j)**,
+     todo `required="Y"` virou `required="N"` (8: OrderID, ExecID, ExecType, OrdStatus, Instrument,
+     Side, LeavesQty, CumQty, AvgPx; 9: OrderID, ClOrdID, OrigClOrdID, OrdStatus, CxlRejResponseTo;
+     j: RefMsgType, BusinessRejectReason — a resposta ao mass status sem ordens, `35=j 380=101
+     "No orders found."`, vem sem a 372, SPEC v1.3 E1). Mesmo com
      `RejectInvalidMessage=N`, o QuickFIX/Go rejeita com 35=3 a mensagem sem campo obrigatório, e
      ela não chega à aplicação: um fill incompleto seria descartado. O motor valida o conteúdo e
      decide (SPEC v1.1 F8). Cabeçalho, trailer, grupos e MsgType ficam como estão;

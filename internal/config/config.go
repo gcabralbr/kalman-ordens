@@ -111,7 +111,7 @@ type Parametros struct {
 	PrazoConfirmacao, EsperaEncerramento      time.Duration
 	RetentativaProtecao, AlertaSemProtecao    time.Duration
 	AlertaPendente, RepeticaoAlerta           time.Duration
-	SilencioMassStatus                        time.Duration
+	SilencioMassStatus, AlertaSessaoPresa     time.Duration
 	IdadeMaxPreco, IdadeMaxPrecoDivergente    time.Duration
 	MaxRepreco                                int
 
@@ -139,12 +139,13 @@ func (c Config) Parametros() Parametros {
 		EsperaStop:              c.Segundos("ESPERA_STOP_S", 5),
 		EsperaErro:              c.Segundos("ESPERA_ERRO_S", 2),
 		PrazoConfirmacao:        c.Segundos("PRAZO_CONFIRMACAO_S", 3),
-		EsperaEncerramento:      c.Segundos("ESPERA_ENCERRAMENTO_S", 5),
+		EsperaEncerramento:      c.Segundos("ESPERA_ENCERRAMENTO_S", 8),
 		RetentativaProtecao:     c.Segundos("RETENTATIVA_PROTECAO_S", 1),
 		AlertaSemProtecao:       c.Segundos("ALERTA_SEM_PROTECAO_S", 2),
 		AlertaPendente:          c.Segundos("ALERTA_PENDENTE_S", 3),
 		RepeticaoAlerta:         c.Segundos("ALERTA_REPETICAO_S", 30),
 		SilencioMassStatus:      c.Segundos("MASS_STATUS_SILENCIO_S", 3),
+		AlertaSessaoPresa:       c.Segundos("SESSAO_PRESA_ALERTA_S", 60),
 		IdadeMaxPreco:           c.Segundos("PRECO_IDADE_MAX_S", 3),
 		IdadeMaxPrecoDivergente: c.Segundos("IDADE_MAX_PRECO_DIVERGENTE_S", 60),
 		MaxRepreco:              c.Inteiro("MAX_REPRECO_SAIDA", 3),

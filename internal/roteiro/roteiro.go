@@ -54,8 +54,10 @@ var verbos = map[string]int{
 	"em_qualquer_ordem": 0,
 	"entrada":           -1, "saida": -1, "http": -1, "resposta": -1, "saude": -1,
 	"evento": -1, "sem_evento": -1, "conta_eventos": -1, "alerta": 1, "sem_alerta": 1,
-	"aguarda_logon": 0, "derruba_sessao": 0, "reinicia_servico": 0, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
+	"aguarda_logon": -1, "derruba_sessao": 0, "reinicia_servico": 0, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
 	"usuario": -1, "habilita": -1, "desabilita": 1,
+	"pnt_recusa_logon": 1, "pnt_aceita_logon": 0, "aguarda_recusas": 1, "pnt_espera_seq": 1, "pnt_esquece": 1,
+	"corrompe_store": 0, "descarta": -1,
 }
 
 // verbosDePreparo também valem no _comum.fix e no cabeçalho (Cenario.Preparo).
@@ -83,7 +85,7 @@ func passoPreparo(texto, origem string, toks []string) (Passo, error) {
 	return Passo{Origem: origem, Verbo: toks[0], Args: toks[1:]}, nil
 }
 
-var verbosDeMensagem = map[string]bool{"recebe": true, "envia": true, "envia_offline": true, "recebe_sessao": true, "nada": true}
+var verbosDeMensagem = map[string]bool{"recebe": true, "envia": true, "envia_offline": true, "recebe_sessao": true, "nada": true, "descarta": true}
 
 var camposPreco = map[string]bool{"ticker": true, "preco": true, "bid": true, "ask": true, "status84": true, "idade": true, "http": true}
 
@@ -351,7 +353,7 @@ func (l *leitor) expandir(ls []linha, params map[string]string, capturas map[str
 			if err != nil {
 				return nil, err
 			}
-			if verbo != "nada" && verbo != "recebe_sessao" && !tem35(cs) {
+			if verbo != "nada" && verbo != "recebe_sessao" && verbo != "descarta" && !tem35(cs) {
 				return nil, fmt.Errorf("%s: %s sem 35", ln.origem, verbo)
 			}
 			if verbo != "recebe" {

@@ -57,6 +57,8 @@ func TestFillIncompletoNaoEDescartado(t *testing.T) {
 		"fill sem 6/151/54/55/17": cab + "11=KM-E-1-1|37=dsa.1|150=F|39=2|14=1|32=1|31=130010",
 		"ER só com 11 e 39":       cab + "11=KM-E-1-1|39=0",
 		"35=9 sem 37/41/434":      strings.Replace(cab, "35=8", "35=9", 1) + "11=KM-P-1-2|58=x",
+		// HML 14/10: a resposta ao mass status sem ordens (v1.3 E1)
+		"35=j sem 372": strings.Replace(cab, "35=8", "35=j", 1) + "45=3|380=101|58=No orders found.",
 	}
 	atual, err := Carregar()
 	if err != nil {

@@ -16,7 +16,7 @@ recebe 35=F 11=KM-E-3201-2 41=KM-E-3201-1 37=dsaGQ2.3201 38=1 54=1
 avanca 2s
 nada 35=F
 envia @ER 11=KM-E-3201-2 41=KM-E-3201-1 37=dsaGQ2.3201 198=PNT-6112403201 150=4 39=4 54=1 38=1 44=130020 847=1031 151=0 14=0 6=0
-avanca 6s
+avanca 8s
 evento ENTRADA_ENCERRADA operacao_id=3201 qtd_final=0 motivo=CANCELADA
 saude posicao=0
 nada

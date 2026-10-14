@@ -1,0 +1,63 @@
+cenario 46 Cancel na HML: 39=6 e, ~5 s depois, 39=4 com 11 e 41 = ClOrdID original
+hora 2026-10-14 10:20:00
+# HML 14/10 (F1, rodada 1): o 39=4 do cancel chega ~5 s depois do 39=6 e traz 11 = 41 = ClOrdID
+# original da ordem, não o do pedido de cancel. SPEC v1.3 F1: a ordem é achada pelo 37 (e pelo
+# ClOrdID original); ESPERA_ENCERRAMENTO_S passa a 8 s, contados do 39=4. F2: o 39=6 é resposta
+# ao cancel — CANCEL_SEM_RESPOSTA só sem 39=6 em ESPERA_STOP_S (5 s); com o 39=6, só se o 39=4
+# não vier em ESPERA_ENCERRAMENTO_S (8 s) depois dele.
+
+executa INICIO
+
+# 1) entrada sem fill: timeout → cancel → 39=6 → 5 s → 39=4 com o ClOrdID original
+entrada 4601 C
+resposta aceito=true
+recebe 35=D 11=KM-E-4601-1 44=130020 54=1 847=1031
+envia @ER 11=KM-E-4601-1 37=dsa.4601.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+avanca 3s
+recebe 35=F 11=KM-E-4601-2 41=KM-E-4601-1 37=dsa.4601.E 38=1 54=1
+envia @ER 11=KM-E-4601-2 41=KM-E-4601-1 37=dsa.4601.E 150=6 39=6 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+avanca 5s
+sem_alerta CANCEL_SEM_RESPOSTA
+nada
+envia @ER 11=KM-E-4601-1 41=KM-E-4601-1 37=dsa.4601.E 150=4 39=4 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0
+avanca 7900ms
+sem_evento ENTRADA_ENCERRADA
+avanca 200ms
+evento ENTRADA_ENCERRADA operacao_id=4601 qtd_final=0 motivo=CANCELADA
+sem_alerta CANCEL_SEM_RESPOSTA
+saude posicao=0
+nada
+
+# 2) saída do gestor: cancel da 1014 → 39=6 → 5 s → 39=4 com o ClOrdID original → saída
+avanca 1m
+executa COMPRADO OP=4602
+preco bid=130100 ask=130105 preco=130100
+saida 4602 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-4602-2 41=KM-P-4602-1 37=dsa.4602.P 38=1 54=2
+envia @ER 11=KM-P-4602-2 41=KM-P-4602-1 37=dsa.4602.P 150=6 39=6 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+avanca 5s
+nada 35=D
+sem_alerta CANCEL_SEM_RESPOSTA
+envia @ER 11=KM-P-4602-1 41=KM-P-4602-1 37=dsa.4602.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-4602-1 38=1 44=130050 54=2 847=1031
+envia @ER 11=KM-S-4602-1 37=dsa.4602.S 150=F 39=2 54=2 38=1 44=130050 847=1031 32=1 31=130100 14=1 151=0 6=130100
+evento ZERADA operacao_id=4602 origem=GESTOR
+sem_alerta CANCEL_SEM_RESPOSTA
+saude posicao=0
+nada
+
+# 3) 39=6 sem o 39=4: o alerta vem ESPERA_ENCERRAMENTO_S depois do 39=6
+avanca 1m
+entrada 4603 C
+resposta aceito=true
+recebe 35=D 11=KM-E-4603-1 54=1 847=1031
+envia @ER 11=KM-E-4603-1 37=dsa.4603.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+avanca 3s
+recebe 35=F 11=KM-E-4603-2 41=KM-E-4603-1 37=dsa.4603.E
+envia @ER 11=KM-E-4603-2 41=KM-E-4603-1 37=dsa.4603.E 150=6 39=6 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+avanca 7900ms
+sem_alerta CANCEL_SEM_RESPOSTA
+avanca 200ms
+alerta CANCEL_SEM_RESPOSTA
+nada

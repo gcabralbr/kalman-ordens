@@ -158,6 +158,11 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 		}
 	case "5":
 		m.replaceConfirmado(op, o, msg.Texto(11))
+	case "6":
+		// cancel pendente: o PnT recebeu o pedido; o 39=4 vem depois (na HML, ~5 s, v1.3 F2)
+		if o.pend == pendCancel && o.cancelPendenteEm.IsZero() {
+			o.cancelPendenteEm = m.agora()
+		}
 	case "D":
 		// Restated (ex.: reativação depois do estado de erro, F14): só atualiza o estado, sem efeito
 		if !o.Estado.Final() && (st == "0" || st == "1") {
@@ -567,8 +572,20 @@ func (m *Motor) decidirProtecaoEmErro(op *operacao, o *ordem) {
 	}
 }
 
+// semOrdens: 35=j 380=101 "No orders found." — a resposta do PnT ao mass status de uma conta sem
+// ordens (HML 14/10), sem a 372 (v1.3 E2).
+const semOrdens = "101"
+
 func (m *Motor) businessReject(msg pnt.Mensagem) {
 	ref, refID, razao := msg.Texto(372), msg.Texto(379), msg.Texto(380)
+	if razao == semOrdens && (ref == "" || ref == "AF") {
+		m.registrarRecebida(nil, msg)
+		if m.conciliando {
+			m.massUltima = m.agora()
+		}
+		slog.Info("mass status: nenhuma ordem na conta (35=j 380=101)", "379", refID, "58", msg.Texto(58), "conciliando", m.conciliando)
+		return
+	}
 	if ref == "AF" || m.massReqIDs[refID] {
 		m.registrarRecebida(nil, msg)
 		if razao == "4" {
@@ -636,6 +653,25 @@ func (m *Motor) rejeicaoEnviada(msg pnt.Mensagem) {
 		m.massTentativas = 0
 		m.pedirMassStatus()
 	}
+}
+
+// logonRecusado: o PnT recusou o logon por ainda segurar a sessão anterior (v1.3 D1). Depois de
+// SESSAO_PRESA_ALERTA_S recusando, alerta crítico (tick); resolve no logon. A camada PnT já
+// tenta de novo com espera crescente; a 1014 continua protegendo a posição no PnT.
+func (m *Motor) logonRecusado(texto string) {
+	_, _ = m.repo.RegistrarEvento(repo.EventoFIX{Direcao: "REC", MsgType: "5", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
+	if m.presaDesde.IsZero() {
+		m.presaDesde = m.agora()
+	}
+	m.presaTexto = texto
+	slog.Warn("logon recusado pelo PnT: a sessão anterior ainda está aberta lá", "texto", texto, "desde", m.presaDesde)
+}
+
+// storeIlegivel: o reenvio pedido pelo PnT não conseguiu ler o store FIX (v1.3 B1). A camada PnT
+// derruba a sessão, repara o store e reconecta com espera crescente; resolve no logon seguinte.
+func (m *Motor) storeIlegivel(texto string) {
+	_, _ = m.repo.RegistrarEvento(repo.EventoFIX{Direcao: "ENV", MsgType: "?", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
+	m.al.Emitir("FIX_STORE_ILEGIVEL", "FIX_STORE_ILEGIVEL", "o reenvio pedido pelo PnT não conseguiu ler o store FIX; sessão derrubada, store reparado, reconexão com espera: "+cortarTexto(texto, 300), 0)
 }
 
 // mensagemIlegivel: a biblioteca descartou bytes do PnT que não conseguiu ler (F11). Pode ter sido

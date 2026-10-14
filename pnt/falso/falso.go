@@ -91,6 +91,10 @@ type Falso struct {
 	aplicacao []Recebida
 	admin     []Recebida
 	novas     chan struct{}
+	// recusa de logon (RecusarLogons): texto do 58; vazio = aceita
+	recusa    string
+	recusasEm []time.Time
+	store     *storeFalso
 }
 
 // Tipos de mensagem de sessão (não entram na fila de aplicação).
@@ -172,7 +176,7 @@ func (f *Falso) Iniciar() error {
 	if f.cfg.Verboso {
 		lf = screen.NewLogFactory()
 	}
-	f.acceptor, err = quickfix.NewAcceptor(f, quickfix.NewMemoryStoreFactory(), s, lf)
+	f.acceptor, err = quickfix.NewAcceptor(f, fabricaStoreFalso{f}, s, lf)
 	if err != nil {
 		return err
 	}
@@ -244,6 +248,51 @@ func (f *Falso) Corromper(tipo string, delta int) error {
 	f.proxy.corrupcao = &corrupcao{tipo: tipo, delta: delta}
 	f.proxy.mu.Unlock()
 	return nil
+}
+
+// RecusarLogons faz o falso recusar todo logon novo com um 35=5 58=texto, sem contar a sequência
+// de quem tentou — como o PnT da HML em 14/10, que segurava a sessão depois de uma queda abrupta
+// ("already logged on") e depois pediu por ResendRequest os números desses logons. Texto vazio
+// volta a aceitar.
+func (f *Falso) RecusarLogons(texto string) {
+	f.mu.Lock()
+	f.recusa = texto
+	f.mu.Unlock()
+}
+
+// Recusas conta os logons recusados desde o início; RecusasEm dá os instantes.
+func (f *Falso) Recusas() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.recusasEm)
+}
+
+func (f *Falso) RecusasEm() []time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]time.Time(nil), f.recusasEm...)
+}
+
+// AjustarSequenciaEsperada muda o próximo MsgSeqNum que o falso espera do cliente, com a sessão
+// caída: delta > 0 = o falso espera mais à frente (o logon seguinte é "MsgSeqNum too low");
+// delta < 0 = o falso "esquece" as últimas mensagens recebidas e pede o reenvio delas no logon.
+func (f *Falso) AjustarSequenciaEsperada(delta int) error {
+	if f.Logado() {
+		return errors.New("falso: AjustarSequenciaEsperada com a sessão logada")
+	}
+	f.mu.Lock()
+	st := f.store
+	f.mu.Unlock()
+	if st == nil {
+		return errors.New("falso: sessão sem store")
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	n := st.base.NextTargetMsgSeqNum() + delta
+	if n < 1 {
+		return fmt.Errorf("falso: sequência esperada ficaria %d", n)
+	}
+	return st.base.SetNextTargetMsgSeqNum(n)
 }
 
 // Derrubar corta a conexão TCP (queda de rede). O serviço reconecta sozinho.
@@ -427,6 +476,14 @@ func (f *Falso) ToApp(*quickfix.Message, quickfix.SessionID) error { return nil 
 func (f *Falso) FromAdmin(m *quickfix.Message, _ quickfix.SessionID) quickfix.MessageRejectError {
 	r := recebida(m)
 	f.mu.Lock()
+	if r.Tipo == "A" && f.recusa != "" {
+		texto := f.recusa
+		f.admin = append(f.admin, r)
+		f.recusasEm = append(f.recusasEm, time.Now())
+		f.store.congelarAlvo.Store(true) // a biblioteca contaria o logon recusado
+		f.mu.Unlock()
+		return quickfix.RejectLogon{Text: texto}
+	}
 	if tiposSessao[r.Tipo] {
 		f.admin = append(f.admin, r)
 	} else {
@@ -477,6 +534,132 @@ func recebida(m *quickfix.Message) Recebida {
 		}
 	}
 	return r
+}
+
+// ---------------------------------------------------------------- store
+
+// fabricaStoreFalso: store em memória com trava (o executor ajusta a sequência esperada de fora
+// da goroutine da sessão) e sem contar o logon recusado.
+type fabricaStoreFalso struct{ f *Falso }
+
+func (x fabricaStoreFalso) Create(id quickfix.SessionID) (quickfix.MessageStore, error) {
+	base, err := quickfix.NewMemoryStoreFactory().Create(id)
+	if err != nil {
+		return nil, err
+	}
+	st := &storeFalso{base: base}
+	x.f.mu.Lock()
+	x.f.store = st
+	x.f.mu.Unlock()
+	return st, nil
+}
+
+type storeFalso struct {
+	mu           sync.Mutex
+	base         quickfix.MessageStore
+	congelarAlvo atomic.Bool // o próximo IncrNextTargetMsgSeqNum não conta (logon recusado)
+}
+
+func (s *storeFalso) NextSenderMsgSeqNum() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.NextSenderMsgSeqNum()
+}
+
+func (s *storeFalso) NextTargetMsgSeqNum() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.NextTargetMsgSeqNum()
+}
+
+func (s *storeFalso) IncrNextSenderMsgSeqNum() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.IncrNextSenderMsgSeqNum()
+}
+
+func (s *storeFalso) IncrNextTargetMsgSeqNum() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.congelarAlvo.Swap(false) {
+		return nil
+	}
+	return s.base.IncrNextTargetMsgSeqNum()
+}
+
+func (s *storeFalso) SetNextSenderMsgSeqNum(n int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.SetNextSenderMsgSeqNum(n)
+}
+
+func (s *storeFalso) SetNextTargetMsgSeqNum(n int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.SetNextTargetMsgSeqNum(n)
+}
+
+func (s *storeFalso) CreationTime() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.CreationTime()
+}
+
+func (s *storeFalso) SetCreationTime(t time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.base.SetCreationTime(t)
+}
+
+func (s *storeFalso) SaveMessage(seq int, msg []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.SaveMessage(seq, msg)
+}
+
+func (s *storeFalso) SaveMessageAndIncrNextSenderMsgSeqNum(seq int, msg []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.SaveMessageAndIncrNextSenderMsgSeqNum(seq, msg)
+}
+
+func (s *storeFalso) GetMessages(de, ate int) ([][]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.GetMessages(de, ate)
+}
+
+func (s *storeFalso) IterateMessages(de, ate int, cb func([]byte) error) error {
+	s.mu.Lock()
+	msgs, err := s.base.GetMessages(de, ate)
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	for _, m := range msgs {
+		if err := cb(m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *storeFalso) Refresh() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.Refresh()
+}
+
+func (s *storeFalso) Reset() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.Reset()
+}
+
+func (s *storeFalso) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.base.Close()
 }
 
 // ---------------------------------------------------------------- proxy de queda

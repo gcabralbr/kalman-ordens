@@ -1,0 +1,32 @@
+cenario 49 Store FIX ilegível no reenvio → FIX_STORE_ILEGIVEL, store reparado, reconexão
+hora 2026-10-14 13:20:00
+config FIX_RECONEXAO_MAX_S=1
+# SPEC v1.3 B1: erro ao ler do store uma mensagem pedida por ResendRequest → alerta crítico
+# FIX_STORE_ILEGIVEL; a camada PnT derruba a sessão, repara o store (9 e 10 recalculados; o que
+# continuar ilegível vira gap fill) e reconecta com espera crescente — nunca o laço silencioso
+# de 14/10 (cenário 47). O alerta resolve no logon seguinte ao reparo.
+# Aqui: com a sessão caída, a última mensagem gravada no store do serviço fica com o 9 errado e
+# o PnT falso "esquece" essa mensagem — no logon ele pede o reenvio dela.
+
+executa INICIO
+derruba_sessao
+corrompe_store
+pnt_esquece 1
+# o primeiro logon cai no reenvio; o segundo, depois do reparo, fica de pé
+aguarda_logon 2
+alerta FIX_STORE_ILEGIVEL
+alerta RESOLVIDO
+recebe_sessao 35=4 123=Y 43=Y
+saude sessao_logada=true
+# o mass status pedido no primeiro logon pode ter se perdido com a queda
+descarta 35=AF
+avanca 3s
+alerta CONCILIACAO
+descarta 35=AF
+avanca 3s
+saude sessao_logada=true conciliando=false parada=null divergente=false
+sem_alerta FIX_STORE_ILEGIVEL
+
+entrada 4901 C
+resposta aceito=true
+recebe 35=D 11=KM-E-4901-1 54=1 847=1031

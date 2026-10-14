@@ -1,16 +1,15 @@
 package pnt
 
-import (
-	"regexp"
+import "regexp"
 
-	"github.com/quickfixgo/quickfix"
-)
-
-// Senha fora de qualquer arquivo. O QuickFIX/Go grava a mensagem como foi ao fio no log da sessão
-// (FileLog) e no store (FileStore, para reenvio): o logon levaria o 554 (Password) e o 925
-// (NewPassword) em texto puro, como no log antigo do PT. A camada mascara antes de gravar; no fio
-// a senha vai inteira. O logon gravado mascarado nunca é reenviado (mensagem de sessão: no
-// ResendRequest a biblioteca manda GapFill no lugar).
+// Senha fora dos logs. O QuickFIX/Go grava a mensagem como foi ao fio no log da sessão (FileLog):
+// o logon levaria o 554 (Password) e o 925 (NewPassword) em texto puro, como no log antigo do PT.
+// O espião (sessao.go) mascara antes de gravar; no fio a senha vai inteira.
+//
+// O store não é mascarado (SPEC v1.3 A1, substitui a parte do store da v1.1 F15): o reenvio relê
+// cada mensagem gravada, e um logon mascarado não se lê mais (o 9 não bate) — na HML em 14/10 isso
+// derrubou o reenvio dos logons e a sessão entrou em laço. O store fica protegido pelo diretório
+// FIX (700/600, só do usuário do serviço), como o service.env.
 var reSenha = regexp.MustCompile(`(^|\x01|\|)(554|925)=[^\x01|]*`)
 
 const senhaMascarada = "***"
@@ -25,16 +24,3 @@ func Mascarar(b []byte) []byte {
 
 // MascararTexto: Mascarar para string (eventos do log, textos de alerta).
 func MascararTexto(s string) string { return string(Mascarar([]byte(s))) }
-
-// storeMascarado grava no store a mensagem com a senha mascarada.
-type storeMascarado struct {
-	quickfix.MessageStore
-}
-
-func (s storeMascarado) SaveMessage(seq int, msg []byte) error {
-	return s.MessageStore.SaveMessage(seq, Mascarar(msg))
-}
-
-func (s storeMascarado) SaveMessageAndIncrNextSenderMsgSeqNum(seq int, msg []byte) error {
-	return s.MessageStore.SaveMessageAndIncrNextSenderMsgSeqNum(seq, Mascarar(msg))
-}

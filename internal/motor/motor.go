@@ -59,20 +59,21 @@ const (
 // ordem = persistido + volátil.
 type ordem struct {
 	dominio.Ordem
-	pend            pendencia
-	clPend          string
-	pendDesde       time.Time
-	qtdPend         int
-	precoPend       int64
-	stopPend        int64
-	stopLimPend     int64
-	cancelarApos    bool
-	cancelamentos   int
-	ultimoCancel    time.Time
-	enviada         time.Time
-	pendenteDesde   time.Time
-	alertouPendente bool
-	recriada        bool // 1014 recriada (P5/P8): rejeição conta no limite de recriações
+	pend             pendencia
+	clPend           string
+	pendDesde        time.Time
+	cancelPendenteEm time.Time // cancel pendente confirmado pelo PnT (39=6): o 39=4 vem depois (v1.3 F2)
+	qtdPend          int
+	precoPend        int64
+	stopPend         int64
+	stopLimPend      int64
+	cancelarApos     bool
+	cancelamentos    int
+	ultimoCancel     time.Time
+	enviada          time.Time
+	pendenteDesde    time.Time
+	alertouPendente  bool
+	recriada         bool // 1014 recriada (P5/P8): rejeição conta no limite de recriações
 	// estado de erro do PnT (39=7, v1.1 F14): desde quando, o texto 58, se o motor já agiu e se o
 	// cancelamento foi por causa do erro (1014: recriar sob o limite da P8)
 	emErroDesde      time.Time
@@ -253,6 +254,8 @@ type Motor struct {
 	entradasHoje   int
 	zeragemFeita   bool
 	jaLogou        bool
+	presaDesde     time.Time // primeiro logon recusado pelo PnT ("already logged on") desde o último logon
+	presaTexto     string
 	conciliando    bool
 	massReqIDs     map[string]bool // os 584 do mass status em curso (um AF por conta)
 	massUltima     time.Time
@@ -499,6 +502,8 @@ func (m *Motor) MensagemIlegivel(texto string) {
 func (m *Motor) RejeicaoEnviada(msg pnt.Mensagem) {
 	m.fila <- func() { m.processadas++; m.rejeicaoEnviada(msg) }
 }
+func (m *Motor) LogonRecusado(texto string) { m.fila <- func() { m.logonRecusado(texto) } }
+func (m *Motor) StoreIlegivel(texto string) { m.fila <- func() { m.storeIlegivel(texto) } }
 
 // ---------------------------------------------------------------- carga do dia
 

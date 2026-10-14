@@ -13,11 +13,13 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `SESSAO_VOLTOU` | sessão FIX logou de novo após uma queda | não |
 | `SESSAO_REJEITOU_MENSAGEM` | o serviço enviou 35=3 (a biblioteca descartou uma mensagem do PnT); dispara mass status | sim |
 | `MENSAGEM_ILEGIVEL` | a biblioteca descartou em silêncio bytes do PnT que não conseguiu ler (ex.: BodyLength errado); dispara mass status | sim |
+| `SESSAO_PRESA_NO_PNT` | o PnT recusa o logon há `SESSAO_PRESA_ALERTA_S` (60 s) por ainda segurar a sessão anterior ("already logged on", depois de uma queda abrupta; na HML, ~3,5 min); a camada PnT tenta de novo com espera crescente; a 1014 continua protegendo a posição no PnT; resolvido no logon (v1.3 D1) | sim |
+| `FIX_STORE_ILEGIVEL` | o reenvio pedido pelo PnT (ResendRequest) não conseguiu ler o store FIX; a camada PnT derrubou a sessão, reparou o store e reconecta com espera crescente; resolvido no logon seguinte (v1.3 B1) | sim |
 | `PROTECAO_EM_ERRO` | 1014 em estado de erro (39=7) sem reativação em `ESPERA_ERRO_S`: cancelada e recriada sob o limite da P8; leva o texto 58; resolvido quando a recriada é aceita | sim |
 | `PROTECAO_EM_ERRO_PRESA` | 1014 em erro, cancel rejeitado e o mass status mostra que ela continua viva em 39=7: não é recriada nem a posição zerada (pode reativar pelo 20856); entradas bloqueadas, decisão humana; resolvido quando ela sai do erro | sim |
 | `SAIDA_EM_ERRO` | saída em estado de erro (39=7) sem reativação: cancelada, a saída segue com o próximo repreço; leva o texto 58 | sim |
 | `ENTRADA_EM_ERRO` | entrada em estado de erro (39=7) sem reativação: cancelada; leva o texto 58 | não |
-| `CONCILIACAO` | resultado da conciliação do logon (ordens KM, ignoradas, divergências, posição) | não |
+| `CONCILIACAO` | resultado da conciliação do logon (ordens KM, ignoradas, divergências, posição); o mass status vazio (35=j 380=101 "No orders found.") é só registrado (v1.3 E2) | não |
 | `MASS_STATUS_REJEITADO` | mass status rejeitado por motivo diferente de 380=4; entradas bloqueadas | sim |
 | `DESCONHECIDA` | ordem viva na tabela e ausente no mass status | não |
 | `DIVERGENTE` | inconsistência de posição ou de ordem não resolvida; BLOQUEAR | sim |
@@ -25,7 +27,7 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `PENDENTE_39A` | ordem em 39=A por mais de 3 s | não |
 | `RECUSA_PNT` | ordem, cancel ou replace rejeitado pelo PnT (35=8 39=8, 35=9, 35=3, 35=j) | não |
 | `CANCEL_STOP_REJEITADO` | cancel da 1014 rejeitado (35=9): aguardando fills do stop | não |
-| `CANCEL_SEM_RESPOSTA` | cancel enviado sem resposta em `ESPERA_STOP_S` | sim |
+| `CANCEL_SEM_RESPOSTA` | cancel enviado sem 39=6 nem 39=4 em `ESPERA_STOP_S`, ou com 39=6 e sem o 39=4 em `ESPERA_ENCERRAMENTO_S` depois dele (v1.3 F2) | sim |
 | `SEM_PROTECAO` | posição sem 1014 aceita por mais de 2 s | sim |
 | `PROTECAO_REJEITADA` | 1014 rejeitada (1ª vez: nova tentativa; 2ª: zera a posição) | não |
 | `PROTECAO_RECRIADA` | 1014 recriada com o mesmo gatilho e limite: cancelada/expirada pelo PnT sem pedido nosso (na hora), recriada rejeitada, ou invariante violada (posição ≠ 0 sem 1014 e sem saída viva por mais de 2 s) | sim |

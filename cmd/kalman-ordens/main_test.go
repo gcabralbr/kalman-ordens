@@ -189,20 +189,45 @@ func TestServirDePontaAPonta(t *testing.T) {
 		}
 	}
 
-	// a senha foi no logon e não está em nenhum arquivo do FIX_DIR (log e store) nem no log do serviço
+	// a senha foi no logon e não está no log FIX nem no log do serviço; o store guarda o logon como
+	// foi ao fio, para o reenvio (SPEC v1.3 A1), protegido pelo diretório 700/600
 	if !senhaNoFio(f) {
 		t.Fatal("o logon não levou a senha")
 	}
-	_ = filepath.WalkDir(dirFix, func(p string, d fs.DirEntry, err error) error {
+	mascarados := 0
+	_ = filepath.WalkDir(filepath.Join(dirFix, "log"), func(p string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
-			if b, _ := os.ReadFile(p); strings.Contains(string(b), senhaFumaca) {
+			b, _ := os.ReadFile(p)
+			if strings.Contains(string(b), senhaFumaca) {
 				t.Errorf("senha em texto puro em %s", p)
+			}
+			if strings.Contains(string(b), "554=***") {
+				mascarados++
 			}
 		}
 		return nil
 	})
+	if mascarados == 0 {
+		t.Error("o log FIX não tem o logon (mascarado): a conferência da senha não provou nada")
+	}
 	if strings.Contains(logServico.String(), senhaFumaca) {
 		t.Error("senha em texto puro no log do serviço")
+	}
+	// v1.3 A2: a janela de sincronia fica registrada no log do serviço e no log de eventos FIX
+	if !strings.Contains(logServico.String(), "recebidas_na_janela=") {
+		t.Error("o log do serviço não registra a janela de sincronia do logon")
+	}
+	sincronia := false
+	_ = filepath.WalkDir(filepath.Join(dirFix, "log"), func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			if b, _ := os.ReadFile(p); strings.Contains(string(b), "ms de sincronia") {
+				sincronia = true
+			}
+		}
+		return nil
+	})
+	if !sincronia {
+		t.Error("o log de eventos FIX não registra a janela de sincronia do logon")
 	}
 
 	// o estado ficou no banco

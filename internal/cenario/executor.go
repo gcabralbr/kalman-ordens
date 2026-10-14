@@ -148,7 +148,7 @@ func (e *Executor) preparar() error {
 	}
 	e.repo = r
 	e.notif = &notificador{}
-	f, err := falso.Novo(falso.Config{Contraparte: "KALMAN", Dir: filepath.Join(e.dir, "pnt")})
+	f, err := falso.Novo(falso.Config{Contraparte: "KALMAN", Dir: filepath.Join(e.dir, "pnt"), Verboso: os.Getenv("FALSO_VERBOSO") != ""})
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,10 @@ func (e *Executor) subir() error {
 	m := motor.Novo(e.cfg, e.rel, e.repo, e.preco, e.notif)
 	s, err := pnt.NovaSessao(pnt.ConfigSessao{
 		SenderCompID: "KALMAN", Host: "127.0.0.1", Porta: e.pnt.Porta(), Dir: filepath.Join(e.dir, "fix"),
-		Inicio: "00:00:00", Fim: "00:00:00", HeartBtInt: 5, ReconexaoS: 1, SemLogArquivo: true,
+		Inicio: "00:00:00", Fim: "00:00:00", HeartBtInt: 5, SemLogArquivo: true,
+		Usuario: e.cfg.Texto("FIX_USUARIO", ""), Senha: e.cfg.Texto("FIX_SENHA", ""),
+		ReconexaoS: e.cfg.Inteiro("FIX_RECONEXAO_S", 1), ReconexaoMaxS: e.cfg.Inteiro("FIX_RECONEXAO_MAX_S", 60),
+		SincroniaMs: e.cfg.Inteiro("FIX_SINCRONIA_MS", 500),
 	}, m)
 	if err != nil {
 		return err
@@ -288,7 +291,11 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		}
 		return nil
 	case "aguarda_logon":
-		if err := e.pnt.EsperarLogon(e.logons, 10*time.Second); err != nil {
+		n := 1
+		if len(p.Args) == 1 {
+			n, _ = strconv.Atoi(p.Args[0])
+		}
+		if err := e.pnt.EsperarLogon(e.logons+int64(n-1), 10*time.Second); err != nil {
 			return err
 		}
 		e.logons = e.pnt.Logons()
@@ -303,6 +310,37 @@ func (e *Executor) passo(p roteiro.Passo) error {
 			return fmt.Errorf("o serviço não percebeu a queda")
 		}
 		e.ocioso()
+		return nil
+	case "pnt_recusa_logon":
+		e.pnt.RecusarLogons(p.Args[0])
+		return nil
+	case "pnt_aceita_logon":
+		e.pnt.RecusarLogons("")
+		return nil
+	case "aguarda_recusas":
+		n, _ := strconv.Atoi(p.Args[0])
+		if !esperarAte(15*time.Second, func() bool { return e.pnt.Recusas() >= n }) {
+			return fmt.Errorf("%d logon(s) recusado(s) em 15 s, esperava %d", e.pnt.Recusas(), n)
+		}
+		e.ocioso()
+		return nil
+	case "pnt_espera_seq", "pnt_esquece":
+		n, _ := strconv.Atoi(strings.TrimPrefix(p.Args[0], "+"))
+		if p.Verbo == "pnt_esquece" {
+			n = -n
+		}
+		return e.pnt.AjustarSequenciaEsperada(n)
+	case "corrompe_store":
+		return corromperUltimaDoStore(filepath.Join(e.dir, "fix", "store"))
+	case "descarta":
+		e.ocioso()
+		for i := len(e.pnt.Pendentes()) - 1; i >= 0; i-- {
+			if r := e.pnt.Pendentes()[i]; e.casa(p.Campos, r, false) == nil {
+				e.pnt.Consumir(i)
+			}
+		}
+		// o que o serviço enviou numa sessão que caiu sem o PnT falso processar não chega mais
+		e.svc.baseRec = e.pnt.RecebidasApp() - e.svc.sessao.Enviadas()
 		return nil
 	case "reinicia_servico":
 		e.descer()
@@ -761,6 +799,46 @@ func esperarAte(limite time.Duration, cond func() bool) bool {
 		time.Sleep(10 * time.Millisecond)
 	}
 	return false
+}
+
+// corromperUltimaDoStore muda, no lugar, o 9 da última mensagem gravada no store FIX do serviço
+// (o reenvio não consegue mais lê-la). Só com a sessão caída.
+func corromperUltimaDoStore(dir string) error {
+	idx, err := filepath.Glob(filepath.Join(dir, "*.header"))
+	if err != nil || len(idx) != 1 {
+		return fmt.Errorf("store do serviço: índice %v (%v)", idx, err)
+	}
+	b, err := os.ReadFile(idx[0])
+	if err != nil {
+		return err
+	}
+	linhas := strings.Split(strings.TrimSpace(string(b)), "\n")
+	var seq, tam int
+	var pos int64
+	if _, err := fmt.Sscanf(linhas[len(linhas)-1], "%d,%d,%d", &seq, &pos, &tam); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(strings.TrimSuffix(idx[0], ".header")+".body", os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	msg := make([]byte, tam)
+	if _, err := f.ReadAt(msg, pos); err != nil {
+		return err
+	}
+	i := bytes.Index(msg, []byte("\x019=")) + 3
+	j := i + bytes.IndexByte(msg[i:], 1)
+	v, err := strconv.Atoi(string(msg[i:j]))
+	if err != nil {
+		return err
+	}
+	novo := strconv.Itoa(v + 1)
+	if len(novo) != j-i {
+		novo = strconv.Itoa(v - 1)
+	}
+	_, err = f.WriteAt([]byte(novo), pos+int64(i))
+	return err
 }
 
 // Dir cria um diretório de trabalho para o cenário.

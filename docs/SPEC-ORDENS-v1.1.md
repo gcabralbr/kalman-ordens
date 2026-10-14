@@ -7,6 +7,9 @@ Onde a v1.1 não diz nada, vale a v1.
 **Revista pela [v1.2](SPEC-ORDENS-v1.2.md):** conta, destino e símbolo vêm da operação, não do
 service.env (B3 e a parte de símbolo de B5, P7 e as chaves `ORDENS_*` abaixo foram substituídas).
 
+**Revista pela [v1.3](SPEC-ORDENS-v1.3.md)** (rodada 1 da F1): o store FIX deixa de ser mascarado
+(parte do store da F15), `ESPERA_ENCERRAMENTO_S` passa a 8 s (A3), [PnT-13] fechada (pendência 3).
+
 Os roteiros (`cenarios/*.fix`, formato em `cenarios/FORMATO.md`) são a especificação executável:
 cada decisão abaixo está afirmada em pelo menos um deles.
 
@@ -181,7 +184,8 @@ não esperava e foi corrigido. Próxima fase: F1 (HML do PnT, Parte 11.2).
    (3.6) leem o `preco`; com o ticker errado leriam o contrato errado. Adotado até decisão: as
    duas ficam suspensas enquanto durar a divergência (a 1014 continua protegendo), e o alerta
    de B5.b já está ativo. Sem roteiro próprio.
-3. **[PnT-13] CumQty no mass status.** O mass status de HML 2025 trouxe 39=2 com 14=0. Se for
+3. ~~[PnT-13] CumQty no mass status.~~ **Fechada pela v1.3**: na HML de 14/10 o mass status trouxe
+   todas as ordens do dia com `14`/`6` corretos. Texto original: O mass status de HML 2025 trouxe 39=2 com 14=0. Se for
    assim em produção, o fill não é recuperável pelo 150=I e o serviço marca DIVERGENTE. O
    cenário 08 supõe 14 correto.
 4. **Valores de `status84`.** A regra é "≠ 0 = não negocia"; o 2 dos roteiros é ilustrativo.

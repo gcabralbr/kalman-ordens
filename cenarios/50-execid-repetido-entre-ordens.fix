@@ -1,0 +1,46 @@
+cenario 50 ExecID (17) igual em duas ordens → os dois fills aplicados; repetido na mesma ordem → uma vez
+hora 2026-10-14 10:40:00
+# HML 14/10: o fill (150=F) traz 17 numérico e 1057 — cara de TradeID da bolsa, que pode se
+# repetir entre ordens e entre dias. Até a v1.3 o 17 era único no banco inteiro: um fill com o
+# 17 de outro fill qualquer era ignorado em silêncio ("ExecID repetido"). SPEC v1.3 H1: a chave
+# passa a (37, 17) — o mesmo 17 em outra ordem é outro fill; na mesma ordem, repetido (reenvio,
+# mass status) não muda nada.
+
+executa INICIO
+
+entrada 5001 C
+resposta aceito=true
+recebe 35=D 11=KM-E-5001-1 44=130020 54=1 847=1031
+envia @ER 11=KM-E-5001-1 37=dsa.5001.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-E-5001-1 37=dsa.5001.E 150=F 39=2 17=7001 1057=Y 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=5001 qtd=1 preco=130010
+recebe 35=D 11=KM-P-5001-1 38=1 54=2 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-5001-1 37=dsa.5001.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=5001
+
+# o mesmo fill da entrada de novo (mesmo 37, mesmo 17): nada muda
+envia @ER 11=KM-E-5001-1 37=dsa.5001.E 150=F 39=2 17=7001 1057=Y 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+conta_eventos ENTRADA_EXECUTADA operacao_id=5001 = 1
+sem_alerta FILL_ORDEM_ENCERRADA
+saude posicao=1
+
+# saída do gestor; o fill dela vem com o MESMO 17 da entrada, noutra ordem (outro 37)
+preco bid=130100 ask=130105 preco=130100
+saida 5001 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-5001-2 41=KM-P-5001-1 37=dsa.5001.P
+envia @ER 11=KM-P-5001-2 41=KM-P-5001-1 37=dsa.5001.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-5001-1 38=1 44=130050 54=2 847=1031
+envia @ER 11=KM-S-5001-1 37=dsa.5001.S 150=0 39=0 54=2 38=1 44=130050 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-S-5001-1 37=dsa.5001.S 150=F 39=2 17=7001 1057=N 54=2 38=1 44=130050 847=1031 32=1 31=130100 14=1 151=0 6=130100
+evento SAIDA_EXECUTADA operacao_id=5001 qtd=1 preco=130100 origem=GESTOR
+evento ZERADA operacao_id=5001 pnl_pts=90 origem=GESTOR
+saude posicao=0
+
+# o fill da saída repetido (mesmo 37, mesmo 17): aplicado uma vez só
+envia @ER 11=KM-S-5001-1 37=dsa.5001.S 150=F 39=2 17=7001 1057=N 54=2 38=1 44=130050 847=1031 32=1 31=130100 14=1 151=0 6=130100
+conta_eventos SAIDA_EXECUTADA operacao_id=5001 = 1
+conta_eventos ZERADA operacao_id=5001 = 1
+sem_alerta FILL_ORDEM_ENCERRADA
+saude posicao=0
+nada

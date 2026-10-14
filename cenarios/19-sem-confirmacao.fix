@@ -29,7 +29,7 @@ saude parada=null divergente=false
 # viva e com o tempo da entrada vencido: cancela o restante agora
 recebe 35=F 11=KM-E-1901-2 41=KM-E-1901-1 37=dsa.1901.E
 envia @ER 11=KM-E-1901-2 41=KM-E-1901-1 37=dsa.1901.E 150=4 39=4 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0
-avanca 5s
+avanca 8s
 evento ENTRADA_ENCERRADA operacao_id=1901 qtd_final=0 motivo=CANCELADA
 nada
 

@@ -92,9 +92,9 @@
 			<field name="ApplID" required="N"/>
 			<field name="ApplSeqNum" required="N"/>
 			<field name="RefSeqNum" required="N"/>
-			<field name="RefMsgType" required="Y"/>
+			<field name="RefMsgType" required="N"/>
 			<field name="BusinessRejectRefID" required="N"/>
-			<field name="BusinessRejectReason" required="Y"/>
+			<field name="BusinessRejectReason" required="N"/>
 			<field name="Text" required="N"/>
 			<field name="EncodedTextLen" required="N"/>
 			<field name="EncodedText" required="N"/>

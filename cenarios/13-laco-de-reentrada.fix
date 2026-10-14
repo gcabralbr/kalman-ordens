@@ -44,8 +44,8 @@ avanca 100ms
 entrada 1310 C
 resposta aceito=false codigo=PARADA
 
-# ENTRADA_ENCERRADA sai ESPERA_ENCERRAMENTO_S (5 s) depois do 39=4
-avanca 5s
+# ENTRADA_ENCERRADA sai ESPERA_ENCERRAMENTO_S (8 s) depois do 39=4
+avanca 8s
 evento ENTRADA_ENCERRADA operacao_id=1301 qtd_final=0
 conta_eventos ENTRADA_ENCERRADA = 1
 nada

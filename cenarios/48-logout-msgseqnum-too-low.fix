@@ -1,0 +1,21 @@
+cenario 48 Logout "MsgSeqNum too low, expecting N" → a próxima tentativa de logon já sai com N
+hora 2026-10-14 13:10:00
+# HML 14/10: o PnT recusou o logon com "MsgSeqNum too low, expecting N" e a biblioteca só subia a
+# sequência de 1 em 1, a cada tentativa. SPEC v1.3 C1: a camada PnT lê o N do logout e ajusta a
+# próxima sequência de envio antes da próxima tentativa (só para cima). Aqui o PnT falso passa a
+# esperar 50 números à frente: de 1 em 1 (uma tentativa por FIX_RECONEXAO_S=1) seriam ~50 s, e
+# o aguarda_logon espera 10 s.
+
+executa INICIO
+derruba_sessao
+pnt_espera_seq +50
+aguarda_logon
+alerta SESSAO_VOLTOU
+recebe 35=AF 585=9 1=12345
+avanca 3s
+alerta CONCILIACAO
+saude sessao_logada=true conciliando=false parada=null divergente=false
+
+entrada 4801 C
+resposta aceito=true
+recebe 35=D 11=KM-E-4801-1 54=1 847=1031

@@ -64,7 +64,9 @@ sudo install -d -o root -g kalman-ordens -m 750 /etc/kalman-ordens
 Permissões: binário `root:root 755`; `/etc/kalman-ordens/service.env` `root:kalman-ordens 640`
 (o serviço lê, não escreve); `/var/lib/kalman-ordens` (store e log FIX) **só do usuário do
 serviço: diretórios 700, arquivos 600, dono `kalman-ordens`**. O log FIX é fiel ao fio: a senha
-sai mascarada (`554=***`), mas o 9 do logon revela o tamanho dela (SPEC v1.1 F15). A unidade usa
+sai mascarada (`554=***`), mas o 9 do logon revela o tamanho dela (SPEC v1.1 F15). O **store**
+(`fix/store`) guarda o logon como foi ao fio, **com a senha**: é o que o reenvio relê (SPEC v1.3
+A1) — mesma proteção do service.env. A unidade usa
 `UMask=0077` e `StateDirectoryMode=0700`, e o serviço aperta as permissões ao subir. Conferir
 depois da primeira subida:
 
@@ -111,7 +113,7 @@ o mesmo da HML de terça) e a habilitação é pela CLI (1.5).
 **Migrar logo em seguida** (com o binário e o service.env instalados; só banco, sem FIX nem HTTP):
 
 ```
-sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql
+sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql, 0003_execid_por_ordem.sql
 sudo /opt/kalman-ordens/kalman-ordens migrar   # de novo: nenhuma migração pendente
 ```
 
@@ -170,6 +172,11 @@ de cada sessão de teste (é a evidência das respostas do PnT).
   (SPEC v1.1 F11, F12). Na terça, procurar `MENSAGEM_ILEGIVEL` / `Msg Parse Error` no log FIX.
 - Parar o serviço não cancela nada no PnT. Se o PnT tiver Cancel-on-Disconnect ligado por padrão
   [PnT-12], a 1014 morre a cada restart — é um dos testes (2.6).
+- **Queda abrupta (SIGKILL, travamento, rede): até ~4 min sem sessão.** O PnT segura a sessão
+  antiga e recusa os logons novos com "already logged on" (14/10: ~3,5 min). O serviço tenta de
+  novo com espera crescente (5, 10, 20, 40, 60 s…; `FIX_RECONEXAO_MAX_S`) e, depois de 60 s
+  recusando, alerta `SESSAO_PRESA_NO_PNT` (crítico). A 1014 continua no PnT protegendo a posição.
+  Para parar, sempre `systemctl stop` (logout limpo: a sessão volta na hora).
 
 ### 1.7 F1 em duas rodadas
 
@@ -183,9 +190,34 @@ marcados "2". Procedimento do replay, horários e critérios: a detalhar antes d
 
 A bancada da SwingTrade exploratória [PnT-9, PnT-10] fica para depois da rodada 2.
 
-**Atenção (2.5 e 2.6):** o serviço só envia a 1014 depois de um fill de entrada. Sem fill na
-rodada 1, não há 1014 viva pelo caminho normal: esses dois itens precisam de um caminho de teste
-(a decidir) ou passam para a rodada 2.
+**Atenção (2.5 e 2.6):** o serviço só envia a 1014 depois de um fill de entrada. Na rodada 1 a
+venda limite executou (a HML é o pregão de ontem, ~3400 pts acima), e a 1014 saiu pelo caminho
+normal.
+
+### 1.8 Depois da rodada 1 (14/10): antes de qualquer novo start na .53
+
+O binário `03c7e05` **não pode subir de novo** na .53: o store FIX dele tem os logons de 14/10
+gravados com a senha mascarada e o reenvio entra em laço (SPEC v1.3 A1). A versão nova repara o
+store sozinha na subida.
+
+```
+cd ~/kalman-ordens && git pull && scripts/build.sh
+dist/kalman-ordens versao                      # o commit novo, sem -sujo
+sudo install -o root -g root -m 755 dist/kalman-ordens /opt/kalman-ordens/kalman-ordens
+sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0003_execid_por_ordem.sql (ExecID único por ordem, v1.3 H1)
+sudo /opt/kalman-ordens/kalman-ordens migrar   # de novo: nenhuma migração pendente
+sudo systemctl start kalman-ordens
+journalctl -u kalman-ordens | grep -E 'store reparado|logon recusado|sincronia|ALERTA'
+```
+
+Esperado na primeira subida: `pnt: store reparado reparo="N mensagem(ns), K com 9/10
+recalculados, 0 trocada(s) por gap fill"` (K = os logons de 14/10), logon aceito e, se o PnT pedir
+reenvio, gap fill — nada de `Resend Msg Parse Error` no log de eventos FIX. Não há chave nova
+obrigatória no service.env (`FIX_RECONEXAO_MAX_S`, `FIX_SINCRONIA_MS` e `SESSAO_PRESA_ALERTA_S`
+têm padrão; `ESPERA_ENCERRAMENTO_S` passou a 8). A cada logon o journal registra a janela de
+sincronia (`recebidas_na_janela`, `reenvios_na_janela`; v1.3 A2): anotar em todo logon da HML — um
+ResendRequest do PnT fora da janela quer dizer que 500 ms não bastam (`FIX_SINCRONIA_MS`). Depois:
+o teste 2.6b.
 
 ---
 
@@ -203,7 +235,8 @@ anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que 
 | 2.3 | 1 | 1031 limite longe: aceite e cancelamento | entrada por `curl` com limite longe do livro; o serviço cancela no timeout (3 s) | `39=A`→`39=0`; o `35=F` **só com as tags do dicionário** (F4) é aceito? `39=6`→`39=4` |
 | 2.4 | 1 | 1031: replace | 1031 longe viva + replace (saída que não executa: reapregoa a cada 2 s) | `35=G` aceito (`39=E`→`39=5`); o 198 muda? |
 | 2.5 | 1 | 1014 com gatilho longe: envio, replace e cancel | protocolo da 1014 sem fill: gatilho longe do livro, replace de preço, cancel | `44` = `20829` aceito; `40=2` devolvido [PnT-6]; ecos 20828/20829; `35=G` e `39=4` da 1014 |
-| 2.6 | 1 | Cancel-on-Disconnect [PnT-12] | com uma 1014 viva (gatilho longe), `systemctl stop` e `start` | a 1014 continua viva no mass status? (se morrer: pedir exceção) |
+| 2.6 | 1 | Cancel-on-Disconnect [PnT-12] | com uma 1014 viva (gatilho longe), `systemctl stop` e `start` | **14/10: logout limpo, a 1014 sobreviveu.** |
+| 2.6b | 1 (repetir) | COD em queda abrupta, com a v1.3 (1.8) | com uma 1014 viva: `sudo systemctl kill -s SIGKILL kalman-ordens` e `sudo systemctl start kalman-ordens` logo em seguida | no journal: "logon recusado" com espera crescente, `SESSAO_PRESA_NO_PNT` depois de 60 s, logon aceito (quanto tempo?), ResendRequest respondido com gap fill, sem `Resend Msg Parse Error`, `FIX_STORE_ILEGIVEL` ou laço. Na conciliação: **a 1014 continua viva?** (se morrer: pedir exceção [PnT-12]) |
 | 2.7 | 1 | Mass status: o que volta [PnT-13] | restart com uma ordem viva e uma encerrada no dia | só as ativas? o `150=I` traz o `14` certo (a HML de 2025 trouxe `39=2` com `14=0`)? |
 | 2.8 | 1 | Comprimento do ClOrdID [PnT-4] | os enviados: `KM-E-900000001-1` (16), `KM-MS-<ms>-<n>` (~22) | aceitos (o RoE diz máximo 28; ambos abaixo) |
 | 2.9 | 1 | Códigos de erro [PnT-15] | qualquer rejeição que aparecer | texto 58 e 103/102 gravados |
@@ -211,7 +244,8 @@ anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que 
 | 2.10b | 1 | **HML aceita `20856=Y` em 1031 e 1014?** (F14) | toda NewOrderSingle do serviço leva `20856=Y`; ver a resposta das ordens de 2.3 e 2.5 | aceito (`39=A`/`39=0`) ou rejeitado (`39=8`/`35=3`/`35=j`, texto 58). Rejeitado → tirar a tag e perguntar ao PnT como ativar a reativação automática fora da Sniper/multileg |
 | 2.10c | 1 | Estado de erro (39=7) em single-leg | se aparecer algum `39=7`: o texto 58, se veio `150=D/39=0` e em quanto tempo | alertas `PROTECAO_EM_ERRO` / `ENTRADA_EM_ERRO` / `SAIDA_EM_ERRO` (só se não voltou em 2 s) |
 | 2.10e | 1 | Conta e símbolo da operação (v1.2) | no log FIX, a 1031 e o cancel de 2.3 | `1=99999` e `116=99999` (cabeçalho) em D, F e G; `142=177.124.234.134`; `55=WINV26`. O cancel do PT não levava conta: o PnT aceita o nosso com 1/116? |
-| 2.10d | 1 | Senha fora dos arquivos (F15) | depois do logon: `sudo grep -rhoa '554=[^[:cntrl:]]*' /var/lib/kalman-ordens/fix \| sort -u` e `journalctl -u kalman-ordens \| grep -c '<senha>'` | só `554=***` nos arquivos; nada no journal |
+| 2.10d | 1 | Senha fora dos logs (F15; store: v1.3 A1) | depois do logon: `sudo grep -rhoa '554=[^[:cntrl:]]*' /var/lib/kalman-ordens/fix/log \| sort -u`, `journalctl -u kalman-ordens \| grep -c '<senha>'` e `sudo find /var/lib/kalman-ordens/fix/store -printf '%m %u %p
+'` | só `554=***` no log; nada no journal; store (com a senha) só `600 kalman-ordens` |
 | 2.11 | 2 | 1014 depois de um fill de entrada | fill com o marketdata em replay | 1014 enviada na hora; `ENTRADA_EXECUTADA` → `PROTEGIDA` |
 | 2.12 | 2 | 1014: replace de quantidade | com `LIMITE_POSICAO_MAX=2`/`LIMITE_QTD_ORDEM=2` e entrada de 2 com dois fills | `35=G` da 1014 aceito; um pedido por vez |
 | 2.13 | 2 | 1014: disparo | preço do replay atravessa o gatilho | fills da 1014 com o mesmo 37 [PnT-5]; disparo com folga |
@@ -219,7 +253,8 @@ anotar a resposta do PnT (mensagens do log FIX) e o ponto `[PnT-n]` da SPEC que 
 
 Depois: ajustar na SPEC cada ponto `[PnT-n]` respondido; se mudar comportamento, roteiro novo antes
 do código. Dicionário novo do PnT [PnT-2]: recebido em 13/10/2026, cópia regenerada (SPEC v1.2
-seção 7). Pendente [PnT-17]: a 1014 é suportada no DSA? (2.5 e 2.11–2.13 respondem na prática).
+seção 7). Rodada 1 (14/10): resultados e correções na [SPEC v1.3](../docs/SPEC-ORDENS-v1.3.md)
+seção 1 — fechadas [PnT-11], [PnT-13] e [PnT-17] (a 1014 funciona no DSA); falta o 2.6b.
 
 ---
 

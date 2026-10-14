@@ -1,6 +1,6 @@
 cenario 04b Fill depois do 39=4, dentro da espera de encerramento → entrada normal
 hora 2026-10-13 10:32:00
-# SPEC v1.1 A.3: dentro de ESPERA_ENCERRAMENTO_S (5 s) depois do 39=4, o fill vale como
+# SPEC v1.1 A.3: dentro de ESPERA_ENCERRAMENTO_S (8 s, v1.3 F1) depois do 39=4, o fill vale como
 # entrada normal. Não há ENTRADA_ENCERRADA intermediário (qtd 0): o único sai no fim da
 # espera, já com a quantidade executada. O fill em ordem encerrada continua gerando alerta.
 
@@ -15,7 +15,8 @@ avanca 3s
 recebe 35=F 11=KM-E-1041-2 41=KM-E-1041-1 37=dsa.1041.E
 envia @ER 11=KM-E-1041-2 41=KM-E-1041-1 37=dsa.1041.E 150=4 39=4 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0
 
-avanca 2s
+# 6 s: além dos 5 s da v1.1, dentro dos 8 s da v1.3
+avanca 6s
 sem_evento ENTRADA_ENCERRADA
 envia @ER 11=KM-E-1041-2 37=dsa.1041.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010 58="Received RealExecReport when Order was already over. RealExecReport accepted."
 alerta FILL_ORDEM_ENCERRADA
@@ -26,8 +27,8 @@ envia @ER 11=KM-P-1041-1 37=dsa.1041.P 150=0 39=0 54=2 38=1 44=129410 847=1014 1
 evento PROTEGIDA operacao_id=1041 preco_stop=129510
 sem_evento ENTRADA_ENCERRADA
 
-# fim da espera (5 s depois do 39=4): um único ENTRADA_ENCERRADA, com o que executou
-avanca 3s
+# fim da espera (8 s depois do 39=4): um único ENTRADA_ENCERRADA, com o que executou
+avanca 2s
 evento ENTRADA_ENCERRADA operacao_id=1041 qtd_final=1 preco_medio=130010
 conta_eventos ENTRADA_ENCERRADA operacao_id=1041 = 1
 saude posicao=1

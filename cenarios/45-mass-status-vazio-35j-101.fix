@@ -1,0 +1,31 @@
+cenario 45 Mass status vazio: 35=j 380=101 "No orders found." sem 372 → conciliação vazia, sem alerta
+hora 2026-10-14 09:30:00
+# HML 14/10 (F1, rodada 1): sem ordens na conta, o PnT responde ao 35=AF 585=9 com 35=j 380=101
+# "No orders found." — sem a 372 (RefMsgType), que o dicionário declara obrigatória. Até a v1.2 a
+# biblioteca rejeitava a mensagem: 35=3 ao PnT a cada subida sem ordens e SESSAO_REJEITOU_MENSAGEM
+# falso. SPEC v1.3 E1: a cópia do dicionário não exige 372/380 no 35=j. E2: 380=101 é o mass
+# status vazio — registrado, sem alerta; a conciliação fecha no silêncio, como sem resposta.
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+recebe 35=AF 34=>S1 585=9 1=12345 584=>MS1
+envia 35=j 45=$S1 380=101 58="No orders found."
+# nenhum 35=3 de volta ao PnT
+nada
+sem_alerta SESSAO_REJEITOU_MENSAGEM
+sem_alerta MASS_STATUS_REJEITADO
+sem_alerta RECUSA_PNT
+saude conciliando=true
+
+avanca 3s
+alerta CONCILIACAO
+saude sessao_logada=true conciliando=false parada=null divergente=false
+sem_alerta SESSAO_REJEITOU_MENSAGEM
+sem_alerta MASS_STATUS_REJEITADO
+sem_alerta RECUSA_PNT
+nada
+
+# o serviço segue normal
+entrada 4501 C
+resposta aceito=true
+recebe 35=D 11=KM-E-4501-1 1=12345 44=130020 54=1 55=WINZ26 847=1031

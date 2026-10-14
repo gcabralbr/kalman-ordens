@@ -1,0 +1,50 @@
+cenario 47 Queda abrupta: PnT recusa o logon ("already logged on") → SESSAO_PRESA_NO_PNT; aceito, pede o reenvio dos logons recusados → gap fill
+hora 2026-10-14 13:02:00
+config FIX_USUARIO=GAMMAQ2
+config FIX_SENHA=Senha-HML-de-teste
+config FIX_RECONEXAO_MAX_S=1
+# HML 14/10, 15:02–15:06: depois de um SIGKILL o PnT segurou a sessão ~3,5 min, recusando cada
+# logon com "already logged on"; cada logon recusado consumiu um número nosso, gravado no store,
+# e não contou do lado do PnT. Aceito o logon, o PnT pediu ResendRequest a partir do primeiro
+# recusado. O store tinha os logons com a senha mascarada (9 errado): "Resend Msg Parse Error:
+# Incorrect Message Length" → desconexão → o PnT segura a sessão meio aberta → laço infinito.
+# SPEC v1.3 A1: o store guarda a mensagem como foi ao fio (sem máscara; diretório 700/600); o
+# reenvio dos logons vira gap fill e a sessão fica de pé. D1: alerta crítico SESSAO_PRESA_NO_PNT
+# depois de 60 s de recusas; espera crescente entre as tentativas (camada PnT; aqui o teto é
+# 1 s para o roteiro não demorar — o crescimento está em pnt TestEsperaCrescente). A 1014 cobre
+# a posição enquanto isso.
+
+executa INICIO
+executa COMPRADO OP=4701
+
+# queda que o PnT não percebe: ele continua com a sessão aberta e recusa os logons novos
+pnt_recusa_logon "Session already logged on"
+derruba_sessao
+alerta SESSAO_CAIU
+aguarda_recusas 3
+avanca 59s
+sem_alerta SESSAO_PRESA_NO_PNT
+avanca 2s
+alerta SESSAO_PRESA_NO_PNT
+saude sessao_logada=false posicao=1
+entrada 4702 C
+resposta aceito=false codigo=SEM_SESSAO
+
+# o PnT solta a sessão: aceita o logon e pede o reenvio desde o primeiro logon recusado; os
+# logons voltam como gap fill (mensagens de sessão não se reenviam)
+pnt_aceita_logon
+aguarda_logon
+recebe_sessao 35=4 123=Y 43=Y
+alerta SESSAO_VOLTOU
+alerta RESOLVIDO
+sem_alerta FIX_STORE_ILEGIVEL
+saude sessao_logada=true
+
+# conciliação: a 1014 continua viva no PnT
+recebe 35=AF 585=9 1=12345 584=>MS
+envia @ER 11=KM-P-4701-1 37=dsa.4701.P 150=I 39=0 584=$MS 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+avanca 3s
+alerta CONCILIACAO
+saude sessao_logada=true posicao=1 divergente=false parada=null
+sem_alerta FIX_STORE_ILEGIVEL
+nada

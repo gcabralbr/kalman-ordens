@@ -2,7 +2,7 @@ cenario 04 Entrada sem fill → timeout → cancelamento → fill chega depois d
 hora 2026-10-13 10:30:00
 # O RoE 2025 mostra o PnT entregando um fill real depois de dar a ordem por encerrada
 # ("Received RealExecReport when Order was already over").
-# SPEC v1.1 A.3: o ENTRADA_ENCERRADA fica retido por ESPERA_ENCERRAMENTO_S (5 s) depois do 39=4.
+# SPEC v1.1 A.3: o ENTRADA_ENCERRADA fica retido por ESPERA_ENCERRAMENTO_S (8 s, v1.3 F1) depois do 39=4.
 # Fill depois disso = ENTRADA_TARDIA: o serviço cria a 1014 e zera na hora. O gestor recebe
 # ENTRADA_EXECUTADA tardio=true e SAIDA_EXECUTADA origem=ENTRADA_TARDIA só para registro e
 # nunca reabre a operação. (Fill dentro da espera: cenário 04b.)
@@ -21,7 +21,7 @@ recebe 35=F 11=KM-E-1004-2 41=KM-E-1004-1 37=dsa.401 38=1 54=1
 envia @ER 11=KM-E-1004-2 41=KM-E-1004-1 37=dsa.401 150=6 39=6 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
 envia @ER 11=KM-E-1004-2 41=KM-E-1004-1 37=dsa.401 150=4 39=4 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0
 
-avanca 4900ms
+avanca 7900ms
 sem_evento ENTRADA_ENCERRADA
 avanca 200ms
 evento ENTRADA_ENCERRADA operacao_id=1004 qtd_final=0 motivo=CANCELADA

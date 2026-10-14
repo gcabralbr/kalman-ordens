@@ -13,6 +13,9 @@ func (m *Motor) aoLogar() {
 		m.al.Emitir("SESSAO_VOLTOU", "", "sessão FIX voltou", 0)
 	}
 	m.jaLogou = true
+	m.presaDesde, m.presaTexto = timeZero, ""
+	m.al.Resolver("SESSAO_PRESA_NO_PNT")
+	m.al.Resolver("FIX_STORE_ILEGIVEL")
 	m.conciliando = true
 	m.massTentativas = 0
 	m.pedirMassStatus()

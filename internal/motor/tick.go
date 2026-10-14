@@ -21,6 +21,10 @@ func (m *Motor) tick() {
 	agora := m.agora()
 	m.observarPreco()
 	logado := m.fix != nil && m.fix.Logado()
+	if !logado && !m.presaDesde.IsZero() && agora.Sub(m.presaDesde) >= m.p.AlertaSessaoPresa {
+		m.al.Emitir("SESSAO_PRESA_NO_PNT", "SESSAO_PRESA_NO_PNT", fmt.Sprintf("o PnT recusa o logon há %s (%s): ainda segura a sessão anterior; posição %d, 1014 no PnT; reconectando com espera crescente",
+			agora.Sub(m.presaDesde).Truncate(time.Second), m.presaTexto, m.posicaoTotal()), 0)
+	}
 
 	if m.conciliando && logado {
 		switch {
@@ -113,7 +117,13 @@ func (m *Motor) alertasDeTempo(op *operacao, agora time.Time) {
 			o.alertouPendente = true
 			m.al.Emitir("PENDENTE_39A", "", fmt.Sprintf("ordem em 39=A há mais de %s: %s", m.p.AlertaPendente, o.ClOrdAtual), op.OperacaoID)
 		}
-		if o.pend == pendCancel && !o.pendDesde.IsZero() && agora.Sub(o.pendDesde) >= m.p.EsperaStop {
+		// cancel sem resposta: sem 39=6 em ESPERA_STOP_S; com o 39=6, sem 39=4 em
+		// ESPERA_ENCERRAMENTO_S depois dele (v1.3 F2)
+		limite, desde := m.p.EsperaStop, o.pendDesde
+		if !o.cancelPendenteEm.IsZero() {
+			limite, desde = m.p.EsperaEncerramento, o.cancelPendenteEm
+		}
+		if o.pend == pendCancel && !desde.IsZero() && agora.Sub(desde) >= limite {
 			m.al.Emitir("CANCEL_SEM_RESPOSTA", chaveOp("CANCEL_SEM_RESPOSTA", op), fmt.Sprintf("cancelamento sem resposta: %s", o.ClOrdAtual), op.OperacaoID)
 		}
 	}

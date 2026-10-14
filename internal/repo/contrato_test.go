@@ -98,12 +98,25 @@ func TestContrato(t *testing.T) {
 			}
 
 			q := 1
-			ev := EventoFIX{OrdemID: o.ID, Direcao: "REC", MsgType: "8", ExecID: "T-1", CumQty: &q, Em: em}
+			ev := EventoFIX{OrdemID: o.ID, Direcao: "REC", MsgType: "8", OrderID: "dsa.9", ExecID: "T-1", CumQty: &q, Em: em}
 			if novo, err := r.RegistrarEvento(ev); !novo || err != nil {
 				t.Fatalf("evento: %v %v", novo, err)
 			}
 			if novo, err := r.RegistrarEvento(ev); novo || err != nil {
-				t.Fatalf("execid repetido aceito: %v %v", novo, err)
+				t.Fatalf("execid repetido na mesma ordem aceito: %v %v", novo, err)
+			}
+			// v1.3 H1: o mesmo 17 em outra ordem (outro 37) é outro fill
+			outra := ev
+			outra.OrderID = "dsa.10"
+			if novo, err := r.RegistrarEvento(outra); !novo || err != nil {
+				t.Fatalf("mesmo execid em outra ordem recusado: %v %v", novo, err)
+			}
+			sem37 := ev
+			sem37.OrderID = ""
+			for i := 0; i < 2; i++ { // sem 37 não conflita (NULL na chave)
+				if novo, err := r.RegistrarEvento(sem37); !novo || err != nil {
+					t.Fatalf("execid sem 37: %v %v", novo, err)
+				}
 			}
 			for i := 0; i < 2; i++ { // sem execid nunca conflita
 				if novo, err := r.RegistrarEvento(EventoFIX{Direcao: "ENV", MsgType: "D", Em: em.Add(time.Duration(i) * time.Second)}); !novo || err != nil {

@@ -1,6 +1,7 @@
 package pnt
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -20,6 +21,8 @@ type ouvinteTeste struct {
 	recebidas []Mensagem
 	enviadas3 []Mensagem
 	ilegiveis []string
+	recusados []string
+	stores    []string
 }
 
 func (o *ouvinteTeste) Logou() { o.mu.Lock(); o.logons++; o.mu.Unlock() }
@@ -33,6 +36,16 @@ func (o *ouvinteTeste) RejeicaoRecebida(Mensagem) {}
 func (o *ouvinteTeste) MensagemIlegivel(s string) {
 	o.mu.Lock()
 	o.ilegiveis = append(o.ilegiveis, s)
+	o.mu.Unlock()
+}
+func (o *ouvinteTeste) LogonRecusado(s string) {
+	o.mu.Lock()
+	o.recusados = append(o.recusados, s)
+	o.mu.Unlock()
+}
+func (o *ouvinteTeste) StoreIlegivel(s string) {
+	o.mu.Lock()
+	o.stores = append(o.stores, s)
 	o.mu.Unlock()
 }
 func (o *ouvinteTeste) RejeicaoEnviada(m Mensagem) {
@@ -180,9 +193,10 @@ func TestBodyLengthErradoAvisado(t *testing.T) {
 	}
 }
 
-// A senha vai no logon (no fio, inteira) e não aparece em nenhum arquivo do diretório FIX do
-// serviço: log de mensagens, log de eventos e store. O log antigo do PT gravava 553/554 em texto puro.
-func TestSenhaForaDosArquivos(t *testing.T) {
+// A senha vai no logon (no fio, inteira) e não aparece nos logs do diretório FIX (log de
+// mensagens e de eventos; o log antigo do PT gravava 553/554 em texto puro). O store guarda o
+// logon como foi ao fio, senha inclusive (SPEC v1.3 A1): é o que o reenvio relê. Diretório 700/600.
+func TestSenhaSoNoStore(t *testing.T) {
 	const senha = "Segredo-HML-7f3a"
 	f, err := falso.Novo(falso.Config{Contraparte: "CLIENTE", Dir: t.TempDir()})
 	if err != nil {
@@ -221,7 +235,7 @@ func TestSenhaForaDosArquivos(t *testing.T) {
 	if !noFio {
 		t.Fatal("o logon não levou a senha no fio")
 	}
-	arquivos, comLogon := 0, 0
+	logs, mascarados, noStore := 0, 0, 0
 	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
@@ -230,12 +244,20 @@ func TestSenhaForaDosArquivos(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		arquivos++
-		if strings.Contains(string(b), senha) {
-			t.Errorf("senha em texto puro em %s", p)
-		}
-		if strings.Contains(string(b), "554=***") {
-			comLogon++
+		rel, _ := filepath.Rel(dir, p)
+		switch strings.Split(filepath.ToSlash(rel), "/")[0] {
+		case "log":
+			logs++
+			if strings.Contains(string(b), senha) {
+				t.Errorf("senha em texto puro no log %s", p)
+			}
+			if strings.Contains(string(b), "554=***") {
+				mascarados++
+			}
+		case "store":
+			if strings.Contains(string(b), "\x01554="+senha+"\x01") {
+				noStore++
+			}
 		}
 		return nil
 	})
@@ -259,8 +281,207 @@ func TestSenhaForaDosArquivos(t *testing.T) {
 			return nil
 		})
 	}
-	if arquivos < 3 || comLogon < 2 {
-		t.Fatalf("conferência fraca: %d arquivos, %d com o logon mascarado (esperado log e store)", arquivos, comLogon)
+	if logs < 2 || mascarados < 1 || noStore != 1 {
+		t.Fatalf("conferência fraca: %d log(s), %d com o logon mascarado, %d arquivo(s) do store com o logon fiel (esperado 1, o .body)", logs, mascarados, noStore)
+	}
+}
+
+// subirComSenha: sessão com senha (sem log em arquivo) no diretório dado, espera crescente curta.
+func subirComSenha(t *testing.T, f *falso.Falso, dir string, esperas ...time.Duration) (*Sessao, *ouvinteTeste) {
+	t.Helper()
+	o := &ouvinteTeste{}
+	s, err := NovaSessao(ConfigSessao{SenderCompID: "CLIENTE", Host: "127.0.0.1", Porta: f.Porta(), Dir: dir,
+		Inicio: "00:00:00", Fim: "00:00:00", HeartBtInt: 5, ReconexaoS: 1, Usuario: "U", Senha: "Senha-de-teste-123",
+		Esperas: esperas, SemLogArquivo: true}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Iniciar(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Parar)
+	return s, o
+}
+
+func novoFalso(t *testing.T) *falso.Falso {
+	t.Helper()
+	f, err := falso.Novo(falso.Config{Contraparte: "CLIENTE", Dir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Iniciar(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(f.Parar)
+	return f
+}
+
+func gapFills(f *falso.Falso) int {
+	n := 0
+	for _, m := range f.Sessao() {
+		if v, _ := m.Valor(123); m.Tipo == "4" && v == "Y" {
+			n++
+		}
+	}
+	return n
+}
+
+// HML 14/10 (SPEC v1.3 A1, D1): depois de uma queda abrupta o PnT recusa os logons ("already
+// logged on") sem contar a sequência deles; aceito o logon, pede o reenvio desde o primeiro
+// recusado. Os logons gravados (com a senha) se leem: viram gap fill e a sessão fica de pé. Cada
+// recusa chega ao ouvinte, e as tentativas se espaçam com a espera crescente.
+func TestLogonsRecusadosReenvioViraGapFill(t *testing.T) {
+	f := novoFalso(t)
+	s, o := subirComSenha(t, f, t.TempDir(), 50*time.Millisecond, 100*time.Millisecond, 200*time.Millisecond, 400*time.Millisecond)
+	esperar(t, "logon", s.Logado)
+	f.RecusarLogons("Session already logged on")
+	if err := f.Derrubar(); err != nil {
+		t.Fatal(err)
+	}
+	esperar(t, "4 logons recusados", func() bool { return f.Recusas() >= 4 })
+	f.RecusarLogons("")
+	esperar(t, "logon aceito", func() bool { return s.Logado() && f.Logado() })
+	esperar(t, "gap fill dos logons recusados", func() bool { return gapFills(f) >= 1 })
+	if _, err := s.Enviar(MassStatus("12345", "MS-9")); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := f.Proxima(5 * time.Second); err != nil || r.Tipo != "AF" {
+		t.Fatalf("a sessão não ficou de pé depois do gap fill: %v %v", r.Bruta, err)
+	}
+	o.mu.Lock()
+	recusados, stores := len(o.recusados), len(o.stores)
+	o.mu.Unlock()
+	if recusados < 4 || stores != 0 {
+		t.Fatalf("recusas avisadas=%d (esperado ≥ 4), store ilegível=%d (esperado 0)", recusados, stores)
+	}
+	// espera crescente: cada intervalo entre recusas ≥ a espera da tentativa (50, 100, 200 ms)
+	em := f.RecusasEm()
+	for i, minimo := range []time.Duration{50 * time.Millisecond, 100 * time.Millisecond, 200 * time.Millisecond} {
+		if d := em[i+1].Sub(em[i]); d < minimo {
+			t.Errorf("intervalo %d entre recusas %s, esperado ≥ %s", i+1, d, minimo)
+		}
+	}
+}
+
+// O store como a v1.2 gravava (logon com a senha mascarada, 9 errado): sem o reparo na subida, o
+// reenvio não lê o logon ("Resend Msg Parse Error") e a sessão cai em laço (HML 14/10).
+func TestStoreDaV12ReparadoNaSubida(t *testing.T) {
+	f := novoFalso(t)
+	dir := t.TempDir()
+	s, _ := subirComSenha(t, f, dir, 50*time.Millisecond)
+	esperar(t, "logon", s.Logado)
+	s.Parar()
+	esperar(t, "queda no falso", func() bool { return !f.Logado() })
+	pre := strings.TrimSuffix(mustGlob(t, filepath.Join(dir, "store", "*.body")), ".body")
+	b, err := os.ReadFile(pre + ".body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, err := os.ReadFile(pre + ".header")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// o store da v1.2: cada mensagem mascarada depois de montada (o 9 continua o de antes)
+	var corpo, indice []byte
+	linhas := strings.Split(strings.TrimSpace(string(idx)), "\n")
+	for _, l := range linhas {
+		var seq, pos, tam int
+		if _, err := fmt.Sscanf(l, "%d,%d,%d", &seq, &pos, &tam); err != nil {
+			t.Fatal(err)
+		}
+		m := Mascarar(b[pos : pos+tam])
+		indice = fmt.Appendf(indice, "%d,%d,%d\n", seq, len(corpo), len(m))
+		corpo = append(corpo, m...)
+	}
+	if len(corpo) == len(b) {
+		t.Fatal("o store não tinha a senha")
+	}
+	if err := os.WriteFile(pre+".body", corpo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pre+".header", indice, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// o falso perde o que recebeu (logon e logout): pede o reenvio no próximo logon
+	if err := f.AjustarSequenciaEsperada(-len(linhas)); err != nil {
+		t.Fatal(err)
+	}
+	s2, o2 := subirComSenha(t, f, dir, 50*time.Millisecond)
+	esperar(t, "logon depois do reparo", func() bool { return s2.Logado() && f.Logado() })
+	esperar(t, "gap fill do logon mascarado", func() bool { return gapFills(f) >= 1 })
+	o2.mu.Lock()
+	defer o2.mu.Unlock()
+	if len(o2.stores) != 0 || s2.Reinicios() != 0 {
+		t.Fatalf("store ilegível=%v reinícios=%d: o reparo na subida não bastou", o2.stores, s2.Reinicios())
+	}
+}
+
+func mustGlob(t *testing.T, padrao string) string {
+	t.Helper()
+	m, err := filepath.Glob(padrao)
+	if err != nil || len(m) != 1 {
+		t.Fatalf("%s: %v %v", padrao, m, err)
+	}
+	return m[0]
+}
+
+// SPEC v1.3 B1: uma mensagem do store que o reenvio não lê → aviso, sessão derrubada, store
+// reparado, reconexão com espera; nunca o laço silencioso.
+func TestStoreIlegivelNoReenvio(t *testing.T) {
+	f := novoFalso(t)
+	dir := t.TempDir()
+	s, o := subirComSenha(t, f, dir, 50*time.Millisecond)
+	esperar(t, "logon", s.Logado)
+	if _, err := s.Enviar(MassStatus("12345", "MS-1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Proxima(5 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Derrubar(); err != nil {
+		t.Fatal(err)
+	}
+	esperar(t, "queda", func() bool { return !s.Logado() })
+	// o AF gravado (última mensagem) fica com o 9 errado, e o falso pede o reenvio dele
+	pre := strings.TrimSuffix(mustGlob(t, filepath.Join(dir, "store", "*.body")), ".body")
+	b, _ := os.ReadFile(pre + ".body")
+	cab := "8=FIX.4.4\x019="
+	i := strings.LastIndex(string(b), cab) + len(cab)
+	b[i]++
+	if err := os.WriteFile(pre+".body", b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.AjustarSequenciaEsperada(-1); err != nil {
+		t.Fatal(err)
+	}
+	esperar(t, "aviso de store ilegível", func() bool { o.mu.Lock(); defer o.mu.Unlock(); return len(o.stores) >= 1 })
+	esperar(t, "reinício pelo vigia", func() bool { return s.Reinicios() >= 1 })
+	esperar(t, "logon depois do reparo", func() bool { return s.Logado() && f.Logado() })
+	esperar(t, "gap fill do AF", func() bool { return gapFills(f) >= 1 })
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if len(o.stores) != 1 || !strings.Contains(o.stores[0], "Incorrect Message Length") {
+		t.Fatalf("avisos de store ilegível: %v", o.stores)
+	}
+}
+
+// SPEC v1.3 C1: logout "MsgSeqNum too low, expecting N" → a próxima tentativa já sai com N (a
+// biblioteca, sozinha, subiria de 1 em 1: 50 tentativas, uma por segundo).
+func TestLogoutTooLowAjustaSequencia(t *testing.T) {
+	f := novoFalso(t)
+	s, _ := subirComSenha(t, f, t.TempDir(), 50*time.Millisecond)
+	esperar(t, "logon", s.Logado)
+	if err := f.Derrubar(); err != nil {
+		t.Fatal(err)
+	}
+	esperar(t, "queda", func() bool { return !s.Logado() })
+	if err := f.AjustarSequenciaEsperada(50); err != nil {
+		t.Fatal(err)
+	}
+	inicio := time.Now()
+	esperar(t, "logon com a sequência ajustada", func() bool { return s.Logado() && f.Logado() })
+	if d := time.Since(inicio); d > 5*time.Second {
+		t.Fatalf("logon só depois de %s", d)
 	}
 }
 

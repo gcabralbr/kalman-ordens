@@ -23,7 +23,7 @@ type EventoFIX struct {
 	OrdStatus string
 	ClOrdID   string
 	OrderID   string
-	ExecID    string // único quando presente
+	ExecID    string // único por OrderID quando os dois estão presentes (v1.3 H1)
 	LastQty   *int
 	LastPx    *decimal.Decimal
 	CumQty    *int
@@ -50,7 +50,8 @@ type Repositorio interface {
 	OperacaoExiste(operacaoID int64) (bool, error)
 	// SalvarOrdem insere (ID == 0) ou atualiza.
 	SalvarOrdem(*dominio.Ordem) error
-	// RegistrarEvento devolve novo=false se o ExecID já existe (fill repetido).
+	// RegistrarEvento devolve novo=false se o par (OrderID, ExecID) já existe (fill repetido na
+	// mesma ordem). O mesmo ExecID em outra ordem é outro evento (v1.3 H1).
 	RegistrarEvento(EventoFIX) (novo bool, err error)
 	EnviosDesde(t time.Time) (int, error)
 	Publicar(tipo string, operacaoID int64, dados []byte, em time.Time) (int64, error)
@@ -215,11 +216,13 @@ func (m *Memoria) SalvarOrdem(o *dominio.Ordem) error {
 func (m *Memoria) RegistrarEvento(e EventoFIX) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if e.ExecID != "" {
-		if m.execIDs[e.ExecID] {
+	// como a chave única (orderid37, execid) do MariaDB: vazio em qualquer dos dois não conflita
+	if e.ExecID != "" && e.OrderID != "" {
+		chave := e.OrderID + "\x00" + e.ExecID
+		if m.execIDs[chave] {
 			return false, nil
 		}
-		m.execIDs[e.ExecID] = true
+		m.execIDs[chave] = true
 	}
 	m.eventos = append(m.eventos, e)
 	return true, nil

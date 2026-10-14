@@ -101,7 +101,7 @@ func TestMigrarEUsuarioComSchemaVazio(t *testing.T) {
 	if err := cliMigrar(cfg, nil, &saida); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(saida.String(), "aplicada: 0001_inicial.sql") || !strings.Contains(saida.String(), "aplicada: 0002_") {
+	if !strings.Contains(saida.String(), "aplicada: 0001_inicial.sql") || !strings.Contains(saida.String(), "aplicada: 0002_") || !strings.Contains(saida.String(), "aplicada: 0003_execid_por_ordem.sql") {
 		t.Fatalf("primeiro migrar: %q", saida.String())
 	}
 	saida.Reset()

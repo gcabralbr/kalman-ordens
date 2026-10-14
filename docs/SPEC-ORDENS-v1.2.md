@@ -8,6 +8,9 @@ rodada 1 da F1, para a HML testar o caminho de produção.
 
 Data: 2026-10-11. Seção 7 (dicionário novo do PnT): 2026-10-13.
 
+**Revista pela [v1.3](SPEC-ORDENS-v1.3.md)** (rodada 1 da F1, 14/10): pendências 3 e 4 fechadas; o
+35=j entra na diferença 2 do dicionário (E1).
+
 ---
 
 ## 1. Usuário: conta e destino (U)
@@ -63,9 +66,9 @@ diferente do da operação → `CAMPO_INVALIDO`. `GET /ordens/{id}` traz `uid`, 
    mass status sem conta fixa). Revisar se o PnT aceitar `585` por usuário em vez de por conta.
 2. **PartyID 448:** o PT manda `453=1 448=CPF 447=D 452=5` (constante `"CPF"`) só no multileg; não
    replicado na 1031/1014. Perguntar ao PnT se a single-leg exige PartyID [PnT-3].
-3. **Conta no cancel:** o PT não manda conta no 35=F; o serviço manda 1 e 116. Confirmar na
-   rodada 1 que o PnT aceita (checklist 2.10e).
-4. **A 1014 é suportada no DSA? [PnT-17]** O dicionário novo do PnT não tem nenhuma tag da 1014
+3. ~~Conta no cancel.~~ **Fechada (v1.3)**: o PnT aceitou o cancel com 1 e 116 na rodada 1.
+4. ~~A 1014 é suportada no DSA? [PnT-17]~~ **Fechada (v1.3)**: na rodada 1 a 1014 foi aceita
+   (`39=A` → `39=0`, ecoa 20828/20829). D2 continua. Texto original: O dicionário novo do PnT não tem nenhuma tag da 1014
    e a NewOrderSingle dele traz os campos da SwingTrade com OCO (F22). Pergunta enviada ao PnT em
    13/10: "a 1014 é suportada no DSA?". Até a resposta, a v1 segue com a 1014 (D2) e a HML a testa
    (rodada 1, 2.5; rodada 2, 2.11–2.13). Se não for suportada, a proteção da v1 muda: a decisão D2

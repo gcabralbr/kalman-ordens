@@ -10,11 +10,13 @@ import (
 // (dsa_FIX44.xml) é Derivar(Original): `go generate ./pnt/dicionario`. Ver LEIA.md.
 const Original = "dsa_FIX44.pnt-2026-10-13.xml"
 
-// Campos do corpo de 8 e 9 que o original declara obrigatórios e a cópia relaxa (SPEC v1.1 F8).
-// Se o dicionário do PnT mudar essa lista, Derivar falha: a diferença precisa ser revista.
+// Campos do corpo de 8, 9 e j que o original declara obrigatórios e a cópia relaxa (SPEC v1.1
+// F8; j: v1.3 E1, o "No orders found." do mass status vazio vem sem 372). Se o dicionário do PnT
+// mudar essa lista, Derivar falha: a diferença precisa ser revista.
 var obrigatoriosRelaxados = map[string][]string{
 	"8": {"OrderID", "ExecID", "ExecType", "OrdStatus", "Instrument", "Side", "LeavesQty", "CumQty", "AvgPx"},
 	"9": {"OrderID", "ClOrdID", "OrigClOrdID", "OrdStatus", "CxlRejResponseTo"},
+	"j": {"RefMsgType", "BusinessRejectReason"},
 }
 
 // Tags da 1014 (RoE 2025), ausentes do dicionário do PnT: declaradas e incluídas (opcionais) no
@@ -32,7 +34,7 @@ var tags1014 = []struct{ numero, nome, tipo string }{
 
 // Derivar aplica ao dicionário do PnT as diferenças da cópia do serviço (LEIA.md), e só elas:
 //  1. type="FIX" na raiz;
-//  2. corpo de 8 e 9 sem obrigatórios (obrigatoriosRelaxados);
+//  2. corpo de 8, 9 e j sem obrigatórios (obrigatoriosRelaxados);
 //  3. valor 9 no enum de MassStatusReqType (585);
 //  4. tags da 1014 (tags1014) declaradas e no corpo de D e G;
 //  5. no componente InstrumentLeg, a 20798 referida pelo nome declarado (LegLastShares) e não
@@ -51,7 +53,7 @@ func Derivar(pnt []byte) ([]byte, error) {
 	s = strings.Replace(s, "<fix major=", `<fix type="FIX" major=`, 1)
 
 	linhas := strings.Split(s, "\n")
-	for _, tipo := range []string{"8", "9"} {
+	for _, tipo := range []string{"8", "9", "j"} {
 		var err error
 		if linhas, err = relaxar(linhas, tipo); err != nil {
 			return nil, err

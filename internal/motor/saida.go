@@ -328,7 +328,7 @@ func (m *Motor) replace(o *ordem, qtd int, px, stop, stopLim int64) {
 }
 
 func limparPendencia(o *ordem) {
-	o.pend, o.clPend = semPendencia, ""
+	o.pend, o.clPend, o.cancelPendenteEm = semPendencia, "", timeZero
 	o.qtdPend, o.precoPend, o.stopPend, o.stopLimPend = 0, 0, 0, 0
 }
 
