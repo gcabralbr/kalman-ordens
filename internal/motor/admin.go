@@ -393,7 +393,15 @@ func (m *Motor) resultadoConsulta(c *consultaPnT, completa bool) Resposta {
 		outros[conta] = c.outros[conta]
 	}
 	contas := append([]string{}, c.contas...)
-	return Resposta{"consultado_em": emBR(c.inicio), "cache": false, "contas": contas, "ordens": ordens, "outros": outros, "posicao": posicao}
+	// v1.7 C8: a consulta terminou com todas as contas respondidas? senão, quais faltaram
+	semResposta := []string{}
+	for _, conta := range c.contas {
+		if !c.feitas[conta] {
+			semResposta = append(semResposta, conta)
+		}
+	}
+	return Resposta{"consultado_em": emBR(c.inicio), "cache": false, "completo": completa, "contas_sem_resposta": semResposta,
+		"contas": contas, "ordens": ordens, "outros": outros, "posicao": posicao}
 }
 
 // divergencias: o PnT e o serviço discordam sobre a ordem?

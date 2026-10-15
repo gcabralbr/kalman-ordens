@@ -18,11 +18,12 @@ Data: 2026-10-15.
 |---|---|---|
 | C1 | Dispara um **35=AF (585=9) por conta** — as das operações do dia e as dos usuários habilitados (as mesmas do mass status do logon, v1.2 U6) —, ReqID `KM-AD-<ms>-<n>`, e espera as respostas. Uma conta está respondida com `912=Y` (LastRptRequested), com o `911` (TotNumReports) atingido ou com um 35=j ligado ao AF pelo 379 (380=101: sem ordens). Fecha quando todas responderam ou em **`CONSULTA_PNT_ESPERA_S` = 5 s**. Sem sessão logada → 503 `{"erro": "SEM_SESSAO"}`. | 64 |
 | C2 | **Só leitura**: as respostas são gravadas (`kalmanordemevento`, ligadas à ordem quando ela existe: aparecem no histórico da operação), mas **não mexem no estado** — nem posição, nem ordens, nem alerta. A conciliação automática do logon continua a mesma (ReqID `KM-MS-…`). | 64 |
-| C3 | Resposta: `{consultado_em, cache, contas: [conta...], ordens: [...], outros: {conta: N}, posicao: [{simbolo, qtd, preco_medio}]}`. `consultado_em` = quando os AF saíram. | 64 |
+| C3 | Resposta: `{consultado_em, cache, completo, contas_sem_resposta, contas: [conta...], ordens: [...], outros: {conta: N}, posicao: [{simbolo, qtd, preco_medio}]}` (`completo` e `contas_sem_resposta`: C8). `consultado_em` = quando os AF saíram. | 64 |
 | C4 | `ordens`: cada ordem **`KM-`** do PnT: `{origem: "KM", operacao_id, modulo, papel (E/P/S), simbolo, lado (C/V), qtd (38), preco (44), gatilho (20828; nulo fora da 1014), cumqty (14), ordstatus (39), ordstatus_texto, orderid (37), clordid (11), estado_servico (o estado da ordem no serviço; nulo se não há registro), confere, divergencia}`. `operacao_id`/`modulo`/`papel` vêm do serviço ou, sem registro, do ClOrdID. **Diverge** (`confere: false`, `divergencia` com os motivos separados por `; `): sem registro no serviço; viva no PnT e encerrada no serviço (ou o contrário); `cumqty` ≠ o executado no serviço; e, viva dos dois lados e sem pedido em curso no serviço, quantidade, gatilho ou preço diferentes. **Com todas as contas respondidas**, uma ordem viva no serviço (criada antes da consulta) que não veio do PnT entra com os dados do serviço, `ordstatus: null` e `divergencia: "viva no servico e ausente no PnT"`; com o tempo esgotado, a ausência não é acusada. | 64 |
 | C5 | `outros`: ordens de outros sistemas na mesma conta (sem `KM-`), **só contadas**, por conta (PT/L&S na próxima versão). | 64 |
 | C6 | `posicao`: pelo que o PnT mostra das ordens KM — por operação (o ClOrdID diz qual), a posição líquida (Σ lado × cumqty); das operações com posição, por símbolo, a soma e o preço médio da entrada (ponderado). | 64 |
 | C7 | **Intervalo mínimo de 10 s** (`CONSULTA_PNT_INTERVALO_S`, desde o `consultado_em` da última): dentro dele, devolve a última consulta com `cache: true` (fora dele, `cache: false`), sem AF. Pedidos durante uma consulta em curso recebem o resultado dela. | 64 |
+| C8 | **`completo`** (aprovado 15/10, aditivo): `true` quando todas as contas responderam, `false` quando a consulta fechou pelo tempo; **`contas_sem_resposta`**: as contas que não responderam (`[]` se completa). Com `completo: false`, a ausência de ordens vivas no PnT não é acusada (C4). No cache, os valores da consulta guardada. | 64 |
 
 ## 2. Ações de admin (A)
 
@@ -50,9 +51,7 @@ Sem migração nova.
 
 ## 4. Pendência
 
-1. **Consulta incompleta**: com o tempo esgotado, a resposta traz o que chegou e não acusa as
-   ausências, mas o contrato não tem campo que diga que faltou conta. Proposta: `completo: true|false`
-   (e as contas que não responderam). Muda o contrato: aguarda aprovação.
+1. ~~Consulta incompleta.~~ **Fechada por C8** (`completo`, `contas_sem_resposta`).
 
 ## 5. Cobertura
 

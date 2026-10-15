@@ -1,6 +1,6 @@
 cenario 64 Ordens no PnT (admin): um AF por conta, comparação com o serviço, outros sistemas contados, posição; cache de 10 s; tempo esgotado; só leitura
 hora 2026-10-15 12:30:00
-# SPEC v1.7 C (contrato oficial). GET /pnt/ordens dispara um 35=AF (585=9) por conta (as das
+# SPEC v1.7 C (contrato oficial) e v1.7 C8 (completo, contas_sem_resposta). GET /pnt/ordens dispara um 35=AF (585=9) por conta (as das
 # operações do dia e dos usuários habilitados), espera as respostas (todas as contas com 912=Y, o
 # 911 atingido ou 35=j; senão CONSULTA_PNT_ESPERA_S = 5 s) e devolve {consultado_em, cache, contas,
 # ordens, outros, posicao}. Só leitura: as respostas são gravadas mas não mexem no estado (a
@@ -18,7 +18,7 @@ envia @ER 11=KM-P-6401-1 37=dsa.6401.P 150=I 39=0 584=$AD 54=2 38=1 44=129410 84
 envia @ER 11=PT-5511 37=dsa.pt.1 150=I 39=0 584=$AD 54=1 38=2 44=129000 14=0 151=2 6=0 911=4
 envia @ER 11=KM-E-6499-1 37=dsa.6499.E 150=I 39=4 584=$AD 54=2 38=1 44=131000 847=1031 14=0 151=0 6=0 911=4 912=Y
 http_aguarda
-resposta _status=200 cache=false consultado_em=2026-10-15T12:30:03.000-03:00 contas.#=1 contas.0=12345 outros.12345=1 ordens.#=3
+resposta _status=200 cache=false completo=true contas_sem_resposta.#=0 consultado_em=2026-10-15T12:30:03.000-03:00 contas.#=1 contas.0=12345 outros.12345=1 ordens.#=3
 resposta ordens.0.origem=KM ordens.0.operacao_id=6401 ordens.0.modulo=KALMAN ordens.0.papel=E ordens.0.simbolo=WINZ26 ordens.0.lado=C ordens.0.qtd=1 ordens.0.preco=130020 ordens.0.gatilho=null ordens.0.cumqty=1
 resposta ordens.0.ordstatus=2 ordens.0.ordstatus_texto=executada ordens.0.orderid=dsa.6401.E ordens.0.clordid=KM-E-6401-1 ordens.0.estado_servico=EXECUTADA ordens.0.confere=true ordens.0.divergencia=null
 resposta ordens.1.papel=P ordens.1.lado=V ordens.1.gatilho=129510 ordens.1.preco=129410 ordens.1.ordstatus=0 ordens.1.ordstatus_texto=nova ordens.1.estado_servico=ATIVA ordens.1.confere=true
@@ -35,7 +35,7 @@ resposta estado=PROTEGIDA posicao=1
 # --- dentro de 10 s: a última, com cache=true, sem AF
 avanca 9s
 http GET /pnt/ordens
-resposta _status=200 cache=true consultado_em=2026-10-15T12:30:03.000-03:00 ordens.#=3
+resposta _status=200 cache=true completo=true consultado_em=2026-10-15T12:30:03.000-03:00 ordens.#=3
 nada
 
 # --- a 1014 no PnT com outro gatilho
@@ -62,7 +62,7 @@ http_async GET /pnt/ordens
 recebe 35=AF 585=9 1=12345 584=>AD4
 envia 35=j 372=AF 379=$AD4 380=101 58="No orders found."
 http_aguarda
-resposta _status=200 cache=false ordens.#=1 ordens.0.divergencia="viva no servico e ausente no PnT"
+resposta _status=200 cache=false completo=true contas_sem_resposta.#=0 ordens.#=1 ordens.0.divergencia="viva no servico e ausente no PnT"
 
 # --- tempo esgotado (CONSULTA_PNT_ESPERA_S): devolve o que chegou; sem todas as contas, não acusa
 # ausência
@@ -73,7 +73,7 @@ envia @ER 11=KM-E-6401-1 37=dsa.6401.E 150=I 39=2 584=$AD5 54=1 38=1 44=130020 8
 avanca 4900ms
 avanca 200ms
 http_aguarda
-resposta _status=200 cache=false ordens.#=1 ordens.0.confere=true
+resposta _status=200 cache=false completo=false contas_sem_resposta.#=1 contas_sem_resposta.0=12345 ordens.#=1 ordens.0.confere=true
 
 # --- sem sessão: 503
 avanca 10s
