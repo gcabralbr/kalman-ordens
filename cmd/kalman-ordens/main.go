@@ -50,6 +50,7 @@ const ajuda = `uso: kalman-ordens <comando> [opções]
   historico operacao -id N [-modulo M] [-cru]   linha do tempo da operação (JSON, direto no banco)
   historico dia [-dia D] [-uid N] [-modulo M]   operações do dia
   historico sessao [-dia D]                     logon, logout, queda, reenvios, conciliações, alertas gerais
+  expurgar [-meses N] [-simular]                apaga o que passou da retenção (timer mensal; EXPURGO_DB_DSN)
   parar   -motivo X               parada BLOQUEAR (HTTP local)
   zerar   -motivo X               parada ZERAR (HTTP local)
   retomar -motivo X               retira a parada (sempre manual)
@@ -84,6 +85,8 @@ func executar(args []string, saida, erros io.Writer) int {
 		err = cliUsuario(config.DoAmbiente(), args, saida)
 	case "historico":
 		err = cliHistorico(config.DoAmbiente(), args, saida)
+	case "expurgar":
+		err = cliExpurgar(config.DoAmbiente(), args, saida, time.Now())
 	case "versao":
 		fmt.Fprintln(saida, versao)
 	case "ajuda", "help", "-h", "--help":

@@ -82,6 +82,10 @@ type Repositorio interface {
 	// Eventos da sessão FIX e gerais (v1.5 R3).
 	RegistrarSessao(EventoSessao) error
 	SessaoEntre(de, ate time.Time) ([]EventoSessao, error)
+	// Pedidos HTTP (v1.6 P1). PedidosDoDia: uid 0 = todos; modulo vazio = todos.
+	RegistrarPedido(*PedidoHTTP) error
+	PedidosDoDia(data string, uid int, modulo string) ([]PedidoHTTP, error)
+	PedidosDaOperacao(modulo string, operacaoID int64) ([]PedidoHTTP, error)
 
 	// ConfigUsuario lê a configuração do usuário no GQ (dbecotools.acusuario, v1.2 U1):
 	// usutxtconfig (HML) e usutxtconfigprd (PRODUCAO). achou=false: uid sem linha.
@@ -112,6 +116,7 @@ type Memoria struct {
 	hist       []dominio.Habilitacao
 	usuarios   map[int]*[2]string // uid → {usutxtconfig, usutxtconfigprd}
 	sessao     []EventoSessao
+	pedidos    []PedidoHTTP
 	proxEvento int64
 }
 

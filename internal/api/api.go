@@ -3,8 +3,10 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -16,44 +18,46 @@ import (
 func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /ordens", func(w http.ResponseWriter, r *http.Request) {
+		corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))
 		var p motor.Pedido
-		dec := json.NewDecoder(r.Body)
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&p); err != nil {
-			escrever(w, http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()})
-			return
+		status, resp := http.StatusOK, motor.Resposta(nil)
+		if err := decodificar(corpo, &p); err != nil {
+			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()}
+		} else {
+			select {
+			case resp = <-m.PedirAssincrono(p):
+			case <-time.After(espera):
+				// o motor segue com o pedido; o gestor reenvia o mesmo corpo e recebe o resultado original
+				status, resp = http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "RESULTADO_DESCONHECIDO",
+					"motivo": "o motor nao respondeu a tempo; reenviar o mesmo pedido"}
+			}
 		}
-		select {
-		case r := <-m.PedirAssincrono(p):
-			escrever(w, http.StatusOK, r)
-		case <-time.After(espera):
-			// o motor segue com o pedido; o gestor reenvia o mesmo corpo e recebe o resultado original
-			escrever(w, http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "RESULTADO_DESCONHECIDO",
-				"motivo": "o motor nao respondeu a tempo; reenviar o mesmo pedido"})
-		}
+		// v1.6 P1: o pedido como chegou e a resposta dada, inclusive 400 e 503
+		m.RegistrarPedidoHTTP("ORDENS", p.Modulo, valor(p.OperacaoID), valor(p.UID), p.Papel, corpo, status, resp)
+		escrever(w, status, resp)
 	})
 	// ajuste da proteção (v1.4 K1): novo stop em preço (preco_stop) ou em pontos da entrada (stop_pts)
 	mux.HandleFunc("POST /operacoes/{id}/stop", func(w http.ResponseWriter, r *http.Request) {
-		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		if err != nil {
-			escrever(w, http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "operacao_id invalido"})
-			return
-		}
+		corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))
 		var a motor.AjusteStop
-		dec := json.NewDecoder(r.Body)
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&a); err != nil {
-			escrever(w, http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()})
-			return
+		id, errID := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		status, resp := http.StatusOK, motor.Resposta(nil)
+		switch err := decodificar(corpo, &a); {
+		case errID != nil:
+			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "operacao_id invalido"}
+		case err != nil:
+			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()}
+		default:
+			select {
+			case resp = <-m.AjustarStopAssincrono(id, a):
+			case <-time.After(espera):
+				// o motor segue com o pedido; o último ajuste vale, reenviar o mesmo é inofensivo
+				status, resp = http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "RESULTADO_DESCONHECIDO",
+					"motivo": "o motor nao respondeu a tempo; consultar GET /ordens/{id} ou reenviar o mesmo ajuste"}
+			}
 		}
-		select {
-		case r := <-m.AjustarStopAssincrono(id, a):
-			escrever(w, http.StatusOK, r)
-		case <-time.After(espera):
-			// o motor segue com o pedido; o último ajuste vale, reenviar o mesmo é inofensivo
-			escrever(w, http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "RESULTADO_DESCONHECIDO",
-				"motivo": "o motor nao respondeu a tempo; consultar GET /ordens/{id} ou reenviar o mesmo ajuste"})
-		}
+		m.RegistrarPedidoHTTP("STOP", a.Modulo, id, valor(a.UID), "", corpo, status, resp)
+		escrever(w, status, resp)
 	})
 	mux.HandleFunc("GET /ordens/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -126,6 +130,23 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		escrever(w, http.StatusOK, m.Saude())
 	})
 	return mux
+}
+
+// limiteCorpo: os pedidos têm algumas centenas de bytes.
+const limiteCorpo = 64 * 1024
+
+// decodificar: JSON estrito (campo desconhecido = erro), como antes da v1.6.
+func decodificar(corpo []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(corpo))
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
+}
+
+func valor[T int | int64](p *T) T {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 // responderHistorico: 404 para operação inexistente, 400 para dia inválido, 500 para o resto.

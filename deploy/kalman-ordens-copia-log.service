@@ -1,0 +1,18 @@
+[Unit]
+Description=kalman-ordens — cópia do log FIX compactado para fora da máquina (.51 -> .53)
+Documentation=file:///opt/kalman-ordens/LEIA.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# o diretório do log é 700 do kalman-ordens; a chave SSH (600) também é dele
+User=kalman-ordens
+Group=kalman-ordens
+EnvironmentFile=/etc/kalman-ordens/copia-log.env
+ExecStart=/opt/kalman-ordens/copia-log-fix.sh
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes

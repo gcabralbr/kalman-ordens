@@ -6,6 +6,9 @@ diz nada, vale a v1.4.
 Tema: **suporte a reclamação de cliente** — histórico para a tela de admin do Kalman (contrato
 oficial do responsável, 15/10), o que fica gravado de cada mensagem FIX e a retenção.
 
+**Revista pela [v1.6](SPEC-ORDENS-v1.6.md)** (15/10): retenção aprovada (seção 3), cópia do log FIX
+para a .53, pedidos HTTP gravados (seção 4, aprovada).
+
 Data: 2026-10-15.
 
 ---

@@ -80,3 +80,54 @@ func (m *Memoria) PublicadosEntre(de, ate time.Time, tipo string) ([]Publicado, 
 	}
 	return r, nil
 }
+
+// PedidoHTTP é uma linha de kalmanordempedido (v1.6 P1): um POST /ordens ou POST
+// /operacoes/{id}/stop como chegou (corpo cru) e como foi respondido.
+type PedidoHTTP struct {
+	ID         int64
+	Data       string // dia do pregão
+	Modulo     string
+	OperacaoID int64  // 0 = sem (corpo ilegível)
+	UID        int    // 0 = sem
+	Rota       string // ORDENS | STOP
+	Papel      string // ENTRADA | SAIDA (ORDENS)
+	HTTPStatus int
+	Aceito     bool
+	Codigo     string
+	Corpo      string
+	Resposta   string
+	Em         time.Time
+}
+
+func (m *Memoria) RegistrarPedido(p *PedidoHTTP) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p.Modulo = modulo(p.Modulo)
+	p.ID = int64(len(m.pedidos) + 1)
+	m.pedidos = append(m.pedidos, *p)
+	return nil
+}
+
+func (m *Memoria) PedidosDoDia(data string, uid int, mod string) ([]PedidoHTTP, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var r []PedidoHTTP
+	for _, p := range m.pedidos {
+		if p.Data == data && (uid == 0 || p.UID == uid) && (mod == "" || p.Modulo == mod) {
+			r = append(r, p)
+		}
+	}
+	return r, nil
+}
+
+func (m *Memoria) PedidosDaOperacao(mod string, op int64) ([]PedidoHTTP, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var r []PedidoHTTP
+	for _, p := range m.pedidos {
+		if p.Modulo == modulo(mod) && p.OperacaoID == op {
+			r = append(r, p)
+		}
+	}
+	return r, nil
+}

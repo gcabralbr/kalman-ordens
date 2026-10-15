@@ -1,8 +1,11 @@
 package motor
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -104,7 +107,28 @@ func HistoricoOperacao(r repo.Repositorio, modulo string, id int64, cru bool) (R
 	for _, e := range evs {
 		mensagens = append(mensagens, mensagem(e, cru))
 	}
-	return Resposta{"operacao": (&Motor{}).descrever(op), "eventos": eventos, "mensagens": mensagens}, nil
+	ps, err := r.PedidosDaOperacao(op.Modulo, op.OperacaoID)
+	if err != nil {
+		return nil, err
+	}
+	pedidos := []map[string]any{}
+	for _, p := range ps {
+		pedidos = append(pedidos, pedidoJSON(p))
+	}
+	return Resposta{"operacao": (&Motor{}).descrever(op), "eventos": eventos, "mensagens": mensagens, "pedidos": pedidos}, nil
+}
+
+// pedidoJSON (v1.6 P1): corpo e resposta como JSON quando são JSON (senão o texto cru).
+func pedidoJSON(p repo.PedidoHTTP) map[string]any {
+	return map[string]any{"em": emBR(p.Em), "rota": p.Rota, "papel": textoOuNulo(p.Papel), "http_status": p.HTTPStatus,
+		"aceito": p.Aceito, "codigo": textoOuNulo(p.Codigo), "corpo": jsonOuTexto(p.Corpo), "resposta": jsonOuTexto(p.Resposta)}
+}
+
+func jsonOuTexto(s string) any {
+	if json.Valid([]byte(s)) {
+		return json.RawMessage(s)
+	}
+	return s
 }
 
 func mensagem(e repo.EventoFIX, cru bool) map[string]any {
@@ -171,7 +195,9 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 		}
 	}
 	lista := []map[string]any{}
+	existe := map[chave]bool{}
 	for _, d := range ops {
+		existe[chave{d.Modulo, d.OperacaoID}] = true
 		if (uid != 0 && d.UID != uid) || (modulo != "" && d.Modulo != modulo) {
 			continue
 		}
@@ -182,7 +208,50 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 			"qtd": d.QtdPedida, "preco_medio_entrada": medioOuNulo(op, true), "preco_medio_saida": medioOuNulo(op, false),
 			"pnl_pts": d.PnL, "motivo_saida": textoOuNulo(d.MotivoSaida), "origem_saida": textoOuNulo(d.OrigemSaida),
 			"criada_em": emBR(d.CriadaEm), "zerada_em": emBROuNulo(zerada[k]), "alertas_n": alertas[k],
+			"em": d.CriadaEm,
 		})
+	}
+	// v1.6 P1: pedido recusado que não virou operação (limite, preço, habilitação, corpo ilegível...)
+	// entra na lista com estado RECUSADA, o código, o motivo e o corpo
+	ps, err := r.PedidosDoDia(dia, uid, modulo)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range ps {
+		if p.Aceito || existe[chave{p.Modulo, p.OperacaoID}] {
+			continue
+		}
+		var c struct {
+			Lado string `json:"lado"`
+			Qtd  *int   `json:"qtd"`
+		}
+		_ = json.Unmarshal([]byte(p.Corpo), &c)
+		var resp struct {
+			Motivo string `json:"motivo"`
+		}
+		_ = json.Unmarshal([]byte(p.Resposta), &resp)
+		var opID, u, qtd any
+		if p.OperacaoID != 0 {
+			opID = p.OperacaoID
+		}
+		if p.UID != 0 {
+			u = p.UID
+		}
+		if c.Qtd != nil {
+			qtd = *c.Qtd
+		}
+		lista = append(lista, map[string]any{
+			"operacao_id": opID, "uid": u, "modulo": p.Modulo, "estado": "RECUSADA", "lado": textoOuNulo(c.Lado), "qtd": qtd,
+			"preco_medio_entrada": nil, "preco_medio_saida": nil, "pnl_pts": nil, "motivo_saida": nil, "origem_saida": nil,
+			"criada_em": emBR(p.Em), "zerada_em": nil, "alertas_n": 0,
+			"rota": p.Rota, "papel": textoOuNulo(p.Papel), "http_status": p.HTTPStatus, "codigo": textoOuNulo(p.Codigo),
+			"motivo": textoOuNulo(resp.Motivo), "corpo": jsonOuTexto(p.Corpo),
+			"em": p.Em,
+		})
+	}
+	sort.SliceStable(lista, func(i, j int) bool { return lista[i]["em"].(time.Time).Before(lista[j]["em"].(time.Time)) })
+	for _, x := range lista {
+		delete(x, "em")
 	}
 	return lista, nil
 }
@@ -221,3 +290,18 @@ func EventosDaSessao(r repo.Repositorio, dia string) ([]map[string]any, error) {
 
 // Repo: o repositório do motor (consultas de histórico pela API).
 func (m *Motor) Repo() repo.Repositorio { return m.repo }
+
+// RegistrarPedidoHTTP (v1.6 P1): o POST como chegou (corpo cru) e como foi respondido, inclusive
+// 400 (corpo ilegível) e 503. Chamado pela API, fora da fila do motor; uma falha ao gravar só vai
+// ao log (não muda a resposta já dada).
+func (m *Motor) RegistrarPedidoHTTP(rota, modulo string, operacaoID int64, uid int, papel string, corpo []byte, status int, resposta Resposta) {
+	agora := m.rel.Agora()
+	b, _ := json.Marshal(resposta)
+	codigo, _ := resposta["codigo"].(string)
+	p := &repo.PedidoHTTP{Data: agora.In(relogio.Fuso).Format("2006-01-02"), Modulo: modulo, OperacaoID: operacaoID, UID: uid,
+		Rota: rota, Papel: papel, HTTPStatus: status, Aceito: resposta["aceito"] == true, Codigo: codigo,
+		Corpo: string(corpo), Resposta: string(b), Em: agora}
+	if err := m.repo.RegistrarPedido(p); err != nil {
+		slog.Error("registrar pedido HTTP", "rota", rota, "operacao", operacaoID, "erro", err)
+	}
+}

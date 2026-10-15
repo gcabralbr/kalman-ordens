@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -121,4 +122,86 @@ func (r *MariaDB) PublicadosDaOperacao(mod string, op int64) ([]Publicado, error
 
 func (r *MariaDB) PublicadosEntre(de, ate time.Time, tipo string) ([]Publicado, error) {
 	return r.publicadosOnde("em >= ? AND em < ? AND (? = '' OR tipo = ?)", de.UTC(), ate.UTC(), tipo, tipo)
+}
+
+func (r *MariaDB) RegistrarPedido(p *PedidoHTTP) error {
+	p.Modulo = modulo(cortar(p.Modulo, 8))
+	var op, uid any
+	if p.OperacaoID != 0 {
+		op = p.OperacaoID
+	}
+	if p.UID != 0 {
+		uid = p.UID
+	}
+	res, err := r.db.Exec(`INSERT INTO kalmanordempedido (data, modulo, operacao_id, uid, rota, papel, http_status, aceito, codigo,
+		corpo, resposta, em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, p.Data, p.Modulo, op, uid, p.Rota, nulo(cortar(p.Papel, 8)), p.HTTPStatus,
+		p.Aceito, nulo(cortar(p.Codigo, 40)), strings.ToValidUTF8(cortar(p.Corpo, 65000), ""), strings.ToValidUTF8(cortar(p.Resposta, 65000), ""), utc(p.Em))
+	if err != nil {
+		return err
+	}
+	p.ID, err = res.LastInsertId()
+	return err
+}
+
+func (r *MariaDB) pedidos(where string, args ...any) ([]PedidoHTTP, error) {
+	rows, err := r.db.Query(`SELECT id, data, modulo, operacao_id, uid, rota, papel, http_status, aceito, codigo, corpo, resposta, em
+		FROM kalmanordempedido WHERE `+where+` ORDER BY em, id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ps []PedidoHTTP
+	for rows.Next() {
+		var p PedidoHTTP
+		var d time.Time
+		var op, uid sql.NullInt64
+		var papel, cod sql.NullString
+		if err := rows.Scan(&p.ID, &d, &p.Modulo, &op, &uid, &p.Rota, &papel, &p.HTTPStatus, &p.Aceito, &cod, &p.Corpo, &p.Resposta, &p.Em); err != nil {
+			return nil, err
+		}
+		p.Data, p.OperacaoID, p.UID, p.Papel, p.Codigo = d.Format("2006-01-02"), op.Int64, int(uid.Int64), papel.String, cod.String
+		ps = append(ps, p)
+	}
+	return ps, rows.Err()
+}
+
+func (r *MariaDB) PedidosDoDia(data string, uid int, mod string) ([]PedidoHTTP, error) {
+	return r.pedidos("data = ? AND (? = 0 OR uid = ?) AND (? = '' OR modulo = ?)", data, uid, uid, mod, mod)
+}
+
+func (r *MariaDB) PedidosDaOperacao(mod string, op int64) ([]PedidoHTTP, error) {
+	return r.pedidos("modulo = ? AND operacao_id = ?", modulo(mod), op)
+}
+
+// TabelasExpurgo (v1.6 E1): as tabelas com retenção — mensagens FIX, eventos publicados, sessão e
+// pedidos HTTP. O resumo (kalmanordemoperacao, kalmanordem) não tem expurgo.
+var TabelasExpurgo = []string{"kalmanordemevento", "kalmanordempub", "kalmanordemsessao", "kalmanordempedido"}
+
+// Expurgar apaga, de cada tabela de TabelasExpurgo, as linhas com em < antes, em lotes (sem
+// segurar a tabela por muito tempo). simular: só conta. Usa um usuário de banco próprio (DELETE só
+// nessas tabelas); o do serviço não tem DELETE.
+func (r *MariaDB) Expurgar(antes time.Time, lote int, simular bool) (map[string]int64, error) {
+	n := map[string]int64{}
+	for _, t := range TabelasExpurgo {
+		if simular {
+			var c int64
+			if err := r.db.QueryRow("SELECT COUNT(*) FROM "+t+" WHERE em < ?", antes.UTC()).Scan(&c); err != nil {
+				return n, fmt.Errorf("%s: %w", t, err)
+			}
+			n[t] = c
+			continue
+		}
+		for {
+			res, err := r.db.Exec("DELETE FROM "+t+" WHERE em < ? LIMIT ?", antes.UTC(), lote)
+			if err != nil {
+				return n, fmt.Errorf("%s: %w", t, err)
+			}
+			k, _ := res.RowsAffected()
+			n[t] += k
+			if k < int64(lote) {
+				break
+			}
+		}
+	}
+	return n, nil
 }

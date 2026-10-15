@@ -400,6 +400,30 @@ func TestContratoHistorico(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			for _, p := range []PedidoHTTP{
+				{Data: "2026-10-15", OperacaoID: 61, UID: 7, Rota: "ORDENS", Papel: "ENTRADA", HTTPStatus: 200, Aceito: true, Corpo: `{"a":"ação"}`, Resposta: `{"aceito":true}`, Em: em},
+				{Data: "2026-10-15", Modulo: "PT", OperacaoID: 61, UID: 8, Rota: "STOP", HTTPStatus: 200, Codigo: "SEM_PRECO", Corpo: "{}", Resposta: "{}", Em: em.Add(time.Second)},
+				{Data: "2026-10-15", Rota: "ORDENS", HTTPStatus: 400, Codigo: "CAMPO_INVALIDO", Corpo: "{x", Resposta: "{}", Em: em.Add(2 * time.Second)},
+				{Data: "2026-10-14", OperacaoID: 61, UID: 7, Rota: "ORDENS", HTTPStatus: 200, Corpo: "{}", Resposta: "{}", Em: em.Add(-24 * time.Hour)},
+			} {
+				p := p
+				if err := r.RegistrarPedido(&p); err != nil || p.ID == 0 {
+					t.Fatalf("RegistrarPedido: %v", err)
+				}
+			}
+			if ps, _ := r.PedidosDoDia("2026-10-15", 0, ""); len(ps) != 3 || ps[0].Corpo != `{"a":"ação"}` || !ps[0].Aceito || ps[0].Papel != "ENTRADA" ||
+				ps[1].Modulo != "PT" || ps[1].Codigo != "SEM_PRECO" || ps[2].OperacaoID != 0 || ps[2].UID != 0 || ps[2].HTTPStatus != 400 || !ps[2].Em.Equal(em.Add(2*time.Second)) {
+				t.Fatalf("PedidosDoDia: %+v", ps)
+			}
+			if ps, _ := r.PedidosDoDia("2026-10-15", 7, ""); len(ps) != 1 {
+				t.Fatalf("PedidosDoDia uid 7: %d", len(ps))
+			}
+			if ps, _ := r.PedidosDoDia("2026-10-15", 0, "PT"); len(ps) != 1 {
+				t.Fatalf("PedidosDoDia PT: %d", len(ps))
+			}
+			if ps, _ := r.PedidosDaOperacao("", 61); len(ps) != 2 {
+				t.Fatalf("PedidosDaOperacao KALMAN: %d", len(ps))
+			}
 			ss, err := r.SessaoEntre(em.Add(-time.Hour), em.Add(time.Hour))
 			if err != nil || len(ss) != 2 || ss[0].Tipo != "LOGON" || ss[1].Tipo != "QUEDA" || ss[1].Texto != "caiu" || !ss[1].Em.Equal(em.Add(time.Second)) {
 				t.Fatalf("SessaoEntre: %+v %v", ss, err)

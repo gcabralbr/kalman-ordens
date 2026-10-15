@@ -1,0 +1,9 @@
+[Unit]
+Description=kalman-ordens — cópia diária do log FIX (03:00, depois do logrotate)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

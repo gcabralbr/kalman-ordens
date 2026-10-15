@@ -143,7 +143,7 @@ func (r *MariaDB) LimparTeste() error {
 		return fmt.Errorf("repo: LimparTeste recusado no schema %q (só *_teste)", schema)
 	}
 	for _, t := range []string{"kalmanordemevento", "kalmanordempub", "kalmanordemestado", "kalmanordem", "kalmanordemoperacao",
-		"kalmanordemusuario", "kalmanordemusuariohist", "kalmanordemsessao", "acusuario_teste", "kalmanordem_migracao"} {
+		"kalmanordemusuario", "kalmanordemusuariohist", "kalmanordemsessao", "kalmanordempedido", "acusuario_teste", "kalmanordem_migracao"} {
 		if _, err := r.db.Exec("DROP TABLE IF EXISTS " + t); err != nil {
 			return err
 		}

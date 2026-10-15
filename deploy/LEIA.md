@@ -117,7 +117,7 @@ o mesmo da HML de terça) e a habilitação é pela CLI (1.5).
 **Migrar logo em seguida** (com o binário e o service.env instalados; só banco, sem FIX nem HTTP):
 
 ```
-sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql, 0003_execid_por_ordem.sql, 0004_modulo.sql, 0005_stop_ajustado.sql, 0006_historico.sql
+sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql, 0003_execid_por_ordem.sql, 0004_modulo.sql, 0005_stop_ajustado.sql, 0006_historico.sql, 0007_pedidos.sql
 sudo /opt/kalman-ordens/kalman-ordens migrar   # de novo: nenhuma migração pendente
 ```
 
@@ -367,3 +367,88 @@ Com Docker (máquina de desenvolvimento):
 scripts/teste-completo.sh --container          # dois backends (memória e mariadb:10.11.15)
 scripts/teste-completo.sh --container --race   # o mesmo com -race, em golang:1.24-bookworm
 ```
+
+---
+
+## 5. Retenção e cópia do log FIX (SPEC v1.6 E)
+
+Banco: 12 meses (eventos FIX, publicados, sessão, pedidos); resumo de operações e ordens sem
+expurgo. Log FIX em arquivo: 90 dias compactado. Cópia do log para fora da máquina: só na .51
+(para a .53), instalação na F2. 5.1 e 5.2 valem nas duas máquinas.
+
+### 5.1 Expurgo do banco (timer mensal)
+
+Usuário de banco só do expurgo (como root do MariaDB; na .51, o mesmo com o schema de lá):
+
+```sql
+CREATE USER 'kalman_ordens_expurgo'@'127.0.0.1' IDENTIFIED BY '<senha do expurgo>';
+GRANT SELECT, DELETE ON kalmanordens.kalmanordemevento TO 'kalman_ordens_expurgo'@'127.0.0.1';
+GRANT SELECT, DELETE ON kalmanordens.kalmanordempub    TO 'kalman_ordens_expurgo'@'127.0.0.1';
+GRANT SELECT, DELETE ON kalmanordens.kalmanordemsessao TO 'kalman_ordens_expurgo'@'127.0.0.1';
+GRANT SELECT, DELETE ON kalmanordens.kalmanordempedido TO 'kalman_ordens_expurgo'@'127.0.0.1';
+GRANT SELECT ON kalmanordens.kalmanordem_migracao      TO 'kalman_ordens_expurgo'@'127.0.0.1';
+```
+
+```
+sudo install -o root -g root -m 600 ~/kalman-ordens/deploy/expurgo.env.example /etc/kalman-ordens/expurgo.env
+sudoedit /etc/kalman-ordens/expurgo.env          # a senha do expurgo; EXPURGO_MESES=12
+sudo install -o root -g root -m 644 ~/kalman-ordens/deploy/kalman-ordens-expurgo.service ~/kalman-ordens/deploy/kalman-ordens-expurgo.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo /opt/kalman-ordens/kalman-ordens expurgar -simular   # só conta (lê /etc/kalman-ordens/expurgo.env)
+sudo systemctl enable --now kalman-ordens-expurgo.timer
+systemctl list-timers kalman-ordens-expurgo.timer
+```
+
+O prazo muda em `EXPURGO_MESES` (mínimo 3). `journalctl -u kalman-ordens-expurgo` mostra o que cada
+execução apagou por tabela.
+
+### 5.2 Log FIX: logrotate (diário, 90 dias, compactado)
+
+O SELinux (Enforcing na .53) não deixa o logrotate mexer em `var_lib_t`: o diretório do log ganha o
+rótulo de log (o serviço continua escrevendo nele).
+
+```
+sudo semanage fcontext -a -t var_log_t '/var/lib/kalman-ordens/fix/log(/.*)?'
+sudo restorecon -Rv /var/lib/kalman-ordens/fix/log
+sudo install -o root -g root -m 644 ~/kalman-ordens/deploy/logrotate-kalman-ordens /etc/logrotate.d/kalman-ordens
+sudo logrotate -d /etc/logrotate.d/kalman-ordens    # simula: os dois *.current.log, rotate 90
+```
+
+Roda com o `logrotate.timer` do sistema (meia-noite, fora da sessão FIX). Arquivos rotacionados:
+`FIX.4.4-<sender>-<target>.messages.current.log-AAAAMMDD.gz` (e o `.event.`), 600 do
+`kalman-ordens`. O prazo muda em `rotate`/`maxage`. Depois da primeira noite:
+`sudo ls -lZ /var/lib/kalman-ordens/fix/log` e `ausearch -m avc -ts today | grep logrotate` (nada).
+
+### 5.3 Cópia do log FIX para a .53 (só na .51, F2)
+
+Na **.53** (destino), uma conta só para receber, com a chave da .51 restrita ao `rrsync` num
+diretório:
+
+```
+sudo useradd --system --create-home --home-dir /var/lib/kalmancopia --shell /bin/bash kalmancopia
+sudo install -d -o kalmancopia -g kalmancopia -m 700 /var/lib/kalmancopia/fix-log-51 /var/lib/kalmancopia/.ssh
+sudo install -o root -g root -m 755 /usr/share/doc/rsync/support/rrsync /usr/local/bin/rrsync
+# authorized_keys (uma linha, com a chave pública gerada na .51 abaixo):
+#   command="/usr/local/bin/rrsync /var/lib/kalmancopia/fix-log-51",restrict ssh-ed25519 AAAA... kalman-ordens@51
+sudoedit /var/lib/kalmancopia/.ssh/authorized_keys
+sudo chown kalmancopia: /var/lib/kalmancopia/.ssh/authorized_keys && sudo chmod 600 /var/lib/kalmancopia/.ssh/authorized_keys
+```
+
+Na **.51** (origem):
+
+```
+sudo ssh-keygen -t ed25519 -N '' -C kalman-ordens@51 -f /etc/kalman-ordens/copia-log_ed25519
+sudo chown kalman-ordens:kalman-ordens /etc/kalman-ordens/copia-log_ed25519 && sudo chmod 600 /etc/kalman-ordens/copia-log_ed25519
+sudo cat /etc/kalman-ordens/copia-log_ed25519.pub            # vai para a authorized_keys da .53
+ssh-keyscan -t ed25519 172.16.110.53 | sudo tee /etc/kalman-ordens/copia-log_known_hosts   # conferir a impressão digital
+sudo chmod 644 /etc/kalman-ordens/copia-log_known_hosts
+sudo install -o root -g root -m 755 ~/kalman-ordens/deploy/copia-log-fix.sh /opt/kalman-ordens/copia-log-fix.sh
+sudo install -o root -g root -m 600 ~/kalman-ordens/deploy/copia-log.env.example /etc/kalman-ordens/copia-log.env
+sudo install -o root -g root -m 644 ~/kalman-ordens/deploy/kalman-ordens-copia-log.service ~/kalman-ordens/deploy/kalman-ordens-copia-log.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start kalman-ordens-copia-log.service && journalctl -u kalman-ordens-copia-log -n 20   # "copia-log-fix: ok"
+sudo systemctl enable --now kalman-ordens-copia-log.timer
+```
+
+O destino espelha os 90 dias da .51 (`--delete`): protege contra a perda do disco da .51, não
+contra apagar na .51.

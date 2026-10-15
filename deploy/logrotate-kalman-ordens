@@ -1,0 +1,18 @@
+# /etc/logrotate.d/kalman-ordens — log FIX em arquivo (v1.6 E2): diário, compactado, 90 dias.
+# O QuickFIX/Go mantém os dois arquivos (.messages.current.log e .event.current.log) abertos em
+# append enquanto o processo vive: copytruncate (copia e zera; o processo segue escrevendo no mesmo
+# arquivo, sem reabrir). O logrotate.timer roda à meia-noite (+ até 1 h), fora da sessão FIX, quando
+# não há mensagem chegando (o copytruncate perderia o que fosse escrito entre a cópia e o zerar).
+# Para mudar o prazo: rotate e maxage (dias).
+/var/lib/kalman-ordens/fix/log/*.current.log {
+    su kalman-ordens kalman-ordens
+    daily
+    rotate 90
+    maxage 90
+    missingok
+    notifempty
+    copytruncate
+    compress
+    dateext
+    dateformat -%Y%m%d
+}

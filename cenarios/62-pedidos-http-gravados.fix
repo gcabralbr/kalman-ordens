@@ -1,0 +1,66 @@
+cenario 62 Pedidos HTTP gravados: aceitos, repetidos, recusados, corpo ilegível e 503 — no histórico da operação e na lista do dia
+hora 2026-10-15 11:30:00
+# SPEC v1.6 P1. Todo POST /ordens e POST /operacoes/{id}/stop fica gravado como chegou (corpo cru)
+# e como foi respondido. GET /operacoes/{id}/historico ganha "pedidos" ({em, rota, papel,
+# http_status, aceito, codigo, corpo, resposta}); no GET /operacoes?dia=, o pedido recusado que não
+# virou operação aparece com estado RECUSADA, o código, o motivo e o corpo.
+config HTTP_ESPERA_S=0.2
+
+executa INICIO
+
+# --- 503: o motor não respondeu a tempo (segue com o pedido); o reenvio devolve o original
+motor_lento
+entrada 6201 C
+resposta aceito=false codigo=RESULTADO_DESCONHECIDO _status=503
+motor_normal
+recebe 35=D 11=KM-E-6201-1 44=130020 54=1 847=1031
+envia @ER 11=KM-E-6201-1 37=dsa.6201.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+recebe 35=D 11=KM-P-6201-1 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-6201-1 37=dsa.6201.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=6201
+entrada 6201 C
+resposta aceito=true repetido=true _status=200
+
+# --- recusados com a operação existente: ficam no histórico dela (não na lista do dia)
+saida 6201 C SINAL_OPOSTO
+resposta aceito=false codigo=LADO_INCOMPATIVEL
+stop 6201 preco=130000
+resposta aceito=false codigo=STOP_ALEM_DO_PRECO
+stop 6201 preco=129800
+resposta aceito=true situacao=ENVIADO
+recebe 35=G 11=KM-P-6201-2 20828=129800
+envia @ER 11=KM-P-6201-2 41=KM-P-6201-1 37=dsa.6201.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0
+evento PROTECAO_AJUSTADA operacao_id=6201
+
+# --- recusados sem operação: por limite (intervalo mínimo), por habilitação, corpo ilegível
+entrada 6202 C
+resposta aceito=false codigo=POSICAO_MAXIMA
+entrada 6203 V uid=8
+resposta aceito=false codigo=UID_NAO_HABILITADO
+http POST /ordens {"operacao_id":6204,"papel":"ENTRADA","lado":"C","campo_que_nao_existe":1}
+resposta aceito=false codigo=CAMPO_INVALIDO _status=400
+
+# --- histórico da operação 6201: os 5 pedidos (o 503 e o reenvio, a saída recusada, os dois stops), em ordem
+http GET /operacoes/6201/historico
+resposta _status=200 operacao.operacao_id=6201 pedidos.#=5
+resposta pedidos.0.rota=ORDENS pedidos.0.papel=ENTRADA pedidos.0.http_status=503 pedidos.0.aceito=false pedidos.0.codigo=RESULTADO_DESCONHECIDO pedidos.0.corpo.operacao_id=6201 pedidos.0.corpo.lado=C pedidos.0.resposta.codigo=RESULTADO_DESCONHECIDO pedidos.0.em=2026-10-15T11:30:03.000-03:00
+resposta pedidos.1.http_status=200 pedidos.1.aceito=true pedidos.1.codigo=null pedidos.1.resposta.repetido=true
+resposta pedidos.2.papel=SAIDA pedidos.2.aceito=false pedidos.2.codigo=LADO_INCOMPATIVEL pedidos.2.corpo.motivo=SINAL_OPOSTO
+resposta pedidos.3.rota=STOP pedidos.3.papel=null pedidos.3.codigo=STOP_ALEM_DO_PRECO pedidos.3.corpo.preco_stop=130000
+resposta pedidos.4.rota=STOP pedidos.4.aceito=true pedidos.4.resposta.situacao=ENVIADO pedidos.4.resposta.preco_stop=129800
+resposta mensagens.#=6 eventos.#=*
+
+# --- lista do dia: a operação e as três recusas sem operação
+http GET /operacoes?dia=2026-10-15
+resposta _status=200 _lista.#=4
+resposta _lista.0.operacao_id=6201 _lista.0.estado=PROTEGIDA
+resposta _lista.1.operacao_id=6202 _lista.1.estado=RECUSADA _lista.1.uid=7 _lista.1.lado=C _lista.1.qtd=1 _lista.1.codigo=POSICAO_MAXIMA _lista.1.motivo=* _lista.1.corpo.operacao_id=6202 _lista.1.rota=ORDENS _lista.1.papel=ENTRADA _lista.1.http_status=200 _lista.1.zerada_em=null _lista.1.alertas_n=0
+resposta _lista.2.operacao_id=6203 _lista.2.estado=RECUSADA _lista.2.uid=8 _lista.2.lado=V _lista.2.codigo=UID_NAO_HABILITADO
+# corpo ilegível: o que foi lido antes do erro identifica o pedido (operacao_id, papel); sem uid no corpo
+resposta _lista.3.operacao_id=6204 _lista.3.papel=ENTRADA _lista.3.estado=RECUSADA _lista.3.uid=null _lista.3.codigo=CAMPO_INVALIDO _lista.3.http_status=400 _lista.3.corpo.campo_que_nao_existe=1
+http GET /operacoes?dia=2026-10-15&uid=7
+resposta _lista.#=2 _lista.0.operacao_id=6201 _lista.1.operacao_id=6202
+http GET /operacoes?dia=2026-10-15&uid=8
+resposta _lista.#=1 _lista.0.operacao_id=6203
+http GET /operacoes?dia=2026-10-15&modulo=PT
+resposta _lista.#=0

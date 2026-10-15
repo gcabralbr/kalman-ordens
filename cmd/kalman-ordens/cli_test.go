@@ -102,7 +102,7 @@ func TestMigrarEUsuarioComSchemaVazio(t *testing.T) {
 	if err := cliMigrar(cfg, nil, &saida); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(saida.String(), "aplicada: 0001_inicial.sql") || !strings.Contains(saida.String(), "aplicada: 0002_") || !strings.Contains(saida.String(), "aplicada: 0003_execid_por_ordem.sql") || !strings.Contains(saida.String(), "aplicada: 0004_modulo.sql") || !strings.Contains(saida.String(), "aplicada: 0005_stop_ajustado.sql") || !strings.Contains(saida.String(), "aplicada: 0006_historico.sql") {
+	if !strings.Contains(saida.String(), "aplicada: 0001_inicial.sql") || !strings.Contains(saida.String(), "aplicada: 0002_") || !strings.Contains(saida.String(), "aplicada: 0003_execid_por_ordem.sql") || !strings.Contains(saida.String(), "aplicada: 0004_modulo.sql") || !strings.Contains(saida.String(), "aplicada: 0005_stop_ajustado.sql") || !strings.Contains(saida.String(), "aplicada: 0006_historico.sql") || !strings.Contains(saida.String(), "aplicada: 0007_pedidos.sql") {
 		t.Fatalf("primeiro migrar: %q", saida.String())
 	}
 	saida.Reset()
@@ -199,5 +199,102 @@ func TestHistoricoCLI(t *testing.T) {
 	}
 	if err := cliHistorico(cfg, []string{"dia", "-dia", "15/10/2026"}, &saida); err == nil {
 		t.Fatal("dia inválido devia falhar")
+	}
+}
+
+// expurgar (v1.6 E1): apaga só o que passou da retenção nas quatro tabelas, em lotes; o resumo
+// (operação, ordem) fica; recusa prazo abaixo do mínimo e sem EXPURGO_DB_DSN.
+func TestExpurgarCLI(t *testing.T) {
+	dsn := os.Getenv("KALMAN_TESTE_MARIADB")
+	if dsn == "" {
+		t.Skip("KALMAN_TESTE_MARIADB vazio")
+	}
+	r, err := repo.AbrirMariaDB(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Fechar()
+	if err := r.LimparTeste(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Migrar(); err != nil {
+		t.Fatal(err)
+	}
+	agora := time.Date(2026, 10, 15, 21, 0, 0, 0, time.UTC) // 18:00 em Brasília
+	// corte com 12 meses: 2025-10-15 00:00 em Brasília
+	velho, novo := time.Date(2025, 10, 15, 2, 59, 0, 0, time.UTC), time.Date(2025, 10, 15, 3, 0, 0, 0, time.UTC)
+	op := &dominio.Operacao{Data: "2025-10-14", OperacaoID: 900000077, UID: 7, Lado: dominio.Compra, QtdPedida: 1, StopPts: 500,
+		Estado: dominio.Zerada, CriadaEm: velho, ContadorN: map[string]int{}}
+	if err := r.SalvarOperacao(op); err != nil {
+		t.Fatal(err)
+	}
+	o := &dominio.Ordem{Data: "2025-10-14", OperacaoID: op.OperacaoID, Papel: dominio.Entrada, ClOrdBase: "KM-E-900000077-1",
+		ClOrdAtual: "KM-E-900000077-1", Lado: dominio.Compra, Qtd: 1, Estado: dominio.Executada, CriadaEm: velho}
+	if err := r.SalvarOrdem(o); err != nil {
+		t.Fatal(err)
+	}
+	for i, em := range []time.Time{velho, velho, velho, novo} {
+		if _, err := r.RegistrarEvento(repo.EventoFIX{OrdemID: o.ID, Direcao: "ENV", MsgType: "D", Em: em}); err != nil {
+			t.Fatal(i, err)
+		}
+		if _, err := r.Publicar("ALERTA", "", 0, []byte(`{}`), em); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.RegistrarSessao(repo.EventoSessao{Tipo: "LOGON", Texto: "x", Em: em}); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.RegistrarPedido(&repo.PedidoHTTP{Data: "2025-10-14", Rota: "ORDENS", HTTPStatus: 200, Corpo: "{}", Resposta: "{}", Em: em}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var saida bytes.Buffer
+	if err := cliExpurgar(config.Novo(map[string]string{}), []string{"-env", "/nao/existe"}, &saida, agora); err == nil {
+		t.Fatal("sem EXPURGO_DB_DSN devia falhar")
+	}
+	cfg := config.Novo(map[string]string{"EXPURGO_DB_DSN": dsn, "EXPURGO_MESES": "12"})
+	if err := cliExpurgar(cfg, []string{"-meses", "2"}, &saida, agora); err == nil || !strings.Contains(err.Error(), "mínimo") {
+		t.Fatalf("2 meses devia ser recusado: %v", err)
+	}
+	if err := cliExpurgar(config.Novo(map[string]string{"EXPURGO_DB_DSN": dsn, "EXPURGO_MESES": "1"}), nil, &saida, agora); err == nil {
+		t.Fatal("EXPURGO_MESES=1 devia ser recusado")
+	}
+	saida.Reset()
+	if err := cliExpurgar(cfg, []string{"-simular"}, &saida, agora); err != nil {
+		t.Fatal(err)
+	}
+	for _, tab := range repo.TabelasExpurgo {
+		if !strings.Contains(saida.String(), tab+": 3 linha(s) a apagar (simulação), anteriores a 2025-10-15 (12 meses)") {
+			t.Fatalf("simular: %q", saida.String())
+		}
+	}
+	saida.Reset()
+	if err := cliExpurgar(cfg, nil, &saida, agora); err != nil {
+		t.Fatal(err)
+	}
+	for _, tab := range repo.TabelasExpurgo {
+		if !strings.Contains(saida.String(), tab+": 3 linha(s) apagadas") {
+			t.Fatalf("expurgar: %q", saida.String())
+		}
+	}
+	saida.Reset()
+	if err := cliExpurgar(cfg, []string{"-simular"}, &saida, agora); err != nil || strings.Count(saida.String(), ": 0 linha(s)") != 4 {
+		t.Fatalf("depois do expurgo: %q %v", saida.String(), err)
+	}
+	// o que está dentro do prazo e o resumo ficam
+	if evs, _ := r.EventosFIXDasOrdens([]int64{o.ID}); len(evs) != 1 || !evs[0].Em.Equal(novo) {
+		t.Fatalf("eventos depois do expurgo: %+v", evs)
+	}
+	if ss, _ := r.SessaoEntre(velho.Add(-time.Hour), agora); len(ss) != 1 {
+		t.Fatalf("sessão depois do expurgo: %d", len(ss))
+	}
+	if ps, _ := r.PedidosDoDia("2025-10-14", 0, ""); len(ps) != 1 {
+		t.Fatalf("pedidos depois do expurgo: %d", len(ps))
+	}
+	if ps, _ := r.PublicadosEntre(velho.Add(-time.Hour), agora, ""); len(ps) != 1 {
+		t.Fatalf("publicados depois do expurgo: %d", len(ps))
+	}
+	if d, ok, _ := r.DiaDaOperacao("", op.OperacaoID); !ok || d != "2025-10-14" {
+		t.Fatal("o resumo da operação não pode ser expurgado")
 	}
 }
