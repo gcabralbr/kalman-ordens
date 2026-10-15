@@ -93,7 +93,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 | `pnt_espera_seq +N` / `pnt_esquece N` | com a sessão caída: o PnT falso passa a esperar o MsgSeqNum N à frente (o logon seguinte é "MsgSeqNum too low, expecting …") / N atrás (pede o reenvio das últimas N mensagens no logon) |
 | `corrompe_store` | com a sessão caída: muda, no lugar, o 9 da última mensagem gravada no store FIX do serviço (o reenvio não a lê mais) |
 | `descarta TAG=VAL ...` | tira da fila as mensagens de aplicação pendentes que casam (zero ou mais) e dá por perdido o que o serviço enviou numa sessão que caiu antes de o PnT falso processar; só para corridas de tempo real numa queda |
-| `motor_lento` / `motor_normal` | trava / solta a fila do motor (os pedidos HTTP ficam esperando; com `HTTP_ESPERA_S` curto, dá o 503) |
+| `motor_lento` / `motor_normal` | trava / solta a fila do motor (os pedidos HTTP ficam esperando; com `HTTP_ESPERA_S` curto, dá o 503); com o motor travado, `avanca` move o relógio e só enfileira os ticks (atrás do motor parado) |
 
 ## Blocos e modelos (em `_comum.fix`)
 

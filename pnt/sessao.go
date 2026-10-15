@@ -50,6 +50,8 @@ type ConfigSessao struct {
 	ResetOnLogon bool
 	// SemLogArquivo desliga o FileLog (testes).
 	SemLogArquivo bool
+	// SemSyncStore: o store FIX sem fsync por mensagem (FileStoreSync=N). Padrão: com fsync.
+	SemSyncStore bool
 }
 
 // Ouvinte recebe os eventos da sessão. Os métodos são chamados nas goroutines do QuickFIX/Go:
@@ -163,6 +165,7 @@ func (s *Sessao) Configuracao() (*quickfix.Settings, error) {
 	st := quickfix.NewSettings()
 	g := st.GlobalSettings()
 	g.Set(config.FileStorePath, filepath.Join(s.cfg.Dir, "store"))
+	g.Set(config.FileStoreSync, sn(!s.cfg.SemSyncStore))
 	g.Set(config.FileLogPath, filepath.Join(s.cfg.Dir, "log"))
 	ss := quickfix.NewSessionSettings()
 	ss.Set(config.BeginString, quickfix.BeginStringFIX44)

@@ -191,6 +191,8 @@ func servir(ctx context.Context, cfg config.Config) error {
 		// envio liberado só depois do reenvio que o PnT pede logo após o logon (v1.3 A2)
 		SincroniaMs:  cfg.Inteiro("FIX_SINCRONIA_MS", 500),
 		ResetOnLogon: cfg.Bool("FIX_RESET_ON_LOGON", false),
+		// fsync do store FIX a cada mensagem (padrão: sim); ver docs/CARGA-2026-10-15.md seção 7
+		SemSyncStore: !cfg.Bool("FIX_STORE_SYNC", true),
 	}, m)
 	if err != nil {
 		return err

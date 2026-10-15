@@ -2,6 +2,7 @@ package metricas
 
 import (
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -25,16 +26,32 @@ var (
 	Recusas      = NovoContador("recusas_total", "Pedidos recusados, por pedido (ENTRADA, SAIDA, STOP...) e código.", "pedido", "codigo")
 	Alertas      = NovoContador("alertas_total", "Alertas emitidos, por código.", "codigo")
 	HTTP         = NovoHistograma("http_segundos", "Duração das requisições HTTP, por rota e status.", "rota", "status")
+	// v1.10
+	Lote        = NovoHistograma("lote_segundos", "Gravação do lote de uma volta do motor (uma transação).")
+	LoteLinhas  = NovoHistogramaBaldes("lote_linhas", "Linhas gravadas por lote.", []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000})
+	EsperaEnvio = NovoHistograma("envio_espera_segundos",
+		"Da decisão do motor ao envio ao PnT (commit do lote e, na entrada, o limitador de taxa), por prioridade.", "prioridade")
 )
 
 // Estado: medidores escritos pelo motor (tick) e lidos na coleta.
 var (
 	filaTamanho, filaCapacidade   atomic.Int64
+	aguardandoTaxa                atomic.Int64
+	lerFilas                      atomic.Pointer[func() [3]int]
 	ordensVivas, operacoesAbertas atomic.Int64
 	posicaoTotal                  atomic.Int64
 	sessaoLogada                  atomic.Int64
 	lerFila                       atomic.Pointer[func() int]
 )
+
+// DefinirFilas (v1.10): as três filas de entrada do motor (P0, P1, P2); o último motor vale.
+func DefinirFilas(tamanhos func() [3]int, capacidade int) {
+	lerFilas.Store(&tamanhos)
+	filaCapacidade.Store(int64(capacidade))
+}
+
+// DefinirAguardandoTaxa: entradas decididas esperando o limitador de taxa.
+func DefinirAguardandoTaxa(n int) { aguardandoTaxa.Store(int64(n)) }
 
 // DefinirFila: o motor em execução informa como ler o tamanho da fila (o último vale).
 func DefinirFila(tamanho func() int, capacidade int) {
@@ -57,12 +74,26 @@ func DefinirEstado(vivas, abertas, posicao int, logada bool) {
 var inicio = time.Now()
 
 func init() {
-	NovoMedidor("fila_tamanho", "Itens na fila do motor agora.", func() float64 {
+	NovoMedidor("fila_tamanho", "Itens nas filas do motor agora (as três).", func() float64 {
+		if f := lerFilas.Load(); f != nil {
+			t := (*f)()
+			return float64(t[0] + t[1] + t[2])
+		}
 		if f := lerFila.Load(); f != nil {
 			return float64((*f)())
 		}
 		return 0
 	})
+	for i, nome := range []string{"p0", "p1", "p2"} {
+		i := i
+		NovoMedidor("fila_tamanho_"+nome, "Itens na fila "+strings.ToUpper(nome)+" do motor (P0: PnT e tick; P1: saídas, ajustes, admin; P2: entradas).", func() float64 {
+			if f := lerFilas.Load(); f != nil {
+				return float64((*f)()[i])
+			}
+			return 0
+		})
+	}
+	NovoMedidor("envios_aguardando_taxa", "Entradas decididas esperando o limitador de taxa da sessão.", func() float64 { return float64(aguardandoTaxa.Load()) })
 	NovoMedidor("fila_capacidade", "Capacidade da fila do motor (cheia = quem enfileira espera).", func() float64 { return float64(filaCapacidade.Load()) })
 	NovoMedidor("ordens_vivas", "Ordens vivas no motor.", func() float64 { return float64(ordensVivas.Load()) })
 	NovoMedidor("operacoes_abertas", "Operações do dia não encerradas.", func() float64 { return float64(operacoesAbertas.Load()) })

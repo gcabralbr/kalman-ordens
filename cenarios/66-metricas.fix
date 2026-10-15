@@ -1,6 +1,6 @@
 cenario 66 GET /metrics: filas, tempos por ordem, fill→1014, mensagens FIX, banco, recusas, alertas e HTTP
 hora 2026-10-15 11:40:00
-# SPEC v1.9 M. Formato de texto do Prometheus, só em 127.0.0.1 (o HTTP inteiro). Os contadores e
+# SPEC v1.9 M e v1.10 (lote, filas, taxa). Formato de texto do Prometheus, só em 127.0.0.1 (o HTTP inteiro). Os contadores e
 # histogramas somam em todos os roteiros do mesmo processo: aqui só ">=".
 
 executa INICIO
@@ -23,11 +23,12 @@ evento ZERADA operacao_id=6601
 avanca 200ms
 
 # fila do motor, por origem; capacidade
-metrica kalman_ordens_fila_espera_segundos_count origem=http >= 2
+metrica kalman_ordens_fila_espera_segundos_count origem=http_entrada >= 2
+metrica kalman_ordens_fila_espera_segundos_count origem=http_saida >= 1
 metrica kalman_ordens_fila_espera_segundos_count origem=fix >= 7
 metrica kalman_ordens_fila_espera_segundos_count origem=tick >= 1
-metrica kalman_ordens_fila_espera_segundos_bucket origem=http le=+Inf >= 2
-metrica kalman_ordens_fila_capacidade = 10000
+metrica kalman_ordens_fila_espera_segundos_bucket origem=http_entrada le=+Inf >= 2
+metrica kalman_ordens_fila_capacidade = 1248576
 metrica kalman_ordens_fila_tamanho >= 0
 # do POST até a primeira mensagem FIX
 metrica kalman_ordens_pedido_ate_envio_segundos_count pedido=ENTRADA >= 1
@@ -44,12 +45,18 @@ metrica kalman_ordens_protecao_fill_ate_envio_segundos_count >= 1
 # mensagens FIX
 metrica kalman_ordens_fix_mensagens_total direcao=enviada tipo=D >= 3
 metrica kalman_ordens_fix_mensagens_total direcao=enviada tipo=F >= 1
-metrica kalman_ordens_fix_mensagens_total direcao=enviada tipo=AF >= 1
 metrica kalman_ordens_fix_mensagens_total direcao=recebida tipo=8 >= 7
-# banco
-metrica kalman_ordens_banco_segundos_count operacao=SalvarOrdem >= 3
-metrica kalman_ordens_banco_segundos_count operacao=RegistrarEvento >= 10
-metrica kalman_ordens_banco_segundos_count operacao=Publicar >= 5
+# banco: uma transação por volta (v1.10 B)
+metrica kalman_ordens_banco_segundos_count operacao=GravarLote >= 3
+metrica kalman_ordens_lote_segundos_count >= 3
+metrica kalman_ordens_lote_linhas_count >= 3
+# da decisão ao envio (commit e, na entrada, a taxa), por prioridade (v1.10)
+metrica kalman_ordens_envio_espera_segundos_count prioridade=PROTECAO >= 1
+metrica kalman_ordens_envio_espera_segundos_count prioridade=SAIDA >= 2
+metrica kalman_ordens_envio_espera_segundos_count prioridade=ENTRADA >= 1
+metrica kalman_ordens_fila_tamanho_p0 >= 0
+metrica kalman_ordens_fila_tamanho_p2 >= 0
+metrica kalman_ordens_envios_aguardando_taxa = 0
 # recusas e alertas por código
 metrica kalman_ordens_recusas_total pedido=ENTRADA codigo=POSICAO_MAXIMA >= 1
 metrica kalman_ordens_alertas_total codigo=CONCILIACAO >= 1

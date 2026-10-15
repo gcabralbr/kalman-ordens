@@ -48,7 +48,7 @@ func (m *Motor) AcaoOperacaoAssincrona(acao, modulo string, id int64, a AcaoAdmi
 		if rec != nil {
 			r = m.recusar(Pedido{Modulo: modulo, OperacaoID: &id, Papel: acao}, rec)
 		}
-		ch <- r
+		m.aposVolta(func() { ch <- r })
 	})
 	return ch
 }
@@ -131,7 +131,7 @@ type consultaPnT struct {
 // ConsultarPnTAssincrono: GET /pnt/ordens.
 func (m *Motor) ConsultarPnTAssincrono() <-chan Resposta {
 	ch := make(chan Resposta, 1)
-	m.entrar("http", func() { m.consultarPnT(ch) })
+	m.entrar("http_saida", func() { m.consultarPnT(ch) })
 	return ch
 }
 
@@ -156,15 +156,17 @@ func (m *Motor) consultarPnT(ch chan Resposta) {
 	}
 	c := &consultaPnT{inicio: agora, corte: m.seqOrdens, contaDoID: map[string]string{}, feitas: map[string]bool{},
 		recebidas: map[string]int{}, outros: map[string]int{}, esperando: []chan Resposta{ch}}
-	c.contas = m.contasMassStatus()
+	c.contas = m.contasAdmin()
 	m.consulta = c
 	for _, conta := range c.contas {
 		contadorMass++
 		id := fmt.Sprintf("KM-AD-%d-%d", agora.UnixMilli(), contadorMass)
 		c.contaDoID[id] = conta
-		if !m.enviar(nil, pnt.MassStatus(conta, id), id) {
+		conta := conta
+		m.enfileirarEnvio(envioPendente{msg: pnt.MassStatus(conta, id), clordid: id, prio: prioSaida, aoFalhar: func() {
 			c.feitas[conta] = true // não saiu: nada a esperar desta conta
-		}
+			m.fecharConsultaSePronta(false)
+		}})
 	}
 	slog.Info("consulta de ordens no PnT (admin)", "contas", c.contas)
 	m.fecharConsultaSePronta(false)
@@ -209,9 +211,11 @@ func (m *Motor) fecharConsultaSePronta(tempo bool) {
 	m.consulta = nil
 	m.ultimaConsulta, m.ultimaConsultaEm = r, c.inicio
 	slog.Info("consulta de ordens no PnT (admin) concluída", "completa", completa, "ordens_km", len(c.respostas), "outros", c.outros)
-	for _, ch := range c.esperando {
-		ch <- r
-	}
+	m.aposVolta(func() {
+		for _, ch := range c.esperando {
+			ch <- r
+		}
+	})
 }
 
 var textoOrdStatus = map[string]string{
@@ -466,7 +470,7 @@ func (m *Motor) AlterarHabilitacaoAssincrono(uid int, a HabilitacaoAdmin) <-chan
 		if rec != nil {
 			r = m.recusar(Pedido{UID: &uid, Papel: "HABILITACAO"}, rec)
 		}
-		ch <- r
+		m.aposVolta(func() { ch <- r })
 	})
 	return ch
 }
@@ -491,6 +495,7 @@ func (m *Motor) alterarHabilitacao(uid int, a HabilitacaoAdmin) (Resposta, *recu
 		slog.Error("alterar habilitação", "uid", uid, "erro", err)
 		return nil, simples("CONFIG_USUARIO_INDISPONIVEL", "habilitação ilegível no banco")
 	}
+	m.invalidarUsuario(uid) // o cache relê do banco na próxima entrada do uid (v1.10 B)
 	switch {
 	case !existia && hab:
 		return nil, simples("SEM_HABILITACAO_PREVIA", fmt.Sprintf("uid %d nunca foi habilitado: a 1ª habilitação é pela CLI (kalman-ordens usuario habilitar)", uid))

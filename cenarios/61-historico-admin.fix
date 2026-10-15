@@ -72,7 +72,6 @@ avanca 1s
 derruba_sessao
 envia_offline 35=j 372=AF 380=101 58="No orders found."
 aguarda_logon
-recebe 35=AF 585=9 1=12345
 avanca 3s
 avanca 1s
 pnt_recusa_logon "Session already logged on"
@@ -80,12 +79,10 @@ derruba_sessao
 aguarda_recusas 1
 pnt_aceita_logon
 aguarda_logon
-recebe 35=AF 585=9 1=12345
 avanca 3s
 avanca 1s
 reinicia_servico
 aguarda_logon
-recebe 35=AF 585=9 1=12345
 avanca 3s
 http GET /sessao/eventos?dia=2026-10-15
 resposta _status=200

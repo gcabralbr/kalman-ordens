@@ -36,7 +36,7 @@ func (m *Motor) AjustarStopAssincrono(id int64, a AjusteStop) <-chan Resposta {
 		if rec != nil {
 			r = m.recusar(Pedido{Modulo: a.Modulo, OperacaoID: &id, Papel: "STOP"}, rec)
 		}
-		ch <- r
+		m.aposVolta(func() { ch <- r })
 	})
 	return ch
 }

@@ -480,3 +480,95 @@ func TestContratoAlterarHabilitado(t *testing.T) {
 		})
 	}
 }
+
+// v1.10 B: o lote numa transação — operação e ordem novas (INSERT, ID do motor) e já gravadas
+// (upsert pelo ID), eventos (o fill repetido ignorado pela chave única), publicados, estado,
+// sessão e pedidos; IDs máximos; chaves de fill do dia; configuração de vários uids.
+func TestContratoLote(t *testing.T) {
+	for nome, novo := range backends(t) {
+		t.Run(nome, func(t *testing.T) {
+			r := novo(t)
+			em := time.Date(2026, 10, 15, 13, 0, 0, 0, time.UTC)
+			if a, b, err := r.MaioresIDs(); err != nil || a != 0 || b != 0 {
+				t.Fatalf("MaioresIDs vazio: %d %d %v", a, b, err)
+			}
+			op := dominio.Operacao{ID: 41, Data: "2026-10-15", OperacaoID: 7001, UID: 7, Conta: "12345", Destino: 85, Simbolo: "WINZ26",
+				Lado: dominio.Compra, QtdPedida: 1, StopPts: 500, Estado: dominio.Entrando, CriadaEm: em, ContadorN: map[string]int{"E": 1}}
+			ord := dominio.Ordem{ID: 90, Data: "2026-10-15", UID: 7, OperacaoID: 7001, Papel: dominio.Entrada, Conta: "12345", Simbolo: "WINZ26",
+				ClOrdBase: "KM-E-7001-1", ClOrdAtual: "KM-E-7001-1", Estrategia: 1031, Lado: dominio.Compra, Qtd: 1, Preco: 130020,
+				Estado: dominio.Enviando, CriadaEm: em}
+			q, px := 1, decimal.RequireFromString("130010")
+			fill := EventoFIX{OrdemID: 90, Direcao: "REC", MsgType: "8", ExecType: "F", OrderID: "dsa.1", ExecID: "x1", LastQty: &q, LastPx: &px, Em: em}
+			l := &Lote{
+				NovasOperacoes: []dominio.Operacao{op}, NovasOrdens: []dominio.Ordem{ord},
+				Eventos:    []EventoFIX{{OrdemID: 90, Direcao: "ENV", MsgType: "D", ClOrdID: "KM-E-7001-1", Bruta: "8=FIX", Em: em}, fill},
+				Publicados: []PublicadoNovo{{Tipo: "ENTRADA_EXECUTADA", OperacaoID: 7001, Dados: []byte(`{"a":1}`), Em: em}},
+				Estados:    []EstadoNovo{{Chave: "parada", Valor: "x", Em: em}},
+				Sessao:     []EventoSessao{{Tipo: "LOGON", Texto: "ok", Em: em}},
+				Pedidos:    []PedidoHTTP{{Data: "2026-10-15", OperacaoID: 7001, UID: 7, Rota: "ORDENS", HTTPStatus: 200, Aceito: true, Corpo: "{}", Resposta: "{}", Em: em}},
+			}
+			if err := r.GravarLote(l); err != nil {
+				t.Fatalf("lote 1: %v", err)
+			}
+			// segundo lote: as mesmas operação e ordem já gravadas, mudadas; o fill repetido; mais um publicado
+			op.Estado, op.StopAjustado, op.ContadorN["P"] = dominio.Protegida, 129700, 1
+			ord.Estado, ord.QtdExec, ord.OrderID, ord.PrecoMedio = dominio.Executada, 1, "dsa.1", px
+			if err := r.GravarLote(&Lote{Operacoes: []dominio.Operacao{op}, Ordens: []dominio.Ordem{ord}, Eventos: []EventoFIX{fill},
+				Publicados: []PublicadoNovo{{Tipo: "PROTEGIDA", OperacaoID: 7001, Dados: []byte(`{}`), Em: em}}}); err != nil {
+				t.Fatalf("lote 2: %v", err)
+			}
+			ops, ords, err := r.CarregarDia("2026-10-15")
+			if err != nil || len(ops) != 1 || len(ords) != 1 {
+				t.Fatalf("carregar: %d %d %v", len(ops), len(ords), err)
+			}
+			if g := ops[0]; g.ID != 41 || g.Estado != dominio.Protegida || g.StopAjustado != 129700 || g.ContadorN["P"] != 1 || g.Conta != "12345" {
+				t.Fatalf("operação: %+v", g)
+			}
+			if g := ords[0]; g.ID != 90 || g.Estado != dominio.Executada || g.QtdExec != 1 || g.OrderID != "dsa.1" || !g.PrecoMedio.Equal(px) || g.Preco != 130020 {
+				t.Fatalf("ordem: %+v", g)
+			}
+			if evs, _ := r.EventosFIXDasOrdens([]int64{90}); len(evs) != 2 {
+				t.Fatalf("eventos: %d (o fill repetido não pode duplicar)", len(evs))
+			}
+			if ps, _ := r.PublicadosDaOperacao("", 7001); len(ps) != 2 || ps[0].Tipo != "ENTRADA_EXECUTADA" || ps[1].Tipo != "PROTEGIDA" {
+				t.Fatalf("publicados: %+v", ps)
+			}
+			if v, ok, _ := r.LerEstado("parada"); !ok || v != "x" {
+				t.Fatalf("estado: %q %v", v, ok)
+			}
+			if ss, _ := r.SessaoEntre(em.Add(-time.Hour), em.Add(time.Hour)); len(ss) != 1 {
+				t.Fatalf("sessão: %d", len(ss))
+			}
+			if ps, _ := r.PedidosDaOperacao("", 7001); len(ps) != 1 {
+				t.Fatalf("pedidos: %d", len(ps))
+			}
+			if a, b, _ := r.MaioresIDs(); a != 41 || b != 90 {
+				t.Fatalf("MaioresIDs: %d %d", a, b)
+			}
+			k, err := r.ChavesFillDoDia(em.Add(-time.Hour), em.Add(time.Hour))
+			if err != nil || !k[ChaveFill("dsa.1", "x1")] || len(k) != 1 {
+				t.Fatalf("chaves de fill: %v %v", k, err)
+			}
+			// a operação nova com a chave única de outra: erro (nunca atualiza a outra linha)
+			outra := op
+			outra.ID, outra.Estado = 42, dominio.Entrando
+			if err := r.GravarLote(&Lote{NovasOperacoes: []dominio.Operacao{outra}}); err == nil && nome == "mariadb" {
+				t.Fatal("operação nova com (modulo, operacao_id) repetido devia falhar")
+			}
+			// configuração de vários uids
+			if mdb, ok := r.(*MariaDB); ok {
+				if err := mdb.PrepararUsuariosTeste(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if u, ok := r.(UsuariosDeTeste); ok {
+				_ = u.DefinirUsuario(7, "hml", "A")
+				_ = u.DefinirUsuario(8, "prd", "B")
+			}
+			cfg, err := r.ConfigUsuarios([]int{7, 8, 9})
+			if err != nil || cfg[7][0] != "A" || cfg[8][1] != "B" || len(cfg) != 2 {
+				t.Fatalf("ConfigUsuarios: %v %v", cfg, err)
+			}
+		})
+	}
+}

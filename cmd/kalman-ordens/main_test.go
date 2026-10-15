@@ -115,10 +115,11 @@ func TestServirDePontaAPonta(t *testing.T) {
 	pHTTP, _ := strconv.Atoi(portaHTTP)
 	pMD := md.Listener.Addr().(*net.TCPAddr).Port
 	loopback.Exigir(t, append(f.PortasEscuta(), pHTTP, pMD)...)
-	if af, err := f.Proxima(5 * time.Second); err != nil || af.Tipo != "AF" {
-		t.Fatalf("esperava o mass status do logon: %v %s", err, af.Bruta)
+	// sem ordem viva nem posição, o logon não pede mass status (v1.10 C5): a conciliação fecha no
+	// silêncio
+	if m, err := f.Proxima(1500 * time.Millisecond); err == nil {
+		t.Fatalf("logon sem ordens não devia mandar nada: %s", m.Bruta)
 	}
-	time.Sleep(1200 * time.Millisecond) // silêncio de 0,5 s + ticks reais
 
 	base := "http://" + endereco
 	corpo := `{"operacao_id":9001,"uid":7,"papel":"ENTRADA","lado":"C","qtd":1,"stop_pts":500,"motivo":"SINAL","ts_decisao":"x"}`

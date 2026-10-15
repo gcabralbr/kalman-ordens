@@ -144,4 +144,23 @@ func (m *Medido) ConfigUsuario(uid int) (string, string, bool, error) {
 	return hml, prd, ok, err
 }
 
+func (m *Medido) GravarLote(l *Lote) error {
+	return medirErr("GravarLote", func() error { return m.Base.GravarLote(l) })
+}
+func (m *Medido) MaioresIDs() (int64, int64, error) {
+	var b int64
+	a, err := medir("MaioresIDs", func() (int64, error) {
+		a, x, err := m.Base.MaioresIDs()
+		b = x
+		return a, err
+	})
+	return a, b, err
+}
+func (m *Medido) ChavesFillDoDia(de, ate time.Time) (map[string]bool, error) {
+	return medir("ChavesFillDoDia", func() (map[string]bool, error) { return m.Base.ChavesFillDoDia(de, ate) })
+}
+func (m *Medido) ConfigUsuarios(uids []int) (map[int][2]string, error) {
+	return medir("ConfigUsuarios", func() (map[int][2]string, error) { return m.Base.ConfigUsuarios(uids) })
+}
+
 var _ Repositorio = (*Medido)(nil)

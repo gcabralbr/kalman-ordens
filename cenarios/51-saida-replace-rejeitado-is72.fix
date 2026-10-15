@@ -17,7 +17,7 @@ usuario 7 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta"
 
 preco ticker=WINZ26 bid=208370 ask=208375 preco=208370 status84=0 idade=100ms
 aguarda_logon
-recebe 35=AF 585=9 1=99999
+# sem ordem viva nem posição: o logon não pede mass status (v1.10 C5)
 avanca 3s
 alerta CONCILIACAO
 

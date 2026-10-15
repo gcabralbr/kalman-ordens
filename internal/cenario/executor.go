@@ -288,6 +288,11 @@ func (e *Executor) passo(p roteiro.Passo) error {
 			}
 			e.rel.Avancar(s)
 			d -= s
+			if e.travado != nil {
+				// motor_lento: o tick entra na fila atrás do motor parado
+				e.svc.motor.TickAssincrono()
+				continue
+			}
 			e.svc.motor.Tick()
 			e.ocioso()
 		}
@@ -383,6 +388,7 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		if err != nil {
 			return err
 		}
+		antes := e.svc.sessao.Recebidas()
 		if p.Verbo == "envia" {
 			err = e.pnt.Enviar(cs)
 		} else {
@@ -390,6 +396,13 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		}
 		if err != nil {
 			return err
+		}
+		if e.travado != nil && p.Verbo == "envia" {
+			// motor_lento: espera a mensagem chegar à sessão (o motor não a trata até motor_normal)
+			fim := time.Now().Add(esperaMensagem)
+			for e.svc.sessao.Recebidas() <= antes && time.Now().Before(fim) {
+				time.Sleep(time.Millisecond)
+			}
 		}
 		e.ocioso()
 		return nil
@@ -400,6 +413,10 @@ func (e *Executor) passo(p roteiro.Passo) error {
 	case "usuario", "habilita", "desabilita":
 		if err := e.usuario(p); err != nil {
 			return err
+		}
+		// o roteiro mudou o banco por fora (como a CLI): o cache do motor relê (v1.10 B)
+		if e.svc != nil && e.travado == nil {
+			e.svc.motor.InvalidarUsuarios()
 		}
 		e.ocioso()
 		return nil

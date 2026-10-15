@@ -335,7 +335,7 @@ func (l *leitor) expandir(ls []linha, params map[string]string, capturas map[str
 			r = append(r, pp)
 			continue
 		}
-		if verbo == "http" {
+		if verbo == "http" || verbo == "http_async" {
 			partes := strings.SplitN(strings.TrimSpace(texto), " ", 4)
 			if len(partes) < 3 {
 				return nil, fmt.Errorf("%s: http METODO /caminho [json]", ln.origem)

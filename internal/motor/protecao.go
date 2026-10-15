@@ -39,17 +39,18 @@ func (m *Motor) ajustarProtecao(op *operacao) {
 		o.Stop, o.StopLim, o.Preco = stop, lim, lim
 		m.salvarOrdem(o)
 		m.indexar(op, o)
-		if !m.enviarNova(op, o) {
+		chegada := m.chegadaFIX
+		m.enviarNova(op, o, func() {
 			o.Estado = dominio.FalhaEnvio
 			m.salvarOrdem(o)
-			op.retentativaProtEm = agora.Add(m.p.RetentativaProtecao)
-			return
-		}
-		if !m.chegadaFIX.IsZero() {
-			// a 1014 nova saiu por causa de uma mensagem do PnT (o fill da entrada): quanto esperou
-			metricas.FillAteProtecao.Observar(time.Since(m.chegadaFIX).Seconds())
-		}
-		slog.Info("PROTEÇÃO enviada", "clordid", o.ClOrdAtual, "stop", stop, "limite", lim, "qtd", qtd)
+			op.retentativaProtEm = m.agora().Add(m.p.RetentativaProtecao)
+		}, func() {
+			if !chegada.IsZero() {
+				// a 1014 nova saiu por causa de uma mensagem do PnT (o fill da entrada): quanto esperou
+				metricas.FillAteProtecao.Observar(time.Since(chegada).Seconds())
+			}
+		})
+		slog.Info("PROTEÇÃO decidida", "clordid", o.ClOrdAtual, "stop", stop, "limite", lim, "qtd", qtd)
 		return
 	}
 	if !p.disparadaEm.IsZero() {
@@ -180,11 +181,10 @@ func (m *Motor) recriarProtecao(op *operacao, motivo string) {
 	m.al.Resolver(chaveOp("PROTECAO_RECRIADA", op)) // uma recriação nova reabre o alerta
 	m.al.Emitir("PROTECAO_RECRIADA", chaveOp("PROTECAO_RECRIADA", op),
 		fmt.Sprintf("%s: 1014 recriada (tentativa %d; gatilho %d, limite %d), posição %d, operação %d", motivo, op.recriacoes, stop, lim, pos, op.OperacaoID), op.OperacaoID)
-	if !m.enviarNova(op, o) {
+	m.enviarNova(op, o, func() {
 		o.Estado = dominio.FalhaEnvio
 		m.salvarOrdem(o)
-		return
-	}
+	})
 	slog.Info("PROTEÇÃO recriada", "clordid", o.ClOrdAtual, "stop", stop, "limite", lim, "qtd", o.Qtd)
 }
 

@@ -5,6 +5,9 @@
 // KALMAN_TESTE_MARIADB; grava o resultado em JSON (KALMAN_CARGA_SAIDA, padrão: diretório temporário).
 //
 //	KALMAN_CARGA=190,1000,4000 KALMAN_TESTE_MARIADB=... go test -run TestCarga -timeout 60m -v ./teste/carga
+//
+// KALMAN_CARGA_TAXA: FIX_TAXA_MSG_S e FIX_RAJADA_MSG do serviço (vazio = o padrão); KALMAN_CARGA_SUFIXO
+// entra no nome do JSON.
 package carga
 
 import (
@@ -64,7 +67,7 @@ func TestCarga(t *testing.T) {
 		t.Run(fmt.Sprintf("N=%d", n), func(t *testing.T) {
 			r := rodada(t, bin, dsn, n)
 			b, _ := json.MarshalIndent(r, "", "  ")
-			arq := filepath.Join(saida, fmt.Sprintf("carga-%d.json", n))
+			arq := filepath.Join(saida, fmt.Sprintf("carga-%d%s.json", n, os.Getenv("KALMAN_CARGA_SUFIXO")))
 			if err := os.WriteFile(arq, b, 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -225,8 +228,15 @@ func rodada(t *testing.T, bin, dsn string, n int) Resultado {
 		// limites abertos: o teste mede a capacidade, não os limites de risco
 		"LIMITE_POSICAO_MAX=1000000", "LIMITE_QTD_ORDEM=1", "LIMITE_INTERVALO_ENTRADAS_S=0", "LIMITE_ENTRADAS_MIN=1000000",
 		"LIMITE_MENSAGENS_MIN=100000000", "LIMITE_ENTRADAS_DIA=1000000", "LIMITE_PERDA_DIA_PTS=1000000000", "LIMITE_RECUSAS_PARADA=1000000",
-		"JANELA_INICIO=00:00:00", "JANELA_FIM=23:59:59", "HORA_ZERAGEM=23:59:59",
+		"JANELA_INICIO=00:00:00", "JANELA_FIM=23:59:59", "HORA_ZERAGEM=23:59:59", "DEBUG_PPROF=1",
 	)
+	// KALMAN_CARGA_TAXA: o limitador de taxa da sessão (v1.10); vazio = o padrão do serviço
+	if v := os.Getenv("KALMAN_CARGA_TAXA"); v != "" {
+		env = append(env, "FIX_TAXA_MSG_S="+v, "FIX_RAJADA_MSG="+v)
+	}
+	if v := os.Getenv("KALMAN_CARGA_STORE_SYNC"); v != "" {
+		env = append(env, "FIX_STORE_SYNC="+v)
+	}
 	logArq, err := os.Create(filepath.Join(dir, "servico.log"))
 	if err != nil {
 		t.Fatal(err)
@@ -264,6 +274,20 @@ func rodada(t *testing.T, bin, dsn string, n int) Resultado {
 	amostra := novoAmostrador(cmd.Process.Pid)
 	go amostra.rodar()
 
+	// perfil de CPU do serviço durante a rajada de entradas (KALMAN_CARGA_PERFIL=diretório)
+	if dirPerfil := os.Getenv("KALMAN_CARGA_PERFIL"); dirPerfil != "" {
+		go func() {
+			r, err := cli.Get(base + "/debug/pprof/profile?seconds=8")
+			if err != nil {
+				return
+			}
+			defer r.Body.Close()
+			if f, err := os.Create(filepath.Join(dirPerfil, fmt.Sprintf("cpu-%d.pprof", n))); err == nil {
+				_, _ = io.Copy(f, r.Body)
+				f.Close()
+			}
+		}()
+	}
 	// --- rajada de entradas
 	// concluída = todas as N protegidas: o motor processa também os pedidos que voltaram 503
 	res.Entradas = rajada(t, cli, base, n, "ENTRADA", resp, res.Respostas, func() bool {
@@ -288,6 +312,12 @@ func rodada(t *testing.T, bin, dsn string, n int) Resultado {
 	coletarMetricas(cli, base, &res)
 	if s := saude(cli, base); s != nil && s["posicao"] != float64(0) {
 		res.Erros = append(res.Erros, fmt.Sprintf("posição final %v", s["posicao"]))
+	}
+	// o log do serviço fica ao lado do JSON (KALMAN_CARGA_LOG=1)
+	if os.Getenv("KALMAN_CARGA_LOG") == "1" {
+		if b, err := os.ReadFile(logArq.Name()); err == nil {
+			_ = os.WriteFile(filepath.Join(os.Getenv("KALMAN_CARGA_SAIDA"), fmt.Sprintf("servico-%d%s.log", n, os.Getenv("KALMAN_CARGA_SUFIXO"))), b, 0o644)
+		}
 	}
 	return res
 }
@@ -877,7 +907,7 @@ func coletarMetricas(cli *http.Client, base string, res *Resultado) {
 					return arred(h.baldes[i] * 1000)
 				}
 			}
-			return math.Inf(1)
+			return -1 // além do último balde
 		}
 		qq := Quantis{N: int(h.n), P50: q(0.5), P95: q(0.95), P99: q(0.99), Max: arred(h.soma / h.n * 1000)} // Max aqui = média
 		if strings.HasPrefix(k, "banco_segundos") {

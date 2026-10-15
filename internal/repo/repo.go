@@ -91,6 +91,14 @@ type Repositorio interface {
 	PedidosDoDia(data string, uid int, modulo string) ([]PedidoHTTP, error)
 	PedidosDaOperacao(modulo string, operacaoID int64) ([]PedidoHTTP, error)
 
+	// Lote (v1.10 B): o motor grava uma volta inteira numa transação; IDs de operação e ordem são
+	// atribuídos por ele (a partir de MaioresIDs); a deduplicação de fill é dele (ChavesFillDoDia).
+	GravarLote(*Lote) error
+	MaioresIDs() (operacao, ordem int64, err error)
+	ChavesFillDoDia(de, ate time.Time) (map[string]bool, error)
+	// ConfigUsuarios: a configuração de vários uids de uma vez (cache do motor); uid sem linha não vem.
+	ConfigUsuarios(uids []int) (map[int][2]string, error)
+
 	// ConfigUsuario lê a configuração do usuário no GQ (dbecotools.acusuario, v1.2 U1):
 	// usutxtconfig (HML) e usutxtconfigprd (PRODUCAO). achou=false: uid sem linha.
 	ConfigUsuario(uid int) (hml, prd string, achou bool, err error)

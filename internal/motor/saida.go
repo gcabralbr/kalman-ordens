@@ -76,6 +76,9 @@ func (m *Motor) iniciarSaida(op *operacao, motivo, origem string) {
 	op.MotivoSaida, op.OrigemSaida, op.SaidaPedidaEm = motivo, origem, m.agora()
 	if e := op.viva(dominio.Entrada); e != nil {
 		m.cancelar(e)
+		if op.Estado.Final() {
+			return // a entrada nunca saiu (estava na fila da taxa): a operação já encerrou sem entrada
+		}
 		if op.posicao() == 0 {
 			op.saidaAposEntrada = true
 			m.salvarOp(op)
@@ -140,13 +143,12 @@ func (m *Motor) enviarSaida(op *operacao) {
 	m.indexar(op, o)
 	op.saidaDivergente = divergente
 	op.proximoRepreco = m.agora().Add(m.p.TimeoutSaida)
-	if !m.enviarNova(op, o) {
+	m.enviarNova(op, o, func() {
 		o.Estado = dominio.FalhaEnvio
 		m.salvarOrdem(o)
 		op.proximaSaidaEm = m.agora().Add(m.p.TimeoutSaida)
-		return
-	}
-	slog.Info("SAIDA enviada", "clordid", o.ClOrdAtual, "preco", px, "divergente", divergente)
+	})
+	slog.Info("SAIDA decidida", "clordid", o.ClOrdAtual, "preco", px, "divergente", divergente)
 }
 
 // precoSaida: bid/ask ∓ COLAR_SAIDA × k (B2). Sem bid/ask, o preco. Posição em contrato que não é
@@ -317,6 +319,19 @@ func (m *Motor) cancelar(o *ordem) {
 		return
 	}
 	op := m.donoDa[o]
+	if m.retirarDaFila(o) {
+		// a NewOrderSingle nunca saiu (esperava a taxa ou estava nesta volta): não há o que cancelar
+		// no PnT; encerra aqui
+		o.Estado = dominio.Cancelada
+		m.salvarOrdem(o)
+		slog.Info("ordem retirada da fila de envio (nunca foi ao PnT)", "clordid", o.ClOrdAtual)
+		if o.Papel == dominio.Entrada {
+			m.encerrarEntrada(op, "CANCELADA", true)
+		} else {
+			m.ordemEncerrada(op, o, "CANCELADA")
+		}
+		return
+	}
 	cl := op.clordid(o.Papel, op.proximoN(o.Papel))
 	o.cancelamentos++
 	o.ultimoCancel = m.agora()
@@ -324,11 +339,14 @@ func (m *Motor) cancelar(o *ordem) {
 	m.porClOrd[cl] = o
 	msg := pnt.Cancelamento(m.idDe(op), cl, o.ClOrdAtual, o.OrderID, op.Simbolo, o.Lado.FIX(), o.Qtd, m.agora())
 	m.salvarOp(op)
-	if !m.enviar(o, msg, cl) {
-		o.pend, o.clPend = semPendencia, ""
-		return
-	}
-	slog.Info("CANCEL enviado", "ordem", o.ClOrdAtual, "clordid", cl)
+	m.enfileirarEnvio(envioPendente{o: o, msg: msg, clordid: cl, prio: prioSaida,
+		aoEnviar: func() { o.pendDesde, o.ultimoCancel = m.agora(), m.agora() },
+		aoFalhar: func() {
+			if o.clPend == cl {
+				o.pend, o.clPend = semPendencia, ""
+			}
+		}})
+	slog.Info("CANCEL decidido", "ordem", o.ClOrdAtual, "clordid", cl)
 }
 
 func (m *Motor) replace(o *ordem, qtd int, px, stop, stopLim int64) {
@@ -343,11 +361,18 @@ func (m *Motor) replace(o *ordem, qtd int, px, stop, stopLim int64) {
 	novo := pnt.Ordem{ClOrdID: cl, Simbolo: op.Simbolo, Lado: o.Lado.FIX(), Qtd: qtd, Preco: px, Estrategia: o.Estrategia, Stop: stop, StopLim: stopLim}
 	msg := pnt.Replace(m.idDe(op), novo, o.ClOrdAtual, o.OrderID, m.agora())
 	m.salvarOp(op)
-	if !m.enviar(o, msg, cl) {
-		limparPendencia(o)
-		return
+	prio := prioSaida
+	if o.Papel == dominio.Protecao {
+		prio = prioProtecao
 	}
-	slog.Info("REPLACE enviado", "ordem", o.ClOrdAtual, "clordid", cl, "qtd", qtd, "preco", px, "stop", stop)
+	m.enfileirarEnvio(envioPendente{o: o, msg: msg, clordid: cl, prio: prio,
+		aoEnviar: func() { o.pendDesde = m.agora() },
+		aoFalhar: func() {
+			if o.clPend == cl {
+				limparPendencia(o)
+			}
+		}})
+	slog.Info("REPLACE decidido", "ordem", o.ClOrdAtual, "clordid", cl, "qtd", qtd, "preco", px, "stop", stop)
 }
 
 func limparPendencia(o *ordem) {

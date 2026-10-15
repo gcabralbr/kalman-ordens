@@ -1,6 +1,7 @@
 package motor
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -79,7 +80,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 
 	agora := m.agora()
 	op := &operacao{Operacao: dominio.Operacao{
-		Data: m.dia, Modulo: p.modulo(), OperacaoID: *p.OperacaoID, UID: *p.UID, Conta: conta.Conta, Destino: conta.Destino, Simbolo: l.Ticker,
+		ID: m.novoIDOperacao(), Data: m.dia, Modulo: p.modulo(), OperacaoID: *p.OperacaoID, UID: *p.UID, Conta: conta.Conta, Destino: conta.Destino, Simbolo: l.Ticker,
 		Lado: lado, QtdPedida: *p.Qtd, StopPts: *p.StopPts,
 		Estado: dominio.Entrando, MotivoEntrada: p.Motivo, TsDecisao: p.TsDecisao, CriadaEm: agora,
 		ContadorN: map[string]int{},
@@ -104,15 +105,32 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	m.entradasRec = append(m.entradasRec, agora)
 	m.entradasHoje++
 
-	if !m.enviarNova(op, o) {
+	rp := m.respostaAtual
+	m.enviarNova(op, o, func() {
+		// a entrada não saiu (sessão caiu antes do envio): a operação encerra sem entrada
 		o.Estado = dominio.FalhaEnvio
 		m.salvarOrdem(o)
 		op.Estado = dominio.EncerradaSemEntrada
 		op.EncerrouEntrada = true
+		if rp != nil && !rp.entregue {
+			// a resposta ainda não saiu (mesma volta): vira a recusa de sempre
+			nova := m.recusar(p, simples("ENVIO_FALHOU", "a ordem não saiu para o PnT"))
+			for k := range rp.r {
+				delete(rp.r, k)
+			}
+			for k, v := range nova {
+				rp.r[k] = v
+			}
+			b, _ := json.Marshal(rp.r)
+			op.RespostaEntrada = string(b)
+		} else {
+			// já respondida (esperava a taxa): o gestor sabe pelo evento
+			m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("entrada %s não saiu para o PnT (sessão caiu antes do envio)", o.ClOrdAtual), op.OperacaoID)
+			m.publicar("ENTRADA_ENCERRADA", op, map[string]any{"qtd_final": 0, "preco_medio": 0, "motivo": "REJEITADA"})
+		}
 		m.salvarOp(op)
-		return nil, simples("ENVIO_FALHOU", "a ordem não saiu para o PnT")
-	}
-	slog.Info("ENTRADA enviada", "clordid", o.ClOrdAtual, "preco", o.Preco, "conta", op.Conta, "simbolo", op.Simbolo)
+	})
+	slog.Info("ENTRADA decidida", "clordid", o.ClOrdAtual, "preco", o.Preco, "conta", op.Conta, "simbolo", op.Simbolo)
 	return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "clordid": o.ClOrdAtual, "preco": o.Preco}, nil
 }
 
@@ -126,7 +144,7 @@ func (m *Motor) verificarHabilitacao(p Pedido) (dominio.Habilitacao, *recusa) {
 	if p.UID == nil {
 		return dominio.Habilitacao{}, simples("UID_NAO_HABILITADO", "uid ausente")
 	}
-	h, ok, err := m.repo.Habilitacao(*p.UID)
+	h, ok, err := m.habilitacaoDo(*p.UID)
 	if err != nil {
 		m.al.Emitir("USUARIO_CONFIG", "", fmt.Sprintf("habilitação do uid %d ilegível: %v", *p.UID, err), 0)
 		return h, simples("CONFIG_USUARIO_INDISPONIVEL", "habilitação ilegível")
@@ -140,7 +158,7 @@ func (m *Motor) verificarHabilitacao(p Pedido) (dominio.Habilitacao, *recusa) {
 // contaDoUsuario lê a configuração do usuário no GQ e resolve conta e destino no ambiente da
 // instância (v1.2 U1–U3). Não emite alerta: quem chama decide.
 func (m *Motor) contaDoUsuario(uid int) (usuario.Resolvido, *usuario.Falha) {
-	hml, prd, achou, err := m.repo.ConfigUsuario(uid)
+	hml, prd, achou, err := m.configUsuarioDo(uid)
 	if err != nil {
 		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONFIG_USUARIO_INDISPONIVEL", Motivo: "acusuario ilegível: " + err.Error(), Alerta: "USUARIO_CONFIG"}
 	}
@@ -292,24 +310,34 @@ func (m *Motor) novaOrdem(op *operacao, papel dominio.Papel, lado dominio.Lado, 
 	cl := op.clordid(papel, op.proximoN(papel))
 	m.seqOrdens++
 	return &ordem{seq: m.seqOrdens, Ordem: dominio.Ordem{
-		Data: op.Data, Modulo: op.Modulo, UID: op.UID, OperacaoID: op.OperacaoID, Papel: papel, Conta: op.Conta, Simbolo: op.Simbolo, ClOrdBase: cl, ClOrdAtual: cl,
+		ID: m.novoIDOrdem(), Data: op.Data, Modulo: op.Modulo, UID: op.UID, OperacaoID: op.OperacaoID, Papel: papel, Conta: op.Conta, Simbolo: op.Simbolo, ClOrdBase: cl, ClOrdAtual: cl,
 		Estrategia: estrategia, Lado: lado, Qtd: qtd, Estado: dominio.Enviando, CriadaEm: m.agora(),
 	}}
 }
 
-// enviarNova manda o NewOrderSingle de uma ordem já gravada (gravar antes de enviar).
-func (m *Motor) enviarNova(op *operacao, o *ordem) bool {
+// enviarNova: a NewOrderSingle sai depois do commit da volta (gravar antes de enviar, v1.10 B), na
+// prioridade do papel (1014 > saída > entrada; a entrada sujeita à taxa). aoFalhar roda se não
+// sair; aoEnviar, depois de sair.
+func (m *Motor) enviarNova(op *operacao, o *ordem, aoFalhar func(), aoEnviar ...func()) {
 	msg := pnt.NovaOrdem(m.idDe(op), pnt.Ordem{
 		ClOrdID: o.ClOrdAtual, Simbolo: op.Simbolo, Lado: o.Lado.FIX(), Qtd: o.Qtd, Preco: o.Preco,
 		Estrategia: o.Estrategia, Stop: o.Stop, StopLim: o.StopLim,
 	}, m.agora())
 	m.salvarOp(op)
-	if !m.enviar(o, msg, o.ClOrdAtual) {
-		return false
+	prio := prioEntrada
+	switch o.Papel {
+	case dominio.Protecao:
+		prio = prioProtecao
+	case dominio.Saida:
+		prio = prioSaida
 	}
-	o.enviada = m.agora()
-	o.envioReal = time.Now()
-	return true
+	m.enfileirarEnvio(envioPendente{o: o, msg: msg, clordid: o.ClOrdAtual, prio: prio, aoFalhar: aoFalhar, aoEnviar: func() {
+		o.enviada = m.agora()
+		o.envioReal = time.Now()
+		for _, f := range aoEnviar {
+			f()
+		}
+	}})
 }
 
 func (m *Motor) haSemConfirmacao() bool {

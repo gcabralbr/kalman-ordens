@@ -8,6 +8,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/pprof"
+	"os"
 	"strconv"
 	"time"
 
@@ -219,6 +221,11 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 	mux.HandleFunc("GET /saude", func(w http.ResponseWriter, r *http.Request) {
 		escrever(w, http.StatusOK, m.Saude())
 	})
+	if os.Getenv("DEBUG_PPROF") == "1" {
+		// perfil de CPU (diagnóstico, teste de carga); o HTTP inteiro só escuta em 127.0.0.1
+		mux.HandleFunc("GET /debug/pprof/", pprof.Index)
+		mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
+	}
 	return medirHTTP(mux)
 }
 

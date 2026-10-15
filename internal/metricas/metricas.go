@@ -177,7 +177,12 @@ type serieH struct {
 }
 
 func NovoHistograma(nome, ajuda string, rotulos ...string) *Histograma {
-	h := &Histograma{nome: Prefixo + nome, ajuda: ajuda, rotulos: rotulos, baldes: BaldesSegundos, series: map[string]*serieH{}}
+	return NovoHistogramaBaldes(nome, ajuda, BaldesSegundos, rotulos...)
+}
+
+// NovoHistogramaBaldes: com baldes próprios (contagens, não segundos).
+func NovoHistogramaBaldes(nome, ajuda string, baldes []float64, rotulos ...string) *Histograma {
+	h := &Histograma{nome: Prefixo + nome, ajuda: ajuda, rotulos: rotulos, baldes: baldes, series: map[string]*serieH{}}
 	registrar(h)
 	return h
 }

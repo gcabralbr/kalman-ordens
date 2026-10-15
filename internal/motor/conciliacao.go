@@ -3,6 +3,7 @@ package motor
 import (
 	"fmt"
 	"log/slog"
+	"sort"
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/pnt"
@@ -40,13 +41,39 @@ func (m *Motor) pedirMassStatus() {
 		contadorMass++
 		id := fmt.Sprintf("KM-MS-%d-%d", m.agora().UnixMilli(), contadorMass)
 		m.massReqIDs[id] = true
-		if !m.enviar(nil, pnt.MassStatus(c, id), id) {
-			m.massProxima = m.agora().Add(m.p.RetentativaProtecao)
-		}
+		m.enfileirarEnvio(envioPendente{msg: pnt.MassStatus(c, id), clordid: id, prio: prioSaida,
+			// o silêncio conta do envio real do último AF, não da decisão (v1.10 P3)
+			aoEnviar: func() { m.massUltima = m.agora() },
+			aoFalhar: func() { m.massProxima = m.agora().Add(m.p.RetentativaProtecao) }})
 	}
 }
 
 func (m *Motor) contasMassStatus() []string {
+	// v1.10 C5: só as contas com ordem viva ou posição (pelo banco, carregado no motor) — não todos
+	// os habilitados; sem nenhuma, nada é pedido e a conciliação fecha no silêncio
+	vistas := map[string]bool{}
+	var r []string
+	for _, op := range m.ops {
+		if op.Conta == "" || vistas[op.Conta] {
+			continue
+		}
+		viva := op.posicao() != 0
+		for _, o := range op.ordens {
+			if o.viva() {
+				viva = true
+			}
+		}
+		if viva {
+			vistas[op.Conta] = true
+			r = append(r, op.Conta)
+		}
+	}
+	return r
+}
+
+// contasAdmin (GET /pnt/ordens, v1.7 C1): as contas das operações do dia e dos usuários
+// habilitados (do cache).
+func (m *Motor) contasAdmin() []string {
 	vistas := map[string]bool{}
 	var r []string
 	add := func(c string) {
@@ -58,18 +85,18 @@ func (m *Motor) contasMassStatus() []string {
 	for _, op := range m.ops {
 		add(op.Conta)
 	}
-	hs, err := m.repo.Habilitacoes()
-	if err != nil {
-		slog.Warn("mass status: habilitações ilegíveis; só as contas das operações do dia", "erro", err)
-	}
-	for _, h := range hs {
-		if !h.Habilitado {
-			continue
+	var uids []int
+	for uid, h := range m.usuarios.hab {
+		if h.Habilitado {
+			uids = append(uids, uid)
 		}
-		if res, f := m.contaDoUsuario(h.UID); f == nil {
+	}
+	sort.Ints(uids)
+	for _, uid := range uids {
+		if res, f := m.contaDoUsuario(uid); f == nil {
 			add(res.Conta)
 		} else {
-			slog.Warn("mass status: conta do uid habilitado não resolvida", "uid", h.UID, "codigo", f.Codigo, "motivo", f.Motivo)
+			slog.Warn("consulta do admin: conta do uid habilitado não resolvida", "uid", uid, "codigo", f.Codigo, "motivo", f.Motivo)
 		}
 	}
 	return r

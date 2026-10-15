@@ -64,12 +64,17 @@ func (m *Motor) registrarRecebidaEm(o *ordem, msg pnt.Mensagem, em time.Time) bo
 	if o != nil {
 		ev.OrdemID, ev.Modulo = o.ID, o.Modulo
 	}
-	novo, err := m.repo.RegistrarEvento(ev)
-	if err != nil {
-		slog.Error("registrar evento", "erro", err)
-		return true
+	// v1.10 B: o fill repetido (mesmo 37 e 17: reenvio, mass status) é descartado em memória; a
+	// chave única do banco fica de rede
+	if ev.OrderID != "" && ev.ExecID != "" {
+		k := repo.ChaveFill(ev.OrderID, ev.ExecID)
+		if m.execVistos[k] {
+			return false
+		}
+		m.execVistos[k] = true
 	}
-	return novo
+	m.v.eventos = append(m.v.eventos, ev)
+	return true
 }
 
 func (m *Motor) execReport(msg pnt.Mensagem) {
@@ -333,6 +338,9 @@ func (m *Motor) statusDaOrdem(op *operacao, o *ordem, st string, estavaEncerrada
 
 // aplicarFill: posição pelo maior CumQty de cada ordem (F7). Fill repetido não muda nada.
 func (m *Motor) aplicarFill(op *operacao, o *ordem, cum int, avg decimal.Decimal, lastQty int, lastPx decimal.Decimal, estavaEncerrada bool) {
+	if m.agregado.valido {
+		m.somarContribuicao(op, -1) // sai a parte de antes do fill; volta a de depois (abaixo)
+	}
 	antes := o.QtdExec
 	delta := cum - antes
 	var px decimal.Decimal
@@ -356,6 +364,9 @@ func (m *Motor) aplicarFill(op *operacao, o *ordem, cum int, avg decimal.Decimal
 		metricas.EnvioAteFill.Observar(time.Since(o.envioReal).Seconds(), nomePapel(o.Papel))
 	}
 	o.QtdExec = cum
+	if m.agregado.valido {
+		m.somarContribuicao(op, 1)
+	}
 	slog.Info("FILL", "clordid", o.ClOrdAtual, "orderid", o.OrderID, "delta", delta, "preco", px, "cum", cum)
 	if !px.IsPositive() {
 		m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("fill sem preço em %s", o.ClOrdAtual), op.OperacaoID)
@@ -756,7 +767,7 @@ func (m *Motor) rejeicaoGenerica(msg pnt.Mensagem, refID, texto string) {
 
 // rejeicaoEnviada: a nossa biblioteca mandou 35=3 — a mensagem do PnT foi descartada (F9).
 func (m *Motor) rejeicaoEnviada(msg pnt.Mensagem) {
-	_, _ = m.repo.RegistrarEvento(repo.EventoFIX{Direcao: "ENV", MsgType: "3", Texto: msg.Texto(58), Codigo: msg.Texto(373), Bruta: msg.Bruta, Em: m.agora()})
+	m.v.eventos = append(m.v.eventos, repo.EventoFIX{Direcao: "ENV", MsgType: "3", Texto: msg.Texto(58), Codigo: msg.Texto(373), Bruta: msg.Bruta, Em: m.agora()})
 	m.al.Emitir("SESSAO_REJEITOU_MENSAGEM", "SESSAO_REJEITOU_MENSAGEM",
 		fmt.Sprintf("a sessão rejeitou (35=3) a mensagem %s do PnT: %s", msg.Texto(45), msg.Texto(58)), 0)
 	if !m.conciliando && m.fix != nil && m.fix.Logado() {
@@ -770,7 +781,7 @@ func (m *Motor) rejeicaoEnviada(msg pnt.Mensagem) {
 // SESSAO_PRESA_ALERTA_S recusando, alerta crítico (tick); resolve no logon. A camada PnT já
 // tenta de novo com espera crescente; a 1014 continua protegendo a posição no PnT.
 func (m *Motor) logonRecusado(texto string) {
-	_, _ = m.repo.RegistrarEvento(repo.EventoFIX{Direcao: "REC", MsgType: "5", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
+	m.v.eventos = append(m.v.eventos, repo.EventoFIX{Direcao: "REC", MsgType: "5", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
 	m.registrarSessao("LOGON_RECUSADO", texto)
 	if m.presaDesde.IsZero() {
 		m.presaDesde = m.agora()
@@ -782,14 +793,14 @@ func (m *Motor) logonRecusado(texto string) {
 // storeIlegivel: o reenvio pedido pelo PnT não conseguiu ler o store FIX (v1.3 B1). A camada PnT
 // derruba a sessão, repara o store e reconecta com espera crescente; resolve no logon seguinte.
 func (m *Motor) storeIlegivel(texto string) {
-	_, _ = m.repo.RegistrarEvento(repo.EventoFIX{Direcao: "ENV", MsgType: "?", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
+	m.v.eventos = append(m.v.eventos, repo.EventoFIX{Direcao: "ENV", MsgType: "?", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
 	m.al.Emitir("FIX_STORE_ILEGIVEL", "FIX_STORE_ILEGIVEL", "o reenvio pedido pelo PnT não conseguiu ler o store FIX; sessão derrubada, store reparado, reconexão com espera: "+cortarTexto(texto, 300), 0)
 }
 
 // mensagemIlegivel: a biblioteca descartou bytes do PnT que não conseguiu ler (F11). Pode ter sido
 // um fill: alerta crítico e mass status na hora, sem esperar o heartbeat revelar o buraco.
 func (m *Motor) mensagemIlegivel(texto string) {
-	_, _ = m.repo.RegistrarEvento(repo.EventoFIX{Direcao: "REC", MsgType: "?", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
+	m.v.eventos = append(m.v.eventos, repo.EventoFIX{Direcao: "REC", MsgType: "?", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
 	m.al.Emitir("MENSAGEM_ILEGIVEL", "MENSAGEM_ILEGIVEL", "a sessão descartou uma mensagem ilegível do PnT: "+cortarTexto(texto, 300), 0)
 	if !m.conciliando && m.fix != nil && m.fix.Logado() {
 		m.conciliando = true

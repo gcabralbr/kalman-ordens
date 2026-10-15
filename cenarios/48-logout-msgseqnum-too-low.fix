@@ -11,7 +11,6 @@ derruba_sessao
 pnt_espera_seq +50
 aguarda_logon
 alerta SESSAO_VOLTOU
-recebe 35=AF 585=9 1=12345
 avanca 3s
 alerta CONCILIACAO
 saude sessao_logada=true conciliando=false parada=null divergente=false

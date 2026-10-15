@@ -116,6 +116,10 @@ type Parametros struct {
 	IdadeMaxPreco, IdadeMaxPrecoDivergente    time.Duration
 	MaxRepreco                                int
 	ConsultaPnTEspera, ConsultaPnTIntervalo   time.Duration
+	// v1.10: limitador de taxa da sessão (só as entradas esperam) e cache de usuários
+	TaxaMsgS      float64
+	RajadaMsg     int
+	CacheUsuarios time.Duration
 
 	PosicaoMax, QtdMaxOrdem, EntradasPorMinuto, MensagensPorMinuto, EntradasPorDia, RecusasParaParada int
 	IntervaloEntradas                                                                                 time.Duration
@@ -155,6 +159,9 @@ func (c Config) Parametros() Parametros {
 		MaxRepreco:              c.Inteiro("MAX_REPRECO_SAIDA", 3),
 		ConsultaPnTEspera:       c.Segundos("CONSULTA_PNT_ESPERA_S", 5),
 		ConsultaPnTIntervalo:    c.Segundos("CONSULTA_PNT_INTERVALO_S", 10),
+		TaxaMsgS:                float64(c.Segundos("FIX_TAXA_MSG_S", 100)) / float64(time.Second),
+		RajadaMsg:               c.Inteiro("FIX_RAJADA_MSG", 100),
+		CacheUsuarios:           c.Segundos("CACHE_USUARIOS_S", 30),
 
 		PosicaoMax:         c.Inteiro("LIMITE_POSICAO_MAX", 1),
 		QtdMaxOrdem:        c.Inteiro("LIMITE_QTD_ORDEM", 1),

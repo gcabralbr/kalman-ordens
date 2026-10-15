@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -301,7 +300,8 @@ func (m *Motor) RegistrarPedidoHTTP(rota, modulo string, operacaoID int64, uid i
 	p := &repo.PedidoHTTP{Data: agora.In(relogio.Fuso).Format("2006-01-02"), Modulo: modulo, OperacaoID: operacaoID, UID: uid,
 		Rota: rota, Papel: papel, HTTPStatus: status, Aceito: resposta["aceito"] == true, Codigo: codigo,
 		Corpo: string(corpo), Resposta: string(b), Em: agora}
-	if err := m.repo.RegistrarPedido(p); err != nil {
-		slog.Error("registrar pedido HTTP", "rota", rota, "operacao", operacaoID, "erro", err)
-	}
+	// vai no lote da próxima volta (v1.10 B): a goroutine HTTP não disputa o banco com o motor
+	m.v.muPedidos.Lock()
+	m.v.pedidos = append(m.v.pedidos, *p)
+	m.v.muPedidos.Unlock()
 }

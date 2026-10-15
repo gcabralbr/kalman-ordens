@@ -11,6 +11,8 @@ import (
 	"runtime/debug"
 	"sort"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/quickfixgo/quickfix"
@@ -94,6 +96,9 @@ type ordem struct {
 	canceladaPorErro bool
 	decidirNoMass    bool  // cancel da 1014 em erro rejeitado por outro motivo: o mass status decide (F17)
 	seq              int64 // ordem de criação neste processo (0 = carregada do banco)
+	// lote (v1.10 B): já gravada uma vez e a cópia da última gravação (para não regravar igual)
+	persistida bool
+	gravada    dominio.Ordem
 	// métricas (v1.9 M), tempo real; zero = carregada do banco
 	envioReal, aReal    time.Time
 	mediuA, mediuAceite bool
@@ -130,6 +135,9 @@ type operacao struct {
 	violacaoDesde         time.Time // invariante de proteção violada desde
 	recriacoes            int       // recriações da 1014 na janela de 30 s (P8)
 	ultimaRecriacao       time.Time
+	// lote (v1.10 B): já gravada uma vez e a cópia da última gravação
+	persistida bool
+	gravada    dominio.Operacao
 }
 
 type ultimoPreco struct {
@@ -270,14 +278,28 @@ type Parada struct {
 
 // Motor.
 type Motor struct {
-	p      config.Parametros
-	rel    relogio.Relogio
-	repo   repo.Repositorio
-	precos preco.Fonte
-	fix    Envio
-	al     *alerta.Alertas
-	fila   chan func()
-	fim    chan struct{}
+	p          config.Parametros
+	rel        relogio.Relogio
+	repo       repo.Repositorio
+	precos     preco.Fonte
+	fix        Envio
+	al         *alerta.Alertas
+	p0, p1, p2 chan func() // entrada por prioridade (volta.go)
+	fim        chan struct{}
+
+	v             *estadoVolta    // o que a volta acumula até o commit
+	esperandoTaxa []envioPendente // entradas esperando o limitador de taxa
+	tokens        float64
+	tokensEm      time.Time
+	chegadas      sync.Map     // ClOrdID → chegada à sessão (relógio do motor)
+	chegadaMass   atomic.Int64 // última resposta de mass status chegada à sessão (UnixNano, relógio do motor)
+	proxOpID      int64
+	proxOrdemID   int64
+	execVistos    map[string]bool // fills (37, 17) já aplicados hoje
+	usuarios      *cacheUsuarios
+	respostaAtual *respostaPendente
+	versaoFills   int64 // muda a cada fill aplicado (agregados do resultado do dia)
+	agregado      agregadoDia
 
 	dia         string
 	ops         []*operacao
@@ -330,43 +352,36 @@ func Novo(c config.Config, rel relogio.Relogio, r repo.Repositorio, f preco.Font
 	m := &Motor{
 		p: p, rel: rel, repo: repo.Medir(r), precos: f,
 		ultimos: map[string]ultimoPreco{}, massReqIDs: map[string]bool{},
-		fila: make(chan func(), 10000),
-		fim:  make(chan struct{}),
+		p0: make(chan func(), capFilaP0), p1: make(chan func(), capFilaP1), p2: make(chan func(), capFilaP2),
+		fim:        make(chan struct{}),
+		execVistos: map[string]bool{},
+		v:          &estadoVolta{opsSujas: map[*operacao]bool{}, ordensSujas: map[*ordem]bool{}},
+		usuarios:   novoCacheUsuarios(),
 	}
 	m.al = alerta.Novo(n, m.publicarAlerta, rel, p.RepeticaoAlerta)
-	metricas.DefinirFila(func() int { return len(m.fila) }, cap(m.fila))
+	metricas.DefinirFilas(func() [3]int { return [3]int{len(m.p0), len(m.p1), len(m.p2)} }, capFilaP0+capFilaP1+capFilaP2)
 	return m
 }
 
 // Usar liga a sessão FIX.
 func (m *Motor) Usar(e Envio) { m.fix = e }
 
-// Iniciar carrega o estado do dia (Parte 7.3) e sobe a goroutine do motor.
+// Iniciar carrega o estado do dia (Parte 7.3) e o cache de usuários, e sobe a goroutine do motor.
 func (m *Motor) Iniciar() error {
 	if err := m.carregarDia(); err != nil {
 		return err
 	}
+	m.carregarUsuarios()
 	go m.laco()
 	return nil
 }
 
-// Parar encerra a goroutine (não mexe em nada no PnT).
+// Parar encerra a goroutine (não mexe em nada no PnT), depois de fechar a volta em curso.
 func (m *Motor) Parar() {
 	done := make(chan struct{})
-	m.fila <- func() { close(done) }
+	m.p0 <- func() { m.aposVolta(func() { close(done) }) }
 	<-done
 	close(m.fim)
-}
-
-func (m *Motor) laco() {
-	for {
-		select {
-		case <-m.fim:
-			return
-		case f := <-m.fila:
-			m.protegido(f)
-		}
-	}
 }
 
 func (m *Motor) protegido(f func()) {
@@ -379,35 +394,44 @@ func (m *Motor) protegido(f func()) {
 	f()
 }
 
-// Fazer roda f na goroutine do motor e espera.
+// Fazer roda f na goroutine do motor e espera o fim da volta (commit e envio feitos).
 func (m *Motor) Fazer(f func()) { m.fazerComo("outro", f) }
 
 func (m *Motor) fazerComo(origem string, f func()) {
 	done := make(chan struct{})
-	m.entrar(origem, func() { defer close(done); f() })
+	m.entrar(origem, func() {
+		f()
+		m.aposVolta(func() { close(done) })
+	})
 	<-done
 }
 
-// entrar põe f na fila do motor medindo a espera (métrica fila_espera_segundos{origem}).
+// entrar põe f na fila da classe da origem (P0: fix, tick, outro; P1: http_saida; P2:
+// http_entrada), medindo a espera (fila_espera_segundos{origem}).
 func (m *Motor) entrar(origem string, f func()) {
 	t0 := time.Now()
-	m.fila <- func() {
+	m.filaDa(classeDaOrigem(origem)) <- func() {
 		metricas.FilaEspera.Observar(time.Since(t0).Seconds(), origem)
 		f()
 	}
 }
 
-// entrarPedido: um pedido HTTP; a primeira mensagem FIX que ele causar mede pedido_ate_envio.
+// entrarPedido: um pedido HTTP — ENTRADA em P2, o resto em P1; a primeira mensagem FIX que ele
+// causar mede pedido_ate_envio.
 func (m *Motor) entrarPedido(pedido string, f func()) {
 	t0 := time.Now()
-	m.entrar("http", func() {
+	origem := "http_saida"
+	if pedido == "ENTRADA" {
+		origem = "http_entrada"
+	}
+	m.entrar(origem, func() {
 		m.pedidoEm, m.pedidoRotulo = t0, pedido
 		defer func() { m.pedidoEm = timeZero }()
 		f()
 	})
 }
 
-// entrarFIX: uma mensagem do PnT; a 1014 que um fill de entrada causar mede a espera desde a
+// entrarFIX: uma mensagem do PnT (P0); a 1014 que um fill de entrada causar mede a espera desde a
 // chegada (protecao_fill_ate_envio_segundos).
 func (m *Motor) entrarFIX(f func()) {
 	t0 := time.Now()
@@ -421,6 +445,9 @@ func (m *Motor) entrarFIX(f func()) {
 // Tick roda as verificações dependentes de tempo e espera (o executor e o relógio real chamam).
 func (m *Motor) Tick() { m.fazerComo("tick", m.tick) }
 
+// TickAssincrono enfileira o tick sem esperar (testes: o relógio anda com o motor travado).
+func (m *Motor) TickAssincrono() { m.entrar("tick", m.tick) }
+
 // Processadas conta mensagens FIX de aplicação já tratadas pelo motor (testes).
 func (m *Motor) Processadas() int64 {
 	var n int64
@@ -431,16 +458,29 @@ func (m *Motor) Processadas() int64 {
 // Pedir trata um POST /ordens e espera o resultado.
 func (m *Motor) Pedir(p Pedido) Resposta { return <-m.PedirAssincrono(p) }
 
-// PedirAssincrono enfileira o pedido; o resultado chega no canal. Quem desiste de esperar (503)
-// não cancela nada: o motor processa o pedido do mesmo jeito.
+// respostaPendente: a resposta HTTP do pedido em tratamento, entregue depois do commit e do envio;
+// uma falha de envio na mesma volta ainda a muda (ENVIO_FALHOU).
+type respostaPendente struct {
+	r        Resposta
+	entregue bool
+}
+
+// PedirAssincrono enfileira o pedido; o resultado chega no canal depois do commit e do envio.
+// Quem desiste de esperar (503) não cancela nada: o motor processa o pedido do mesmo jeito.
 func (m *Motor) PedirAssincrono(p Pedido) <-chan Resposta {
 	ch := make(chan Resposta, 1)
-	m.entrarPedido(p.Papel, func() { ch <- m.pedir(p) })
+	m.entrarPedido(p.Papel, func() {
+		rp := &respostaPendente{}
+		m.respostaAtual = rp
+		rp.r = m.pedir(p)
+		m.respostaAtual = nil
+		m.aposVolta(func() { rp.entregue = true; ch <- rp.r })
+	})
 	return ch
 }
 
 // Enfileirar roda f na goroutine do motor sem esperar (testes: simular motor lento).
-func (m *Motor) Enfileirar(f func()) { m.fila <- f }
+func (m *Motor) Enfileirar(f func()) { m.p0 <- f }
 
 func (m *Motor) pedir(p Pedido) Resposta {
 	if p.Modulo != "" && !dominio.ModuloValido(p.Modulo) {
@@ -537,7 +577,7 @@ func (m *Motor) AtivarParada(modo, origem, motivo string, por int) Resposta {
 		m.ativarParada(modo, origem, motivoComPor(motivo, por))
 		m.parada.Motivo, m.parada.Por = motivo, por
 		if b, err := json.Marshal(m.parada); err == nil {
-			_ = m.repo.GravarEstado("parada", string(b), m.agora())
+			m.gravarEstado("parada", string(b))
 		}
 		r = Resposta{"aceito": true, "codigo": "PARADA_ATIVA", "motivo": "parada " + m.parada.Modo + " ativa", "parada": m.parada}
 	})
@@ -571,7 +611,7 @@ func (m *Motor) Retomar(origem, motivo string, por int) Resposta {
 			op.Divergente = false
 			m.salvarOp(op)
 		}
-		_ = m.repo.GravarEstado("parada", "", m.agora())
+		m.gravarEstado("parada", "")
 		m.al.Resolver("DIVERGENTE")
 		m.al.Emitir("RETOMADA", "", fmt.Sprintf("retomado por %s: %s (estava: %+v)", origem, motivo, antes), 0)
 	})
@@ -608,6 +648,11 @@ func (m *Motor) Caiu() {
 }
 func (m *Motor) Recebeu(msg pnt.Mensagem) {
 	metricas.FixMensagens.Inc("recebida", msg.Tipo)
+	m.marcarChegada(msg.Texto(11), msg.Texto(41))
+	if (msg.Tipo == "8" && msg.Texto(150) == "I") || msg.Tipo == "j" {
+		// resposta de mass status chegou (ainda que na fila): o silêncio da conciliação conta daqui
+		m.chegadaMass.Store(m.rel.Agora().UnixNano())
+	}
 	m.entrarFIX(func() { m.processadas++; m.processar(msg) })
 }
 func (m *Motor) RejeicaoRecebida(msg pnt.Mensagem) {
@@ -637,7 +682,7 @@ func (m *Motor) carregarDia() error {
 		return err
 	}
 	for i := range ops {
-		op := &operacao{Operacao: ops[i]}
+		op := &operacao{Operacao: ops[i], persistida: true, gravada: ops[i].Copia()}
 		m.ops = append(m.ops, op)
 		m.porOp[chaveOperacao{op.Modulo, op.OperacaoID}] = op
 		if op.Estado == dominio.PosicionadaSemProtecao {
@@ -649,7 +694,7 @@ func (m *Motor) carregarDia() error {
 		if op == nil {
 			continue
 		}
-		o := &ordem{Ordem: ords[i], enviada: ords[i].CriadaEm}
+		o := &ordem{Ordem: ords[i], enviada: ords[i].CriadaEm, persistida: true, gravada: ords[i]}
 		m.indexar(op, o)
 	}
 	if v, ok, _ := m.repo.LerEstado("parada"); ok && v != "" {
@@ -680,7 +725,21 @@ func (m *Motor) carregarDia() error {
 			m.enviosRec = append(m.enviosRec, m.agora())
 		}
 	}
-	slog.Info("dia carregado", "dia", m.dia, "operacoes", len(m.ops), "posicao", m.posicaoTotal(), "parada", m.parada)
+	m.versaoFills++
+	// v1.10 B: o motor atribui os IDs e deduplica os fills em memória
+	maxOp, maxOrdem, err := m.repo.MaioresIDs()
+	if err != nil {
+		return err
+	}
+	m.proxOpID, m.proxOrdemID = maxOp, maxOrdem
+	de, err := time.ParseInLocation("2006-01-02", m.dia, relogio.Fuso)
+	if err != nil {
+		return err
+	}
+	if m.execVistos, err = m.repo.ChavesFillDoDia(de, de.AddDate(0, 0, 1)); err != nil {
+		return err
+	}
+	slog.Info("dia carregado", "dia", m.dia, "operacoes", len(m.ops), "posicao", m.posicaoTotal(), "parada", m.parada, "fills_vistos", len(m.execVistos))
 	return nil
 }
 
@@ -719,16 +778,14 @@ func (m *Motor) localizar(id37, cl, orig string) *ordem {
 
 // ---------------------------------------------------------------- persistência e publicação
 
-func (m *Motor) salvarOp(op *operacao) {
-	if err := m.repo.SalvarOperacao(&op.Operacao); err != nil {
-		slog.Error("salvar operação", "op", op.OperacaoID, "erro", err)
-	}
-}
+// salvarOp / salvarOrdem: entram no lote da volta (gravados no commit, só se mudaram).
+func (m *Motor) salvarOp(op *operacao) { m.v.opsSujas[op] = true }
 
-func (m *Motor) salvarOrdem(o *ordem) {
-	if err := m.repo.SalvarOrdem(&o.Ordem); err != nil {
-		slog.Error("salvar ordem", "clordid", o.ClOrdAtual, "erro", err)
-	}
+func (m *Motor) salvarOrdem(o *ordem) { m.v.ordensSujas[o] = true }
+
+// gravarEstado: kalmanordemestado, no lote da volta.
+func (m *Motor) gravarEstado(k, v string) {
+	m.v.estados = append(m.v.estados, repo.EstadoNovo{Chave: k, Valor: v, Em: m.agora()})
 }
 
 func (m *Motor) mudar(op *operacao, e dominio.EstadoOperacao) {
@@ -761,12 +818,8 @@ func (m *Motor) publicar(tipo string, op *operacao, dados map[string]any) {
 		slog.Error("publicar", "tipo", tipo, "erro", err)
 		return
 	}
-	seq, err := m.repo.Publicar(tipo, mod, id, b, m.agora())
-	if err != nil {
-		slog.Error("publicar", "tipo", tipo, "erro", err)
-		return
-	}
-	slog.Info("evento", "tipo", tipo, "seq", seq, "dados", string(b))
+	m.v.publicados = append(m.v.publicados, repo.PublicadoNovo{Tipo: tipo, Modulo: mod, OperacaoID: id, Dados: b, Em: m.agora()})
+	slog.Info("evento", "tipo", tipo, "dados", string(b))
 }
 
 // publicarAlerta: o alerta só traz o operacao_id; o módulo é o da operação do dia com esse id
@@ -785,7 +838,7 @@ func (m *Motor) publicarAlerta(codigo, texto string, op int64) {
 		}
 	}
 	b, _ := json.Marshal(d)
-	_, _ = m.repo.Publicar("ALERTA", mod, op, b, m.agora())
+	m.v.publicados = append(m.v.publicados, repo.PublicadoNovo{Tipo: "ALERTA", Modulo: mod, OperacaoID: op, Dados: b, Em: m.agora()})
 	if op == 0 {
 		// alerta sem operação: também no registro da sessão (v1.5 R3)
 		tipo := "ALERTA"
@@ -798,39 +851,7 @@ func (m *Motor) publicarAlerta(codigo, texto string, op int64) {
 
 // registrarSessao (v1.5 R3): GET /sessao/eventos. Texto em ASCII (v1.4 L1).
 func (m *Motor) registrarSessao(tipo, texto string) {
-	if err := m.repo.RegistrarSessao(repo.EventoSessao{Tipo: tipo, Texto: alerta.ASCII(texto), Em: m.agora()}); err != nil {
-		slog.Error("registrar evento da sessão", "tipo", tipo, "erro", err)
-	}
-}
-
-// enviar manda pela sessão e registra o evento ENV. Devolve false se não saiu.
-func (m *Motor) enviar(o *ordem, msg *quickfix.Message, clordid string) bool {
-	tipo, _ := msg.Header.GetString(quickfix.Tag(35))
-	ok := false
-	if m.fix != nil {
-		seq, err := m.fix.Enviar(msg)
-		if err == nil {
-			ok = true
-			metricas.FixMensagens.Inc("enviada", tipo)
-			if !m.pedidoEm.IsZero() {
-				metricas.PedidoAteEnvio.Observar(time.Since(m.pedidoEm).Seconds(), m.pedidoRotulo)
-				m.pedidoEm = timeZero // só a primeira mensagem do pedido
-			}
-			m.clordPorSeq[seq] = clordid
-			m.enviosRec = append(m.enviosRec, m.agora())
-		} else {
-			slog.Warn("envio falhou", "clordid", clordid, "erro", err)
-		}
-	}
-	ev := repo.EventoFIX{Direcao: "ENV", MsgType: tipo, ClOrdID: clordid, Bruta: msg.String(), Em: m.agora()}
-	if o != nil {
-		ev.OrdemID, ev.OrderID, ev.Modulo = o.ID, o.OrderID, o.Modulo
-	}
-	if !ok {
-		ev.Texto = "NAO_ENVIADA"
-	}
-	_, _ = m.repo.RegistrarEvento(ev)
-	return ok
+	m.v.sessao = append(m.v.sessao, repo.EventoSessao{Tipo: tipo, Texto: alerta.ASCII(texto), Em: m.agora()})
 }
 
 // ---------------------------------------------------------------- utilitários
@@ -863,15 +884,46 @@ func (m *Motor) precoDoDia(l preco.Leitura) (*decimal.Decimal, bool) {
 	return px, px != nil
 }
 
+// resultadoDoDia: realizado + aberto de todas as operações. O aberto é Σ (último − médio) × posição
+// = último × Σposição − Σ(médio × posição): os agregados só são recalculados quando um fill muda
+// algo (versaoFills), e a conta por entrada fica O(1) — antes, O(operações do dia) em decimal a cada
+// entrada (v1.10: 40% da CPU do motor numa rajada de 1.000).
 func (m *Motor) resultadoDoDia(ultimo *decimal.Decimal) decimal.Decimal {
-	r := decimal.Zero
-	for _, op := range m.ops {
-		r = r.Add(op.pnlRealizado())
-		if ultimo != nil {
-			r = r.Add(op.pnlAberto(*ultimo))
+	a := &m.agregado
+	if !a.valido || a.versao != m.versaoFills {
+		a.realizado, a.somaPos, a.somaMedioPos = decimal.Zero, 0, decimal.Zero
+		for _, op := range m.ops {
+			m.somarContribuicao(op, 1)
 		}
+		a.versao, a.valido = m.versaoFills, true
+	}
+	r := a.realizado
+	if ultimo != nil {
+		r = r.Add(ultimo.Mul(decimal.NewFromInt(a.somaPos)).Sub(a.somaMedioPos))
 	}
 	return r
+}
+
+// somarContribuicao: soma (sinal 1) ou tira (sinal -1) a parte da operação nos agregados; o fill
+// tira antes de mudar a ordem e soma depois (aplicarFill), sem recalcular o dia.
+func (m *Motor) somarContribuicao(op *operacao, sinal int64) {
+	a := &m.agregado
+	s := decimal.NewFromInt(sinal)
+	a.realizado = a.realizado.Add(op.pnlRealizado().Mul(s))
+	pos := op.posicao()
+	if pe, ok := op.medio(true); pos != 0 && ok {
+		a.somaPos += sinal * int64(pos)
+		a.somaMedioPos = a.somaMedioPos.Add(pe.Mul(decimal.NewFromInt(sinal * int64(pos))))
+	}
+}
+
+// agregadoDia: os agregados de resultadoDoDia.
+type agregadoDia struct {
+	valido       bool
+	versao       int64
+	realizado    decimal.Decimal
+	somaPos      int64
+	somaMedioPos decimal.Decimal
 }
 
 // arredondamento ao tick

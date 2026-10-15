@@ -20,6 +20,7 @@ func (m *Motor) tick() {
 	}
 	m.al.Tick()
 	m.fecharConsultaSePronta(true)
+	m.recarregarUsuarios(m.agora())
 	m.atualizarMetricas()
 	agora := m.agora()
 	m.observarPreco()
@@ -35,7 +36,7 @@ func (m *Motor) tick() {
 			if !agora.Before(m.massProxima) {
 				m.pedirMassStatus()
 			}
-		case agora.Sub(m.massUltima) >= m.p.SilencioMassStatus:
+		case agora.Sub(m.ultimoSinalMass()) >= m.p.SilencioMassStatus:
 			m.conciliar() // e segue: as ações de tempo já rodam com o estado conciliado
 		}
 	}
@@ -122,11 +123,15 @@ func (m *Motor) alertasDeTempo(op *operacao, agora time.Time) {
 		}
 		// cancel sem resposta: sem 39=6 em ESPERA_STOP_S; com o 39=6, sem 39=4 em
 		// ESPERA_ENCERRAMENTO_S depois dele (v1.3 F2)
+		// (v1.10 P3) uma resposta que já chegou à sessão e ainda está na fila do motor conta: antes
+		// do 39=6, qualquer chegada desde o envio; depois dele, só uma chegada posterior (o 39=4)
 		limite, desde := m.p.EsperaStop, o.pendDesde
+		chegou := m.chegouDesde(desde, o.clPend)
 		if !o.cancelPendenteEm.IsZero() {
 			limite, desde = m.p.EsperaEncerramento, o.cancelPendenteEm
+			chegou = m.chegouDepois(desde, o.clPend)
 		}
-		if o.pend == pendCancel && !desde.IsZero() && agora.Sub(desde) >= limite {
+		if o.pend == pendCancel && !desde.IsZero() && agora.Sub(desde) >= limite && !chegou {
 			m.al.Emitir("CANCEL_SEM_RESPOSTA", chaveOp("CANCEL_SEM_RESPOSTA", op), fmt.Sprintf("cancelamento sem resposta: %s", o.ClOrdAtual), op.OperacaoID)
 		}
 	}
@@ -137,7 +142,9 @@ func (m *Motor) verificarSemConfirmacao(agora time.Time) bool {
 	achou := false
 	for _, op := range m.ops {
 		for _, o := range op.ordens {
-			if o.Estado != dominio.Enviando || o.enviada.IsZero() || agora.Sub(o.enviada) < m.p.PrazoConfirmacao {
+			// a resposta que já chegou à sessão (ainda na fila do motor) conta (v1.10 P3)
+			if o.Estado != dominio.Enviando || o.enviada.IsZero() || agora.Sub(o.enviada) < m.p.PrazoConfirmacao ||
+				m.chegouDesde(o.enviada, o.ClOrdAtual, o.ClOrdBase) {
 				continue
 			}
 			o.Estado = dominio.SemConfirmacao
@@ -276,7 +283,7 @@ func (m *Motor) verificarZeragem() {
 		return
 	}
 	m.zeragemFeita = true
-	_ = m.repo.GravarEstado("zeragem_feita", m.dia, m.agora())
+	m.gravarEstado("zeragem_feita", m.dia)
 	algo := false
 	for _, op := range m.ops {
 		if !op.Estado.Final() && (op.posicao() != 0 || op.viva(dominio.Entrada) != nil) {
@@ -326,7 +333,7 @@ func (m *Motor) ativarParadaCom(modo, origem, motivo, origemSaida string) {
 	}
 	m.parada = &Parada{Modo: modo, Origem: origem, Motivo: motivo, Desde: m.agora().In(relogio.Fuso).Format(time.RFC3339)}
 	if b, err := json.Marshal(m.parada); err == nil {
-		_ = m.repo.GravarEstado("parada", string(b), m.agora())
+		m.gravarEstado("parada", string(b))
 	}
 	m.al.Emitir("PARADA", "", fmt.Sprintf("PARADA %s (%s): %s", modo, origem, motivo), 0)
 	for _, op := range m.ops {

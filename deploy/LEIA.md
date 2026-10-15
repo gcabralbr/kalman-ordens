@@ -137,6 +137,8 @@ sudo /opt/kalman-ordens/kalman-ordens usuario conferir    -uid 1450   # destino=
 sudo /opt/kalman-ordens/kalman-ordens usuario habilitar   -uid 1450 -motivo "F1 rodada 1" -posicao-max 1 -qtd-max 1
 sudo /opt/kalman-ordens/kalman-ordens usuario listar
 sudo /opt/kalman-ordens/kalman-ordens usuario desabilitar -uid 1450 -motivo "fim da rodada"   # sem -posicao-max/-qtd-max, os limites ficam os atuais (v1.8 H4)
+# v1.10: o serviço lê a habilitação de um cache relido a cada 30 s (CACHE_USUARIOS_S): o que a CLI
+# grava vale em até 30 s; a tela de admin (POST /usuarios/{uid}/habilitacao) vale na hora
 ```
 
 ```

@@ -7,6 +7,9 @@ Tema: **escala (190 → 4.000 usuários no mesmo sinal)** — métricas contínu
 Relatório: [CARGA-2026-10-15.md](CARGA-2026-10-15.md) (resultados, ponto de saturação e o desenho
 proposto da fila com prioridade, do limitador de taxa e da ordem justa — a combinar).
 
+**Revista pela [v1.10](SPEC-ORDENS-v1.10.md)** (15/10): filas com prioridade, banco em lote, limitador
+de taxa, cache de usuários, mass status do logon só das contas com ordem viva ou posição.
+
 Data: 2026-10-15.
 
 ---

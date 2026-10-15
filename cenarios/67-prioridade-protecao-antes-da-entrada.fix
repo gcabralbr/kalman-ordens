@@ -1,0 +1,28 @@
+cenario 67 Prioridade: o fill (P0) é tratado antes do pedido de entrada (P2) e a 1014 sai antes da 1031 de entrada
+hora 2026-10-15 10:00:00
+# SPEC v1.10 P1/P2. Entrada do motor em três filas por prioridade estrita: P0 = o que vem do PnT e
+# o tick; P1 = saídas, ajustes, admin; P2 = entradas. Envio ao PnT, depois do commit da volta:
+# 1014 > cancel/saída > entrada. Aqui o motor fica parado com um pedido de entrada (P2) e o fill de
+# outra entrada (P0) na fila; ao soltar, a 1014 da posição sai antes da entrada nova.
+config LIMITE_POSICAO_MAX=2
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+
+executa INICIO
+entrada 6701 C
+resposta aceito=true
+recebe 35=D 11=KM-E-6701-1 847=1031
+envia @ER 11=KM-E-6701-1 37=dsa.6701.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+
+# motor parado: chega o pedido de entrada 6702 e, depois dele, o fill da 6701
+motor_lento
+http_async POST /ordens {"operacao_id":6702,"uid":7,"papel":"ENTRADA","lado":"C","qtd":1,"stop_pts":500,"motivo":"SINAL","ts_decisao":"t6702"}
+envia @ER 11=KM-E-6701-1 37=dsa.6701.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+motor_normal
+# a 1014 da posição sai antes da entrada que chegou primeiro
+recebe 35=D 11=KM-P-6701-1 847=1014 20828=129510
+recebe 35=D 11=KM-E-6702-1 847=1031
+http_aguarda
+resposta aceito=true operacao_id=6702
+evento ENTRADA_EXECUTADA operacao_id=6701
+nada

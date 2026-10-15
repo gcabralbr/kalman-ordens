@@ -1,0 +1,403 @@
+package motor
+
+import (
+	"fmt"
+	"log/slog"
+	"reflect"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/quickfixgo/quickfix"
+
+	"gammaquant.com.br/kalman-ordens/internal/dominio"
+	"gammaquant.com.br/kalman-ordens/internal/metricas"
+	"gammaquant.com.br/kalman-ordens/internal/repo"
+)
+
+// Volta (SPEC v1.10): o motor tira itens das três filas por prioridade estrita, trata vários numa
+// volta, grava tudo o que mudou numa transação só (lote) e, depois do commit, envia ao PnT por
+// prioridade (1014 > cancel/saída > entrada), com a entrada sujeita ao limitador de taxa. As
+// respostas HTTP e os Fazer síncronos saem depois do commit e do envio.
+
+// Classes de entrada (prioridade estrita: P0 sempre antes de P1, P1 antes de P2).
+const (
+	classeP0 = iota // o que vem do PnT, eventos de sessão, tick, consultas e paradas
+	classeP1        // pedidos de saída, ajuste do stop, ações de admin
+	classeP2        // pedidos de entrada
+)
+
+// Prioridade de envio ao PnT.
+const (
+	prioProtecao = iota // 1014: nova, recriada, replace
+	prioSaida           // cancel, 1031 de saída e o replace dela, mass status
+	prioEntrada         // 1031 de entrada (limitador de taxa)
+)
+
+const (
+	maxItensPorVolta = 256
+	maxDuracaoVolta  = 20 * time.Millisecond
+	capFilaP0        = 1 << 20 // nunca bloqueia a goroutine da sessão FIX
+	capFilaP1        = 100000
+	capFilaP2        = 100000
+)
+
+// envioPendente: uma mensagem decidida numa volta, enviada depois do commit.
+type envioPendente struct {
+	o            *ordem // nil: mass status
+	msg          *quickfix.Message
+	clordid      string
+	prio         int
+	pedidoEm     time.Time // métrica pedido_ate_envio (o pedido HTTP que causou)
+	pedidoRotulo string
+	decididoEm   time.Time // tempo real, métrica de espera pela taxa
+	aoEnviar     func()
+	aoFalhar     func()
+}
+
+// estadoVolta: o que a volta acumula até o commit.
+type estadoVolta struct {
+	opsSujas    map[*operacao]bool
+	ordensSujas map[*ordem]bool
+	eventos     []repo.EventoFIX
+	publicados  []repo.PublicadoNovo
+	estados     []repo.EstadoNovo
+	sessao      []repo.EventoSessao
+	envios      []envioPendente
+	aposVolta   []func()
+
+	muPedidos sync.Mutex
+	pedidos   []repo.PedidoHTTP // vêm das goroutines HTTP
+}
+
+func classeDaOrigem(origem string) int {
+	switch origem {
+	case "http_entrada":
+		return classeP2
+	case "http_saida":
+		return classeP1
+	}
+	return classeP0
+}
+
+func (m *Motor) filaDa(classe int) chan func() {
+	switch classe {
+	case classeP1:
+		return m.p1
+	case classeP2:
+		return m.p2
+	}
+	return m.p0
+}
+
+// proxima: o próximo item, por prioridade estrita; bloquear=false devolve ok=false sem item.
+func (m *Motor) proxima(bloquear bool) (func(), bool) {
+	select {
+	case f := <-m.p0:
+		return f, true
+	default:
+	}
+	select {
+	case f := <-m.p0:
+		return f, true
+	case f := <-m.p1:
+		return f, true
+	default:
+	}
+	select {
+	case f := <-m.p0:
+		return f, true
+	case f := <-m.p1:
+		return f, true
+	case f := <-m.p2:
+		return f, true
+	default:
+	}
+	if !bloquear {
+		return nil, false
+	}
+	select {
+	case <-m.fim:
+		return nil, false
+	case f := <-m.p0:
+		return f, true
+	case f := <-m.p1:
+		return f, true
+	case f := <-m.p2:
+		return f, true
+	}
+}
+
+func (m *Motor) laco() {
+	for {
+		f, ok := m.proxima(true)
+		if !ok {
+			return
+		}
+		m.protegido(f)
+		inicio := time.Now()
+		for n := 1; n < maxItensPorVolta && time.Since(inicio) < maxDuracaoVolta; n++ {
+			f, ok := m.proxima(false)
+			if !ok {
+				break
+			}
+			m.protegido(f)
+		}
+		m.protegido(m.fecharVolta)
+	}
+}
+
+// aposVolta: f roda depois do commit e do envio desta volta (respostas HTTP, Fazer).
+func (m *Motor) aposVolta(f func()) { m.v.aposVolta = append(m.v.aposVolta, f) }
+
+// fecharVolta: grava o lote, envia e só então responde.
+func (m *Motor) fecharVolta() {
+	l := m.montarLote()
+	if !l.Vazio() {
+		t0 := time.Now()
+		err := m.repo.GravarLote(l)
+		if err != nil {
+			// uma nova tentativa na hora (ex.: conexão que caiu)
+			slog.Warn("gravação do lote falhou, tentando de novo", "erro", err, "linhas", l.Linhas())
+			err = m.repo.GravarLote(l)
+		}
+		metricas.Lote.Observar(time.Since(t0).Seconds())
+		metricas.LoteLinhas.Observar(float64(l.Linhas()))
+		if err != nil {
+			// o que não gravou fica para a próxima volta; o envio segue (proteção não espera o banco)
+			slog.Error("gravação do lote falhou", "erro", err, "linhas", l.Linhas())
+			m.al.Emitir("ERRO_INTERNO", "BANCO_LOTE", "gravação no banco falhou (o envio ao PnT seguiu; nova tentativa na próxima volta): "+cortarTexto(err.Error(), 300), 0)
+			m.devolverAoLote(l)
+		} else {
+			m.al.Resolver("BANCO_LOTE")
+			m.loteGravado(l)
+		}
+	}
+	m.despachar()
+	fs := m.v.aposVolta
+	m.v.aposVolta = nil
+	for _, f := range fs {
+		f()
+	}
+}
+
+// montarLote: só o que mudou desde a última gravação (comparado com a cópia gravada).
+func (m *Motor) montarLote() *repo.Lote {
+	l := &repo.Lote{Eventos: m.v.eventos, Publicados: m.v.publicados, Estados: m.v.estados, Sessao: m.v.sessao}
+	m.v.eventos, m.v.publicados, m.v.estados, m.v.sessao = nil, nil, nil, nil
+	m.v.muPedidos.Lock()
+	l.Pedidos, m.v.pedidos = m.v.pedidos, nil
+	m.v.muPedidos.Unlock()
+	for op := range m.v.opsSujas {
+		c := op.Operacao.Copia()
+		switch {
+		case !op.persistida:
+			l.NovasOperacoes = append(l.NovasOperacoes, c)
+		case !reflect.DeepEqual(c, op.gravada):
+			l.Operacoes = append(l.Operacoes, c)
+		}
+	}
+	for o := range m.v.ordensSujas {
+		c := o.Ordem
+		switch {
+		case !o.persistida:
+			l.NovasOrdens = append(l.NovasOrdens, c)
+		case !reflect.DeepEqual(c, o.gravada):
+			l.Ordens = append(l.Ordens, c)
+		}
+	}
+	return l
+}
+
+func (m *Motor) loteGravado(l *repo.Lote) {
+	porIDOp := map[int64]dominio.Operacao{}
+	for _, c := range append(append([]dominio.Operacao{}, l.NovasOperacoes...), l.Operacoes...) {
+		porIDOp[c.ID] = c
+	}
+	porIDOrdem := map[int64]dominio.Ordem{}
+	for _, c := range append(append([]dominio.Ordem{}, l.NovasOrdens...), l.Ordens...) {
+		porIDOrdem[c.ID] = c
+	}
+	for op := range m.v.opsSujas {
+		op.persistida = true
+		if c, ok := porIDOp[op.ID]; ok {
+			op.gravada = c
+		}
+	}
+	for o := range m.v.ordensSujas {
+		o.persistida = true
+		if c, ok := porIDOrdem[o.ID]; ok {
+			o.gravada = c
+		}
+	}
+	m.v.opsSujas, m.v.ordensSujas = map[*operacao]bool{}, map[*ordem]bool{}
+}
+
+// devolverAoLote: a gravação falhou; o que era do lote volta para a próxima (as operações e ordens
+// continuam sujas).
+func (m *Motor) devolverAoLote(l *repo.Lote) {
+	m.v.eventos = append(l.Eventos, m.v.eventos...)
+	m.v.publicados = append(l.Publicados, m.v.publicados...)
+	m.v.estados = append(l.Estados, m.v.estados...)
+	m.v.sessao = append(l.Sessao, m.v.sessao...)
+	m.v.muPedidos.Lock()
+	m.v.pedidos = append(l.Pedidos, m.v.pedidos...)
+	m.v.muPedidos.Unlock()
+}
+
+// ---------------------------------------------------------------- envio e limitador de taxa
+
+// enfileirarEnvio: a mensagem sai depois do commit desta volta (despachar).
+func (m *Motor) enfileirarEnvio(e envioPendente) {
+	e.pedidoEm, e.pedidoRotulo, e.decididoEm = m.pedidoEm, m.pedidoRotulo, time.Now()
+	m.pedidoEm = timeZero // a métrica do pedido mede só a primeira mensagem que ele causou
+	m.v.envios = append(m.v.envios, e)
+}
+
+// recarregarTokens: token bucket no relógio do motor (FIX_TAXA_MSG_S, FIX_RAJADA_MSG).
+func (m *Motor) recarregarTokens(agora time.Time) {
+	if m.tokensEm.IsZero() {
+		m.tokens, m.tokensEm = float64(m.p.RajadaMsg), agora
+		return
+	}
+	if dt := agora.Sub(m.tokensEm).Seconds(); dt > 0 {
+		m.tokens = min(float64(m.p.RajadaMsg), m.tokens+dt*m.p.TaxaMsgS)
+		m.tokensEm = agora
+	}
+}
+
+// despachar: 1014 > cancel/saída > entrada; a ordem de decisão é mantida dentro da classe. Proteção
+// e saída nunca esperam pela taxa (consomem tokens, podendo deixar o saldo negativo); a entrada só
+// sai com saldo — reserva para a proteção.
+func (m *Motor) despachar() {
+	pend := append(m.esperandoTaxa, m.v.envios...)
+	m.esperandoTaxa, m.v.envios = nil, nil
+	defer func() { metricas.DefinirAguardandoTaxa(len(m.esperandoTaxa)) }()
+	if len(pend) == 0 {
+		return
+	}
+	sort.SliceStable(pend, func(i, j int) bool { return pend[i].prio < pend[j].prio })
+	m.recarregarTokens(m.agora())
+	for _, e := range pend {
+		if e.prio == prioEntrada && m.tokens < 1 {
+			m.esperandoTaxa = append(m.esperandoTaxa, e)
+			continue
+		}
+		m.tokens--
+		m.despacharUm(e)
+	}
+}
+
+func (m *Motor) despacharUm(e envioPendente) {
+	tipo, _ := e.msg.Header.GetString(quickfix.Tag(35))
+	ok := false
+	if m.fix != nil {
+		seq, err := m.fix.Enviar(e.msg)
+		if err == nil {
+			ok = true
+			m.clordPorSeq[seq] = e.clordid
+			m.enviosRec = append(m.enviosRec, m.agora())
+			metricas.FixMensagens.Inc("enviada", tipo)
+			metricas.EsperaEnvio.Observar(time.Since(e.decididoEm).Seconds(), nomePrio(e.prio))
+			if !e.pedidoEm.IsZero() {
+				metricas.PedidoAteEnvio.Observar(time.Since(e.pedidoEm).Seconds(), e.pedidoRotulo)
+			}
+		} else {
+			slog.Warn("envio falhou", "clordid", e.clordid, "erro", err)
+		}
+	}
+	ev := repo.EventoFIX{Direcao: "ENV", MsgType: tipo, ClOrdID: e.clordid, Bruta: e.msg.String(), Em: m.agora()}
+	if e.o != nil {
+		ev.OrdemID, ev.OrderID, ev.Modulo = e.o.ID, e.o.OrderID, e.o.Modulo
+	}
+	if !ok {
+		ev.Texto = "NAO_ENVIADA"
+	}
+	m.v.eventos = append(m.v.eventos, ev)
+	if ok {
+		if e.aoEnviar != nil {
+			e.aoEnviar()
+		}
+	} else if e.aoFalhar != nil {
+		e.aoFalhar()
+	}
+}
+
+func nomePrio(p int) string {
+	switch p {
+	case prioProtecao:
+		return "PROTECAO"
+	case prioSaida:
+		return "SAIDA"
+	}
+	return "ENTRADA"
+}
+
+// retirarDaFila: a NewOrderSingle da ordem ainda não saiu (esperando a taxa ou nesta volta)?
+// Então sai da fila e nunca vai ao PnT.
+func (m *Motor) retirarDaFila(o *ordem) bool {
+	for _, lista := range []*[]envioPendente{&m.esperandoTaxa, &m.v.envios} {
+		for i, e := range *lista {
+			if e.o == o {
+				*lista = append((*lista)[:i], (*lista)[i+1:]...)
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ---------------------------------------------------------------- chegada à sessão
+
+// marcarChegada (goroutine da sessão): a resposta do PnT chegou, mesmo que ainda na fila do motor —
+// os prazos de confirmação contam até a chegada, não até o motor tratá-la (v1.10 P3).
+func (m *Motor) marcarChegada(cls ...string) {
+	agora := m.rel.Agora()
+	for _, c := range cls {
+		if c != "" {
+			m.chegadas.Store(c, agora)
+		}
+	}
+}
+
+// chegouDesde: alguma mensagem do PnT com um destes ClOrdID chegou à sessão em ou depois de t.
+func (m *Motor) chegouDesde(t time.Time, cls ...string) bool {
+	for _, c := range cls {
+		if c == "" {
+			continue
+		}
+		if v, ok := m.chegadas.Load(c); ok && !v.(time.Time).Before(t) {
+			return true
+		}
+	}
+	return false
+}
+
+// chegouDepois: alguma mensagem com um destes ClOrdID chegou à sessão estritamente depois de t.
+func (m *Motor) chegouDepois(t time.Time, cls ...string) bool {
+	for _, c := range cls {
+		if v, ok := m.chegadas.Load(c); c != "" && ok && v.(time.Time).After(t) {
+			return true
+		}
+	}
+	return false
+}
+
+// ultimoSinalMass: o mais recente entre o último AF enviado (ou a última resposta tratada) e a última
+// resposta de mass status chegada à sessão — o silêncio da conciliação conta daqui (v1.10 P3).
+func (m *Motor) ultimoSinalMass() time.Time {
+	u := m.massUltima
+	if n := m.chegadaMass.Load(); n != 0 {
+		if c := time.Unix(0, n); c.After(u) {
+			u = c
+		}
+	}
+	return u
+}
+
+// ---------------------------------------------------------------- IDs
+
+func (m *Motor) novoIDOperacao() int64 { m.proxOpID++; return m.proxOpID }
+func (m *Motor) novoIDOrdem() int64    { m.proxOrdemID++; return m.proxOrdemID }
+
+var _ = fmt.Sprint

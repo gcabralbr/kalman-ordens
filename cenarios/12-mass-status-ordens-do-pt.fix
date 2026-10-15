@@ -1,11 +1,15 @@
 cenario 12 Mass status devolvendo ordens do PT (prefixo GQ-) → ignoradas
-hora 2026-10-13 09:05:00
+hora 2026-10-13 10:05:00
 # Mesma conta do PT: o mass status por conta traz as ordens dele. Nada é conciliado,
-# cancelado nem contado como divergência.
+# cancelado nem contado como divergência. v1.10 C5: o logon só pede mass status das contas com
+# ordem viva ou posição — aqui, a posição comprada da operação 1201 (com a 1014 viva).
 
-preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+executa INICIO
+executa COMPRADO OP=1201
+reinicia_servico
 aguarda_logon
 recebe 35=AF 585=9 1=12345 584=>MS
+envia @ER 11=KM-P-1201-1 37=dsa.1201.P 150=I 39=0 584=$MS 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 20828=129510 20829=129410
 envia @ER 11=GQ-SO-P-WINFUT:E:9045770_5afaaf2c-1b2c-4d5e-8f90-1234567890ab 37=dsa.9001 198=PNT-9001 150=I 39=0 584=$MS 54=1 38=1 44=129000 847=1031 14=0 151=1 6=0
 envia @ER 11=GQ-SO-P-WINFUT:S:9045771_77aa0c3e-2d4f-4b6a-9c1e-abcdefabcdef 37=dsa.9002 198=PNT-9002 150=I 39=1 584=$MS 54=2 38=2 44=131000 847=1031 14=1 151=1 6=131000
 avanca 3s
@@ -13,7 +17,7 @@ alerta CONCILIACAO
 sem_alerta DIVERGENTE
 sem_alerta DESCONHECIDA
 
-saude conciliando=false posicao=0 divergente=false parada=null
+saude conciliando=false posicao=1 divergente=false parada=null
 nada
 avanca 10s
 nada

@@ -1,0 +1,23 @@
+cenario 69 Prazo de confirmação contado até a chegada à sessão: a resposta presa na fila do motor não vira SEM_CONFIRMACAO
+hora 2026-10-15 10:20:00
+# SPEC v1.10 P3. O 39=0 chega à sessão dentro do prazo (PRAZO_CONFIRMACAO_S = 3 s), mas o motor está
+# parado e os ticks entram na fila antes dele: no tick, a ordem ainda parece "sem resposta". O prazo
+# conta até a chegada (carimbada pela sessão), não até o motor tratar: nada de SEM_CONFIRMACAO,
+# nada de mass status. Antes da v1.10, sob carga, isso disparava alerta crítico e mass status de
+# todas as contas.
+
+executa INICIO
+entrada 6901 C
+resposta aceito=true
+recebe 35=D 11=KM-E-6901-1 847=1031
+motor_lento
+avanca 2900ms
+envia @ER 11=KM-E-6901-1 37=dsa.6901.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+avanca 1s
+motor_normal
+sem_alerta SEM_CONFIRMACAO
+nada 35=AF
+saude conciliando=false
+avanca 1s
+sem_alerta SEM_CONFIRMACAO
+nada 35=AF

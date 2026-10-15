@@ -61,7 +61,6 @@ func Novo(n Notificador, p Publicador, rel relogio.Relogio, repeticao time.Durat
 // (uma segunda emissão com a mesma chave não duplica) e ele repete até Resolver(chave).
 func (a *Alertas) Emitir(codigo, chave, texto string, operacaoID int64) {
 	texto = ASCII(texto)
-	metricas.Alertas.Inc(codigo)
 	cr, ok := Catalogo[codigo]
 	if !ok {
 		slog.Error("alerta fora do catálogo", "codigo", codigo)
@@ -120,6 +119,7 @@ func (a *Alertas) Tick() {
 }
 
 func (a *Alertas) enviar(codigo, texto string, op int64) {
+	metricas.Alertas.Inc(codigo) // só o que sai (um crítico já ativo não conta de novo)
 	slog.Warn("ALERTA", "codigo", codigo, "texto", texto, "operacao", op)
 	a.notif.Notificar(codigo, texto)
 	if a.publicar != nil {
