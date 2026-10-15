@@ -1,0 +1,98 @@
+cenario 57 Ajuste da proteção recusado: além do preço (comprado e vendido), sem preço, campos, sem posição, em saída
+hora 2026-10-15 10:10:00
+# SPEC v1.4 K1. Comprado: o stop de venda tem de ficar abaixo do bid atual; vendido: o de compra,
+# acima do ask — senão STOP_ALEM_DO_PRECO (a 1014 dispararia na hora; quem sai, nesse caso, é o
+# gestor). A comparação é depois do arredondamento ao tick. Recusa não envia nada, não gera alerta
+# e não muda o stop pedido da operação.
+
+executa INICIO
+executa COMPRADO OP=5701
+
+# --- comprado, bid 130000
+stop 5701 preco=130000
+resposta aceito=false codigo=STOP_ALEM_DO_PRECO
+# 129996 arredonda para cima (mais perto do mercado): 130000 → além
+stop 5701 preco=129996
+resposta aceito=false codigo=STOP_ALEM_DO_PRECO
+# em pontos: médio 130010 + 10 = 130020 → além
+stop 5701 pts=-10
+resposta aceito=false codigo=STOP_ALEM_DO_PRECO
+nada
+sem_alerta RECUSA_PNT
+http GET /ordens/5701
+resposta preco_stop_ajustado=0
+
+# --- sem bid/ask recente para validar
+preco vazio
+stop 5701 preco=129800
+resposta aceito=false codigo=SEM_PRECO
+preco normal
+preco idade=5s
+stop 5701 preco=129800
+resposta aceito=false codigo=SEM_PRECO
+preco bid=130000 ask=130005 preco=130000 idade=100ms
+
+# --- campos
+http POST /operacoes/5701/stop {}
+resposta aceito=false codigo=CAMPO_INVALIDO
+stop 5701 preco=129800 pts=200
+resposta aceito=false codigo=CAMPO_INVALIDO
+stop 5701 preco=129800 uid=8
+resposta aceito=false codigo=CAMPO_INVALIDO
+stop 5701 preco=129800 modulo=x
+resposta aceito=false codigo=CAMPO_INVALIDO
+# outra operação / outro módulo
+stop 5799 preco=129800
+resposta aceito=false codigo=SEM_POSICAO
+stop 5701 preco=129800 modulo=PT
+resposta aceito=false codigo=SEM_POSICAO
+nada
+
+# --- 129995 (um tick abaixo do bid) é aceito
+stop 5701 preco=129995 uid=7 modulo=KALMAN
+resposta aceito=true situacao=ENVIADO preco_stop=129995 preco_limite=129895
+recebe 35=G 11=KM-P-5701-2 41=KM-P-5701-1 37=dsa.5701.P 44=129895 847=1014 20828=129995 20829=129895
+envia @ER 11=KM-P-5701-2 41=KM-P-5701-1 37=dsa.5701.P 150=5 39=5 54=2 38=1 44=129895 847=1014 14=0 151=1 6=0
+evento PROTECAO_AJUSTADA operacao_id=5701 preco_stop=129995 preco_limite=129895
+
+# --- em saída: a 1014 está sendo cancelada → SEM_PROTECAO
+saida 5701 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-5701-3 41=KM-P-5701-2 37=dsa.5701.P
+stop 5701 preco=129800
+resposta aceito=false codigo=SEM_PROTECAO
+envia @ER 11=KM-P-5701-3 41=KM-P-5701-2 37=dsa.5701.P 150=4 39=4 54=2 38=1 44=129895 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-5701-1 54=2 847=1031 44=129950
+envia @ER 11=KM-S-5701-1 37=dsa.5701.S 150=0 39=0 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-S-5701-1 37=dsa.5701.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=5701 origem=GESTOR
+# zerada → SEM_POSICAO
+stop 5701 preco=129800
+resposta aceito=false codigo=SEM_POSICAO
+nada
+
+# --- vendido: o stop de compra tem de ficar acima do ask
+avanca 61s
+preco bid=130000 ask=130005 preco=130000 idade=100ms
+entrada 5702 V
+resposta aceito=true
+recebe 35=D 11=KM-E-5702-1 44=129985 54=2 847=1031
+envia @ER 11=KM-E-5702-1 37=dsa.5702.E 150=F 39=2 54=2 38=1 44=129985 847=1031 32=1 31=129990 14=1 151=0 6=129990
+# 1014 de compra: gatilho 129990 + 500 = 130490, limite 130590
+recebe 35=D 11=KM-P-5702-1 54=1 847=1014 20828=130490 20829=130590 44=130590
+envia @ER 11=KM-P-5702-1 37=dsa.5702.P 150=0 39=0 54=1 38=1 44=130590 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=5702 preco_stop=130490
+stop 5702 preco=130005
+resposta aceito=false codigo=STOP_ALEM_DO_PRECO
+# 130009 arredonda para baixo (mais perto do mercado): 130005 → além
+stop 5702 preco=130009
+resposta aceito=false codigo=STOP_ALEM_DO_PRECO
+nada
+# 130010: um tick acima do ask, limite 130110
+stop 5702 preco=130010
+resposta aceito=true situacao=ENVIADO preco_stop=130010 preco_limite=130110
+recebe 35=G 11=KM-P-5702-2 41=KM-P-5702-1 37=dsa.5702.P 54=1 44=130110 847=1014 20828=130010 20829=130110
+envia @ER 11=KM-P-5702-2 41=KM-P-5702-1 37=dsa.5702.P 150=5 39=5 54=1 38=1 44=130110 847=1014 14=0 151=1 6=0
+evento PROTECAO_AJUSTADA operacao_id=5702 preco_stop=130010 preco_limite=130110 preco_stop_anterior=130490
+saude posicao=-1
+nada

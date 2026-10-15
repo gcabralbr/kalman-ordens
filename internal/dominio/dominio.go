@@ -146,12 +146,15 @@ type Operacao struct {
 	OperacaoID int64
 	UID        int
 	// Congelados na entrada (v1.2 U4, S1): proteção e saída usam estes, nunca releem.
-	Conta           string // Robo.CCONroConta do ambiente
-	Destino         int    // Robo.CORSeqId (85)
-	Simbolo         string // contrato vigente na entrada
-	Lado            Lado   // da entrada
-	QtdPedida       int
-	StopPts         int64
+	Conta     string // Robo.CCONroConta do ambiente
+	Destino   int    // Robo.CORSeqId (85)
+	Simbolo   string // contrato vigente na entrada
+	Lado      Lado   // da entrada
+	QtdPedida int
+	StopPts   int64
+	// StopAjustado: o gatilho da 1014 pedido pelo gestor (v1.4 K1; 0 = sem ajuste, vale StopPts
+	// sobre o médio). O último pedido vale; o que está no PnT é o Stop da 1014.
+	StopAjustado    int64
 	Estado          EstadoOperacao
 	MotivoEntrada   string
 	TsDecisao       string

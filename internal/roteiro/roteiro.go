@@ -52,7 +52,7 @@ var verbos = map[string]int{
 	"preco": -1, "avanca": 1,
 	"recebe": -1, "envia": -1, "envia_offline": -1, "recebe_sessao": -1, "nada": -1,
 	"em_qualquer_ordem": 0,
-	"entrada":           -1, "saida": -1, "http": -1, "resposta": -1, "saude": -1,
+	"entrada":           -1, "saida": -1, "stop": -1, "http": -1, "resposta": -1, "saude": -1,
 	"evento": -1, "sem_evento": -1, "conta_eventos": -1, "alerta": 1, "sem_alerta": 1,
 	"aguarda_logon": -1, "derruba_sessao": 0, "reinicia_servico": 0, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
 	"usuario": -1, "habilita": -1, "desabilita": 1,
@@ -461,6 +461,16 @@ func conferir(p Passo, capturas map[string]bool) error {
 	case "saida":
 		if len(p.Args) < 3 || (p.Args[1] != "C" && p.Args[1] != "V") {
 			return fmt.Errorf("%s: saida OP C|V MOTIVO [qtd=]", p.Origem)
+		}
+	case "stop":
+		for _, a := range p.Args[min(1, len(p.Args)):] {
+			k, _, ok := strings.Cut(a, "=")
+			if !ok || (k != "preco" && k != "pts" && k != "uid" && k != "modulo") {
+				return fmt.Errorf("%s: stop OP preco=N|pts=N [uid=N] [modulo=M]: %q", p.Origem, a)
+			}
+		}
+		if len(p.Args) < 1 {
+			return fmt.Errorf("%s: stop OP preco=N|pts=N [uid=N] [modulo=M]", p.Origem)
 		}
 	case "resposta", "saude", "evento", "sem_evento":
 		inicio := 0

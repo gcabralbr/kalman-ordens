@@ -69,6 +69,7 @@ func TestContrato(t *testing.T) {
 			op.Estado, op.EncerrouEntrada, op.PnL = dominio.Zerada, true, decimal.RequireFromString("-505.5")
 			op.ContadorN["P"] = 3
 			op.SaidaPedidaEm = em.Add(time.Minute)
+			op.StopAjustado = 129700 // v1.4 K1
 			if err := r.SalvarOperacao(op); err != nil {
 				t.Fatal(err)
 			}
@@ -101,7 +102,8 @@ func TestContrato(t *testing.T) {
 			}
 			g := ops[0]
 			if g.Estado != dominio.Zerada || !g.EncerrouEntrada || !g.PnL.Equal(op.PnL) || g.ContadorN["P"] != 3 ||
-				!g.CriadaEm.Equal(em) || !g.SaidaPedidaEm.Equal(em.Add(time.Minute)) || g.RespostaEntrada != `{"aceito":true}` || g.Lado != dominio.Compra {
+				!g.CriadaEm.Equal(em) || !g.SaidaPedidaEm.Equal(em.Add(time.Minute)) || g.RespostaEntrada != `{"aceito":true}` || g.Lado != dominio.Compra ||
+				g.StopAjustado != 129700 || ops[1].StopAjustado != 0 {
 				t.Fatalf("operação lida diferente: %+v", g)
 			}
 			if g.Modulo != dominio.ModuloPadrao || ords[0].Modulo != dominio.ModuloPadrao {

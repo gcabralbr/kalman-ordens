@@ -396,6 +396,7 @@ func (m *Motor) replaceConfirmado(op *operacao, o *ordem, clNovo string) {
 		o.ClOrdAtual = clNovo
 		m.porClOrd[clNovo] = o
 	}
+	qtdAntes, stopAntes, limAntes := o.Qtd, o.Stop, o.StopLim
 	if o.pend == pendReplace {
 		o.Qtd = o.qtdPend
 		if o.precoPend != 0 {
@@ -410,13 +411,27 @@ func (m *Motor) replaceConfirmado(op *operacao, o *ordem, clNovo string) {
 	limparPendencia(o)
 	if o.Papel == dominio.Protecao {
 		op.rejeicoesProtecao = 0
-		m.publicar("PROTEGIDA", op, map[string]any{"preco_stop": o.Stop, "preco_limite": o.StopLim, "qtd": o.Qtd})
+		ajustada := op.StopAjustado != 0 && o.Stop != stopAntes
+		if o.Qtd != qtdAntes || !ajustada {
+			m.publicar("PROTEGIDA", op, map[string]any{"preco_stop": o.Stop, "preco_limite": o.StopLim, "qtd": o.Qtd})
+		}
+		if ajustada {
+			// ajuste do gestor confirmado (v1.4 K1)
+			m.publicar("PROTECAO_AJUSTADA", op, map[string]any{"preco_stop": o.Stop, "preco_limite": o.StopLim, "qtd": o.Qtd,
+				"preco_stop_anterior": stopAntes, "preco_limite_anterior": limAntes})
+		}
 	}
 	if cancelarDepois {
 		m.cancelar(o)
 	} else if o.Papel == dominio.Protecao && op.protecaoDesatualizada {
 		m.ajustarProtecao(op)
 	}
+}
+
+// eraAjuste: o pedido pendente da 1014 é um replace só de gatilho (ajuste do gestor, v1.4 K1).
+func (m *Motor) eraAjuste(op *operacao, o *ordem) bool {
+	return o.Papel == dominio.Protecao && o.pend == pendReplace && op.StopAjustado != 0 &&
+		o.qtdPend == o.Qtd && o.stopPend != 0 && o.stopPend != o.Stop
 }
 
 // ordemEncerrada: executada, cancelada ou expirada.
@@ -506,6 +521,7 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 	m.registrarRecebida(o, msg)
 	op := m.donoDa[o]
 	era := o.pend
+	ajuste, stopPedido := m.eraAjuste(op, o), o.stopPend
 	cancelarDepois := o.cancelarApos
 	o.cancelarApos = false
 	limparPendencia(o)
@@ -543,7 +559,10 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 			return
 		}
 		m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("replace rejeitado (%s): %s", texto, o.ClOrdAtual), op.OperacaoID)
-		if o.Papel == dominio.Protecao {
+		switch {
+		case ajuste:
+			m.ajusteRecusado(op, o, stopPedido, texto)
+		case o.Papel == dominio.Protecao:
 			m.protecaoRejeitada(op, texto)
 		}
 		if cancelarDepois {
@@ -661,9 +680,13 @@ func (m *Motor) rejeicaoGenerica(msg pnt.Mensagem, refID, texto string) {
 	m.confirmar(op, o)
 	if o.pend != semPendencia && cl == o.clPend {
 		eraCancel := o.pend == pendCancel
+		ajuste, stopPedido := m.eraAjuste(op, o), o.stopPend
 		limparPendencia(o)
 		m.al.Emitir("RECUSA_PNT", "", "pedido rejeitado "+texto+": "+o.ClOrdAtual, op.OperacaoID)
-		if o.Papel == dominio.Protecao && !eraCancel {
+		switch {
+		case ajuste:
+			m.ajusteRecusado(op, o, stopPedido, texto)
+		case o.Papel == dominio.Protecao && !eraCancel:
 			m.protecaoRejeitada(op, texto)
 		}
 	} else if o.viva() {

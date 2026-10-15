@@ -136,7 +136,7 @@ func Executar(c roteiro.Cenario, dir string, b Backend) (err error) {
 			return fmt.Errorf("%s: %s: %w", p.Origem, p.Verbo, err)
 		}
 	}
-	return nil
+	return e.conferirASCII()
 }
 
 func (e *Executor) preparar() error {
@@ -393,6 +393,8 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return nil
 	case "entrada", "saida":
 		return e.pedido(p)
+	case "stop":
+		return e.ajusteStop(p)
 	case "usuario", "habilita", "desabilita":
 		if err := e.usuario(p); err != nil {
 			return err
@@ -606,6 +608,67 @@ func (e *Executor) pedido(p roteiro.Passo) error {
 	return e.http("POST", "/ordens", string(j))
 }
 
+// ajusteStop: stop OP preco=N | pts=N [modulo=M] [uid=N] → POST /operacoes/OP/stop (v1.4 K1).
+func (e *Executor) ajusteStop(p roteiro.Passo) error {
+	b := map[string]any{}
+	for _, a := range p.Args[1:] {
+		k, v, _ := strings.Cut(a, "=")
+		switch k {
+		case "preco":
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				return err
+			}
+			b["preco_stop"] = f
+		case "pts":
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return err
+			}
+			b["stop_pts"] = n
+		case "uid":
+			b["uid"], _ = strconv.Atoi(v)
+		case "modulo":
+			b["modulo"] = v
+		default:
+			return fmt.Errorf("stop: argumento %q", a)
+		}
+	}
+	j, _ := json.Marshal(b)
+	return e.http("POST", "/operacoes/"+p.Args[0]+"/stop", string(j))
+}
+
+// soASCII (v1.4 L1): todo texto de recusa, alerta e evento que o serviço publica é ASCII.
+func soASCII(onde, s string) error {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return fmt.Errorf("%s fora do ASCII: %q", onde, s)
+		}
+	}
+	return nil
+}
+
+// conferirASCII: os eventos publicados (inclusive os ALERTA) e o que foi ao Telegram.
+func (e *Executor) conferirASCII() error {
+	ps, err := e.publicados()
+	if err != nil {
+		return err
+	}
+	for _, x := range ps {
+		if err := soASCII("evento "+x.Tipo, string(x.Dados)); err != nil {
+			return err
+		}
+	}
+	e.notif.mu.Lock()
+	defer e.notif.mu.Unlock()
+	for _, t := range e.notif.n {
+		if err := soASCII("Telegram", t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (e *Executor) http(metodo, caminho, corpo string) error {
 	req := httptest.NewRequest(metodo, caminho, bytes.NewBufferString(corpo))
 	w := httptest.NewRecorder()
@@ -622,6 +685,11 @@ func (e *Executor) http(metodo, caminho, corpo string) error {
 		e.resposta = map[string]any{"_lista": v}
 	}
 	e.resposta["_status"] = json.Number(strconv.Itoa(w.Code))
+	if mot, ok := e.resposta["motivo"].(string); ok {
+		if err := soASCII("motivo da resposta", mot); err != nil {
+			return err
+		}
+	}
 	e.Registro = append(e.Registro, fmt.Sprintf("%s %s %s → %d %v", metodo, caminho, corpo, w.Code, e.resposta))
 	e.ocioso()
 	return nil

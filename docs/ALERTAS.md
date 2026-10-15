@@ -1,6 +1,8 @@
 # Catálogo de alertas e códigos de recusa
 
 Fonte única. Roteiros (`alerta CODIGO`), Telegram e gestor usam estes códigos.
+**Textos só em ASCII** (SPEC v1.4 L1): o `texto` dos alertas, o `motivo` das recusas e os textos
+dos eventos saem sem acento nem símbolo fora do ASCII (o Kalman grava em latin1).
 Todo alerta sai no Telegram e como evento `ALERTA` (`{"codigo": ..., "texto": ..., "operacao_id": ...}`).
 **Crítico** = repete a cada 30 s (`ALERTA_REPETICAO_S`) até a condição se resolver; a resolução
 gera um alerta `RESOLVIDO` com o código original no texto.
@@ -100,6 +102,23 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `SEM_POSICAO` | SAIDA sem posição real | não | `SEM_POSICAO` (não quando a operação já foi zerada pelo stop) |
 | `LADO_INCOMPATIVEL` | SAIDA com o lado que aumentaria a posição | não | `LADO_INCOMPATIVEL` |
 | `RESULTADO_DESCONHECIDO` | (HTTP 503) motor não respondeu a tempo; consultar `GET /ordens/{id}` | não | — |
+
+## Códigos de recusa do `POST /operacoes/{id}/stop` (ajuste da proteção, SPEC v1.4 K)
+
+Nenhum conta para a parada automática; nenhum gera alerta.
+
+| Código | Quando |
+|---|---|
+| `CAMPO_INVALIDO` | nem `preco_stop` nem `stop_pts`, ou os dois; `preco_stop` ≤ 0; `uid` diferente do da operação; `modulo` inválido |
+| `SEM_POSICAO` | operação inexistente (no módulo), encerrada ou com posição zero |
+| `SEM_PROTECAO` | operação em saída, ou sem 1014 viva |
+| `PROTECAO_DISPARADA` | a 1014 já disparou no PnT (39=B com 20807>0): quem decide são os fills |
+| `SEM_PRECO` | sem bid/ask do símbolo da posição com até `PRECO_IDADE_MAX_S` para validar |
+| `STOP_ALEM_DO_PRECO` | comprado com stop >= bid, ou vendido com stop <= ask (depois do arredondamento ao tick): a 1014 dispararia na hora; quem sai é o gestor |
+| `RESULTADO_DESCONHECIDO` | (HTTP 503) motor não respondeu a tempo; o pedido segue; reenviar o mesmo é inofensivo |
+
+Aceito: `situacao` = `ENVIADO` (35=G enviado), `AGUARDANDO` (sai quando o pedido em curso da 1014
+responder; só o último), `IGNORADO` (menos de `AJUSTE_DEGRAU_MIN_PTS` do que está no PnT).
 
 Precedência na ENTRADA: habilitação → campos → DUPLICADA → PARADA → DIVERGENTE → SEM_SESSAO →
 SEM_CONFIRMACAO → CONCILIANDO → conta e destino (acusuario) → SIMBOLO_INVALIDO → limites (globais

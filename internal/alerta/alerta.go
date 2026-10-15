@@ -59,6 +59,7 @@ func Novo(n Notificador, p Publicador, rel relogio.Relogio, repeticao time.Durat
 // Emitir: alerta com código do catálogo. Se o código é crítico, chave identifica a condição
 // (uma segunda emissão com a mesma chave não duplica) e ele repete até Resolver(chave).
 func (a *Alertas) Emitir(codigo, chave, texto string, operacaoID int64) {
+	texto = ASCII(texto)
 	cr, ok := Catalogo[codigo]
 	if !ok {
 		slog.Error("alerta fora do catálogo", "codigo", codigo)

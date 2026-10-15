@@ -7,6 +7,10 @@ Tema: **resultado da rodada 1 da F1** na .53 (14/10/2026, HML do PnT, binário `
 as correções que ela pediu antes de qualquer novo start na .53. Mais a parte de dados da diretriz
 da [v2](SPEC-ORDENS-v2.md) (serviço para qualquer módulo do GQ; seção 3c).
 
+**Revista pela [v1.4](SPEC-ORDENS-v1.4.md)** (15/10): ajuste da proteção pelo gestor (o replace da
+1014 por ajuste publica `PROTECAO_AJUSTADA` em vez de `PROTEGIDA`; a recriação usa o gatilho
+ajustado), textos em ASCII, pergunta [PnT-18].
+
 Data: 2026-10-14. Itens A–G vindos do responsável; A2, F2 (propostas desta implementação) e H1
 (a pendência do ExecID) confirmados pelo responsável no mesmo dia.
 

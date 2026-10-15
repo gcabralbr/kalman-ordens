@@ -106,6 +106,7 @@ type Parametros struct {
 	ConfereConta time.Duration
 
 	ColarEntrada, FolgaStop, ColarSaida, Tick int64
+	AjusteDegrauMin                           int64
 	TimeoutEntrada, TimeoutSaida, EsperaStop  time.Duration
 	EsperaErro, EsperaFillPosRecusa           time.Duration
 	PrazoConfirmacao, EsperaEncerramento      time.Duration
@@ -134,6 +135,7 @@ func (c Config) Parametros() Parametros {
 		FolgaStop:               c.Pontos("FOLGA_STOP_PTS", 100),
 		ColarSaida:              c.Pontos("COLAR_SAIDA_PTS", 50),
 		Tick:                    c.Pontos("TICK_PTS", 5),
+		AjusteDegrauMin:         c.Pontos("AJUSTE_DEGRAU_MIN_PTS", 25),
 		TimeoutEntrada:          c.Segundos("TIMEOUT_ENTRADA_S", 3),
 		TimeoutSaida:            c.Segundos("TIMEOUT_SAIDA_S", 2),
 		EsperaStop:              c.Segundos("ESPERA_STOP_S", 5),

@@ -1,5 +1,5 @@
 // Package api é o HTTP local do serviço (127.0.0.1:9092). Único cliente: o backend do Kalman
-// (e o CLI por SSH). net/http da biblioteca padrão: seis rotas, nada mais.
+// (e o CLI por SSH). net/http da biblioteca padrão: sete rotas, nada mais.
 package api
 
 import (
@@ -28,7 +28,30 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		case <-time.After(espera):
 			// o motor segue com o pedido; o gestor reenvia o mesmo corpo e recebe o resultado original
 			escrever(w, http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "RESULTADO_DESCONHECIDO",
-				"motivo": "o motor não respondeu a tempo; reenviar o mesmo pedido"})
+				"motivo": "o motor nao respondeu a tempo; reenviar o mesmo pedido"})
+		}
+	})
+	// ajuste da proteção (v1.4 K1): novo stop em preço (preco_stop) ou em pontos da entrada (stop_pts)
+	mux.HandleFunc("POST /operacoes/{id}/stop", func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			escrever(w, http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "operacao_id invalido"})
+			return
+		}
+		var a motor.AjusteStop
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&a); err != nil {
+			escrever(w, http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()})
+			return
+		}
+		select {
+		case r := <-m.AjustarStopAssincrono(id, a):
+			escrever(w, http.StatusOK, r)
+		case <-time.After(espera):
+			// o motor segue com o pedido; o último ajuste vale, reenviar o mesmo é inofensivo
+			escrever(w, http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "RESULTADO_DESCONHECIDO",
+				"motivo": "o motor nao respondeu a tempo; consultar GET /ordens/{id} ou reenviar o mesmo ajuste"})
 		}
 	})
 	mux.HandleFunc("GET /ordens/{id}", func(w http.ResponseWriter, r *http.Request) {

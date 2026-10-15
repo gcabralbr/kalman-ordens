@@ -1,0 +1,57 @@
+cenario 58 Vários ajustes seguidos: um replace por vez, só o último pedido sai ao confirmar; degrau mínimo de 25 pts sobre o que está no PnT
+hora 2026-10-15 10:20:00
+# SPEC v1.4 K1. Um 35=G da 1014 por vez: com um pendente, o serviço guarda só o último pedido e
+# o manda quando o 39=5 chegar. AJUSTE_DEGRAU_MIN_PTS = 25: pedido a menos de 25 pts do gatilho
+# que está no PnT é aceito e ignorado (IGNORADO, sem replace); a mesma regra vale para o pedido
+# guardado, na hora de mandá-lo. Exatamente 25 sai.
+
+executa INICIO
+executa COMPRADO OP=5801
+
+# --- degrau: 129520 está a 10 do 129510 do PnT
+stop 5801 preco=129520
+resposta aceito=true situacao=IGNORADO preco_stop=129520 preco_stop_pnt=129510
+nada
+# 129534 → 129535 (tick, para cima): 25 do PnT, sai
+stop 5801 preco=129534
+resposta aceito=true situacao=ENVIADO preco_stop=129535 preco_limite=129435
+recebe 35=G 11=KM-P-5801-2 41=KM-P-5801-1 37=dsa.5801.P 44=129435 847=1014 20828=129535 20829=129435
+
+# --- três pedidos com o replace pendente: nada sai agora; vale o último
+stop 5801 preco=129600
+resposta aceito=true situacao=AGUARDANDO preco_stop=129600 preco_stop_pnt=129510
+stop 5801 preco=129700
+resposta aceito=true situacao=AGUARDANDO
+stop 5801 preco=129800
+resposta aceito=true situacao=AGUARDANDO preco_stop=129800 preco_limite=129700
+nada
+avanca 1s
+nada
+envia @ER 11=KM-P-5801-2 41=KM-P-5801-1 37=dsa.5801.P 150=5 39=5 54=2 38=1 44=129435 847=1014 14=0 151=1 6=0
+evento PROTECAO_AJUSTADA operacao_id=5801 preco_stop=129535 preco_limite=129435 preco_stop_anterior=129510
+# só o último (129800), na hora do 39=5
+recebe 35=G 11=KM-P-5801-3 41=KM-P-5801-2 37=dsa.5801.P 44=129700 847=1014 20828=129800 20829=129700
+nada
+
+# --- guardado a menos do degrau do que o PnT vai ter: confirmado o 129800, o 129810 não sai
+stop 5801 preco=129810
+resposta aceito=true situacao=AGUARDANDO
+envia @ER 11=KM-P-5801-3 41=KM-P-5801-2 37=dsa.5801.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0
+evento PROTECAO_AJUSTADA operacao_id=5801 preco_stop=129800 preco_limite=129700 preco_stop_anterior=129535
+nada
+avanca 5s
+nada
+conta_eventos PROTECAO_AJUSTADA operacao_id=5801 = 2
+
+# --- de novo contra o PnT (129800): 20 é ignorado, 25 sai
+stop 5801 preco=129820
+resposta aceito=true situacao=IGNORADO preco_stop_pnt=129800
+nada
+stop 5801 preco=129775
+resposta aceito=true situacao=ENVIADO preco_stop=129775 preco_limite=129675
+recebe 35=G 11=KM-P-5801-4 41=KM-P-5801-3 37=dsa.5801.P 44=129675 847=1014 20828=129775 20829=129675
+envia @ER 11=KM-P-5801-4 41=KM-P-5801-3 37=dsa.5801.P 150=5 39=5 54=2 38=1 44=129675 847=1014 14=0 151=1 6=0
+evento PROTECAO_AJUSTADA operacao_id=5801 preco_stop=129775 preco_stop_anterior=129800
+sem_evento PROTEGIDA
+saude posicao=1 divergente=false
+nada

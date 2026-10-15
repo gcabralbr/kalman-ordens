@@ -113,7 +113,7 @@ o mesmo da HML de terça) e a habilitação é pela CLI (1.5).
 **Migrar logo em seguida** (com o binário e o service.env instalados; só banco, sem FIX nem HTTP):
 
 ```
-sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql, 0003_execid_por_ordem.sql, 0004_modulo.sql
+sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql, 0003_execid_por_ordem.sql, 0004_modulo.sql, 0005_stop_ajustado.sql
 sudo /opt/kalman-ordens/kalman-ordens migrar   # de novo: nenhuma migração pendente
 ```
 

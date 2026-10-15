@@ -1,0 +1,67 @@
+cenario 56 Ajuste da proteção aceito: 35=G da 1014 com gatilho e limite novos, PROTECAO_AJUSTADA no 39=5; o ajuste sobrevive ao restart e à recriação
+hora 2026-10-15 10:00:00
+# SPEC v1.4 K1. POST /operacoes/{id}/stop com o novo stop em preço (preco_stop) ou em pontos a
+# partir do preço médio da entrada (stop_pts); o serviço recalcula gatilho e limite (mesma folga,
+# FOLGA_STOP_PTS = 100) e faz o 35=G da 1014 (20828/20829). Arredonda ao tick para o lado mais
+# perto do mercado (como o gatilho calculado na entrada). PROTECAO_AJUSTADA só depois do 39=5.
+
+executa INICIO
+executa COMPRADO OP=5601
+
+# --- em preço: 129800 → limite 129700
+stop 5601 preco=129800
+resposta aceito=true situacao=ENVIADO preco_stop=129800 preco_limite=129700 preco_stop_pnt=129510 preco_limite_pnt=129410
+recebe 35=G 11=KM-P-5601-2 41=KM-P-5601-1 37=dsa.5601.P 1=12345 38=1 40=2 44=129700 54=2 55=WINZ26 847=1014 20828=129800 20829=129700
+envia @ER 11=KM-P-5601-2 41=KM-P-5601-1 37=dsa.5601.P 150=E 39=E 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+sem_evento PROTECAO_AJUSTADA
+envia @ER 11=KM-P-5601-2 41=KM-P-5601-1 37=dsa.5601.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+evento PROTECAO_AJUSTADA operacao_id=5601 modulo=KALMAN preco_stop=129800 preco_limite=129700 preco_stop_anterior=129510 preco_limite_anterior=129410 qtd=1
+sem_evento PROTEGIDA
+http GET /ordens/5601
+resposta estado=PROTEGIDA posicao=1 preco_stop_ajustado=129800
+
+# --- em pontos a partir da entrada: médio 130010 − 100 = 129910 → limite 129810
+preco bid=130100 ask=130105 preco=130100
+stop 5601 pts=100
+resposta aceito=true situacao=ENVIADO preco_stop=129910 preco_limite=129810 preco_stop_pnt=129800
+recebe 35=G 11=KM-P-5601-3 41=KM-P-5601-2 37=dsa.5601.P 38=1 44=129810 54=2 847=1014 20828=129910 20829=129810
+envia @ER 11=KM-P-5601-3 41=KM-P-5601-2 37=dsa.5601.P 150=5 39=5 54=2 38=1 44=129810 847=1014 14=0 151=1 6=0
+evento PROTECAO_AJUSTADA operacao_id=5601 preco_stop=129910 preco_limite=129810 preco_stop_anterior=129800
+
+# --- arredondamento ao tick: comprado, stop de venda → para cima (129962,5 → 129965)
+stop 5601 preco=129962.5
+resposta aceito=true situacao=ENVIADO preco_stop=129965 preco_limite=129865
+recebe 35=G 11=KM-P-5601-4 41=KM-P-5601-3 37=dsa.5601.P 38=1 44=129865 54=2 847=1014 20828=129965 20829=129865
+envia @ER 11=KM-P-5601-4 41=KM-P-5601-3 37=dsa.5601.P 150=5 39=5 54=2 38=1 44=129865 847=1014 14=0 151=1 6=0
+evento PROTECAO_AJUSTADA operacao_id=5601 preco_stop=129965 preco_limite=129865
+saude posicao=1 divergente=false
+nada
+
+# --- restart: o ajuste está na operação; a conciliação acha a 1014 viva e não mexe nela
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345 584=>MS
+envia @ER 11=KM-P-5601-4 37=dsa.5601.P 150=I 39=0 584=$MS 54=2 38=1 44=129865 847=1014 14=0 151=1 6=0 20828=129965 20829=129865
+avanca 3s
+alerta CONCILIACAO
+saude posicao=1 divergente=false parada=null
+nada
+http GET /ordens/5601
+resposta preco_stop_ajustado=129965
+
+# --- ajuste pendente e o PnT cancela a 1014 sem pedido nosso: a recriada vem com o último gatilho
+# pedido (130000), não com o que estava no PnT nem com o stop_pts
+stop 5601 preco=130000
+resposta aceito=true situacao=ENVIADO preco_stop=130000 preco_limite=129900 preco_stop_pnt=129965
+recebe 35=G 11=KM-P-5601-5 41=KM-P-5601-4 37=dsa.5601.P 44=129900 847=1014 20828=130000 20829=129900
+envia @ER 11=KM-P-5601-4 37=dsa.5601.P 150=4 39=4 54=2 38=1 44=129865 847=1014 14=0 151=0 6=0 58="Order cancelled by the system"
+recebe 35=D 11=KM-P-5601-6 38=1 40=2 44=129900 54=2 847=1014 20828=130000 20829=129900
+alerta PROTECAO_RECRIADA
+envia @ER 11=KM-P-5601-6 37=dsa.5601.P6 150=0 39=0 54=2 38=1 44=129900 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=5601 preco_stop=130000 preco_limite=129900
+nada
+
+# --- a saída do gestor cancela a 1014 ajustada e sai com a 1031
+saida 5601 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 41=KM-P-5601-6 37=dsa.5601.P6 54=2

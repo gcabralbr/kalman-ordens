@@ -471,6 +471,7 @@ Estado no fim da F1 (HML do PnT, 14/10/2026; detalhes na [SPEC v1.3](SPEC-ORDENS
 | PnT-15 | códigos de erro | gravar 102/103 e o texto 58 sem interpretar | catálogo em `docs/ALERTAS.md` ("Rejeições e avisos conhecidos do PnT"): `[DSA-40]`, `[IS-72]`, `[DSA-56]`, `[DSA-122]`; continua aberto a códigos novos |
 | PnT-16 | self-trade | registrar; tratar como rejeição comum | não observado |
 | PnT-17 | a 1014 é suportada no DSA? (o dicionário de 13/10 não a tem) | 1014 (D2) até a resposta | **fechada**: a 1014 funciona no DSA; D2 fica |
+| PnT-18 | depois do 39=6 de uma 1014 sem ordem filha (20807=0), ela ainda pode disparar? ([SPEC v1.4](SPEC-ORDENS-v1.4.md) seção 3) | a saída espera o 39=4 (Parte 3.5) | **aberta** (15/10): se não puder, a saída sai no 39=6 e a virada de mão ganha ~3-4 s |
 
 ---|---|---|
 | PnT-1 | usuário novo, IP da .51 | HML com usuário de homologação |

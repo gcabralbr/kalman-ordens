@@ -1,0 +1,68 @@
+cenario 59 Ajuste da proteção com a 1014 disparando ao mesmo tempo: nada de replace sobre a disparada, os fills decidem
+hora 2026-10-15 10:30:00
+# SPEC v1.4 K1 com v1.3 J2. O ajuste sai (35=G) e, antes da resposta, a 1014 dispara no PnT
+# (150=I 39=B, 20807>0). Parte 1: o PnT recusa o replace (35=9) → PROTECAO_AJUSTE_RECUSADO com o
+# motivo, o stop do PnT fica, o pedido guardado cai, nada de PROTECAO_REJEITADA (não é a 1014 que
+# foi recusada); pedido novo com a 1014 disparada → PROTECAO_DISPARADA. Parte 2: o PnT aceita o
+# replace (39=5) depois do disparo → PROTECAO_AJUSTADA, mas o pedido guardado não sai sobre uma
+# 1014 disparada. Nas duas, o fill da 1014 zera com origem STOP_SERVIDOR, sem stop furado.
+
+executa INICIO
+executa COMPRADO OP=5901
+
+# --- parte 1: replace recusado
+stop 5901 preco=129800
+resposta aceito=true situacao=ENVIADO preco_stop=129800
+recebe 35=G 11=KM-P-5901-2 41=KM-P-5901-1 37=dsa.5901.P 44=129700 847=1014 20828=129800 20829=129700
+stop 5901 preco=129900
+resposta aceito=true situacao=AGUARDANDO
+preco bid=129500 ask=129505 preco=129500
+envia @ER 11=KM-P-5901-1 41=KM-P-5901-1 37=dsa.5901.P 150=I 39=B 54=2 38=1 44=129410 847=1014 14=0 151=0 20807=1 20806=129410 6=0 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1."
+evento PROTECAO_DISPARADA operacao_id=5901 qtd_enviada=1 preco_enviado=129410 preco_stop=129510 preco_limite=129410
+envia 35=9 11=KM-P-5901-2 41=KM-P-5901-1 37=dsa.5901.P 39=B 434=2 102=99 58="[DSA-xx] Order is being executed by the robot"
+evento PROTECAO_AJUSTE_RECUSADO operacao_id=5901 preco_stop_pedido=129800 preco_stop=129510 preco_limite=129410 motivo="[99] [DSA-xx] Order is being executed by the robot"
+alerta RECUSA_PNT
+sem_alerta PROTECAO_REJEITADA
+# o pedido guardado (129900) não sai
+nada
+http GET /ordens/5901
+resposta preco_stop_ajustado=129510
+stop 5901 preco=129300
+resposta aceito=false codigo=PROTECAO_DISPARADA
+nada
+avanca 300ms
+envia @ER 11=KM-P-5901-1 37=dsa.5901.P 150=F 39=2 54=2 38=1 44=129410 847=1014 32=1 31=129505 14=1 151=0 6=129505
+evento SAIDA_EXECUTADA operacao_id=5901 qtd=1 preco=129505 origem=STOP_SERVIDOR
+evento ZERADA operacao_id=5901 origem=STOP_SERVIDOR pnl_pts=-505
+avanca 6s
+sem_alerta STOP_FURADO
+sem_alerta PROTECAO_REJEITADA
+saude posicao=0 divergente=false parada=null
+nada
+
+# --- parte 2: replace aceito depois do disparo
+avanca 61s
+preco bid=130000 ask=130005 preco=130000 idade=100ms
+executa COMPRADO OP=5902
+stop 5902 preco=129800
+resposta aceito=true situacao=ENVIADO
+recebe 35=G 11=KM-P-5902-2 41=KM-P-5902-1 37=dsa.5902.P 20828=129800 20829=129700
+stop 5902 preco=129900
+resposta aceito=true situacao=AGUARDANDO
+preco bid=129700 ask=129705 preco=129700
+envia @ER 11=KM-P-5902-1 41=KM-P-5902-1 37=dsa.5902.P 150=I 39=B 54=2 38=1 44=129410 847=1014 14=0 151=0 20807=1 20806=129700 6=0 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1."
+evento PROTECAO_DISPARADA operacao_id=5902 qtd_enviada=1 preco_enviado=129700
+envia @ER 11=KM-P-5902-2 41=KM-P-5902-1 37=dsa.5902.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+evento PROTECAO_AJUSTADA operacao_id=5902 preco_stop=129800 preco_limite=129700
+# a 1014 está disparada: o 129900 guardado não vira replace
+nada
+stop 5902 preco=129600
+resposta aceito=false codigo=PROTECAO_DISPARADA
+avanca 300ms
+envia @ER 11=KM-P-5902-2 37=dsa.5902.P 150=F 39=2 54=2 38=1 44=129700 847=1014 32=1 31=129780 14=1 151=0 6=129780
+evento SAIDA_EXECUTADA operacao_id=5902 qtd=1 preco=129780 origem=STOP_SERVIDOR
+evento ZERADA operacao_id=5902 origem=STOP_SERVIDOR pnl_pts=-230
+avanca 6s
+sem_alerta STOP_FURADO
+saude posicao=0 divergente=false
+nada

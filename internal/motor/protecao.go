@@ -47,12 +47,20 @@ func (m *Motor) ajustarProtecao(op *operacao) {
 		slog.Info("PROTEÇÃO enviada", "clordid", o.ClOrdAtual, "stop", stop, "limite", lim, "qtd", qtd)
 		return
 	}
-	if p.pend != semPendencia || p.Estado == dominio.Enviando || p.Estado == dominio.SemConfirmacao || p.Estado == dominio.Pendente || !p.emErroDesde.IsZero() {
+	if !p.disparadaEm.IsZero() {
+		// disparada no PnT (v1.3 J2): a ordem filha está no mercado; quem decide são os fills
+		op.protecaoDesatualizada = false
+		return
+	}
+	if protecaoOcupada(p) {
 		// um pedido por vez: manda só o estado final quando o atual responder
 		op.protecaoDesatualizada = true
 		return
 	}
 	op.protecaoDesatualizada = false
+	if p.Qtd == qtd && p.Lado == lado && op.StopAjustado != 0 && abs64(stop-p.Stop) < m.p.AjusteDegrauMin {
+		return // ajuste menor que o degrau mínimo em relação ao que está no PnT (v1.4 K1)
+	}
 	if p.Qtd != qtd || p.Stop != stop || p.Lado != lado {
 		m.replace(p, qtd, lim, stop, lim)
 	}
@@ -142,7 +150,8 @@ func (m *Motor) falhaProtecao(op *operacao, motivo string) {
 }
 
 // recriarProtecao manda uma 1014 nova com o mesmo gatilho e limite da última (não depende do
-// feed); sem 1014 anterior, calcula sobre o preço médio da entrada.
+// feed); sem 1014 anterior, calcula sobre o preço médio da entrada. Com ajuste do gestor (v1.4
+// K1), o gatilho ajustado (o último pedido).
 func (m *Motor) recriarProtecao(op *operacao, motivo string) {
 	pos := op.posicao()
 	lado := dominio.ParaZerar(pos)
@@ -153,7 +162,7 @@ func (m *Motor) recriarProtecao(op *operacao, motivo string) {
 		}
 	}
 	var stop, lim int64
-	if ultima != nil {
+	if ultima != nil && op.StopAjustado == 0 {
 		stop, lim = ultima.Stop, ultima.StopLim
 	} else {
 		stop, lim = m.calcularStop(op, lado)
@@ -174,16 +183,17 @@ func (m *Motor) recriarProtecao(op *operacao, motivo string) {
 	slog.Info("PROTEÇÃO recriada", "clordid", o.ClOrdAtual, "stop", stop, "limite", lim, "qtd", o.Qtd)
 }
 
-// calcularStop: gatilho = médio ∓ stop_pts (arredondado para mais perto), limite = gatilho ∓ folga.
+// calcularStop: gatilho = o ajustado pelo gestor (v1.4 K1) ou médio ∓ stop_pts (arredondado para
+// mais perto); limite = gatilho ∓ folga.
 func (m *Motor) calcularStop(op *operacao, lado dominio.Lado) (stop, lim int64) {
-	medio, _ := op.medio(true)
-	stopPts := decimal.NewFromInt(op.StopPts)
+	stop = op.StopAjustado
+	if stop == 0 {
+		stop = m.gatilhoPorPontos(op, lado, op.StopPts)
+	}
 	folga := decimal.NewFromInt(m.p.FolgaStop)
 	if lado == dominio.Venda {
-		stop = m.acima(medio.Sub(stopPts))
 		return stop, m.abaixo(decimal.NewFromInt(stop).Sub(folga))
 	}
-	stop = m.abaixo(medio.Add(stopPts))
 	return stop, m.acima(decimal.NewFromInt(stop).Add(folga))
 }
 

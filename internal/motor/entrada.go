@@ -9,6 +9,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"gammaquant.com.br/kalman-ordens/internal/alerta"
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/usuario"
@@ -282,7 +283,7 @@ func (m *Motor) recusar(p Pedido, r *recusa) Resposta {
 			m.ativarParada("BLOQUEAR", "auto", fmt.Sprintf("%d recusas por limite em 1 min (última: %s)", len(m.recusasLimite), r.codigo))
 		}
 	}
-	return Resposta{"aceito": false, "codigo": r.codigo, "motivo": r.motivo}
+	return Resposta{"aceito": false, "codigo": r.codigo, "motivo": alerta.ASCII(r.motivo)}
 }
 
 func (m *Motor) novaOrdem(op *operacao, papel dominio.Papel, lado dominio.Lado, qtd, estrategia int) *ordem {

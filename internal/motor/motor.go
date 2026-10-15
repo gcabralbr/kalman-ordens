@@ -670,6 +670,9 @@ func (m *Motor) publicar(tipo string, op *operacao, dados map[string]any) {
 		d["uid"] = op.UID
 	}
 	for k, v := range dados {
+		if t, ok := v.(string); ok {
+			v = alerta.ASCII(t) // v1.4 L1
+		}
 		d[k] = v
 	}
 	b, err := json.Marshal(d)
