@@ -124,6 +124,33 @@ Precedência na ENTRADA: habilitação → campos → DUPLICADA → PARADA → D
 SEM_CONFIRMACAO → CONCILIANDO → conta e destino (acusuario) → SIMBOLO_INVALIDO → limites (globais
 e do uid) → preço. A SAIDA não olha habilitação nem a conta atual do GQ: usa o que a entrada gravou.
 
+## Códigos de recusa das ações de admin (SPEC v1.7 A)
+
+`POST /operacoes/{id}/encerrar` e `POST /operacoes/{id}/cancelar-entrada`. Nenhum conta para a
+parada automática; nenhum gera alerta.
+
+| Código | Quando |
+|---|---|
+| `CAMPO_INVALIDO` | `motivo` ou `por` ausente; corpo inválido ou com campo desconhecido; `modulo` inválido |
+| `OPERACAO_INEXISTENTE` | a operação não existe hoje no módulo |
+| `OPERACAO_ENCERRADA` | a operação já está zerada ou encerrada sem entrada |
+| `OPERACAO_EM_SAIDA` | a saída já começou (gestor, stop, parada, admin...) |
+| `SEM_POSICAO` | encerrar sem posição e sem entrada pendente |
+| `SIMBOLO_DIVERGENTE` | encerrar com a posição num contrato que não é mais o vigente e sem preço recente dele |
+| `SEM_ENTRADA_PENDENTE` | cancelar-entrada sem entrada viva |
+| `COM_POSICAO` | cancelar-entrada com a entrada já executada em parte (usar encerrar) |
+| `RESULTADO_DESCONHECIDO` | (HTTP 503) motor não respondeu a tempo |
+
+Respostas aceitas (`"aceito": true`, com `codigo` e `motivo`, SPEC v1.7 A4):
+
+| Código | Quando |
+|---|---|
+| `ENCERRANDO` | encerrar aceito: saída iniciada com origem `ADMIN`; a operação fecha com `ZERADA` |
+| `CANCELANDO` | cancelar-entrada aceito: cancelamento enviado ao PnT |
+| `JA_CANCELANDO` | cancelar-entrada com o cancelamento já em curso: nada de novo |
+| `PARADA_ATIVA` | `POST /parada` aceito |
+| `RETOMADO` | `POST /retomar` aceito |
+
 ## Rejeições e avisos conhecidos do PnT
 
 Códigos e textos vistos nas respostas do PnT (o `[XXX-n]` no 58 de 35=9, 35=8 39=8 e dos avisos

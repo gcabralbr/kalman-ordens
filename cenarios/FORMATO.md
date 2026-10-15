@@ -70,6 +70,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 | `saida OP LADO MOTIVO [qtd=1] [modulo=M]` | `POST /ordens` papel SAIDA; LADO é o lado da ordem de saída |
 | `stop OP preco=N\|pts=N [uid=N] [modulo=M]` | `POST /operacoes/OP/stop` (ajuste da proteção, SPEC v1.4 K): `preco=` vira `preco_stop`, `pts=` vira `stop_pts` |
 | `http METODO /caminho [json]` | requisição livre |
+| `http_async METODO /caminho [json]` / `http_aguarda` | a requisição fica em curso enquanto o roteiro segue (ex.: `GET /pnt/ordens`, que espera as respostas do PnT falso ao AF); `http_aguarda` espera a resposta (tempo real, até 15 s) e ela vira a "última resposta" |
 | `resposta campo=valor ...` | confere o corpo da última resposta HTTP (`parada.modo=BLOQUEAR`; `null`; `*` = presente; numa lista, `mensagens.0.msgtype` e `mensagens.#` = tamanho; resposta que é uma lista fica em `_lista`); `_status` é o código HTTP |
 | `saude campo=valor ...` | `GET /saude` e confere |
 | `evento TIPO campo=valor ...` | existe em `GET /eventos` um evento desse tipo, ainda não casado, que bate; ele passa a contar como casado |
@@ -112,7 +113,7 @@ texto que iria ao Telegram e todo `motivo` de resposta HTTP é ASCII (SPEC v1.4 
 ## Origem das saídas (`SAIDA_EXECUTADA.origem`, `ZERADA.origem`)
 
 `GESTOR` (pedida pelo gestor), `STOP_SERVIDOR` (fill da 1014), `STOP_FURADO` (Parte 3.6),
-`PARADA` (ZERAR), `ZERAGEM` (HORA_ZERAGEM), `PROTECAO_REJEITADA` (1014 rejeitada duas vezes),
+`PARADA` (ZERAR), `ADMIN` (encerrar da tela de admin, SPEC v1.7 A1), `ZERAGEM` (HORA_ZERAGEM), `PROTECAO_REJEITADA` (1014 rejeitada duas vezes),
 `PROTECAO_INSTAVEL` (1014 recriada caiu de novo, v1.1 P8),
 `ENTRADA_TARDIA` (fill de entrada depois da espera de encerramento; só registro, o gestor nunca
 reabre a operação). O gestor trata tudo o que não é `GESTOR` como operação fechada pelo serviço,

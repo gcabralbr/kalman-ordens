@@ -58,24 +58,26 @@ type servico struct {
 
 // Executor de um cenário.
 type Executor struct {
-	c        roteiro.Cenario
-	dir      string
-	rel      *relogio.Controlado
-	preco    *preco.Falsa
-	repo     repo.Repositorio
-	backend  Backend
-	notif    *notificador
-	pnt      *falso.Falso
-	svc      *servico
-	cfg      config.Config
-	capturas map[string]string
-	resposta map[string]any
-	casados  map[int64]bool
-	sessaoOK int
-	logons   int64
-	travado  chan struct{} // motor_lento
-	tsPorOp  map[string]string
-	Registro []string // o que aconteceu, para depuração
+	c         roteiro.Cenario
+	dir       string
+	rel       *relogio.Controlado
+	preco     *preco.Falsa
+	repo      repo.Repositorio
+	backend   Backend
+	notif     *notificador
+	pnt       *falso.Falso
+	svc       *servico
+	cfg       config.Config
+	capturas  map[string]string
+	resposta  map[string]any
+	casados   map[int64]bool
+	sessaoOK  int
+	logons    int64
+	travado   chan struct{} // motor_lento
+	tsPorOp   map[string]string
+	async     chan *httptest.ResponseRecorder // http_async em curso
+	asyncDesc string
+	Registro  []string // o que aconteceu, para depuração
 }
 
 // Backend de persistência do cenário. Novo dá um repositório limpo; Reabrir, o mesmo banco numa
@@ -425,6 +427,14 @@ func (e *Executor) passo(p roteiro.Passo) error {
 			corpo = p.Args[2]
 		}
 		return e.http(p.Args[0], p.Args[1], corpo)
+	case "http_async":
+		corpo := ""
+		if len(p.Args) > 2 {
+			corpo = p.Args[2]
+		}
+		return e.httpAsync(p.Args[0], p.Args[1], corpo)
+	case "http_aguarda":
+		return e.httpAguarda()
 	case "resposta":
 		return conferir(e.resposta, p.Args)
 	case "saude":
@@ -669,10 +679,44 @@ func (e *Executor) conferirASCII() error {
 	return nil
 }
 
+// httpAsync: a requisição fica em curso (ex.: GET /pnt/ordens, que espera as respostas do PnT
+// falso); http_aguarda pega a resposta.
+func (e *Executor) httpAsync(metodo, caminho, corpo string) error {
+	if e.async != nil {
+		return fmt.Errorf("já há uma http_async em curso")
+	}
+	ch := make(chan *httptest.ResponseRecorder, 1)
+	h := e.svc.http
+	go func() {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(metodo, caminho, bytes.NewBufferString(corpo)))
+		ch <- w
+	}()
+	e.async, e.asyncDesc = ch, metodo+" "+caminho+" "+corpo
+	return nil
+}
+
+func (e *Executor) httpAguarda() error {
+	if e.async == nil {
+		return fmt.Errorf("nenhuma http_async em curso")
+	}
+	defer func() { e.async = nil }()
+	select {
+	case w := <-e.async:
+		return e.lerResposta(e.asyncDesc, w)
+	case <-time.After(15 * time.Second):
+		return fmt.Errorf("http_async sem resposta em 15 s: %s", e.asyncDesc)
+	}
+}
+
 func (e *Executor) http(metodo, caminho, corpo string) error {
 	req := httptest.NewRequest(metodo, caminho, bytes.NewBufferString(corpo))
 	w := httptest.NewRecorder()
 	e.svc.http.ServeHTTP(w, req)
+	return e.lerResposta(metodo+" "+caminho+" "+corpo, w)
+}
+
+func (e *Executor) lerResposta(desc string, w *httptest.ResponseRecorder) error {
 	dec := json.NewDecoder(w.Body)
 	dec.UseNumber()
 	var v any
@@ -690,7 +734,7 @@ func (e *Executor) http(metodo, caminho, corpo string) error {
 			return err
 		}
 	}
-	e.Registro = append(e.Registro, fmt.Sprintf("%s %s %s → %d %v", metodo, caminho, corpo, w.Code, e.resposta))
+	e.Registro = append(e.Registro, fmt.Sprintf("%s → %d %v", desc, w.Code, e.resposta))
 	e.ocioso()
 	return nil
 }

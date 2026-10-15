@@ -1,0 +1,108 @@
+cenario 63 Ações de admin: encerrar a operação (saída normal, origem ADMIN), cancelar a entrada pendente, parada e retomada com motivo e por
+hora 2026-10-15 12:00:00
+# SPEC v1.7 A (contrato oficial). Toda ação exige {"motivo", "por" = uid do admin}; é gravada como
+# pedido (v1.6 P1) e, aceita, como evento ADMIN_ACAO na linha do tempo (antes do efeito).
+#   POST /operacoes/{id}/encerrar[?modulo=]: saída normal (cancela a 1014, sai com a 1031, ZERADA)
+#     com origem ADMIN e o motivo do admin.
+#   POST /operacoes/{id}/cancelar-entrada[?modulo=]: só com a entrada pendente e sem posição.
+#   POST /parada e /retomar: passam a aceitar e gravar motivo e por (origem ADMIN na tela).
+# Toda resposta traz {aceito, codigo, motivo} (aceito: ENCERRANDO, CANCELANDO, JA_CANCELANDO,
+# PARADA_ATIVA, RETOMADO).
+config LIMITE_POSICAO_MAX=2
+config LIMITE_QTD_ORDEM=2
+habilita 7 posicao_max=2 qtd_max=2
+
+executa INICIO
+executa COMPRADO OP=6301
+
+# --- campos e recusas
+http POST /operacoes/6301/encerrar {"por":1450}
+resposta aceito=false codigo=CAMPO_INVALIDO
+http POST /operacoes/6301/encerrar {"motivo":"cliente_pediu"}
+resposta aceito=false codigo=CAMPO_INVALIDO
+http POST /operacoes/6301/encerrar {"motivo":"cliente_pediu","por":1450,"extra":1}
+resposta aceito=false codigo=CAMPO_INVALIDO _status=400
+http POST /operacoes/6399/encerrar {"motivo":"cliente_pediu","por":1450}
+resposta aceito=false codigo=OPERACAO_INEXISTENTE
+http POST /operacoes/6301/encerrar?modulo=PT {"motivo":"cliente_pediu","por":1450}
+resposta aceito=false codigo=OPERACAO_INEXISTENTE
+http POST /operacoes/6301/cancelar-entrada {"motivo":"cliente_pediu","por":1450}
+resposta aceito=false codigo=SEM_ENTRADA_PENDENTE
+nada
+sem_evento ADMIN_ACAO
+
+# --- encerrar: ADMIN_ACAO, cancel da 1014, 39=4, saída 1031, fill → ZERADA origem ADMIN
+http POST /operacoes/6301/encerrar {"motivo":"cliente_pediu","por":1450}
+resposta aceito=true codigo=ENCERRANDO motivo=* acao=ENCERRAR operacao_id=6301 posicao=1
+evento ADMIN_ACAO operacao_id=6301 acao=ENCERRAR motivo=cliente_pediu por=1450
+recebe 35=F 11=KM-P-6301-2 41=KM-P-6301-1 37=dsa.6301.P
+http POST /operacoes/6301/encerrar {"motivo":"de_novo","por":1450}
+resposta aceito=false codigo=OPERACAO_EM_SAIDA
+envia @ER 11=KM-P-6301-2 41=KM-P-6301-1 37=dsa.6301.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-6301-1 54=2 847=1031 44=129950
+envia @ER 11=KM-S-6301-1 37=dsa.6301.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+evento SAIDA_EXECUTADA operacao_id=6301 origem=ADMIN
+evento ZERADA operacao_id=6301 origem=ADMIN motivo=cliente_pediu pnl_pts=-10
+http POST /operacoes/6301/encerrar {"motivo":"de_novo","por":1450}
+resposta aceito=false codigo=OPERACAO_ENCERRADA
+conta_eventos ADMIN_ACAO operacao_id=6301 = 1
+
+# no histórico: o ADMIN_ACAO nos eventos e as ações nos pedidos (as recusadas também)
+http GET /operacoes/6301/historico
+resposta pedidos.#=8 pedidos.0.rota=ORDENS pedidos.1.rota=ENCERRAR pedidos.1.codigo=CAMPO_INVALIDO pedidos.3.rota=ENCERRAR pedidos.3.http_status=400
+resposta pedidos.4.rota=CANCELAR_ENTRADA pedidos.4.codigo=SEM_ENTRADA_PENDENTE pedidos.5.rota=ENCERRAR pedidos.5.aceito=true pedidos.5.corpo.por=1450
+resposta pedidos.6.codigo=OPERACAO_EM_SAIDA pedidos.7.codigo=OPERACAO_ENCERRADA
+resposta eventos.3.tipo=ADMIN_ACAO eventos.3.dados.acao=ENCERRAR eventos.3.dados.por=1450 operacao.origem_saida=ADMIN operacao.motivo_saida=cliente_pediu
+
+# --- cancelar a entrada pendente (sem posição)
+avanca 61s
+entrada 6302 C
+resposta aceito=true
+recebe 35=D 11=KM-E-6302-1 44=130020 847=1031
+envia @ER 11=KM-E-6302-1 37=dsa.6302.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+http POST /operacoes/6302/cancelar-entrada {"motivo":"entrada_errada","por":1450}
+resposta aceito=true codigo=CANCELANDO motivo=* acao=CANCELAR_ENTRADA situacao=CANCELANDO
+evento ADMIN_ACAO operacao_id=6302 acao=CANCELAR_ENTRADA motivo=entrada_errada por=1450
+recebe 35=F 11=KM-E-6302-2 41=KM-E-6302-1 37=dsa.6302.E
+# segundo pedido com o cancel em curso: aceito, nada de novo
+http POST /operacoes/6302/cancelar-entrada {"motivo":"entrada_errada","por":1450}
+resposta aceito=true codigo=JA_CANCELANDO motivo=* situacao=JA_CANCELANDO
+nada
+conta_eventos ADMIN_ACAO operacao_id=6302 = 1
+envia @ER 11=KM-E-6302-2 41=KM-E-6302-1 37=dsa.6302.E 150=4 39=4 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0
+avanca 8100ms
+evento ENTRADA_ENCERRADA operacao_id=6302 qtd_final=0 motivo=CANCELADA
+http GET /ordens/6302
+resposta estado=ENCERRADA_SEM_ENTRADA
+http POST /operacoes/6302/cancelar-entrada {"motivo":"entrada_errada","por":1450}
+resposta aceito=false codigo=OPERACAO_ENCERRADA
+
+# --- entrada parcialmente executada: cancelar-entrada recusa (há posição: encerrar)
+avanca 61s
+entrada 6303 C qtd=2
+resposta aceito=true
+recebe 35=D 11=KM-E-6303-1 38=2 847=1031
+envia @ER 11=KM-E-6303-1 37=dsa.6303.E 150=F 39=1 54=1 38=2 44=130020 847=1031 32=1 31=130010 14=1 151=1 6=130010
+recebe 35=D 11=KM-P-6303-1 38=1 847=1014
+http POST /operacoes/6303/cancelar-entrada {"motivo":"entrada_errada","por":1450}
+resposta aceito=false codigo=COM_POSICAO
+sem_evento ADMIN_ACAO operacao_id=6303
+
+# --- parada e retomada com motivo e por (a CLI continua sem por)
+http POST /parada {"modo":"BLOQUEAR","origem":"ADMIN","motivo":"suspeita","por":1450}
+resposta aceito=true codigo=PARADA_ATIVA motivo="parada BLOQUEAR ativa" parada.modo=BLOQUEAR parada.origem=ADMIN parada.motivo=suspeita parada.por=1450
+evento ADMIN_ACAO acao=PARADA modo=BLOQUEAR motivo=suspeita por=1450
+alerta PARADA
+saude parada.por=1450 parada.motivo=suspeita
+http POST /retomar {"origem":"ADMIN","motivo":"verificado","por":1451}
+resposta aceito=true codigo=RETOMADO motivo="parada retirada"
+evento ADMIN_ACAO acao=RETOMAR origem=ADMIN motivo=verificado por=1451
+alerta RETOMADA
+saude parada=null
+http POST /parada {"modo":"QUALQUER","origem":"ADMIN","motivo":"x","por":1450}
+resposta aceito=false codigo=CAMPO_INVALIDO motivo=*
+http POST /parada {"modo":"BLOQUEAR","origem":"cli","motivo":"sem_por"}
+resposta aceito=true codigo=PARADA_ATIVA parada.motivo=sem_por
+evento ADMIN_ACAO acao=PARADA origem=cli por=null
+http GET /sessao/eventos?dia=2026-10-15
+resposta _status=200

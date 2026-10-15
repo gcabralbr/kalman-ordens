@@ -259,6 +259,7 @@ type Parada struct {
 	Modo   string `json:"modo"`
 	Origem string `json:"origem"`
 	Motivo string `json:"motivo"`
+	Por    int    `json:"por,omitempty"` // uid do admin (v1.7 A2)
 	Desde  string `json:"desde"`
 }
 
@@ -306,6 +307,11 @@ type Motor struct {
 	seqOrdens      int64
 	proxInvariante time.Time
 	massCorte      int64 // ordens com seq até aqui existiam quando o mass status foi pedido
+
+	// GET /pnt/ordens (v1.7 C): a consulta em curso e a última (intervalo mínimo)
+	consulta         *consultaPnT
+	ultimaConsulta   Resposta
+	ultimaConsultaEm time.Time
 }
 
 // Novo cria o motor (não inicia).
@@ -476,23 +482,45 @@ func (m *Motor) guardarOriginal(p Pedido, r Resposta) {
 	m.salvarOp(op)
 }
 
-// AtivarParada (POST /parada).
-func (m *Motor) AtivarParada(modo, origem, motivo string) Resposta {
+// AtivarParada (POST /parada). por: uid do admin (v1.7 A2; 0 = não informado, ex.: a CLI).
+func (m *Motor) AtivarParada(modo, origem, motivo string, por int) Resposta {
 	var r Resposta
 	m.Fazer(func() {
 		if modo != "BLOQUEAR" && modo != "ZERAR" {
 			r = Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "modo deve ser BLOQUEAR ou ZERAR"}
 			return
 		}
-		m.ativarParada(modo, origem, motivo)
-		r = Resposta{"aceito": true, "parada": m.parada}
+		m.publicar("ADMIN_ACAO", nil, map[string]any{"acao": "PARADA", "modo": modo, "origem": origem, "motivo": motivo, "por": porOuNulo(por)})
+		m.ativarParada(modo, origem, motivoComPor(motivo, por))
+		m.parada.Motivo, m.parada.Por = motivo, por
+		if b, err := json.Marshal(m.parada); err == nil {
+			_ = m.repo.GravarEstado("parada", string(b), m.agora())
+		}
+		r = Resposta{"aceito": true, "codigo": "PARADA_ATIVA", "motivo": "parada " + m.parada.Modo + " ativa", "parada": m.parada}
 	})
 	return r
 }
 
-// Retomar (POST /retomar). Sempre manual.
-func (m *Motor) Retomar(origem, motivo string) Resposta {
+func porOuNulo(por int) any {
+	if por <= 0 {
+		return nil
+	}
+	return por
+}
+
+// motivoComPor: o texto do alerta PARADA/RETOMADA leva quem pediu.
+func motivoComPor(motivo string, por int) string {
+	if por <= 0 {
+		return motivo
+	}
+	return fmt.Sprintf("%s (por %d)", motivo, por)
+}
+
+// Retomar (POST /retomar). Sempre manual. por: uid do admin (v1.7 A2).
+func (m *Motor) Retomar(origem, motivo string, por int) Resposta {
 	m.Fazer(func() {
+		m.publicar("ADMIN_ACAO", nil, map[string]any{"acao": "RETOMAR", "origem": origem, "motivo": motivo, "por": porOuNulo(por)})
+		motivo = motivoComPor(motivo, por)
 		antes := m.parada
 		m.parada = nil
 		m.divergente = false
@@ -504,7 +532,7 @@ func (m *Motor) Retomar(origem, motivo string) Resposta {
 		m.al.Resolver("DIVERGENTE")
 		m.al.Emitir("RETOMADA", "", fmt.Sprintf("retomado por %s: %s (estava: %+v)", origem, motivo, antes), 0)
 	})
-	return Resposta{"aceito": true}
+	return Resposta{"aceito": true, "codigo": "RETOMADO", "motivo": "parada retirada"}
 }
 
 // Consultar (GET /ordens/{id}?modulo=; sem modulo = KALMAN).

@@ -218,7 +218,7 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 		return nil, err
 	}
 	for _, p := range ps {
-		if p.Aceito || existe[chave{p.Modulo, p.OperacaoID}] {
+		if p.Aceito || existe[chave{p.Modulo, p.OperacaoID}] || (p.Rota != "ORDENS" && p.Rota != "STOP") {
 			continue
 		}
 		var c struct {

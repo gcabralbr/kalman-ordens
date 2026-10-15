@@ -73,6 +73,10 @@ func (m *Motor) registrarRecebidaEm(o *ordem, msg pnt.Mensagem, em time.Time) bo
 
 func (m *Motor) execReport(msg pnt.Mensagem) {
 	cl, orig, id37 := msg.Texto(11), msg.Texto(41), msg.Texto(37)
+	if msg.Texto(150) == "I" && m.consulta != nil && m.consulta.contaDoID[msg.Texto(584)] != "" {
+		m.respostaDaConsulta(msg) // consulta do admin (v1.7 C): só leitura
+		return
+	}
 	if msg.Texto(150) == "I" && m.conciliando && m.massReqIDs[msg.Texto(584)] {
 		m.massUltima = m.agora()
 		if ehNosso(cl) || ehNosso(orig) {
@@ -637,6 +641,13 @@ const semOrdens = "101"
 
 func (m *Motor) businessReject(msg pnt.Mensagem) {
 	ref, refID, razao := msg.Texto(372), msg.Texto(379), msg.Texto(380)
+	if c := m.consulta; c != nil && c.contaDoID[refID] != "" {
+		// 35=j ao AF da consulta do admin (380=101: conta sem ordens): a conta respondeu
+		m.registrarRecebida(nil, msg)
+		c.feitas[c.contaDoID[refID]] = true
+		m.fecharConsultaSePronta(false)
+		return
+	}
 	if razao == semOrdens && (ref == "" || ref == "AF") {
 		m.registrarRecebida(nil, msg)
 		if m.conciliando {

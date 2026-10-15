@@ -6,6 +6,9 @@ diz nada, vale a v1.5.
 Tema: **decisões do responsável sobre a v1.5** (15/10): retenção aprovada, cópia do log FIX para
 fora da máquina, gravação dos pedidos HTTP.
 
+**Revista pela [v1.7](SPEC-ORDENS-v1.7.md)** (15/10): ordens no PnT e ações de admin; a lista do dia
+só traz recusas de `ORDENS` e `STOP`.
+
 Data: 2026-10-15.
 
 ---

@@ -1,5 +1,5 @@
 // Package api é o HTTP local do serviço (127.0.0.1:9092). Único cliente: o backend do Kalman
-// (e o CLI por SSH). net/http da biblioteca padrão: dez rotas, nada mais.
+// (e o CLI por SSH). net/http da biblioteca padrão, nada mais.
 package api
 
 import (
@@ -113,24 +113,80 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		}
 		escrever(w, http.StatusOK, evs)
 	})
+	// parada e retomada (v1.7 A2): aceitam e gravam motivo e por (uid do admin; a CLI não manda)
 	mux.HandleFunc("POST /parada", func(w http.ResponseWriter, r *http.Request) {
-		var b struct{ Modo, Origem, Motivo string }
-		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-			escrever(w, http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()})
-			return
+		corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))
+		var b struct {
+			Modo, Origem, Motivo string
+			Por                  *int
 		}
-		escrever(w, http.StatusOK, m.AtivarParada(b.Modo, b.Origem, b.Motivo))
+		status, resp := http.StatusOK, motor.Resposta(nil)
+		if err := json.Unmarshal(corpo, &b); err != nil {
+			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()}
+		} else {
+			resp = m.AtivarParada(b.Modo, b.Origem, b.Motivo, valor(b.Por))
+		}
+		m.RegistrarPedidoHTTP("PARADA", "", 0, 0, "", corpo, status, resp)
+		escrever(w, status, resp)
 	})
 	mux.HandleFunc("POST /retomar", func(w http.ResponseWriter, r *http.Request) {
-		var b struct{ Origem, Motivo string }
-		_ = json.NewDecoder(r.Body).Decode(&b)
-		escrever(w, http.StatusOK, m.Retomar(b.Origem, b.Motivo))
+		corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))
+		var b struct {
+			Origem, Motivo string
+			Por            *int
+		}
+		_ = json.Unmarshal(corpo, &b)
+		resp := m.Retomar(b.Origem, b.Motivo, valor(b.Por))
+		m.RegistrarPedidoHTTP("RETOMAR", "", 0, 0, "", corpo, http.StatusOK, resp)
+		escrever(w, http.StatusOK, resp)
+	})
+	// ações de admin sobre uma operação (v1.7 A1): {motivo, por} obrigatórios; ?modulo= (ausente = KALMAN)
+	for rota, acao := range map[string]string{"encerrar": motor.AcaoEncerrar, "cancelar-entrada": motor.AcaoCancelarEntrada} {
+		acao := acao
+		mux.HandleFunc("POST /operacoes/{id}/"+rota, func(w http.ResponseWriter, r *http.Request) {
+			corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))
+			modulo := r.URL.Query().Get("modulo")
+			var a motor.AcaoAdmin
+			id, errID := strconv.ParseInt(r.PathValue("id"), 10, 64)
+			status, resp := http.StatusOK, motor.Resposta(nil)
+			switch err := decodificar(corpo, &a); {
+			case errID != nil:
+				status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "operacao_id invalido"}
+			case err != nil:
+				status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()}
+			default:
+				select {
+				case resp = <-m.AcaoOperacaoAssincrona(acao, modulo, id, a):
+				case <-time.After(espera):
+					status, resp = http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "RESULTADO_DESCONHECIDO",
+						"motivo": "o motor nao respondeu a tempo; consultar GET /ordens/{id}"}
+				}
+			}
+			m.RegistrarPedidoHTTP(acao, modulo, id, 0, "", corpo, status, resp)
+			escrever(w, status, resp)
+		})
+	}
+	// ordens no PnT (v1.7 C): um 35=AF por conta, só leitura; intervalo mínimo com cache
+	mux.HandleFunc("GET /pnt/ordens", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case resp := <-m.ConsultarPnTAssincrono():
+			if resp["erro"] != nil {
+				escrever(w, http.StatusServiceUnavailable, resp)
+				return
+			}
+			escrever(w, http.StatusOK, resp)
+		case <-time.After(espera + esperaConsultaPnT):
+			escrever(w, http.StatusServiceUnavailable, motor.Resposta{"erro": "RESULTADO_DESCONHECIDO", "motivo": "a consulta nao terminou a tempo"})
+		}
 	})
 	mux.HandleFunc("GET /saude", func(w http.ResponseWriter, r *http.Request) {
 		escrever(w, http.StatusOK, m.Saude())
 	})
 	return mux
 }
+
+// esperaConsultaPnT: folga do GET /pnt/ordens sobre a espera da própria consulta (CONSULTA_PNT_ESPERA_S).
+const esperaConsultaPnT = 10 * time.Second
 
 // limiteCorpo: os pedidos têm algumas centenas de bytes.
 const limiteCorpo = 64 * 1024

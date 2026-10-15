@@ -115,6 +115,7 @@ type Parametros struct {
 	SilencioMassStatus, AlertaSessaoPresa     time.Duration
 	IdadeMaxPreco, IdadeMaxPrecoDivergente    time.Duration
 	MaxRepreco                                int
+	ConsultaPnTEspera, ConsultaPnTIntervalo   time.Duration
 
 	PosicaoMax, QtdMaxOrdem, EntradasPorMinuto, MensagensPorMinuto, EntradasPorDia, RecusasParaParada int
 	IntervaloEntradas                                                                                 time.Duration
@@ -152,6 +153,8 @@ func (c Config) Parametros() Parametros {
 		IdadeMaxPreco:           c.Segundos("PRECO_IDADE_MAX_S", 3),
 		IdadeMaxPrecoDivergente: c.Segundos("IDADE_MAX_PRECO_DIVERGENTE_S", 60),
 		MaxRepreco:              c.Inteiro("MAX_REPRECO_SAIDA", 3),
+		ConsultaPnTEspera:       c.Segundos("CONSULTA_PNT_ESPERA_S", 5),
+		ConsultaPnTIntervalo:    c.Segundos("CONSULTA_PNT_INTERVALO_S", 10),
 
 		PosicaoMax:         c.Inteiro("LIMITE_POSICAO_MAX", 1),
 		QtdMaxOrdem:        c.Inteiro("LIMITE_QTD_ORDEM", 1),

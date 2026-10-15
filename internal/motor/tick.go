@@ -18,6 +18,7 @@ func (m *Motor) tick() {
 		m.virarDia()
 	}
 	m.al.Tick()
+	m.fecharConsultaSePronta(true)
 	agora := m.agora()
 	m.observarPreco()
 	logado := m.fix != nil && m.fix.Logado()
