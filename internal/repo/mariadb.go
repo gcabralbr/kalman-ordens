@@ -441,6 +441,35 @@ func (r *MariaDB) GravarHabilitacao(h dominio.Habilitacao) error {
 	return tx.Commit()
 }
 
+func (r *MariaDB) AlterarHabilitado(uid int, habilitado bool, por, motivo string, em time.Time) (dominio.Habilitacao, bool, error) {
+	antes := dominio.Habilitacao{UID: uid}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return antes, false, err
+	}
+	defer tx.Rollback()
+	err = tx.QueryRow(`SELECT habilitado, posicao_max, qtd_max_ordem, alterado_por, motivo, alterado_em
+		FROM kalmanordemusuario WHERE uid=? FOR UPDATE`, uid).Scan(&antes.Habilitado, &antes.PosicaoMax, &antes.QtdMaxOrdem, &antes.Por, &antes.Motivo, &antes.Em)
+	if errors.Is(err, sql.ErrNoRows) {
+		return antes, false, nil
+	}
+	if err != nil {
+		return antes, false, err
+	}
+	if antes.Habilitado == habilitado {
+		return antes, true, nil
+	}
+	if _, err := tx.Exec(`UPDATE kalmanordemusuario SET habilitado=?, alterado_por=?, motivo=?, alterado_em=? WHERE uid=?`,
+		habilitado, cortar(por, 64), cortar(motivo, 200), em.UTC(), uid); err != nil {
+		return antes, true, err
+	}
+	if _, err := tx.Exec(`INSERT INTO kalmanordemusuariohist (uid, habilitado, posicao_max, qtd_max_ordem, alterado_por, motivo, alterado_em)
+		VALUES (?,?,?,?,?,?,?)`, uid, habilitado, antes.PosicaoMax, antes.QtdMaxOrdem, cortar(por, 64), cortar(motivo, 200), em.UTC()); err != nil {
+		return antes, true, err
+	}
+	return antes, true, tx.Commit()
+}
+
 // ConfigUsuario: usucodusuario é char(15) com o uid do Kalman (o mesmo do GQ).
 func (r *MariaDB) ConfigUsuario(uid int) (string, string, bool, error) {
 	var hml, prd sql.NullString

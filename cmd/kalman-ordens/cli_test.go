@@ -298,3 +298,51 @@ func TestExpurgarCLI(t *testing.T) {
 		t.Fatal("o resumo da operação não pode ser expurgado")
 	}
 }
+
+// v1.8 H3: "usuario habilitar/desabilitar" sem -posicao-max/-qtd-max mantém os limites atuais
+// (antes zerava); com a flag, troca; linha nova sem flag fica 0 (só o global).
+func TestUsuarioHabilitarPreservaLimites(t *testing.T) {
+	dsn := os.Getenv("KALMAN_TESTE_MARIADB")
+	if dsn == "" {
+		t.Skip("KALMAN_TESTE_MARIADB vazio")
+	}
+	r, err := repo.AbrirMariaDB(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Fechar()
+	if err := r.LimparTeste(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Migrar(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.PrepararUsuariosTeste(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Novo(map[string]string{"DB_DSN": dsn, "ORDENS_AMBIENTE": "HML", "ORDENS_CONTAS_HML": "99999", "ACUSUARIO_TABELA": "acusuario_teste"})
+	var saida bytes.Buffer
+	passo := func(args ...string) {
+		t.Helper()
+		if err := cliUsuario(cfg, args, &saida); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+	confere := func(uid int, hab bool, pm, qm int) {
+		t.Helper()
+		h, ok, err := r.Habilitacao(uid)
+		if err != nil || !ok || h.Habilitado != hab || h.PosicaoMax != pm || h.QtdMaxOrdem != qm {
+			t.Fatalf("uid %d: %+v ok=%v err=%v, esperava habilitado=%v posicao_max=%d qtd_max=%d", uid, h, ok, err, hab, pm, qm)
+		}
+	}
+	passo("habilitar", "-uid", "1450", "-motivo", "F1", "-posicao-max", "2", "-qtd-max", "3")
+	confere(1450, true, 2, 3)
+	passo("desabilitar", "-uid", "1450", "-motivo", "fim")
+	confere(1450, false, 2, 3)
+	passo("habilitar", "-uid", "1450", "-motivo", "volta")
+	confere(1450, true, 2, 3)
+	passo("habilitar", "-uid", "1450", "-motivo", "so qtd", "-qtd-max", "0")
+	confere(1450, true, 2, 0)
+	passo("habilitar", "-uid", "1451", "-motivo", "novo")
+	confere(1451, true, 0, 0)
+}

@@ -71,6 +71,10 @@ type Repositorio interface {
 	Habilitacoes() ([]dominio.Habilitacao, error)
 	// GravarHabilitacao substitui a atual e acrescenta ao histórico.
 	GravarHabilitacao(dominio.Habilitacao) error
+	// AlterarHabilitado (v1.8 H2, admin): troca só habilitado, por, motivo e em, preservando os
+	// limites, com o histórico; atômico. Sem linha, ou já no valor pedido, não grava nada.
+	// Devolve a habilitação de antes e se havia linha.
+	AlterarHabilitado(uid int, habilitado bool, por, motivo string, em time.Time) (antes dominio.Habilitacao, existia bool, err error)
 
 	// Histórico (v1.5 R): consultas de qualquer dia, para a tela de admin e a CLI.
 	// DiaDaOperacao: o dia (pregão) da operação (modulo vazio = KALMAN).
@@ -148,6 +152,20 @@ func (m *Memoria) GravarHabilitacao(h dominio.Habilitacao) error {
 	m.habil[h.UID] = h
 	m.hist = append(m.hist, h)
 	return nil
+}
+
+func (m *Memoria) AlterarHabilitado(uid int, habilitado bool, por, motivo string, em time.Time) (dominio.Habilitacao, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	antes, ok := m.habil[uid]
+	if !ok || antes.Habilitado == habilitado {
+		return antes, ok, nil
+	}
+	h := antes
+	h.Habilitado, h.Por, h.Motivo, h.Em = habilitado, por, motivo, em
+	m.habil[uid] = h
+	m.hist = append(m.hist, h)
+	return antes, true, nil
 }
 
 func (m *Memoria) ConfigUsuario(uid int) (string, string, bool, error) {

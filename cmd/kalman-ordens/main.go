@@ -45,7 +45,7 @@ const ajuda = `uso: kalman-ordens <comando> [opções]
   migrar [-env ARQ]               aplica as migrações pendentes do banco e sai (sem FIX nem HTTP)
   usuario listar                  habilitação por uid, direto no banco
   usuario conferir    -uid N
-  usuario habilitar   -uid N -motivo X [-posicao-max N] [-qtd-max N]
+  usuario habilitar   -uid N -motivo X [-posicao-max N] [-qtd-max N]   (sem a flag, mantém o limite atual)
   usuario desabilitar -uid N -motivo X
   historico operacao -id N [-modulo M] [-cru]   linha do tempo da operação (JSON, direto no banco)
   historico dia [-dia D] [-uid N] [-modulo M]   operações do dia

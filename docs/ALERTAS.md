@@ -151,6 +151,19 @@ Respostas aceitas (`"aceito": true`, com `codigo` e `motivo`, SPEC v1.7 A4):
 | `PARADA_ATIVA` | `POST /parada` aceito |
 | `RETOMADO` | `POST /retomar` aceito |
 
+## Habilitação do usuário pelo admin (SPEC v1.8 H)
+
+`POST /usuarios/{uid}/habilitacao` → `{aceito, codigo, motivo}`. Nenhum gera alerta.
+
+| Código | Quando |
+|---|---|
+| `BLOQUEADO` | aceito: o uid passou a não habilitado (entradas novas recusadas; posição, 1014 e saídas seguem) |
+| `DESBLOQUEADO` | aceito: o uid voltou a habilitado |
+| `JA_BLOQUEADO` | aceito: já não estava habilitado (ou não tem linha); nada gravado |
+| `JA_DESBLOQUEADO` | aceito: já estava habilitado; nada gravado |
+| `SEM_HABILITACAO_PREVIA` | recusa: `habilitado: true` para uid sem linha (a 1ª habilitação é pela CLI) |
+| `CAMPO_INVALIDO` | recusa: `habilitado`, `motivo` ou `por` ausente; campo desconhecido; uid inválido |
+
 ## Rejeições e avisos conhecidos do PnT
 
 Códigos e textos vistos nas respostas do PnT (o `[XXX-n]` no 58 de 35=9, 35=8 39=8 e dos avisos

@@ -431,3 +431,52 @@ func TestContratoHistorico(t *testing.T) {
 		})
 	}
 }
+
+// v1.8 H2: AlterarHabilitado troca só habilitado, por, motivo e em, preserva os limites e grava o
+// histórico; sem linha ou já no valor pedido, nada.
+func TestContratoAlterarHabilitado(t *testing.T) {
+	for nome, novo := range backends(t) {
+		t.Run(nome, func(t *testing.T) {
+			r := novo(t)
+			em := time.Date(2026, 10, 15, 13, 0, 0, 0, time.UTC)
+			hist := func() int {
+				t.Helper()
+				switch x := r.(type) {
+				case *Memoria:
+					return len(x.hist)
+				case *MariaDB:
+					var n int
+					if err := x.db.QueryRow("SELECT COUNT(*) FROM kalmanordemusuariohist WHERE uid=7").Scan(&n); err != nil {
+						t.Fatal(err)
+					}
+					return n
+				}
+				return -1
+			}
+			if _, ok, err := r.AlterarHabilitado(7, false, "admin:1", "x", em); ok || err != nil {
+				t.Fatalf("sem linha: ok=%v err=%v", ok, err)
+			}
+			if err := r.GravarHabilitacao(dominio.Habilitacao{UID: 7, Habilitado: true, PosicaoMax: 2, QtdMaxOrdem: 3, Por: "george", Motivo: "F1", Em: em}); err != nil {
+				t.Fatal(err)
+			}
+			antes, ok, err := r.AlterarHabilitado(7, false, "admin:1450", "inadimplencia", em.Add(time.Minute))
+			if err != nil || !ok || !antes.Habilitado || antes.PosicaoMax != 2 || antes.Por != "george" {
+				t.Fatalf("antes: %+v ok=%v err=%v", antes, ok, err)
+			}
+			h, _, _ := r.Habilitacao(7)
+			if h.Habilitado || h.PosicaoMax != 2 || h.QtdMaxOrdem != 3 || h.Por != "admin:1450" || h.Motivo != "inadimplencia" || !h.Em.Equal(em.Add(time.Minute)) {
+				t.Fatalf("depois: %+v", h)
+			}
+			if n := hist(); n != 2 {
+				t.Fatalf("histórico: %d linhas, esperava 2", n)
+			}
+			// já bloqueado: nada muda, nada no histórico
+			if antes, ok, _ := r.AlterarHabilitado(7, false, "admin:9", "de novo", em.Add(2*time.Minute)); !ok || antes.Habilitado {
+				t.Fatalf("já bloqueado: %+v", antes)
+			}
+			if h, _, _ := r.Habilitacao(7); h.Por != "admin:1450" || hist() != 2 {
+				t.Fatalf("já bloqueado não devia gravar: %+v, histórico %d", h, hist())
+			}
+		})
+	}
+}

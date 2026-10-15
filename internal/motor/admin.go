@@ -11,6 +11,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"gammaquant.com.br/kalman-ordens/internal/alerta"
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/pnt"
 )
@@ -429,4 +430,80 @@ func divergencias(o *ordem, msg pnt.Mensagem) []string {
 		}
 	}
 	return d
+}
+
+// ---------------------------------------------------------------- habilitação pelo admin (v1.8 H)
+
+// HabilitacaoAdmin é o corpo do POST /usuarios/{uid}/habilitacao (estrito): os três obrigatórios.
+type HabilitacaoAdmin struct {
+	Habilitado *bool  `json:"habilitado"`
+	Motivo     string `json:"motivo"`
+	Por        *int   `json:"por"`
+}
+
+// HabilitacaoDoUsuario: GET /usuarios/{uid}/habilitacao (direto do banco). Sem linha: existe e
+// habilitado false, o resto nulo.
+func HabilitacaoDoUsuario(r interface {
+	Habilitacao(int) (dominio.Habilitacao, bool, error)
+}, uid int) (Resposta, error) {
+	h, ok, err := r.Habilitacao(uid)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return Resposta{"uid": uid, "existe": false, "habilitado": false, "posicao_max": nil, "qtd_max_ordem": nil,
+			"por": nil, "motivo": nil, "em": nil}, nil
+	}
+	return Resposta{"uid": uid, "existe": true, "habilitado": h.Habilitado, "posicao_max": h.PosicaoMax, "qtd_max_ordem": h.QtdMaxOrdem,
+		"por": h.Por, "motivo": h.Motivo, "em": emBROuNulo(h.Em)}, nil
+}
+
+// AlterarHabilitacaoAssincrono: POST /usuarios/{uid}/habilitacao, na fila do motor.
+func (m *Motor) AlterarHabilitacaoAssincrono(uid int, a HabilitacaoAdmin) <-chan Resposta {
+	ch := make(chan Resposta, 1)
+	m.fila <- func() {
+		r, rec := m.alterarHabilitacao(uid, a)
+		if rec != nil {
+			r = m.recusar(Pedido{UID: &uid, Papel: "HABILITACAO"}, rec)
+		}
+		ch <- r
+	}
+	return ch
+}
+
+// alterarHabilitacao (v1.8 H2): bloqueia ou desbloqueia o uid. Grava só habilitado, por
+// ("admin:<por>"), motivo e em, preservando os limites, com o histórico; a 1ª habilitação continua
+// só pela CLI. Efeito: só a ENTRADA confere a habilitação (verificarHabilitacao); posição, 1014,
+// saída e entrada pendente seguem.
+func (m *Motor) alterarHabilitacao(uid int, a HabilitacaoAdmin) (Resposta, *recusa) {
+	if uid <= 0 {
+		return nil, simples("CAMPO_INVALIDO", "uid invalido")
+	}
+	if a.Habilitado == nil {
+		return nil, simples("CAMPO_INVALIDO", "habilitado obrigatório")
+	}
+	if rec := (AcaoAdmin{Motivo: a.Motivo, Por: a.Por}).validar(); rec != nil {
+		return nil, rec
+	}
+	hab := *a.Habilitado
+	antes, existia, err := m.repo.AlterarHabilitado(uid, hab, fmt.Sprintf("admin:%d", *a.Por), a.Motivo, m.agora())
+	if err != nil {
+		slog.Error("alterar habilitação", "uid", uid, "erro", err)
+		return nil, simples("CONFIG_USUARIO_INDISPONIVEL", "habilitação ilegível no banco")
+	}
+	switch {
+	case !existia && hab:
+		return nil, simples("SEM_HABILITACAO_PREVIA", fmt.Sprintf("uid %d nunca foi habilitado: a 1ª habilitação é pela CLI (kalman-ordens usuario habilitar)", uid))
+	case !existia || (antes.Habilitado == hab && !hab):
+		return Resposta{"aceito": true, "codigo": "JA_BLOQUEADO", "motivo": fmt.Sprintf("uid %d ja nao estava habilitado", uid)}, nil
+	case antes.Habilitado == hab:
+		return Resposta{"aceito": true, "codigo": "JA_DESBLOQUEADO", "motivo": fmt.Sprintf("uid %d ja estava habilitado", uid)}, nil
+	}
+	acao, codigo, texto := "DESBLOQUEAR_USUARIO", "DESBLOQUEADO", "habilitado: entradas novas voltam a ser aceitas"
+	if !hab {
+		acao, codigo, texto = "BLOQUEAR_USUARIO", "BLOQUEADO", "bloqueado: entradas novas recusadas; posição, 1014 e saídas seguem"
+	}
+	slog.Warn("habilitação alterada pelo admin", "uid", uid, "habilitado", hab, "por", *a.Por, "motivo", a.Motivo)
+	m.publicar("ADMIN_ACAO", nil, map[string]any{"acao": acao, "uid": uid, "motivo": a.Motivo, "por": *a.Por})
+	return Resposta{"aceito": true, "codigo": codigo, "motivo": alerta.ASCII(fmt.Sprintf("uid %d %s", uid, texto))}, nil
 }

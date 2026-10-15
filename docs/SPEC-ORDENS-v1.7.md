@@ -6,6 +6,9 @@ diz nada, vale a v1.6.
 Tema: **tela de admin — ordens no PnT e ações de operação** (contrato oficial do responsável,
 15/10; o lado do Kalman implementa igual). Tudo em 127.0.0.1.
 
+**Revista pela [v1.8](SPEC-ORDENS-v1.8.md)** (15/10): habilitação do usuário pelo admin; CLI
+`usuario` preserva os limites.
+
 Data: 2026-10-15.
 
 ---

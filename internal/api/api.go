@@ -166,6 +166,37 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 			escrever(w, status, resp)
 		})
 	}
+	// habilitação do usuário pelo admin (v1.8 H): consulta e bloqueio/desbloqueio
+	mux.HandleFunc("GET /usuarios/{uid}/habilitacao", func(w http.ResponseWriter, r *http.Request) {
+		uid, err := strconv.Atoi(r.PathValue("uid"))
+		if err != nil || uid <= 0 {
+			escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "uid invalido"})
+			return
+		}
+		h, err := motor.HabilitacaoDoUsuario(m.Repo(), uid)
+		responderHistorico(w, h, err)
+	})
+	mux.HandleFunc("POST /usuarios/{uid}/habilitacao", func(w http.ResponseWriter, r *http.Request) {
+		corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))
+		var a motor.HabilitacaoAdmin
+		uid, errUID := strconv.Atoi(r.PathValue("uid"))
+		status, resp := http.StatusOK, motor.Resposta(nil)
+		switch err := decodificar(corpo, &a); {
+		case errUID != nil || uid <= 0:
+			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "uid invalido"}
+		case err != nil:
+			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()}
+		default:
+			select {
+			case resp = <-m.AlterarHabilitacaoAssincrono(uid, a):
+			case <-time.After(espera):
+				status, resp = http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "RESULTADO_DESCONHECIDO",
+					"motivo": "o motor nao respondeu a tempo; consultar GET /usuarios/{uid}/habilitacao"}
+			}
+		}
+		m.RegistrarPedidoHTTP("HABILITACAO", "", 0, uid, "", corpo, status, resp)
+		escrever(w, status, resp)
+	})
 	// ordens no PnT (v1.7 C): um 35=AF por conta, só leitura; intervalo mínimo com cache
 	mux.HandleFunc("GET /pnt/ordens", func(w http.ResponseWriter, r *http.Request) {
 		select {

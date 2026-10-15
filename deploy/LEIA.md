@@ -136,7 +136,7 @@ Habilitação (v1.2 U5): só pela CLI, direto no banco (lê o `DB_DSN` do servic
 sudo /opt/kalman-ordens/kalman-ordens usuario conferir    -uid 1450   # destino=85 conta=99999
 sudo /opt/kalman-ordens/kalman-ordens usuario habilitar   -uid 1450 -motivo "F1 rodada 1" -posicao-max 1 -qtd-max 1
 sudo /opt/kalman-ordens/kalman-ordens usuario listar
-sudo /opt/kalman-ordens/kalman-ordens usuario desabilitar -uid 1450 -motivo "fim da rodada"
+sudo /opt/kalman-ordens/kalman-ordens usuario desabilitar -uid 1450 -motivo "fim da rodada"   # sem -posicao-max/-qtd-max, os limites ficam os atuais (v1.8 H4)
 ```
 
 ```

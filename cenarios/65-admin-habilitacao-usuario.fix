@@ -1,0 +1,95 @@
+cenario 65 Habilitação pelo admin: bloquear e desbloquear o uid; só a entrada nova é recusada (posição, 1014, ajuste, saída e entrada pendente seguem)
+hora 2026-10-15 13:00:00
+# SPEC v1.8 H (contrato oficial).
+#   GET /usuarios/{uid}/habilitacao → {uid, existe, habilitado, posicao_max, qtd_max_ordem, por, motivo, em}
+#   POST /usuarios/{uid}/habilitacao {habilitado, motivo, por} (estrito) → {aceito, codigo, motivo}:
+#     grava só habilitado, por ("admin:<por>"), motivo e em, preservando os limites, com o
+#     histórico, o pedido (v1.6) e o evento global ADMIN_ACAO (BLOQUEAR_USUARIO/DESBLOQUEAR_USUARIO,
+#     uid, motivo, por; sem operacao_id). A 1ª habilitação continua só pela CLI.
+habilita 7 posicao_max=1 qtd_max=1
+
+executa INICIO
+
+# --- consulta
+http GET /usuarios/7/habilitacao
+resposta _status=200 uid=7 existe=true habilitado=true posicao_max=1 qtd_max_ordem=1 por=* em=*
+http GET /usuarios/8/habilitacao
+resposta _status=200 uid=8 existe=false habilitado=false posicao_max=null qtd_max_ordem=null por=null motivo=null em=null
+
+# --- entrada pendente no PnT (sem fill ainda)
+entrada 6501 C
+resposta aceito=true
+recebe 35=D 11=KM-E-6501-1 44=130020 847=1031
+envia @ER 11=KM-E-6501-1 37=dsa.6501.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+
+# --- bloqueio
+http POST /usuarios/7/habilitacao {"habilitado":false,"motivo":"inadimplencia","por":1450}
+resposta _status=200 aceito=true codigo=BLOQUEADO motivo=*
+evento ADMIN_ACAO acao=BLOQUEAR_USUARIO uid=7 motivo=inadimplencia por=1450 operacao_id=null
+http GET /usuarios/7/habilitacao
+resposta existe=true habilitado=false posicao_max=1 qtd_max_ordem=1 por=admin:1450 motivo=inadimplencia em=2026-10-15T13:00:03.000-03:00
+http POST /usuarios/7/habilitacao {"habilitado":false,"motivo":"de_novo","por":1450}
+resposta aceito=true codigo=JA_BLOQUEADO
+conta_eventos ADMIN_ACAO = 1
+# nada é cancelado nem enviado por causa do bloqueio
+nada
+
+# --- a entrada pendente segue: o fill chega, a 1014 sai e protege; o ajuste do stop também
+envia @ER 11=KM-E-6501-1 37=dsa.6501.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=6501 qtd=1
+recebe 35=D 11=KM-P-6501-1 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-6501-1 37=dsa.6501.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=6501
+stop 6501 preco=129800
+resposta aceito=true situacao=ENVIADO
+recebe 35=G 11=KM-P-6501-2 20828=129800
+envia @ER 11=KM-P-6501-2 41=KM-P-6501-1 37=dsa.6501.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0
+evento PROTECAO_AJUSTADA operacao_id=6501
+
+# --- entrada nova: recusada (a habilitação é conferida só na entrada)
+entrada 6502 C
+resposta aceito=false codigo=UID_NAO_HABILITADO
+nada
+
+# --- a saída do gestor segue
+saida 6501 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 41=KM-P-6501-2 37=dsa.6501.P
+envia @ER 11=KM-P-6501-3 41=KM-P-6501-2 37=dsa.6501.P 150=4 39=4 54=2 38=1 44=129700 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-6501-1 54=2 847=1031
+envia @ER 11=KM-S-6501-1 37=dsa.6501.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=6501 origem=GESTOR
+
+# --- desbloqueio: os limites continuam os de antes; entrada nova aceita
+http POST /usuarios/7/habilitacao {"habilitado":true,"motivo":"regularizado","por":1451}
+resposta aceito=true codigo=DESBLOQUEADO motivo=*
+evento ADMIN_ACAO acao=DESBLOQUEAR_USUARIO uid=7 motivo=regularizado por=1451
+http POST /usuarios/7/habilitacao {"habilitado":true,"motivo":"de_novo","por":1451}
+resposta aceito=true codigo=JA_DESBLOQUEADO
+http GET /usuarios/7/habilitacao
+resposta habilitado=true posicao_max=1 qtd_max_ordem=1 por=admin:1451 motivo=regularizado
+avanca 61s
+entrada 6503 C
+resposta aceito=true
+recebe 35=D 11=KM-E-6503-1 847=1031
+
+# --- recusas
+http POST /usuarios/8/habilitacao {"habilitado":true,"motivo":"x","por":1450}
+resposta aceito=false codigo=SEM_HABILITACAO_PREVIA motivo=*
+http POST /usuarios/8/habilitacao {"habilitado":false,"motivo":"x","por":1450}
+resposta aceito=true codigo=JA_BLOQUEADO
+http GET /usuarios/8/habilitacao
+resposta existe=false
+http POST /usuarios/7/habilitacao {"habilitado":false,"motivo":"x"}
+resposta aceito=false codigo=CAMPO_INVALIDO
+http POST /usuarios/7/habilitacao {"motivo":"x","por":1450}
+resposta aceito=false codigo=CAMPO_INVALIDO
+http POST /usuarios/7/habilitacao {"habilitado":false,"motivo":"","por":1450}
+resposta aceito=false codigo=CAMPO_INVALIDO
+http POST /usuarios/7/habilitacao {"habilitado":false,"motivo":"x","por":1450,"posicao_max":5}
+resposta aceito=false codigo=CAMPO_INVALIDO _status=400
+http POST /usuarios/abc/habilitacao {"habilitado":false,"motivo":"x","por":1450}
+resposta aceito=false codigo=CAMPO_INVALIDO _status=400
+http GET /usuarios/7/habilitacao
+resposta habilitado=true posicao_max=1 qtd_max_ordem=1
+conta_eventos ADMIN_ACAO = 2

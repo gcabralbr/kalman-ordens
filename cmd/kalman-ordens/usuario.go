@@ -31,8 +31,8 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 	fs := flag.NewFlagSet("usuario "+acao, flag.ContinueOnError)
 	uid := fs.Int("uid", 0, "uid do Kalman (o mesmo do GQ)")
 	motivo := fs.String("motivo", "", "motivo (obrigatório em habilitar e desabilitar)")
-	posMax := fs.Int("posicao-max", 0, "limite de posição do uid (0 = só o global)")
-	qtdMax := fs.Int("qtd-max", 0, "limite de quantidade por ordem do uid (0 = só o global)")
+	posMax := fs.Int("posicao-max", 0, "limite de posição do uid (0 = só o global; sem a flag, mantém o atual)")
+	qtdMax := fs.Int("qtd-max", 0, "limite de quantidade por ordem do uid (0 = só o global; sem a flag, mantém o atual)")
 	arqEnv := fs.String("env", "/etc/kalman-ordens/service.env", "service.env, se DB_DSN não estiver no ambiente")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -75,7 +75,21 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 		if *motivo == "" {
 			return fmt.Errorf("usuario %s exige -motivo", acao)
 		}
-		h := dominio.Habilitacao{UID: *uid, Habilitado: acao == "habilitar", PosicaoMax: *posMax, QtdMaxOrdem: *qtdMax,
+		// sem a flag, o limite fica o atual (v1.8 H3; antes zerava); linha nova: 0 = só o global
+		atual, _, err := r.Habilitacao(*uid)
+		if err != nil {
+			return err
+		}
+		pm, qm := atual.PosicaoMax, atual.QtdMaxOrdem
+		fs.Visit(func(f *flag.Flag) {
+			switch f.Name {
+			case "posicao-max":
+				pm = *posMax
+			case "qtd-max":
+				qm = *qtdMax
+			}
+		})
+		h := dominio.Habilitacao{UID: *uid, Habilitado: acao == "habilitar", PosicaoMax: pm, QtdMaxOrdem: qm,
 			Por: quem(), Motivo: *motivo, Em: time.Now()}
 		if err := r.GravarHabilitacao(h); err != nil {
 			return err
