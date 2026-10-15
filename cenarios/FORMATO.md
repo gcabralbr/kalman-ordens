@@ -70,7 +70,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 | `saida OP LADO MOTIVO [qtd=1] [modulo=M]` | `POST /ordens` papel SAIDA; LADO é o lado da ordem de saída |
 | `stop OP preco=N\|pts=N [uid=N] [modulo=M]` | `POST /operacoes/OP/stop` (ajuste da proteção, SPEC v1.4 K): `preco=` vira `preco_stop`, `pts=` vira `stop_pts` |
 | `http METODO /caminho [json]` | requisição livre |
-| `resposta campo=valor ...` | confere o corpo da última resposta HTTP (`parada.modo=BLOQUEAR`; `null`; `*` = presente); `_status` é o código HTTP |
+| `resposta campo=valor ...` | confere o corpo da última resposta HTTP (`parada.modo=BLOQUEAR`; `null`; `*` = presente; numa lista, `mensagens.0.msgtype` e `mensagens.#` = tamanho; resposta que é uma lista fica em `_lista`); `_status` é o código HTTP |
 | `saude campo=valor ...` | `GET /saude` e confere |
 | `evento TIPO campo=valor ...` | existe em `GET /eventos` um evento desse tipo, ainda não casado, que bate; ele passa a contar como casado |
 | `sem_evento TIPO [campo=valor ...]` | nenhum evento não casado desse tipo |

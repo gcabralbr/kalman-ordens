@@ -31,10 +31,16 @@ func (m *Motor) processar(msg pnt.Mensagem) {
 }
 
 func (m *Motor) registrarRecebida(o *ordem, msg pnt.Mensagem) bool {
+	return m.registrarRecebidaEm(o, msg, m.agora())
+}
+
+// registrarRecebidaEm: com o horário de chegada (as respostas do mass status só são gravadas na
+// conciliação, segundos depois de chegarem).
+func (m *Motor) registrarRecebidaEm(o *ordem, msg pnt.Mensagem, em time.Time) bool {
 	ev := repo.EventoFIX{
 		Direcao: "REC", MsgType: msg.Tipo, ExecType: msg.Texto(150), OrdStatus: msg.Texto(39),
 		ClOrdID: msg.Texto(11), OrderID: msg.Texto(37), ExecID: msg.Texto(17), Texto: msg.Texto(58),
-		Bruta: msg.Bruta, Em: m.agora(),
+		Bruta: msg.Bruta, Em: em,
 	}
 	for _, t := range []int{103, 102, 380, 373} {
 		if v := msg.Texto(t); v != "" {
@@ -75,6 +81,7 @@ func (m *Motor) execReport(msg pnt.Mensagem) {
 		} else {
 			m.massRespostas = append(m.massRespostas, nil) // ordem de outro (PT) na mesma conta
 		}
+		m.massChegadas = append(m.massChegadas, m.agora())
 		return
 	}
 	if !ehNosso(cl) && !ehNosso(orig) && m.por37[id37] == nil {
@@ -514,6 +521,7 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 	o := m.localizar(msg.Texto(37), msg.Texto(11), msg.Texto(41))
 	if o == nil {
 		if ehNosso(msg.Texto(11)) || ehNosso(msg.Texto(41)) {
+			m.registrarRecebida(nil, msg)
 			m.al.Emitir("RECUSA_PNT", "", "35=9 de ordem KM desconhecida: 11="+msg.Texto(11), 0)
 		}
 		return
@@ -715,6 +723,7 @@ func (m *Motor) rejeicaoEnviada(msg pnt.Mensagem) {
 // tenta de novo com espera crescente; a 1014 continua protegendo a posição no PnT.
 func (m *Motor) logonRecusado(texto string) {
 	_, _ = m.repo.RegistrarEvento(repo.EventoFIX{Direcao: "REC", MsgType: "5", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
+	m.registrarSessao("LOGON_RECUSADO", texto)
 	if m.presaDesde.IsZero() {
 		m.presaDesde = m.agora()
 	}

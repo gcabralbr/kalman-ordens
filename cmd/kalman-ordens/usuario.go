@@ -43,17 +43,8 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 	}
 	defer r.Fechar()
 	// o schema tem de estar na versão do binário: a CLI não migra sozinha
-	pend, err := r.MigracoesPendentes()
-	if err != nil {
+	if err := schemaEmDia(r); err != nil {
 		return err
-	}
-	if len(pend) > 0 {
-		var nomes []string
-		for _, m := range pend {
-			nomes = append(nomes, m.Nome)
-		}
-		return fmt.Errorf("schema do banco atrás do binário (%d migração(ões) pendente(s): %s): rode kalman-ordens migrar",
-			len(pend), strings.Join(nomes, ", "))
 	}
 	precisaUID := func() error {
 		if *uid <= 0 {

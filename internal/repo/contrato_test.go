@@ -315,3 +315,95 @@ func TestContratoV12(t *testing.T) {
 		})
 	}
 }
+
+// v1.5 R: consultas do histórico (tela de admin e CLI), de qualquer dia.
+func TestContratoHistorico(t *testing.T) {
+	for nome, novo := range backends(t) {
+		t.Run(nome, func(t *testing.T) {
+			r := novo(t)
+			em := time.Date(2026, 10, 15, 13, 0, 0, 250e6, time.UTC)
+			for _, mod := range []string{"", "PT"} {
+				op := &dominio.Operacao{Data: "2026-10-15", Modulo: mod, OperacaoID: 61, UID: 7, Lado: dominio.Compra, QtdPedida: 1, StopPts: 500,
+					Estado: dominio.Entrando, CriadaEm: em, ContadorN: map[string]int{}}
+				if err := r.SalvarOperacao(op); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if d, ok, err := r.DiaDaOperacao("", 61); err != nil || !ok || d != "2026-10-15" {
+				t.Fatalf("DiaDaOperacao KALMAN: %q %v %v", d, ok, err)
+			}
+			if d, ok, _ := r.DiaDaOperacao("PT", 61); !ok || d != "2026-10-15" {
+				t.Fatalf("DiaDaOperacao PT: %q %v", d, ok)
+			}
+			if _, ok, _ := r.DiaDaOperacao("XX", 61); ok {
+				t.Fatal("DiaDaOperacao achou operação de módulo inexistente")
+			}
+
+			o1 := &dominio.Ordem{Data: "2026-10-15", OperacaoID: 61, Papel: dominio.Entrada, ClOrdBase: "KM-E-61-1", ClOrdAtual: "KM-E-61-1",
+				Lado: dominio.Compra, Qtd: 1, Estado: dominio.Enviando, CriadaEm: em}
+			o2 := &dominio.Ordem{Data: "2026-10-15", OperacaoID: 62, Papel: dominio.Entrada, ClOrdBase: "KM-E-62-1", ClOrdAtual: "KM-E-62-1",
+				Lado: dominio.Compra, Qtd: 1, Estado: dominio.Enviando, CriadaEm: em}
+			for _, o := range []*dominio.Ordem{o1, o2} {
+				if err := r.SalvarOrdem(o); err != nil {
+					t.Fatal(err)
+				}
+			}
+			q, px := 1, decimal.RequireFromString("130010")
+			for i, e := range []EventoFIX{
+				{OrdemID: o1.ID, Direcao: "ENV", MsgType: "D", ClOrdID: "KM-E-61-1", Bruta: "8=FIX.4.4\x0135=D\x01", Em: em},
+				{OrdemID: o1.ID, Direcao: "REC", MsgType: "8", ExecType: "F", OrdStatus: "2", ClOrdID: "KM-E-61-1", OrderID: "dsa.61", ExecID: "x1",
+					LastQty: &q, LastPx: &px, CumQty: &q, AvgPx: &px, Texto: "ok", Codigo: "0", Bruta: "8=FIX.4.4\x0135=8\x01", Em: em.Add(time.Second)},
+				{OrdemID: o2.ID, Direcao: "ENV", MsgType: "D", Em: em},
+				{Direcao: "ENV", MsgType: "AF", Em: em},
+			} {
+				if _, err := r.RegistrarEvento(e); err != nil {
+					t.Fatalf("evento %d: %v", i, err)
+				}
+			}
+			evs, err := r.EventosFIXDasOrdens([]int64{o1.ID})
+			if err != nil || len(evs) != 2 {
+				t.Fatalf("EventosFIXDasOrdens: %d %v", len(evs), err)
+			}
+			f := evs[1]
+			if f.ID == 0 || f.ExecType != "F" || f.OrderID != "dsa.61" || *f.LastQty != 1 || !f.LastPx.Equal(px) || *f.CumQty != 1 ||
+				!f.AvgPx.Equal(px) || f.Texto != "ok" || f.Codigo != "0" || f.Bruta != "8=FIX.4.4\x0135=8\x01" || !f.Em.Equal(em.Add(time.Second)) {
+				t.Fatalf("evento lido diferente: %+v", f)
+			}
+			if evs, _ := r.EventosFIXDasOrdens(nil); len(evs) != 0 {
+				t.Fatal("EventosFIXDasOrdens(nil) devolveu eventos")
+			}
+
+			for _, p := range []struct {
+				tipo, mod string
+				op        int64
+				em        time.Time
+			}{{"ENTRADA_EXECUTADA", "", 61, em}, {"ALERTA", "", 61, em}, {"ZERADA", "PT", 61, em}, {"ALERTA", "", 0, em.Add(-24 * time.Hour)}} {
+				if _, err := r.Publicar(p.tipo, p.mod, p.op, []byte(`{"a":1}`), p.em); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if ps, _ := r.PublicadosDaOperacao("", 61); len(ps) != 2 || ps[0].Tipo != "ENTRADA_EXECUTADA" || ps[1].Tipo != "ALERTA" {
+				t.Fatalf("PublicadosDaOperacao KALMAN: %+v", ps)
+			}
+			if ps, _ := r.PublicadosDaOperacao("PT", 61); len(ps) != 1 || ps[0].Tipo != "ZERADA" || !ps[0].Em.Equal(em) {
+				t.Fatalf("PublicadosDaOperacao PT: %+v", ps)
+			}
+			if ps, _ := r.PublicadosEntre(em.Add(-time.Hour), em.Add(time.Hour), ""); len(ps) != 3 {
+				t.Fatalf("PublicadosEntre: %d", len(ps))
+			}
+			if ps, _ := r.PublicadosEntre(em.Add(-time.Hour), em.Add(time.Hour), "ALERTA"); len(ps) != 1 {
+				t.Fatalf("PublicadosEntre ALERTA: %d", len(ps))
+			}
+
+			for _, e := range []EventoSessao{{"LOGON", "logon aceito", em}, {"QUEDA", "caiu", em.Add(time.Second)}, {"LOGON", "ontem", em.Add(-24 * time.Hour)}} {
+				if err := r.RegistrarSessao(e); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ss, err := r.SessaoEntre(em.Add(-time.Hour), em.Add(time.Hour))
+			if err != nil || len(ss) != 2 || ss[0].Tipo != "LOGON" || ss[1].Tipo != "QUEDA" || ss[1].Texto != "caiu" || !ss[1].Em.Equal(em.Add(time.Second)) {
+				t.Fatalf("SessaoEntre: %+v %v", ss, err)
+			}
+		})
+	}
+}

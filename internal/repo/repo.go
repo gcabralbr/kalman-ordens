@@ -16,6 +16,7 @@ import (
 
 // EventoFIX é uma linha de kalmanordemevento.
 type EventoFIX struct {
+	ID        int64 // preenchido na leitura
 	OrdemID   int64
 	Modulo    string // o da ordem; vazio = KALMAN
 	Direcao   string // ENV | REC
@@ -71,6 +72,17 @@ type Repositorio interface {
 	// GravarHabilitacao substitui a atual e acrescenta ao histórico.
 	GravarHabilitacao(dominio.Habilitacao) error
 
+	// Histórico (v1.5 R): consultas de qualquer dia, para a tela de admin e a CLI.
+	// DiaDaOperacao: o dia (pregão) da operação (modulo vazio = KALMAN).
+	DiaDaOperacao(modulo string, operacaoID int64) (string, bool, error)
+	EventosFIXDasOrdens(ordemIDs []int64) ([]EventoFIX, error)
+	PublicadosDaOperacao(modulo string, operacaoID int64) ([]Publicado, error)
+	// PublicadosEntre: [de, ate); tipo vazio = todos.
+	PublicadosEntre(de, ate time.Time, tipo string) ([]Publicado, error)
+	// Eventos da sessão FIX e gerais (v1.5 R3).
+	RegistrarSessao(EventoSessao) error
+	SessaoEntre(de, ate time.Time) ([]EventoSessao, error)
+
 	// ConfigUsuario lê a configuração do usuário no GQ (dbecotools.acusuario, v1.2 U1):
 	// usutxtconfig (HML) e usutxtconfigprd (PRODUCAO). achou=false: uid sem linha.
 	ConfigUsuario(uid int) (hml, prd string, achou bool, err error)
@@ -87,18 +99,20 @@ var ErrDuplicada = errors.New("repo: operação duplicada")
 
 // Memoria guarda cópias (o que o motor tem em memória não vaza para cá).
 type Memoria struct {
-	mu        sync.Mutex
-	ops       []dominio.Operacao
-	ordens    []dominio.Ordem
-	eventos   []EventoFIX
-	execIDs   map[string]bool
-	pubs      []Publicado
-	estado    map[string]string
-	proxOp    int64
-	proxOrdem int64
-	habil     map[int]dominio.Habilitacao
-	hist      []dominio.Habilitacao
-	usuarios  map[int]*[2]string // uid → {usutxtconfig, usutxtconfigprd}
+	mu         sync.Mutex
+	ops        []dominio.Operacao
+	ordens     []dominio.Ordem
+	eventos    []EventoFIX
+	execIDs    map[string]bool
+	pubs       []Publicado
+	estado     map[string]string
+	proxOp     int64
+	proxOrdem  int64
+	habil      map[int]dominio.Habilitacao
+	hist       []dominio.Habilitacao
+	usuarios   map[int]*[2]string // uid → {usutxtconfig, usutxtconfigprd}
+	sessao     []EventoSessao
+	proxEvento int64
 }
 
 func NovaMemoria() *Memoria {
@@ -230,6 +244,8 @@ func (m *Memoria) RegistrarEvento(e EventoFIX) (bool, error) {
 		}
 		m.execIDs[chave] = true
 	}
+	m.proxEvento++
+	e.ID = m.proxEvento
 	m.eventos = append(m.eventos, e)
 	return true, nil
 }

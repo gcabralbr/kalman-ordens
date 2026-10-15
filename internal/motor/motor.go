@@ -301,6 +301,7 @@ type Motor struct {
 	massTentativas int
 	massProxima    time.Time
 	massRespostas  []*pnt.Mensagem // nil = ordem de outro (PT)
+	massChegadas   []time.Time     // quando cada resposta chegou (o registro usa este horário)
 	processadas    int64
 	seqOrdens      int64
 	proxInvariante time.Time
@@ -543,6 +544,9 @@ func (m *Motor) RejeicaoEnviada(msg pnt.Mensagem) {
 	m.fila <- func() { m.processadas++; m.rejeicaoEnviada(msg) }
 }
 func (m *Motor) LogonRecusado(texto string) { m.fila <- func() { m.logonRecusado(texto) } }
+func (m *Motor) EventoSessao(tipo, texto string) {
+	m.fila <- func() { m.registrarSessao(tipo, texto) }
+}
 func (m *Motor) StoreIlegivel(texto string) { m.fila <- func() { m.storeIlegivel(texto) } }
 
 // ---------------------------------------------------------------- carga do dia
@@ -705,6 +709,21 @@ func (m *Motor) publicarAlerta(codigo, texto string, op int64) {
 	}
 	b, _ := json.Marshal(d)
 	_, _ = m.repo.Publicar("ALERTA", mod, op, b, m.agora())
+	if op == 0 {
+		// alerta sem operação: também no registro da sessão (v1.5 R3)
+		tipo := "ALERTA"
+		if codigo == "CONCILIACAO" {
+			tipo = "CONCILIACAO"
+		}
+		m.registrarSessao(tipo, codigo+": "+texto)
+	}
+}
+
+// registrarSessao (v1.5 R3): GET /sessao/eventos. Texto em ASCII (v1.4 L1).
+func (m *Motor) registrarSessao(tipo, texto string) {
+	if err := m.repo.RegistrarSessao(repo.EventoSessao{Tipo: tipo, Texto: alerta.ASCII(texto), Em: m.agora()}); err != nil {
+		slog.Error("registrar evento da sessão", "tipo", tipo, "erro", err)
+	}
 }
 
 // enviar manda pela sessão e registra o evento ENV. Devolve false se não saiu.

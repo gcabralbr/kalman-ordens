@@ -47,6 +47,9 @@ const ajuda = `uso: kalman-ordens <comando> [opções]
   usuario conferir    -uid N
   usuario habilitar   -uid N -motivo X [-posicao-max N] [-qtd-max N]
   usuario desabilitar -uid N -motivo X
+  historico operacao -id N [-modulo M] [-cru]   linha do tempo da operação (JSON, direto no banco)
+  historico dia [-dia D] [-uid N] [-modulo M]   operações do dia
+  historico sessao [-dia D]                     logon, logout, queda, reenvios, conciliações, alertas gerais
   parar   -motivo X               parada BLOQUEAR (HTTP local)
   zerar   -motivo X               parada ZERAR (HTTP local)
   retomar -motivo X               retira a parada (sempre manual)
@@ -79,6 +82,8 @@ func executar(args []string, saida, erros io.Writer) int {
 		err = cli(config.DoAmbiente(), cmd, args)
 	case "usuario":
 		err = cliUsuario(config.DoAmbiente(), args, saida)
+	case "historico":
+		err = cliHistorico(config.DoAmbiente(), args, saida)
 	case "versao":
 		fmt.Fprintln(saida, versao)
 	case "ajuda", "help", "-h", "--help":

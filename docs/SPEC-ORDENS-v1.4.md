@@ -3,6 +3,9 @@
 Revisão da [SPEC-ORDENS-v1.3.md](SPEC-ORDENS-v1.3.md) (que revisa a v1.2, a v1.1 e a v1). Lista
 **só o que mudou**; onde a v1.4 não diz nada, vale a v1.3.
 
+**Revista pela [v1.5](SPEC-ORDENS-v1.5.md)** (15/10): histórico para a tela de admin, registro da sessão,
+retenção.
+
 Tema: **ajuste da proteção pelo gestor** (replace da 1014), **textos em ASCII** e uma pergunta
 nova ao PnT.
 

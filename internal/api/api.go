@@ -1,9 +1,10 @@
 // Package api é o HTTP local do serviço (127.0.0.1:9092). Único cliente: o backend do Kalman
-// (e o CLI por SSH). net/http da biblioteca padrão: sete rotas, nada mais.
+// (e o CLI por SSH). net/http da biblioteca padrão: dez rotas, nada mais.
 package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -62,6 +63,34 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		}
 		escrever(w, http.StatusOK, m.Consultar(r.URL.Query().Get("modulo"), id))
 	})
+	// histórico para a tela de admin (v1.5 R): só leitura, direto do banco, qualquer dia
+	mux.HandleFunc("GET /operacoes", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		uid := 0
+		if v := q.Get("uid"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n <= 0 {
+				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "uid invalido"})
+				return
+			}
+			uid = n
+		}
+		l, err := motor.OperacoesDoDia(m.Repo(), q.Get("dia"), uid, q.Get("modulo"))
+		responderHistorico(w, l, err)
+	})
+	mux.HandleFunc("GET /operacoes/{id}/historico", func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "operacao_id invalido"})
+			return
+		}
+		h, err := motor.HistoricoOperacao(m.Repo(), r.URL.Query().Get("modulo"), id, r.URL.Query().Get("cru") == "1")
+		responderHistorico(w, h, err)
+	})
+	mux.HandleFunc("GET /sessao/eventos", func(w http.ResponseWriter, r *http.Request) {
+		l, err := motor.EventosDaSessao(m.Repo(), r.URL.Query().Get("dia"))
+		responderHistorico(w, l, err)
+	})
 	mux.HandleFunc("GET /eventos", func(w http.ResponseWriter, r *http.Request) {
 		desde, _ := strconv.ParseInt(r.URL.Query().Get("desde"), 10, 64)
 		limite, _ := strconv.Atoi(r.URL.Query().Get("limite"))
@@ -97,6 +126,20 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		escrever(w, http.StatusOK, m.Saude())
 	})
 	return mux
+}
+
+// responderHistorico: 404 para operação inexistente, 400 para dia inválido, 500 para o resto.
+func responderHistorico(w http.ResponseWriter, v any, err error) {
+	switch {
+	case err == nil:
+		escrever(w, http.StatusOK, v)
+	case errors.Is(err, motor.ErrNaoEncontrada):
+		escrever(w, http.StatusNotFound, motor.Resposta{"existe": false})
+	case errors.Is(err, motor.ErrDia):
+		escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "dia obrigatorio, AAAA-MM-DD"})
+	default:
+		escrever(w, http.StatusInternalServerError, motor.Resposta{"erro": err.Error()})
+	}
 }
 
 func escrever(w http.ResponseWriter, status int, v any) {

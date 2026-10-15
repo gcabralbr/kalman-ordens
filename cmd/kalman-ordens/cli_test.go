@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gammaquant.com.br/kalman-ordens/internal/config"
+	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
 )
 
@@ -101,7 +102,7 @@ func TestMigrarEUsuarioComSchemaVazio(t *testing.T) {
 	if err := cliMigrar(cfg, nil, &saida); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(saida.String(), "aplicada: 0001_inicial.sql") || !strings.Contains(saida.String(), "aplicada: 0002_") || !strings.Contains(saida.String(), "aplicada: 0003_execid_por_ordem.sql") || !strings.Contains(saida.String(), "aplicada: 0004_modulo.sql") || !strings.Contains(saida.String(), "aplicada: 0005_stop_ajustado.sql") {
+	if !strings.Contains(saida.String(), "aplicada: 0001_inicial.sql") || !strings.Contains(saida.String(), "aplicada: 0002_") || !strings.Contains(saida.String(), "aplicada: 0003_execid_por_ordem.sql") || !strings.Contains(saida.String(), "aplicada: 0004_modulo.sql") || !strings.Contains(saida.String(), "aplicada: 0005_stop_ajustado.sql") || !strings.Contains(saida.String(), "aplicada: 0006_historico.sql") {
 		t.Fatalf("primeiro migrar: %q", saida.String())
 	}
 	saida.Reset()
@@ -124,5 +125,79 @@ func TestMigrarEUsuarioComSchemaVazio(t *testing.T) {
 	}
 	if !strings.Contains(saida.String(), "uid sem linha") {
 		t.Fatalf("conferir depois de migrar: %q", saida.String())
+	}
+}
+
+// historico (v1.5 R): o mesmo conteúdo das rotas da tela de admin, direto do banco; recusa com o
+// schema atrás do binário.
+func TestHistoricoCLI(t *testing.T) {
+	dsn := os.Getenv("KALMAN_TESTE_MARIADB")
+	if dsn == "" {
+		t.Skip("KALMAN_TESTE_MARIADB vazio")
+	}
+	r, err := repo.AbrirMariaDB(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Fechar()
+	if err := r.LimparTeste(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Novo(map[string]string{"DB_DSN": dsn})
+	var saida bytes.Buffer
+	if err := cliHistorico(cfg, []string{"sessao", "-dia", "2026-10-15"}, &saida); err == nil || !strings.Contains(err.Error(), "rode kalman-ordens migrar") {
+		t.Fatalf("historico com schema vazio: %v", err)
+	}
+	if err := r.Migrar(); err != nil {
+		t.Fatal(err)
+	}
+	em := time.Date(2026, 10, 15, 13, 0, 3, 0, time.UTC) // 10:00:03 em Brasília
+	op := &dominio.Operacao{Data: "2026-10-15", OperacaoID: 900000061, UID: 1450, Lado: dominio.Venda, QtdPedida: 1, StopPts: 500,
+		Estado: dominio.Protegida, CriadaEm: em, ContadorN: map[string]int{}}
+	if err := r.SalvarOperacao(op); err != nil {
+		t.Fatal(err)
+	}
+	o := &dominio.Ordem{Data: "2026-10-15", OperacaoID: op.OperacaoID, UID: 1450, Papel: dominio.Entrada, ClOrdBase: "KM-E-900000061-1",
+		ClOrdAtual: "KM-E-900000061-1", Lado: dominio.Venda, Qtd: 1, Estado: dominio.Ativa, CriadaEm: em}
+	if err := r.SalvarOrdem(o); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.RegistrarEvento(repo.EventoFIX{OrdemID: o.ID, Direcao: "ENV", MsgType: "D", ClOrdID: o.ClOrdAtual, Bruta: "8=FIX.4.4\x0135=D\x0111=KM-E-900000061-1\x01", Em: em}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RegistrarSessao(repo.EventoSessao{Tipo: "LOGON", Texto: "logon aceito", Em: em.Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+
+	casos := []struct {
+		args  []string
+		quer  []string
+		nunca string
+	}{
+		{[]string{"operacao", "-id", "900000061"}, []string{`"operacao_id": 900000061`, `"msgtype": "D"`, `"em": "2026-10-15T10:00:03.000-03:00"`, `"eventos": []`}, "fix_raw"},
+		{[]string{"operacao", "-id", "900000061", "-cru"}, []string{`"fix_raw": "8=FIX.4.4|35=D|11=KM-E-900000061-1|"`}, ""},
+		{[]string{"dia", "-dia", "2026-10-15", "-uid", "1450"}, []string{`"operacao_id": 900000061`, `"lado": "V"`, `"zerada_em": null`, `"alertas_n": 0`}, ""},
+		{[]string{"dia", "-dia", "2026-10-15", "-uid", "1451"}, []string{"[]"}, "operacao_id"},
+		{[]string{"sessao", "-dia", "2026-10-15"}, []string{`"tipo": "LOGON"`, `"em": "2026-10-15T09:00:03.000-03:00"`}, ""},
+	}
+	for _, c := range casos {
+		saida.Reset()
+		if err := cliHistorico(cfg, c.args, &saida); err != nil {
+			t.Fatalf("%v: %v", c.args, err)
+		}
+		for _, q := range c.quer {
+			if !strings.Contains(saida.String(), q) {
+				t.Errorf("%v: falta %s em %s", c.args, q, saida.String())
+			}
+		}
+		if c.nunca != "" && strings.Contains(saida.String(), c.nunca) {
+			t.Errorf("%v: não devia ter %s: %s", c.args, c.nunca, saida.String())
+		}
+	}
+	if err := cliHistorico(cfg, []string{"operacao", "-id", "1"}, &saida); err == nil {
+		t.Fatal("historico de operação inexistente devia falhar")
+	}
+	if err := cliHistorico(cfg, []string{"dia", "-dia", "15/10/2026"}, &saida); err == nil {
+		t.Fatal("dia inválido devia falhar")
 	}
 }

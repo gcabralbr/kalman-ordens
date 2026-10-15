@@ -800,18 +800,30 @@ func (e *Executor) alerta(p roteiro.Passo) error {
 
 // ---------------------------------------------------------------- comparação
 
-// conferir aplica campo=valor (com caminho a.b) sobre um objeto JSON.
+// conferir aplica campo=valor (com caminho a.b; numa lista, a.0.b e a.# = tamanho) sobre um objeto JSON.
 func conferir(obj map[string]any, args []string) error {
 	for _, a := range args {
 		k, esperado, _ := strings.Cut(a, "=")
 		var v any = obj
 		for _, parte := range strings.Split(k, ".") {
-			m, ok := v.(map[string]any)
-			if !ok {
+			switch x := v.(type) {
+			case map[string]any:
+				v = x[parte]
+			case []any:
+				// lista: índice (lista.0.campo) ou tamanho (lista.#)
+				if parte == "#" {
+					v = json.Number(strconv.Itoa(len(x)))
+					continue
+				}
+				i, err := strconv.Atoi(parte)
+				if err != nil || i < 0 || i >= len(x) {
+					v = nil
+					continue
+				}
+				v = x[i]
+			default:
 				v = nil
-				break
 			}
-			v = m[parte]
 		}
 		if !iguaisJSON(esperado, v) {
 			return fmt.Errorf("%s = %v, esperava %s (objeto: %v)", k, v, esperado, obj)
@@ -829,7 +841,7 @@ func iguaisJSON(esperado string, v any) bool {
 	case bool:
 		return esperado == strconv.FormatBool(x)
 	case string:
-		return esperado == x || (esperado != "" && iguaisNumero(esperado, x))
+		return esperado == "*" || esperado == x || (esperado != "" && iguaisNumero(esperado, x))
 	default:
 		return esperado == "*"
 	}

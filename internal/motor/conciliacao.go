@@ -28,7 +28,7 @@ var contadorMass int
 // conciliação fecha no silêncio.
 func (m *Motor) pedirMassStatus() {
 	m.massReqIDs = map[string]bool{}
-	m.massRespostas = nil
+	m.massRespostas, m.massChegadas = nil, nil
 	m.massCorte = m.seqOrdens
 	m.massUltima = m.agora()
 	m.massProxima = timeZero
@@ -80,20 +80,24 @@ func (m *Motor) conciliar() {
 	m.conciliando = false
 	vistas := map[*ordem]bool{}
 	ignoradas, divergencias := 0, 0
-	for _, r := range m.massRespostas {
+	for i, r := range m.massRespostas {
 		if r == nil {
 			ignoradas++
 			continue
 		}
+		chegou := m.agora()
+		if i < len(m.massChegadas) {
+			chegou = m.massChegadas[i]
+		}
 		o := m.localizar(r.Texto(37), r.Texto(11), r.Texto(41))
 		if o == nil {
 			divergencias++
-			m.registrarRecebida(nil, *r)
+			m.registrarRecebidaEm(nil, *r, chegou)
 			m.al.Emitir("DESCONHECIDA", "", fmt.Sprintf("ordem KM no PnT sem registro: 11=%s 37=%s", r.Texto(11), r.Texto(37)), 0)
 			continue
 		}
 		vistas[o] = true
-		if m.registrarRecebida(o, *r) {
+		if m.registrarRecebidaEm(o, *r, chegou) {
 			m.aplicarExecReport(m.donoDa[o], o, *r)
 		}
 	}

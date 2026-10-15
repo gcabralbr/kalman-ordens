@@ -38,6 +38,7 @@ func (o *ouvinteTeste) MensagemIlegivel(s string) {
 	o.ilegiveis = append(o.ilegiveis, s)
 	o.mu.Unlock()
 }
+func (o *ouvinteTeste) EventoSessao(string, string) {}
 func (o *ouvinteTeste) LogonRecusado(s string) {
 	o.mu.Lock()
 	o.recusados = append(o.recusados, s)

@@ -1,0 +1,108 @@
+cenario 61 Histórico para a tela de admin: linha do tempo da operação, operações do dia e eventos da sessão
+hora 2026-10-15 11:00:00
+# SPEC v1.5 R (contrato oficial da tela de admin do Kalman). Só leitura, direto do banco.
+#   GET /operacoes/{id}/historico[?modulo=][&cru=1] → {operacao (= GET /ordens/{id}), eventos
+#     (publicados ao gestor: seq, tipo, dados, em), mensagens (cada mensagem FIX de aplicação das
+#     ordens: em, direcao, msgtype, exectype, ordstatus, clordid, orderid, lastqty, lastpx, cumqty,
+#     avgpx, texto, codigo; fix_raw só com cru=1)}
+#   GET /operacoes?dia=[&uid=][&modulo=] → resumo das operações do dia
+#   GET /sessao/eventos?dia= → LOGON, LOGOUT, QUEDA, LOGON_RECUSADO, RESEND, CONCILIACAO, ALERTA
+# Todo "em" em RFC3339 com o fuso do pregão e milissegundos. O relógio dos roteiros só anda com
+# avanca: tudo da operação acontece às 11:00:03.000.
+
+executa INICIO
+executa COMPRADO OP=6101
+saida 6101 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-6101-2 41=KM-P-6101-1 37=dsa.6101.P
+envia @ER 11=KM-P-6101-2 41=KM-P-6101-1 37=dsa.6101.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-6101-1 54=2 847=1031 44=129950
+envia @ER 11=KM-S-6101-1 37=dsa.6101.S 150=0 39=0 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-S-6101-1 37=dsa.6101.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=6101 origem=GESTOR
+
+# --- linha do tempo da operação
+http GET /operacoes/6101/historico
+resposta _status=200 operacao.existe=true operacao.operacao_id=6101 operacao.estado=ZERADA operacao.posicao=0 operacao.preco_medio_entrada=130010 operacao.pnl_pts=-10 operacao.ordens.#=3
+resposta eventos.#=5 eventos.0.tipo=ENTRADA_EXECUTADA eventos.0.seq=* eventos.0.em=2026-10-15T11:00:03.000-03:00 eventos.0.dados.preco=130010
+resposta eventos.1.tipo=ENTRADA_ENCERRADA eventos.2.tipo=PROTEGIDA eventos.2.dados.preco_stop=129510 eventos.3.tipo=SAIDA_EXECUTADA eventos.4.tipo=ZERADA eventos.4.dados.pnl_pts=-10
+resposta mensagens.#=10 mensagens.0.fix_raw=null
+# entrada: D, 8 (0/0), 8 (F/2 com 32, 31, 14, 6)
+resposta mensagens.0.direcao=ENV mensagens.0.msgtype=D mensagens.0.clordid=KM-E-6101-1 mensagens.0.orderid=null mensagens.0.em=2026-10-15T11:00:03.000-03:00
+resposta mensagens.1.direcao=REC mensagens.1.msgtype=8 mensagens.1.exectype=0 mensagens.1.ordstatus=0 mensagens.1.orderid=dsa.6101.E
+resposta mensagens.2.exectype=F mensagens.2.ordstatus=2 mensagens.2.lastqty=1 mensagens.2.lastpx=130010 mensagens.2.cumqty=1 mensagens.2.avgpx=130010 mensagens.2.texto=null mensagens.2.codigo=null
+# 1014: D, 8 (0/0); cancel: F, 8 (4/4); saída: D, 8 (0/0), 8 (F/2)
+resposta mensagens.3.msgtype=D mensagens.3.clordid=KM-P-6101-1 mensagens.4.orderid=dsa.6101.P mensagens.4.ordstatus=0
+resposta mensagens.5.direcao=ENV mensagens.5.msgtype=F mensagens.5.clordid=KM-P-6101-2 mensagens.5.orderid=dsa.6101.P
+resposta mensagens.6.exectype=4 mensagens.6.ordstatus=4 mensagens.7.msgtype=D mensagens.7.clordid=KM-S-6101-1
+resposta mensagens.8.exectype=0 mensagens.8.orderid=dsa.6101.S mensagens.9.exectype=F mensagens.9.lastpx=130000 mensagens.9.cumqty=1
+
+# cru=1: a mensagem inteira, SOH como "|"
+http GET /operacoes/6101/historico?cru=1
+resposta mensagens.#=10 mensagens.0.fix_raw=* mensagens.9.fix_raw=*
+http GET /operacoes/6101/historico?modulo=KALMAN
+resposta _status=200 operacao.operacao_id=6101
+http GET /operacoes/6101/historico?modulo=PT
+resposta _status=404 existe=false
+http GET /operacoes/6199/historico
+resposta _status=404 existe=false
+
+# --- operações do dia
+http GET /operacoes?dia=2026-10-15&uid=7
+resposta _status=200 _lista.#=1 _lista.0.operacao_id=6101 _lista.0.uid=7 _lista.0.modulo=KALMAN _lista.0.estado=ZERADA _lista.0.lado=C _lista.0.qtd=1
+resposta _lista.0.preco_medio_entrada=130010 _lista.0.preco_medio_saida=130000 _lista.0.pnl_pts=-10 _lista.0.motivo_saida=SINAL_OPOSTO _lista.0.origem_saida=GESTOR
+resposta _lista.0.criada_em=2026-10-15T11:00:03.000-03:00 _lista.0.zerada_em=2026-10-15T11:00:03.000-03:00 _lista.0.alertas_n=0
+http GET /operacoes?dia=2026-10-15
+resposta _lista.#=1
+http GET /operacoes?dia=2026-10-15&modulo=KALMAN
+resposta _lista.#=1
+http GET /operacoes?dia=2026-10-15&uid=8
+resposta _status=200 _lista.#=0
+http GET /operacoes?dia=2026-10-15&modulo=PT
+resposta _lista.#=0
+http GET /operacoes?dia=2026-10-14
+resposta _status=200 _lista.#=0
+http GET /operacoes
+resposta _status=400
+http GET /operacoes?dia=15/10/2026
+resposta _status=400
+
+# --- sessão: queda com mensagem perdida (o serviço pede o reenvio), logon recusado, restart
+avanca 1s
+derruba_sessao
+envia_offline 35=j 372=AF 380=101 58="No orders found."
+aguarda_logon
+recebe 35=AF 585=9 1=12345
+avanca 3s
+avanca 1s
+pnt_recusa_logon "Session already logged on"
+derruba_sessao
+aguarda_recusas 1
+pnt_aceita_logon
+aguarda_logon
+recebe 35=AF 585=9 1=12345
+avanca 3s
+avanca 1s
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345
+avanca 3s
+http GET /sessao/eventos?dia=2026-10-15
+resposta _status=200
+# subida e conciliação
+resposta _lista.0.tipo=LOGON _lista.0.em=2026-10-15T11:00:00.000-03:00 _lista.1.tipo=CONCILIACAO _lista.1.em=2026-10-15T11:00:03.000-03:00
+# queda às 11:00:04 e a volta com o pedido de reenvio da mensagem perdida
+resposta _lista.2.tipo=QUEDA _lista.2.em=2026-10-15T11:00:04.000-03:00 _lista.3.tipo=ALERTA _lista.3.texto="SESSAO_CAIU: sessao FIX caiu"
+resposta _lista.4.tipo=LOGON _lista.5.tipo=RESEND _lista.5.texto="ResendRequest enviado: 7=8 16=0" _lista.6.tipo=ALERTA _lista.6.texto="SESSAO_VOLTOU: sessao FIX voltou" _lista.7.tipo=CONCILIACAO
+# queda às 11:00:08, logon recusado ("already logged on"), volta
+resposta _lista.8.tipo=QUEDA _lista.8.em=2026-10-15T11:00:08.000-03:00 _lista.9.tipo=ALERTA _lista.10.tipo=LOGON_RECUSADO _lista.10.texto="Session already logged on"
+# o logon recusado consumiu sequência dos dois lados (v1.3 A1, D1): cada um pede o reenvio (a ordem
+# entre os dois RESEND não importa)
+resposta _lista.11.tipo=LOGON _lista.12.tipo=RESEND _lista.13.tipo=RESEND _lista.14.tipo=ALERTA _lista.15.tipo=CONCILIACAO
+# restart às 11:00:12: logout limpo, logon do processo novo
+resposta _lista.16.tipo=LOGOUT _lista.16.texto="logout enviado" _lista.16.em=2026-10-15T11:00:12.000-03:00 _lista.17.tipo=ALERTA
+resposta _lista.18.tipo=LOGON _lista.19.tipo=CONCILIACAO _lista.#=20
+http GET /sessao/eventos?dia=2026-10-14
+resposta _status=200 _lista.#=0
+http GET /sessao/eventos
+resposta _status=400

@@ -105,6 +105,10 @@ Preencher `/etc/kalman-ordens/service.env` (`sudoedit`) para a .53 / HML:
 | `TELEGRAM_TOKEN`, `TELEGRAM_CHAT` | chat de **teste**, não o de produção |
 | `HTTP_ENDERECO` | `127.0.0.1:9092` (o Kalman da .53 está no 9091, o marketdata no 9090) |
 
+Histórico (SPEC v1.5): `kalman-ordens historico operacao -id N [-cru]`, `historico dia [-dia D]
+[-uid N]`, `historico sessao [-dia D]` (JSON, direto no banco; `sudo` pelo service.env). As mesmas
+consultas em `GET /operacoes/{id}/historico`, `GET /operacoes?dia=` e `GET /sessao/eventos?dia=`.
+
 Saíram na v1.2 e **o serviço não sobe se estiverem no service.env**: `ORDENS_CONTA`,
 `ORDENS_ONBEHALF`, `ORDENS_SIMBOLO`, `ORDENS_VENCIMENTO`, `ORDENS_UID_REAL`. Conta e destino vêm
 do GQ (`acusuario` do uid, no ambiente), o símbolo é o ticker do marketdata (`WINV26` até quarta,
@@ -113,7 +117,7 @@ o mesmo da HML de terça) e a habilitação é pela CLI (1.5).
 **Migrar logo em seguida** (com o binário e o service.env instalados; só banco, sem FIX nem HTTP):
 
 ```
-sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql, 0003_execid_por_ordem.sql, 0004_modulo.sql, 0005_stop_ajustado.sql
+sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql, 0003_execid_por_ordem.sql, 0004_modulo.sql, 0005_stop_ajustado.sql, 0006_historico.sql
 sudo /opt/kalman-ordens/kalman-ordens migrar   # de novo: nenhuma migração pendente
 ```
 

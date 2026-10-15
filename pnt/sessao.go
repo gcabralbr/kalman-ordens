@@ -72,6 +72,10 @@ type Ouvinte interface {
 	// StoreIlegivel: a biblioteca não conseguiu ler do store uma mensagem pedida por
 	// ResendRequest. A camada derruba a sessão, repara o store e reconecta com espera crescente.
 	StoreIlegivel(texto string)
+	// EventoSessao (v1.5 R3): LOGON (logon aceito), LOGOUT (a sessão terminou com 35=5, nosso ou do
+	// PnT; texto com o 58), QUEDA (terminou sem logout: conexão caiu), RESEND (ResendRequest
+	// recebido ou enviado, com 7 e 16). Para o registro da sessão (GET /sessao/eventos).
+	EventoSessao(tipo, texto string)
 }
 
 // ErrSemSessao: a sessão não está logada; a mensagem não foi enviada.
@@ -111,6 +115,7 @@ type Sessao struct {
 	geracao   int
 	adiadas   []func() // mensagens recebidas durante a sincronia, entregues depois do Logou
 	reenvios  int      // ResendRequests do PnT recebidos durante a sincronia
+	fimLogout string   // 35=5 desta sessão (enviado ou recebido): o fim dela é LOGOUT, não QUEDA
 }
 
 // NovaSessao prepara a sessão (não conecta).
@@ -398,8 +403,10 @@ func (s *Sessao) OnLogon(quickfix.SessionID) {
 	s.conectada = true
 	s.geracao++
 	s.reenvios = 0
+	s.fimLogout = ""
 	g := s.geracao
 	s.transicao.Unlock()
+	s.ouvinte.EventoSessao("LOGON", fmt.Sprintf("logon aceito (%s -> %s); envio liberado em %d ms", s.cfg.SenderCompID, s.cfg.TargetCompID, s.cfg.SincroniaMs))
 	time.AfterFunc(time.Duration(s.cfg.SincroniaMs)*time.Millisecond, func() {
 		s.transicao.Lock()
 		defer s.transicao.Unlock()
@@ -416,6 +423,14 @@ func (s *Sessao) OnLogon(quickfix.SessionID) {
 func (s *Sessao) OnLogout(quickfix.SessionID) {
 	s.transicao.Lock()
 	defer s.transicao.Unlock()
+	if s.conectada {
+		if s.fimLogout != "" {
+			s.ouvinte.EventoSessao("LOGOUT", s.fimLogout)
+		} else {
+			s.ouvinte.EventoSessao("QUEDA", "sessao terminou sem logout (conexao caiu)")
+		}
+		s.fimLogout = ""
+	}
 	s.conectada = false
 	if !s.logado.Load() && s.geracao > 0 {
 		s.registrarSincronia("caiu durante a sincronia")
@@ -472,7 +487,30 @@ func (s *Sessao) ToAdmin(m *quickfix.Message, _ quickfix.SessionID) {
 	case "3":
 		msg := Ler(m.String())
 		s.entregar(func() { s.ouvinte.RejeicaoEnviada(msg) })
+	case "5":
+		s.marcarLogout("logout enviado", m)
+	case "2":
+		s.ouvinte.EventoSessao("RESEND", "ResendRequest enviado: "+faixaReenvio(m))
 	}
+}
+
+// marcarLogout: a sessão em curso termina com logout (não é queda).
+func (s *Sessao) marcarLogout(quem string, m *quickfix.Message) {
+	t := quem
+	if txt, err := m.Body.GetString(quickfix.Tag(58)); err == nil && txt != "" {
+		t += ": " + txt
+	}
+	s.transicao.Lock()
+	if s.conectada && s.fimLogout == "" {
+		s.fimLogout = t
+	}
+	s.transicao.Unlock()
+}
+
+func faixaReenvio(m *quickfix.Message) string {
+	ini, _ := m.Body.GetString(quickfix.Tag(7))
+	fim, _ := m.Body.GetString(quickfix.Tag(16))
+	return "7=" + ini + " 16=" + fim
 }
 
 // ToApp suprime o reenvio de mensagem de aplicação por ResendRequest: uma ordem velha chegando
@@ -489,9 +527,14 @@ func (s *Sessao) ToApp(m *quickfix.Message, _ quickfix.SessionID) error {
 }
 
 func (s *Sessao) FromAdmin(m *quickfix.Message, _ quickfix.SessionID) quickfix.MessageRejectError {
-	if tipo, _ := m.Header.GetString(quickfix.Tag(35)); tipo == "3" {
+	switch tipo, _ := m.Header.GetString(quickfix.Tag(35)); tipo {
+	case "3":
 		msg := Ler(m.String())
 		s.entregar(func() { s.ouvinte.RejeicaoRecebida(msg) })
+	case "5":
+		s.marcarLogout("logout do PnT", m)
+	case "2":
+		s.ouvinte.EventoSessao("RESEND", "ResendRequest do PnT: "+faixaReenvio(m))
 	}
 	return nil
 }
