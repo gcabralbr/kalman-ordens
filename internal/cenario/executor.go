@@ -58,26 +58,27 @@ type servico struct {
 
 // Executor de um cenário.
 type Executor struct {
-	c         roteiro.Cenario
-	dir       string
-	rel       *relogio.Controlado
-	preco     *preco.Falsa
-	repo      repo.Repositorio
-	backend   Backend
-	notif     *notificador
-	pnt       *falso.Falso
-	svc       *servico
-	cfg       config.Config
-	capturas  map[string]string
-	resposta  map[string]any
-	casados   map[int64]bool
-	sessaoOK  int
-	logons    int64
-	travado   chan struct{} // motor_lento
-	tsPorOp   map[string]string
-	async     chan *httptest.ResponseRecorder // http_async em curso
-	asyncDesc string
-	Registro  []string // o que aconteceu, para depuração
+	c           roteiro.Cenario
+	dir         string
+	rel         *relogio.Controlado
+	preco       *preco.Falsa
+	repo        repo.Repositorio
+	backend     Backend
+	notif       *notificador
+	pnt         *falso.Falso
+	svc         *servico
+	cfg         config.Config
+	capturas    map[string]string
+	resposta    map[string]any
+	casados     map[int64]bool
+	sessaoOK    int
+	logons      int64
+	travado     chan struct{} // motor_lento
+	tsPorOp     map[string]string
+	logonsMotor int                             // logons tratados pelo motor em execução (zera a cada subida)
+	async       chan *httptest.ResponseRecorder // http_async em curso
+	asyncDesc   string
+	Registro    []string // o que aconteceu, para depuração
 }
 
 // Backend de persistência do cenário. Novo dá um repositório limpo; Reabrir, o mesmo banco numa
@@ -227,6 +228,7 @@ func (e *Executor) subir() error {
 	if err := m.Iniciar(); err != nil {
 		return err
 	}
+	e.logonsMotor = 0
 	e.svc = &servico{motor: m, sessao: s, http: api.Handler(m, e.cfg.Segundos("HTTP_ESPERA_S", 5)), baseEnv: e.pnt.EnviadasApp() + e.pnt.Reentregas(), baseRec: e.pnt.RecebidasApp()}
 	return s.Iniciar()
 }
@@ -302,11 +304,15 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		if len(p.Args) == 1 {
 			n, _ = strconv.Atoi(p.Args[0])
 		}
+		antes := e.logonsMotor
 		if err := e.pnt.EsperarLogon(e.logons+int64(n-1), 10*time.Second); err != nil {
 			return err
 		}
 		e.logons = e.pnt.Logons()
 		esperarAte(5*time.Second, e.svc.sessao.Logado)
+		// o logon tem de ter chegado ao motor (a sessão marca logada um instante antes)
+		esperarAte(5*time.Second, func() bool { return e.svc.motor.LogonsTratados() > antes })
+		e.logonsMotor = e.svc.motor.LogonsTratados()
 		e.ocioso()
 		return nil
 	case "derruba_sessao":

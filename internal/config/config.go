@@ -117,9 +117,15 @@ type Parametros struct {
 	MaxRepreco                                int
 	ConsultaPnTEspera, ConsultaPnTIntervalo   time.Duration
 	// v1.10: limitador de taxa da sessão (só as entradas esperam) e cache de usuários
-	TaxaMsgS      float64
-	RajadaMsg     int
-	CacheUsuarios time.Duration
+	TaxaMsgS  float64
+	RajadaMsg int
+	// v1.10 P4: reserva da taxa para 1014, cancel e saída (a entrada nunca a esgota) e validade da
+	// entrada na fila da taxa
+	ReservaSaidaMsgS float64
+	TTLFilaEntrada   time.Duration
+	// v1.10 C6: espera máxima da conciliação com 911/912 em uso
+	EsperaMaxMassStatus time.Duration
+	CacheUsuarios       time.Duration
 
 	PosicaoMax, QtdMaxOrdem, EntradasPorMinuto, MensagensPorMinuto, EntradasPorDia, RecusasParaParada int
 	IntervaloEntradas                                                                                 time.Duration
@@ -161,6 +167,9 @@ func (c Config) Parametros() Parametros {
 		ConsultaPnTIntervalo:    c.Segundos("CONSULTA_PNT_INTERVALO_S", 10),
 		TaxaMsgS:                float64(c.Segundos("FIX_TAXA_MSG_S", 100)) / float64(time.Second),
 		RajadaMsg:               c.Inteiro("FIX_RAJADA_MSG", 100),
+		ReservaSaidaMsgS:        float64(c.Segundos("FIX_RESERVA_SAIDA_MSG_S", 30)) / float64(time.Second),
+		TTLFilaEntrada:          c.Segundos("ENTRADA_TTL_FILA_S", 5),
+		EsperaMaxMassStatus:     c.Segundos("MASS_STATUS_ESPERA_MAX_S", 30),
 		CacheUsuarios:           c.Segundos("CACHE_USUARIOS_S", 30),
 
 		PosicaoMax:         c.Inteiro("LIMITE_POSICAO_MAX", 1),

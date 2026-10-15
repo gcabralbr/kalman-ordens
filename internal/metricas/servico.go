@@ -31,6 +31,7 @@ var (
 	LoteLinhas  = NovoHistogramaBaldes("lote_linhas", "Linhas gravadas por lote.", []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000})
 	EsperaEnvio = NovoHistograma("envio_espera_segundos",
 		"Da decisão do motor ao envio ao PnT (commit do lote e, na entrada, o limitador de taxa), por prioridade.", "prioridade")
+	EntradasExpiradasFila = NovoContador("entradas_expiradas_fila_total", "Entradas descartadas por passar de ENTRADA_TTL_FILA_S esperando a taxa.")
 )
 
 // Estado: medidores escritos pelo motor (tick) e lidos na coleta.

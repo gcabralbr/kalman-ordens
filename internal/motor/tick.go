@@ -36,8 +36,13 @@ func (m *Motor) tick() {
 			if !agora.Before(m.massProxima) {
 				m.pedirMassStatus()
 			}
-		case agora.Sub(m.ultimoSinalMass()) >= m.p.SilencioMassStatus:
+		case !m.massCom911 && agora.Sub(m.ultimoSinalMass()) >= m.p.SilencioMassStatus:
+			// PnT sem 911/912 (ou nenhuma conta): fecha no silêncio, como sempre
 			m.conciliar() // e segue: as ações de tempo já rodam com o estado conciliado
+		case m.massCom911 && agora.Sub(m.ultimoSinalMass()) >= m.p.EsperaMaxMassStatus:
+			// v1.10 C6: com 911/912, só fecha incompleta depois da espera máxima; as contas que não
+			// responderam não são julgadas
+			m.conciliar()
 		}
 	}
 	podeEnviar := logado && !m.conciliando

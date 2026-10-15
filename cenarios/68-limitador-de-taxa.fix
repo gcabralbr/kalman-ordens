@@ -1,10 +1,11 @@
-cenario 68 Limitador de taxa da sessão: a entrada espera tokens; a proteção nunca espera; a entrada que não saiu é cancelada sem ir ao PnT
+cenario 68 Limitador de taxa: a entrada tem balde próprio; 1014 e saída usam a reserva e nunca esperam; a entrada que não saiu é cancelada sem ir ao PnT
 hora 2026-10-15 10:10:00
-# SPEC v1.10 P4. Token bucket no relógio do motor (FIX_TAXA_MSG_S, rajada FIX_RAJADA_MSG). Só a
-# 1031 de entrada espera; 1014, cancel, saída e mass status saem na hora (consomem tokens, o saldo
-# pode ficar negativo) — reserva para a proteção. A entrada que ainda espera a taxa e é cancelada
-# (saída do gestor) sai da fila: nunca vai ao PnT, encerra na hora.
-config FIX_TAXA_MSG_S=2
+# SPEC v1.10 P4. O balde da entrada enche a FIX_TAXA_MSG_S − FIX_RESERVA_SAIDA_MSG_S por segundo
+# (aqui 3 − 1 = 2/s), rajada FIX_RAJADA_MSG (2). 1014, cancel, saída e mass status não passam pelo
+# balde da entrada: saem na hora e a entrada nunca esgota a reserva deles. A entrada que ainda
+# espera a taxa e é cancelada (saída do gestor) sai da fila: nunca vai ao PnT, encerra na hora.
+config FIX_TAXA_MSG_S=3
+config FIX_RESERVA_SAIDA_MSG_S=1
 config FIX_RAJADA_MSG=2
 config LIMITE_POSICAO_MAX=10
 config LIMITE_INTERVALO_ENTRADAS_S=0
@@ -12,7 +13,7 @@ config LIMITE_ENTRADAS_MIN=10
 config LIMITE_MENSAGENS_MIN=1000
 
 executa INICIO
-# rajada de 2 tokens: duas entradas saem, a terceira e a quarta esperam
+# rajada de 2: duas entradas saem, a terceira e a quarta esperam
 entrada 6801 C
 recebe 35=D 11=KM-E-6801-1 847=1031
 entrada 6802 C
@@ -24,13 +25,13 @@ resposta aceito=true
 nada
 metrica kalman_ordens_envios_aguardando_taxa = 2
 
-# o fill da 6801: a 1014 sai na hora, mesmo sem token
+# o fill da 6801: a 1014 sai na hora e não gasta o balde da entrada
 envia @ER 11=KM-E-6801-1 37=dsa.6801.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
 recebe 35=D 11=KM-P-6801-1 847=1014
 nada
 
-# 2 msg/s: o saldo negativo (-1) volta a 1 em 1 s
-avanca 900ms
+# 2 entradas/s: um token em 0,5 s (a 1014 não atrasou a entrada)
+avanca 400ms
 nada
 avanca 100ms
 recebe 35=D 11=KM-E-6803-1 847=1031

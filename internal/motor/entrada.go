@@ -317,7 +317,8 @@ func (m *Motor) novaOrdem(op *operacao, papel dominio.Papel, lado dominio.Lado, 
 
 // enviarNova: a NewOrderSingle sai depois do commit da volta (gravar antes de enviar, v1.10 B), na
 // prioridade do papel (1014 > saída > entrada; a entrada sujeita à taxa). aoFalhar roda se não
-// sair; aoEnviar, depois de sair.
+// sair; aoEnviar, depois de sair. A entrada que passa da validade na fila da taxa é descartada
+// (expirarNaFila).
 func (m *Motor) enviarNova(op *operacao, o *ordem, aoFalhar func(), aoEnviar ...func()) {
 	msg := pnt.NovaOrdem(m.idDe(op), pnt.Ordem{
 		ClOrdID: o.ClOrdAtual, Simbolo: op.Simbolo, Lado: o.Lado.FIX(), Qtd: o.Qtd, Preco: o.Preco,
@@ -331,13 +332,31 @@ func (m *Motor) enviarNova(op *operacao, o *ordem, aoFalhar func(), aoEnviar ...
 	case dominio.Saida:
 		prio = prioSaida
 	}
-	m.enfileirarEnvio(envioPendente{o: o, msg: msg, clordid: o.ClOrdAtual, prio: prio, aoFalhar: aoFalhar, aoEnviar: func() {
+	var aoExpirar func()
+	if prio == prioEntrada {
+		aoExpirar = func() { m.expirarNaFila(op, o) }
+	}
+	m.enfileirarEnvio(envioPendente{o: o, msg: msg, clordid: o.ClOrdAtual, prio: prio, aoFalhar: aoFalhar, aoExpirar: aoExpirar, aoEnviar: func() {
 		o.enviada = m.agora()
 		o.envioReal = time.Now()
 		for _, f := range aoEnviar {
 			f()
 		}
 	}})
+}
+
+// expirarNaFila (v1.10 P5): a entrada esperou a taxa mais que ENTRADA_TTL_FILA_S — o sinal
+// envelheceu; descartada sem ir ao PnT: ENTRADA_ENCERRADA motivo=EXPIRADA_NA_FILA.
+func (m *Motor) expirarNaFila(op *operacao, o *ordem) {
+	slog.Warn("entrada expirada na fila da taxa (não foi ao PnT)", "clordid", o.ClOrdAtual, "op", op.OperacaoID, "ttl", m.p.TTLFilaEntrada)
+	o.Estado = dominio.FalhaEnvio
+	o.MotivoRejeicao = "EXPIRADA_NA_FILA"
+	m.salvarOrdem(o)
+	op.Estado = dominio.EncerradaSemEntrada
+	op.EncerrouEntrada = true
+	op.saidaAposEntrada = false
+	m.salvarOp(op)
+	m.publicar("ENTRADA_ENCERRADA", op, map[string]any{"qtd_final": 0, "preco_medio": 0, "motivo": "EXPIRADA_NA_FILA"})
 }
 
 func (m *Motor) haSemConfirmacao() bool {

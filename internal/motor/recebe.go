@@ -92,6 +92,7 @@ func (m *Motor) execReport(msg pnt.Mensagem) {
 			m.massRespostas = append(m.massRespostas, nil) // ordem de outro (PT) na mesma conta
 		}
 		m.massChegadas = append(m.massChegadas, m.agora())
+		m.respostaMass(msg.Texto(584), msg)
 		return
 	}
 	if !ehNosso(cl) && !ehNosso(orig) && m.por37[id37] == nil {
@@ -700,6 +701,10 @@ func (m *Motor) businessReject(msg pnt.Mensagem) {
 		m.registrarRecebida(nil, msg)
 		if m.conciliando {
 			m.massUltima = m.agora()
+			if st := m.massEstado[refID]; st != nil {
+				st.feita = true // a conta respondeu: sem ordens (v1.10 C6)
+				defer m.fecharMassSeCompleto()
+			}
 		}
 		slog.Info("mass status: nenhuma ordem na conta (35=j 380=101)", "379", refID, "58", msg.Texto(58), "conciliando", m.conciliando)
 		return

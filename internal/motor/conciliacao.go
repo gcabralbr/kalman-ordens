@@ -10,6 +10,7 @@ import (
 )
 
 func (m *Motor) aoLogar() {
+	m.logonsTratados++
 	if m.jaLogou {
 		m.al.Emitir("SESSAO_VOLTOU", "", "sessão FIX voltou", 0)
 	}
@@ -29,6 +30,7 @@ var contadorMass int
 // conciliação fecha no silêncio.
 func (m *Motor) pedirMassStatus() {
 	m.massReqIDs = map[string]bool{}
+	m.massEstado, m.massCom911 = map[string]*massConta{}, false
 	m.massRespostas, m.massChegadas = nil, nil
 	m.massCorte = m.seqOrdens
 	m.massUltima = m.agora()
@@ -41,6 +43,7 @@ func (m *Motor) pedirMassStatus() {
 		contadorMass++
 		id := fmt.Sprintf("KM-MS-%d-%d", m.agora().UnixMilli(), contadorMass)
 		m.massReqIDs[id] = true
+		m.massEstado[id] = &massConta{conta: c}
 		m.enfileirarEnvio(envioPendente{msg: pnt.MassStatus(c, id), clordid: id, prio: prioSaida,
 			// o silêncio conta do envio real do último AF, não da decisão (v1.10 P3)
 			aoEnviar: func() { m.massUltima = m.agora() },
@@ -103,8 +106,69 @@ func (m *Motor) contasAdmin() []string {
 }
 
 // conciliar: Parte 7.2, passos 2 a 5.
+// massConta (v1.10 C6): a resposta ao AF de uma conta — respondida com o 912=Y, com o 911
+// atingido ou com um 35=j ligado pelo 379.
+type massConta struct {
+	conta            string
+	recebidas, total int
+	feita            bool
+}
+
+// respostaMass: uma resposta (150=I) do AF reqID chegou ao motor.
+func (m *Motor) respostaMass(reqID string, msg pnt.Mensagem) {
+	st := m.massEstado[reqID]
+	if st == nil {
+		return
+	}
+	st.recebidas++
+	if t, ok := msg.Inteiro(911); ok {
+		st.total, m.massCom911 = t, true
+	}
+	if v := msg.Texto(912); v != "" {
+		m.massCom911 = true
+		if v == "Y" {
+			st.feita = true
+		}
+	}
+	if st.total > 0 && st.recebidas >= st.total {
+		st.feita = true
+	}
+	m.fecharMassSeCompleto()
+}
+
+// massCompleta: todas as contas pedidas responderam.
+func (m *Motor) massCompleta() bool {
+	if len(m.massEstado) == 0 {
+		return false
+	}
+	for _, st := range m.massEstado {
+		if !st.feita {
+			return false
+		}
+	}
+	return true
+}
+
+// fecharMassSeCompleto: com todas as contas respondidas, a conciliação fecha na hora (v1.10 C6).
+func (m *Motor) fecharMassSeCompleto() {
+	if m.conciliando && m.massCompleta() {
+		m.conciliar()
+	}
+}
+
 func (m *Motor) conciliar() {
 	m.conciliando = false
+	// v1.10 C6: com o 911/912 em uso, as ordens das contas que não terminaram de responder não são
+	// julgadas (resposta lenta não vira DESCONHECIDA)
+	semResposta := map[string]bool{}
+	if m.massCom911 {
+		for _, st := range m.massEstado {
+			if !st.feita {
+				semResposta[st.conta] = true
+			}
+		}
+	}
+	naoJulgadas := 0
 	vistas := map[*ordem]bool{}
 	ignoradas, divergencias := 0, 0
 	for i, r := range m.massRespostas {
@@ -133,6 +197,10 @@ func (m *Motor) conciliar() {
 			// só julga as que já existiam quando o mass status foi pedido
 			if !o.viva() || vistas[o] || o.seq > m.massCorte || o.saidaNoMass {
 				continue // a saída com recusa terminal é decidida abaixo (v1.3 I1)
+			}
+			if semResposta[o.Conta] {
+				naoJulgadas++
+				continue
 			}
 			if o.decidirNoMass {
 				// 1014 em erro com cancel rejeitado e ausente no mass status: não existe mais (F17)
@@ -202,6 +270,15 @@ func (m *Motor) conciliar() {
 		m.ativarParada("BLOQUEAR", "auto", fmt.Sprintf("conciliação com %d divergência(s)", divergencias))
 	}
 	texto := fmt.Sprintf("%d ordem(ns) KM, %d de outros (ignoradas), %d divergência(s); posição %d", len(vistas), ignoradas, divergencias, m.posicaoTotal())
+	if len(semResposta) > 0 {
+		contas := make([]string, 0, len(semResposta))
+		for c := range semResposta {
+			contas = append(contas, c)
+		}
+		sort.Strings(contas)
+		texto += fmt.Sprintf("; contas sem resposta completa em %s: %v (%d ordem(ns) viva(s) não verificada(s))", m.p.EsperaMaxMassStatus, contas, naoJulgadas)
+		slog.Warn("conciliação fechada sem a resposta completa de todas as contas", "contas", contas, "nao_verificadas", naoJulgadas)
+	}
 	m.al.Emitir("CONCILIACAO", "", texto, 0)
 	slog.Info("conciliação", "resumo", texto)
 }

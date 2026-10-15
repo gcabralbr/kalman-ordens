@@ -5,7 +5,10 @@ diz nada, vale a v1.9.
 
 Tema: **escala** — decisões do responsável sobre a seção 6 do
 [relatório de carga](CARGA-2026-10-15.md) (15/10): itens 1, 2, 3 e 5 implementados; o 4 (POST em
-lote por sinal) é proposta de contrato (seção 6), a combinar antes do código. Resultado do teste
+lote por sinal) tem o contrato fechado na seção 6 (o Kalman implementa primeiro; o serviço depois).
+Segunda rodada de decisões (15/10, depois do teste com fsync): balde separado da entrada com
+reserva para a proteção e a saída, validade da entrada na fila (P4, P5) e conciliação por 911/912
+(seção 3, C6). Resultado do teste
 de carga depois da mudança: [CARGA-2026-10-15.md](CARGA-2026-10-15.md) seção 7.
 
 Data: 2026-10-15.
@@ -20,6 +23,8 @@ Data: 2026-10-15.
 | P2 | **Envio ao PnT por prioridade**, depois do commit da volta: **1014 (nova, recriada, replace) > cancel, 1031 de saída e o replace dela, mass status > 1031 de entrada**; dentro da classe, a ordem de decisão. | `TestEnvioPorPrioridade`; roteiro 67 |
 | P3 | **Prazos de confirmação contados até a chegada à sessão**: a camada de sessão carimba a chegada de cada mensagem (pelos ClOrdID 11 e 41) antes de ela entrar na fila; `SEM_CONFIRMACAO` (`PRAZO_CONFIRMACAO_S`) e `CANCEL_SEM_RESPOSTA` só disparam se nenhuma resposta **chegou** no prazo, mesmo que ainda não tratada (no `CANCEL_SEM_RESPOSTA` depois do 39=6, só uma chegada posterior a ele conta). Fila cheia deixa de gerar alerta falso e mass status em massa. | roteiro 69 |
 | P4 | **Limitador de taxa da sessão** (token bucket no relógio do motor): `FIX_TAXA_MSG_S` mensagens/s, rajada `FIX_RAJADA_MSG` — **conservador até [PnT-19]: 100/s, rajada 100**. **Só a 1031 de entrada espera**; 1014, cancel, saída e mass status saem na hora (consomem tokens; o saldo pode ficar negativo e as entradas seguintes esperam) — reserva para a proteção. A entrada que espera a taxa conta como viva (limites, posição pendente); o timeout da entrada (`TIMEOUT_ENTRADA_S`) conta do envio real. Cancelada enquanto espera (saída do gestor, parada, admin), **sai da fila e nunca vai ao PnT**: `ENTRADA_ENCERRADA motivo=CANCELADA` na hora. | roteiro 68 |
+| P4' | **Balde separado da entrada (decisão de 15/10)**: a entrada consome de um balde próprio que enche a `FIX_TAXA_MSG_S − FIX_RESERVA_SAIDA_MSG_S` (100 − 30 = **70/s**), rajada `FIX_RAJADA_MSG`, e só sai com saldo. 1014, cancel, saída e mass status **não passam pelo balde da entrada**: a reserva (30/s) é deles e a rajada de entradas nunca a esgota. Substitui o saldo negativo da P4. | roteiro 68 |
+| P5 | **Validade da entrada na fila da taxa**: a entrada que não saiu em `ENTRADA_TTL_FILA_S` (5 s) desde a decisão é **descartada** — nunca vai ao PnT atrasada: ordem `FALHA_ENVIO` (motivo `EXPIRADA_NA_FILA`), operação `ENCERRADA_SEM_ENTRADA`, evento `ENTRADA_ENCERRADA motivo=EXPIRADA_NA_FILA`. Métrica `entradas_expiradas_fila_total`. No POST em lote (seção 6) a validade conta do fechamento do sinal. | roteiro 70 |
 
 ## 2. Banco em lote (B)
 
@@ -52,14 +57,29 @@ admin (`GET /pnt/ordens`, v1.7 C1) continua com as contas das operações do dia
 Roteiros: `_comum.fix` (INICIO sem AF), 45 (logon sem ordens: nenhum AF), 12, 18, 20 (posição
 aberta antes do restart).
 
+**C6 — conciliação por 911/912 (decisão de 15/10).** O PnT informa em cada resposta de mass
+status (35=8 150=I) o total da conta (911 `TotNumReports`) e a última (912 `LastRptRequested`=Y); a
+recusa do pedido vem em 35=j (380=101, 379 = o 584 do pedido). O serviço controla **por conta**: a
+conta fica respondida quando chega a 912=Y, quando o número de respostas chega ao 911, ou com a
+recusa 35=j (marcada feita, com alerta como antes). A conciliação fecha **quando todas as contas
+pedidas responderam** — sem esperar o silêncio. Se alguma resposta trouxe 911/912, o silêncio deixa
+de valer: espera-se até `MASS_STATUS_ESPERA_MAX_S` (30 s) do envio; vencido, a conciliação fecha e
+**as contas que não responderam não são julgadas** (as ordens delas continuam como estão, sem
+`DESCONHECIDA`; o texto do `CONCILIACAO` lista as contas). Sem 911/912 em nenhuma resposta, vale o
+silêncio (como até aqui). Roteiros 71 (fechamento por 912/911, conta sem resposta não julgada) e 20
+(1014 por último com 912=Y).
+
 ## 4. Configuração
 
 | Chave | Inicial | Uso |
 |---|---|---|
 | `FIX_TAXA_MSG_S` | 100 | P4 (conservador até [PnT-19]) |
-| `FIX_RAJADA_MSG` | 100 | P4 |
+| `FIX_RAJADA_MSG` | 100 | P4 (rajada do balde da entrada) |
+| `FIX_RESERVA_SAIDA_MSG_S` | 30 | P4': parte da taxa reservada a 1014, cancel, saída e mass status; o balde da entrada enche a `FIX_TAXA_MSG_S` − esta |
+| `ENTRADA_TTL_FILA_S` | 5 | P5 |
+| `MASS_STATUS_ESPERA_MAX_S` | 30 | C6: espera máxima da conciliação quando o PnT manda 911/912 |
 | `CACHE_USUARIOS_S` | 30 | B4 |
-| `FIX_STORE_SYNC` | `Y` | fsync do store FIX a cada mensagem (o padrão do QuickFIX/Go, como até aqui). Com `N`, sem fsync: ver o relatório, seção 7.2 — **decisão pendente** |
+| `FIX_STORE_SYNC` | `Y` | fsync do store FIX a cada mensagem (o padrão do QuickFIX/Go, como até aqui). Com `N`, sem fsync: ver o relatório, seções 7.2 e 8. **Decisão de 15/10: `N` em produção, depois dos testes de SIGKILL e de queda da máquina na HML** (com o banco em `innodb_flush_log_at_trx_commit=1` o custo é nenhum — seção 8) |
 | `DEBUG_PPROF` | — | `1` expõe `/debug/pprof/` no HTTP local (diagnóstico; o teste de carga usa) |
 
 Sem migração nova.
@@ -67,58 +87,99 @@ Sem migração nova.
 ## 5. Métricas novas
 
 `lote_segundos`, `lote_linhas`, `envio_espera_segundos{prioridade}` (da decisão ao envio: commit e
-taxa), `fila_tamanho_p0|p1|p2`, `envios_aguardando_taxa`; `fila_espera_segundos{origem}` com
+taxa), `fila_tamanho_p0|p1|p2`, `envios_aguardando_taxa`, `entradas_expiradas_fila_total`; `fila_espera_segundos{origem}` com
 `http_entrada` e `http_saida`; `banco_segundos{operacao="GravarLote"}`. `alertas_total` passa a
 contar só os alertas que saem (um crítico já ativo não conta de novo).
 
-## 6. Proposta de contrato — POST em lote por sinal (item 4, a combinar)
+## 6. Contrato — POST em lote por sinal (fechado em 15/10; o Kalman implementa, o serviço depois)
 
-O Kalman manda **uma requisição por sinal** com todas as entradas; o serviço valida cada uma como
-hoje, ordena as aceitas de forma rotativa e registra a posição de cada operação na rajada.
+O Kalman manda **as entradas e/ou as saídas de um sinal** em lote; o serviço valida cada item como
+no `POST /ordens`, **ordena de forma rotativa** (deslocamento áureo) e registra a posição de cada
+operação na rajada.
+
+### 6.1 Requisição
 
 ```
 POST /sinais
 {
-  "sinal_id": "<texto, único por módulo>",
-  "modulo": "KALMAN",                          (opcional)
-  "ts_decisao": "<o do sinal>",
+  "sinal_id": "KALMAN-20261015-093712-0042",   texto, até 64 [A-Za-z0-9._:-], único por módulo
+  "modulo": "KALMAN",                           opcional (ausente = KALMAN)
+  "ts_decisao": "2026-10-15T09:37:12.481-03:00",
+  "parte": 1, "partes": 4,                      1..partes; partes de 1 a 10
   "entradas": [
-    {"operacao_id": 900000001, "uid": 1450, "lado": "C", "qtd": 1, "stop_pts": 500, "motivo": "SINAL"},
-    ...
-  ]
-}
-→ 200
-{
-  "sinal_id": "...", "aceito": true, "codigo": "LOTE_ACEITO", "motivo": "...",
-  "tamanho": 4000, "aceitas": 3990, "criterio": "ROTATIVA", "deslocamento": 1237,
-  "resultados": [
-    {"operacao_id": 900000001, "aceito": true, "posicao": 2764, "clordid": "KM-E-900000001-1", "preco": 130020},
-    {"operacao_id": 900000002, "aceito": false, "codigo": "UID_NAO_HABILITADO", "motivo": "..."},
-    ...
+    {"operacao_id": 900000001, "uid": 1450, "lado": "C", "qtd": 1, "stop_pts": 500, "motivo": "SINAL"}
+  ],
+  "saidas": [
+    {"operacao_id": 900000377, "uid": 1450, "lado": "V", "motivo": "SINAL_OPOSTO"}
   ]
 }
 ```
 
-- **Validação por entrada**, a mesma do `POST /ordens` (habilitação, campos, duplicada, parada,
-  sessão, conta, limites do uid, preço); **um só preço** (a mesma leitura) para o lote inteiro.
-  Lote inválido (JSON, sem `sinal_id`, `entradas` vazia ou com mais de 10.000) → 400
-  `CAMPO_INVALIDO` para o lote todo.
-- **Ordem rotativa**: as aceitas, por uid crescente, deslocadas de `deslocamento` posições. Proposta:
-  `deslocamento = ⌊k·φ·N⌋ mod N` (k = contador de sinais do módulo, persistente entre dias; φ =
-  0,618…; N = aceitas) — cada usuário passa por todas as faixas de posição depressa e sem padrão
-  fixo, e continua determinística e explicável ("no sinal 37 você foi o 2.764º de 3.990").
-  Alternativa mais simples: `deslocamento = k mod N` (desliza de 1 em 1 — justo no longo prazo, mas
-  quem está na frente fica na frente por muitos sinais).
-- O envio segue a ordem rotativa, pela taxa (P4); a proteção de cada uma continua imediata.
-- **Registro por operação** (migração nova): `sinal_id`, `posicao_rajada`, `tamanho_rajada`,
-  `deslocamento`, `criterio`; no `GET /ordens/{id}`, no histórico e na lista do dia.
-- **Idempotência**: mesmo `sinal_id` com o mesmo corpo → o resultado original com `repetido: true`;
-  corpo diferente → `DUPLICADA`; uma entrada que repete o `(modulo, operacao_id)` de outra já
-  recebida → `DUPLICADA` só nela. 503 `RESULTADO_DESCONHECIDO` como no `POST /ordens` (o lote segue;
-  reenviar o mesmo corpo).
-- **Resposta**: depois do commit do lote (milissegundos); `aceito` na entrada = decidida e na fila de
-  envio (não necessariamente já no PnT). Proposta junto: evento `ENTRADA_ENVIADA` (`posicao`,
-  `enviada_em`) quando a 1031 sai, para o gestor e a tela de admin.
-- `POST /ordens` continua para entrada avulsa (sem rajada: ordem de chegada) e para a SAIDA.
-- Para combinar: (a) `φ` ou `+1`; (b) o evento `ENTRADA_ENVIADA`; (c) saídas em lote por sinal
-  (o "sinal oposto" fecha todos — mesma justiça de preço na saída?); (d) limite de entradas por lote.
+- **Limite: 1.000 itens (entradas + saídas) por requisição; até 10 partes; 10.000 itens por
+  sinal.** Corpo até 1 MB. Um sinal maior que 1.000 vai em partes com o mesmo `sinal_id`
+  (`parte`/`partes`), mandadas em seguida.
+- Cada item tem os campos do `POST /ordens` do papel correspondente (sem `papel`, que vem da lista;
+  `ts_decisao` é o do sinal). Campos desconhecidos → `CAMPO_INVALIDO` no item.
+
+### 6.2 Processamento
+
+1. Cada parte é validada **na hora**, item a item, como o `POST /ordens` (entrada: habilitação,
+   campos, duplicada, parada, sessão, conta, limites do uid, preço — **uma leitura de preço para o
+   sinal**; saída: reduce-only, posição, uid da operação). A resposta da parte sai depois do commit.
+2. O sinal **fecha** quando chegam todas as `partes`, ou `SINAL_ESPERA_PARTES_MS` (500 ms) depois da
+   primeira; uma parte que chega depois do fechamento é recusada inteira (`SINAL_FECHADO`).
+3. Fechado o sinal, as **entradas aceitas** de todas as partes são ordenadas por **uid crescente**
+   (empate: `operacao_id`) e **giradas**: com N aceitas e k = o contador de sinais do módulo
+   (persistente entre dias, sobe a cada sinal com pelo menos uma entrada aceita),
+   `deslocamento = ⌊k · 0,6180339887 · N⌋ mod N`; a fila de envio começa na posição `deslocamento`
+   da lista ordenada e dá a volta. **As saídas aceitas** do sinal: a mesma regra, com o seu N (e o
+   mesmo k).
+4. O envio segue essa ordem: saídas na fila de saída (P1; cancel da 1014, depois a 1031), entradas no
+   balde da entrada (P4). **A validade na fila (`ENTRADA_TTL_FILA_S`) conta do fechamento do sinal.**
+   A proteção de cada posição continua imediata.
+
+### 6.3 Resposta (por parte)
+
+```
+200
+{
+  "sinal_id": "...", "parte": 1, "partes": 4,
+  "aceito": true, "codigo": "LOTE_ACEITO", "motivo": "...",
+  "fechado": false,                      true quando esta parte fechou o sinal
+  "criterio": "ROTATIVA_AUREA", "k": 1873, "deslocamento": null,   (preenchido com o sinal fechado)
+  "resultados": [
+    {"operacao_id": 900000001, "papel": "ENTRADA", "aceito": true, "codigo": null, "clordid": "KM-E-900000001-1",
+     "preco": 130020, "posicao": null, "tamanho": null},
+    {"operacao_id": 900000002, "papel": "ENTRADA", "aceito": false, "codigo": "UID_NAO_HABILITADO", "motivo": "..."}
+  ]
+}
+```
+
+- `posicao`/`tamanho`/`deslocamento` vêm preenchidos na resposta da parte que fecha o sinal (num
+  sinal de uma parte, sempre); nas outras, `null` — a posição chega pelo evento `ENTRADA_ENVIADA` e
+  fica no `GET /ordens/{id}`.
+- Recusas do lote inteiro: 400 `CAMPO_INVALIDO` (JSON, `sinal_id`, `parte`/`partes`, lista vazia),
+  `LIMITE_LOTE` (mais de 1.000 itens na parte, mais de 10 partes, mais de 10.000 no sinal),
+  `SINAL_FECHADO`, `DUPLICADA` (mesmo `sinal_id` e `parte` com corpo diferente). Idempotência: mesmo
+  `sinal_id` e `parte` com o mesmo corpo → a resposta original com `repetido: true`. 503
+  `RESULTADO_DESCONHECIDO` como no `POST /ordens` (o motor segue; reenviar o mesmo corpo).
+- Item que repete um `(modulo, operacao_id, papel)` já recebido → `DUPLICADA` só nele.
+
+### 6.4 Eventos e registro
+
+- **`ENTRADA_ENVIADA`** quando a 1031 de entrada sai ao PnT: `{operacao_id, modulo, uid, sinal_id,
+  posicao, tamanho, clordid, enviada_em}`. **`SAIDA_ENVIADA`** quando a primeira mensagem da saída
+  do sinal sai (o cancel da 1014, ou a 1031): o mesmo, com a posição entre as saídas. A entrada
+  avulsa (`POST /ordens`) também publica `ENTRADA_ENVIADA` (sem `sinal_id`/`posicao`).
+- Por operação (migração nova): `sinal_id`, `sinal_k`, `posicao_rajada`, `tamanho_rajada`,
+  `deslocamento`, `criterio`; no `GET /ordens/{id}` (objeto `sinal`), no histórico e na lista do dia
+  da tela de admin.
+- `POST /ordens` continua para entrada e saída avulsas (sem rajada: ordem de chegada).
+
+### 6.5 Configuração
+
+| Chave | Inicial | Uso |
+|---|---|---|
+| `SINAL_ESPERA_PARTES_MS` | 500 | fechamento do sinal em partes |
+| `SINAL_MAX_ITENS_PARTE` | 1000 | limite por requisição |
+| `SINAL_MAX_PARTES` | 10 | |

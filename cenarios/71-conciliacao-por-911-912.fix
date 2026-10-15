@@ -1,0 +1,52 @@
+cenario 71 Conciliação pelo 911/912: fecha quando todas as contas respondem; resposta lenta não vira DESCONHECIDA; incompleta só na espera máxima
+hora 2026-10-15 11:00:00
+# SPEC v1.10 C6. Uma conta respondeu ao AF com o 912=Y (LastRptRequested), com o 911
+# (TotNumReports) atingido ou com um 35=j ligado pelo 379. Todas respondidas → a conciliação fecha
+# na hora, sem esperar o silêncio. Com o 911/912 em uso, o silêncio (3 s) não fecha mais: só a
+# espera máxima (MASS_STATUS_ESPERA_MAX_S, 30 s), e aí as ordens das contas que não terminaram de
+# responder não são julgadas (nada de DESCONHECIDA por resposta lenta). PnT sem 911/912: o silêncio
+# de sempre (roteiros 08, 10, 12...).
+
+executa INICIO
+executa COMPRADO OP=7101
+
+# --- completa: a 1014 e a entrada, 911=2; o 912=Y fecha na hora (sem avanca)
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345 584=>MS1
+envia @ER 11=KM-E-7101-1 37=dsa.7101.E 150=I 39=2 584=$MS1 54=1 38=1 44=130020 847=1031 14=1 151=0 6=130010 911=2 912=N
+saude conciliando=true
+envia @ER 11=KM-P-7101-1 37=dsa.7101.P 150=I 39=0 584=$MS1 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 911=2 912=Y
+alerta CONCILIACAO
+saude conciliando=false posicao=1 divergente=false
+
+# --- lenta: a primeira resposta e 4 s de silêncio (mais que os 3 s): continua conciliando
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345 584=>MS2
+envia @ER 11=KM-E-7101-1 37=dsa.7101.E 150=I 39=2 584=$MS2 54=1 38=1 44=130020 847=1031 14=1 151=0 6=130010 911=2
+avanca 4s
+saude conciliando=true
+sem_alerta DESCONHECIDA
+entrada 7102 C
+resposta aceito=false codigo=CONCILIANDO
+# a segunda (pelo 911) completa
+envia @ER 11=KM-P-7101-1 37=dsa.7101.P 150=I 39=0 584=$MS2 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 911=2
+alerta CONCILIACAO
+saude conciliando=false posicao=1 divergente=false
+sem_alerta DESCONHECIDA
+
+# --- incompleta: só a entrada chega (911=2); fecha aos 30 s sem julgar a 1014 da conta
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345 584=>MS3
+envia @ER 11=KM-E-7101-1 37=dsa.7101.E 150=I 39=2 584=$MS3 54=1 38=1 44=130020 847=1031 14=1 151=0 6=130010 911=2
+avanca 29s
+saude conciliando=true
+avanca 1100ms
+alerta CONCILIACAO
+saude conciliando=false posicao=1 divergente=false parada=null
+sem_alerta DESCONHECIDA
+http GET /ordens/7101
+resposta ordens.1.papel=P ordens.1.estado=ATIVA
+nada 35=D

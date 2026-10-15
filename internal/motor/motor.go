@@ -287,19 +287,20 @@ type Motor struct {
 	p0, p1, p2 chan func() // entrada por prioridade (volta.go)
 	fim        chan struct{}
 
-	v             *estadoVolta    // o que a volta acumula até o commit
-	esperandoTaxa []envioPendente // entradas esperando o limitador de taxa
-	tokens        float64
-	tokensEm      time.Time
-	chegadas      sync.Map     // ClOrdID → chegada à sessão (relógio do motor)
-	chegadaMass   atomic.Int64 // última resposta de mass status chegada à sessão (UnixNano, relógio do motor)
-	proxOpID      int64
-	proxOrdemID   int64
-	execVistos    map[string]bool // fills (37, 17) já aplicados hoje
-	usuarios      *cacheUsuarios
-	respostaAtual *respostaPendente
-	versaoFills   int64 // muda a cada fill aplicado (agregados do resultado do dia)
-	agregado      agregadoDia
+	v              *estadoVolta    // o que a volta acumula até o commit
+	esperandoTaxa  []envioPendente // entradas esperando o limitador de taxa
+	tokens         float64
+	tokensEm       time.Time
+	chegadas       sync.Map     // ClOrdID → chegada à sessão (relógio do motor)
+	chegadaMass    atomic.Int64 // última resposta de mass status chegada à sessão (UnixNano, relógio do motor)
+	proxOpID       int64
+	proxOrdemID    int64
+	execVistos     map[string]bool // fills (37, 17) já aplicados hoje
+	usuarios       *cacheUsuarios
+	respostaAtual  *respostaPendente
+	versaoFills    int64 // muda a cada fill aplicado (agregados do resultado do dia)
+	logonsTratados int   // testes: logons já tratados pelo motor
+	agregado       agregadoDia
 
 	dia         string
 	ops         []*operacao
@@ -333,7 +334,9 @@ type Motor struct {
 	processadas    int64
 	seqOrdens      int64
 	proxInvariante time.Time
-	massCorte      int64 // ordens com seq até aqui existiam quando o mass status foi pedido
+	massCorte      int64                 // ordens com seq até aqui existiam quando o mass status foi pedido
+	massEstado     map[string]*massConta // por 584 (v1.10 C6)
+	massCom911     bool                  // alguma resposta trouxe 911/912: fecha pela contagem
 
 	// métricas (v1.9 M), tempo real: o pedido HTTP e a mensagem FIX em tratamento
 	pedidoEm     time.Time
@@ -447,6 +450,14 @@ func (m *Motor) Tick() { m.fazerComo("tick", m.tick) }
 
 // TickAssincrono enfileira o tick sem esperar (testes: o relógio anda com o motor travado).
 func (m *Motor) TickAssincrono() { m.entrar("tick", m.tick) }
+
+// LogonsTratados: quantos logons o motor já tratou (testes: o executor espera o logon chegar ao
+// motor, não só à sessão).
+func (m *Motor) LogonsTratados() int {
+	var n int
+	m.Fazer(func() { n = m.logonsTratados })
+	return n
+}
 
 // Processadas conta mensagens FIX de aplicação já tratadas pelo motor (testes).
 func (m *Motor) Processadas() int64 {

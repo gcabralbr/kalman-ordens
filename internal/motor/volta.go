@@ -51,8 +51,10 @@ type envioPendente struct {
 	pedidoEm     time.Time // métrica pedido_ate_envio (o pedido HTTP que causou)
 	pedidoRotulo string
 	decididoEm   time.Time // tempo real, métrica de espera pela taxa
+	decididoNo   time.Time // relógio do motor: a validade da entrada na fila (ENTRADA_TTL_FILA_S)
 	aoEnviar     func()
 	aoFalhar     func()
+	aoExpirar    func() // entrada que passou de ENTRADA_TTL_FILA_S esperando a taxa: descartada
 }
 
 // estadoVolta: o que a volta acumula até o commit.
@@ -249,26 +251,33 @@ func (m *Motor) devolverAoLote(l *repo.Lote) {
 
 // enfileirarEnvio: a mensagem sai depois do commit desta volta (despachar).
 func (m *Motor) enfileirarEnvio(e envioPendente) {
-	e.pedidoEm, e.pedidoRotulo, e.decididoEm = m.pedidoEm, m.pedidoRotulo, time.Now()
+	e.pedidoEm, e.pedidoRotulo, e.decididoEm, e.decididoNo = m.pedidoEm, m.pedidoRotulo, time.Now(), m.agora()
 	m.pedidoEm = timeZero // a métrica do pedido mede só a primeira mensagem que ele causou
 	m.v.envios = append(m.v.envios, e)
 }
 
-// recarregarTokens: token bucket no relógio do motor (FIX_TAXA_MSG_S, FIX_RAJADA_MSG).
+// taxaEntrada: o balde da entrada — a taxa da sessão menos a reserva da proteção e da saída.
+func (m *Motor) taxaEntrada() float64 {
+	return max(m.p.TaxaMsgS-m.p.ReservaSaidaMsgS, 0.01)
+}
+
+// recarregarTokens: o balde da entrada (token bucket no relógio do motor), rajada FIX_RAJADA_MSG.
 func (m *Motor) recarregarTokens(agora time.Time) {
 	if m.tokensEm.IsZero() {
 		m.tokens, m.tokensEm = float64(m.p.RajadaMsg), agora
 		return
 	}
 	if dt := agora.Sub(m.tokensEm).Seconds(); dt > 0 {
-		m.tokens = min(float64(m.p.RajadaMsg), m.tokens+dt*m.p.TaxaMsgS)
+		m.tokens = min(float64(m.p.RajadaMsg), m.tokens+dt*m.taxaEntrada())
 		m.tokensEm = agora
 	}
 }
 
-// despachar: 1014 > cancel/saída > entrada; a ordem de decisão é mantida dentro da classe. Proteção
-// e saída nunca esperam pela taxa (consomem tokens, podendo deixar o saldo negativo); a entrada só
-// sai com saldo — reserva para a proteção.
+// despachar: 1014 > cancel/saída > entrada; a ordem de decisão é mantida dentro da classe. A
+// entrada tem balde próprio (FIX_TAXA_MSG_S − FIX_RESERVA_SAIDA_MSG_S) e só sai com saldo; 1014,
+// cancel, saída e mass status não passam pelo balde da entrada — a reserva deles nunca é esgotada
+// por entradas. A entrada que espera mais que ENTRADA_TTL_FILA_S é descartada (não entra
+// atrasada).
 func (m *Motor) despachar() {
 	pend := append(m.esperandoTaxa, m.v.envios...)
 	m.esperandoTaxa, m.v.envios = nil, nil
@@ -277,9 +286,21 @@ func (m *Motor) despachar() {
 		return
 	}
 	sort.SliceStable(pend, func(i, j int) bool { return pend[i].prio < pend[j].prio })
-	m.recarregarTokens(m.agora())
+	agora := m.agora()
+	m.recarregarTokens(agora)
 	for _, e := range pend {
-		if e.prio == prioEntrada && m.tokens < 1 {
+		if e.prio != prioEntrada {
+			m.despacharUm(e)
+			continue
+		}
+		if m.p.TTLFilaEntrada > 0 && agora.Sub(e.decididoNo) >= m.p.TTLFilaEntrada {
+			metricas.EntradasExpiradasFila.Inc()
+			if e.aoExpirar != nil {
+				e.aoExpirar()
+			}
+			continue
+		}
+		if m.tokens < 1 {
 			m.esperandoTaxa = append(m.esperandoTaxa, e)
 			continue
 		}

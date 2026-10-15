@@ -1,0 +1,50 @@
+cenario 70 Entrada que não sai em ENTRADA_TTL_FILA_S é descartada: ENTRADA_ENCERRADA motivo=EXPIRADA_NA_FILA, nunca vai ao PnT atrasada
+hora 2026-10-15 10:30:00
+# SPEC v1.10 P5. A entrada esperando o balde da taxa tem validade (ENTRADA_TTL_FILA_S, contada da
+# decisão): passou, é descartada — o sinal envelheceu e ela não entra atrasada. Aqui o balde da
+# entrada enche a 0,5/s (FIX_TAXA_MSG_S 1 − reserva 0,5), rajada 1, validade 3 s: a 7001 sai na
+# hora, a 7002 aos 2 s, a 7003 venceria aos 4 s e expira aos 3 s.
+config FIX_TAXA_MSG_S=1
+config FIX_RESERVA_SAIDA_MSG_S=0.5
+config FIX_RAJADA_MSG=1
+config ENTRADA_TTL_FILA_S=3
+config LIMITE_POSICAO_MAX=10
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+
+executa INICIO
+entrada 7001 C
+recebe 35=D 11=KM-E-7001-1 847=1031
+envia @ER 11=KM-E-7001-1 37=dsa.7001.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+recebe 35=D 11=KM-P-7001-1 847=1014
+envia @ER 11=KM-P-7001-1 37=dsa.7001.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+entrada 7002 C
+resposta aceito=true
+entrada 7003 C
+resposta aceito=true
+nada
+
+avanca 1900ms
+nada
+avanca 100ms
+recebe 35=D 11=KM-E-7002-1 847=1031
+envia @ER 11=KM-E-7002-1 37=dsa.7002.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+recebe 35=D 11=KM-P-7002-1 847=1014
+envia @ER 11=KM-P-7002-1 37=dsa.7002.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+sem_evento ENTRADA_ENCERRADA operacao_id=7003
+
+# aos 3 s da decisão, a 7003 (ainda sem token) expira
+avanca 900ms
+nada
+sem_evento ENTRADA_ENCERRADA operacao_id=7003
+avanca 100ms
+evento ENTRADA_ENCERRADA operacao_id=7003 qtd_final=0 motivo=EXPIRADA_NA_FILA
+http GET /ordens/7003
+resposta estado=ENCERRADA_SEM_ENTRADA posicao=0 ordens.0.estado=FALHA_ENVIO
+metrica kalman_ordens_entradas_expiradas_fila_total >= 1
+metrica kalman_ordens_envios_aguardando_taxa = 0
+# nunca vai ao PnT, nem quando o token chega
+avanca 3s
+nada
+saude posicao=2 divergente=false
