@@ -1,0 +1,24 @@
+[Unit]
+Description=kalman-precos-hml — /precos/atual da HML a partir do tick file do Kalman (só na .53, teste)
+Documentation=file:///opt/kalman-ordens/LEIA.md
+After=network-online.target
+
+[Service]
+Type=simple
+# lê /var/lib/kalman (750, dono gammaquant): tick files e feriados.json gerado pelo Kalman
+User=gammaquant
+Group=gammaquant
+# PRECOS_HML_TICKER (obrigatória), PRECOS_HML_DATA (vazia = dia útil anterior), PRECOS_HML_PORTA (9095)
+EnvironmentFile=/etc/kalman-ordens/precos-hml.env
+ExecStart=/opt/kalman-ordens/precos-hml
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadOnlyPaths=/var/lib/kalman
+
+[Install]
+WantedBy=multi-user.target

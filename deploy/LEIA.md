@@ -219,6 +219,52 @@ sincronia (`recebidas_na_janela`, `reenvios_na_janela`; v1.3 A2): anotar em todo
 ResendRequest do PnT fora da janela quer dizer que 500 ms não bastam (`FIX_SINCRONIA_MS`). Depois:
 o teste 2.6b.
 
+### 1.9 Preço da HML pelo tick file do Kalman (`precos-hml`, só na .53)
+
+A HML do PnT reproduz o pregão do **dia útil anterior**; o marketdata da .53 é o de hoje. O
+`precos-hml` serve o `/precos/atual?ativo=WINFUT` no **mesmo contrato do marketdata**
+([docs/referencia/precos-atual.md](../docs/referencia/precos-atual.md)) a partir do tick file do
+Kalman daquele dia (`/var/lib/kalman/tick/winfut-AAAA-MM-DD.csv.gz` ou `.csv`), em
+`127.0.0.1:9095`. Sem banco e sem Cedro. Substitui o replay do marketdata da 1.7.
+
+- A cada pedido devolve a **última linha com horário <= a hora do dia de agora** (`preco_obs`,
+  `bid`, `ask`, `status84`; campo vazio no arquivo é omitido). `ticker` = o contrato vigente
+  (parâmetro). `ts` = hora da linha − `idade_seg` da linha, na data de hoje; `idade_seg` = agora − `ts`.
+- Antes da primeira linha ou depois da última (o arquivo do Kalman vai de ~09:00 a ~14:01): `{}`,
+  como o marketdata sem dado — o serviço recusa entradas com `SEM_PRECO`.
+- Dia do arquivo: `PRECOS_HML_DATA` (`AAAA-MM-DD`) ou, vazio, o dia útil anterior pelo
+  `/var/lib/kalman/feriados.json` (gerado pelo Kalman da `anferiado` a cada subida), recalculado
+  na virada do dia. Sem o arquivo do dia, não sobe (e responde 503 se faltar depois).
+
+Instalar (o `scripts/build.sh` gera `dist/precos-hml` junto):
+
+```
+sudo install -o root -g root -m 755 ~/kalman-ordens/dist/precos-hml /opt/kalman-ordens/precos-hml
+sudo install -o root -g root -m 644 ~/kalman-ordens/deploy/kalman-precos-hml.service /etc/systemd/system/kalman-precos-hml.service
+sudo tee /etc/kalman-ordens/precos-hml.env >/dev/null <<'EOF'
+PRECOS_HML_TICKER=WINZ26
+PRECOS_HML_DATA=
+PRECOS_HML_PORTA=9095
+EOF
+sudo systemctl daemon-reload
+sudo systemctl start kalman-precos-hml          # não habilitar: ferramenta de teste
+journalctl -u kalman-precos-hml                 # "winfut-2026-10-14.csv.gz, N linhas, 09:00:38.915 a 14:00:59.976"
+curl -s '127.0.0.1:9095/precos/atual?ativo=WINFUT'
+```
+
+A unidade roda como `gammaquant` (dono de `/var/lib/kalman`, 750), só leitura. Rodar à mão:
+`dist/precos-hml -ticker WINZ26 [-data 2026-10-14] [-porta 9095]`.
+
+No kalman-ordens em HML (`sudoedit /etc/kalman-ordens/service.env`, depois `systemctl restart
+kalman-ordens`):
+
+- `PRECOS_URL=http://127.0.0.1:9095`
+- **colares de volta ao padrão**: `COLAR_ENTRADA_PTS=15` e `COLAR_SAIDA_PTS=50` (ou as duas linhas
+  comentadas) — com o preço da HML, as ordens voltam a ser as de produção.
+
+Ao fim do teste: `PRECOS_URL` de volta ao marketdata (`http://172.16.110.53:9090`), restart do
+kalman-ordens e `sudo systemctl stop kalman-precos-hml`.
+
 ---
 
 ## 2. Checklist da F1 (SPEC v1 Parte 11.2)
