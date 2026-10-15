@@ -43,13 +43,13 @@ const (
 // AcaoOperacaoAssincrona enfileira encerrar / cancelar-entrada; o resultado chega no canal.
 func (m *Motor) AcaoOperacaoAssincrona(acao, modulo string, id int64, a AcaoAdmin) <-chan Resposta {
 	ch := make(chan Resposta, 1)
-	m.fila <- func() {
+	m.entrarPedido(acao, func() {
 		r, rec := m.acaoOperacao(acao, modulo, id, a)
 		if rec != nil {
 			r = m.recusar(Pedido{Modulo: modulo, OperacaoID: &id, Papel: acao}, rec)
 		}
 		ch <- r
-	}
+	})
 	return ch
 }
 
@@ -131,7 +131,7 @@ type consultaPnT struct {
 // ConsultarPnTAssincrono: GET /pnt/ordens.
 func (m *Motor) ConsultarPnTAssincrono() <-chan Resposta {
 	ch := make(chan Resposta, 1)
-	m.fila <- func() { m.consultarPnT(ch) }
+	m.entrar("http", func() { m.consultarPnT(ch) })
 	return ch
 }
 
@@ -461,13 +461,13 @@ func HabilitacaoDoUsuario(r interface {
 // AlterarHabilitacaoAssincrono: POST /usuarios/{uid}/habilitacao, na fila do motor.
 func (m *Motor) AlterarHabilitacaoAssincrono(uid int, a HabilitacaoAdmin) <-chan Resposta {
 	ch := make(chan Resposta, 1)
-	m.fila <- func() {
+	m.entrarPedido("HABILITACAO", func() {
 		r, rec := m.alterarHabilitacao(uid, a)
 		if rec != nil {
 			r = m.recusar(Pedido{UID: &uid, Papel: "HABILITACAO"}, rec)
 		}
 		ch <- r
-	}
+	})
 	return ch
 }
 

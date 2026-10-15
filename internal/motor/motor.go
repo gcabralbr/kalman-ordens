@@ -19,6 +19,7 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/alerta"
 	"gammaquant.com.br/kalman-ordens/internal/config"
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
+	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
@@ -93,6 +94,10 @@ type ordem struct {
 	canceladaPorErro bool
 	decidirNoMass    bool  // cancel da 1014 em erro rejeitado por outro motivo: o mass status decide (F17)
 	seq              int64 // ordem de criação neste processo (0 = carregada do banco)
+	// métricas (v1.9 M), tempo real; zero = carregada do banco
+	envioReal, aReal    time.Time
+	mediuA, mediuAceite bool
+	mediuFill           bool
 }
 
 func (o *ordem) viva() bool { return !o.Estado.Final() && o.Estado != dominio.Desconhecida }
@@ -308,6 +313,11 @@ type Motor struct {
 	proxInvariante time.Time
 	massCorte      int64 // ordens com seq até aqui existiam quando o mass status foi pedido
 
+	// métricas (v1.9 M), tempo real: o pedido HTTP e a mensagem FIX em tratamento
+	pedidoEm     time.Time
+	pedidoRotulo string
+	chegadaFIX   time.Time
+
 	// GET /pnt/ordens (v1.7 C): a consulta em curso e a última (intervalo mínimo)
 	consulta         *consultaPnT
 	ultimaConsulta   Resposta
@@ -318,12 +328,13 @@ type Motor struct {
 func Novo(c config.Config, rel relogio.Relogio, r repo.Repositorio, f preco.Fonte, n alerta.Notificador) *Motor {
 	p := c.Parametros()
 	m := &Motor{
-		p: p, rel: rel, repo: r, precos: f,
+		p: p, rel: rel, repo: repo.Medir(r), precos: f,
 		ultimos: map[string]ultimoPreco{}, massReqIDs: map[string]bool{},
 		fila: make(chan func(), 10000),
 		fim:  make(chan struct{}),
 	}
 	m.al = alerta.Novo(n, m.publicarAlerta, rel, p.RepeticaoAlerta)
+	metricas.DefinirFila(func() int { return len(m.fila) }, cap(m.fila))
 	return m
 }
 
@@ -369,14 +380,46 @@ func (m *Motor) protegido(f func()) {
 }
 
 // Fazer roda f na goroutine do motor e espera.
-func (m *Motor) Fazer(f func()) {
+func (m *Motor) Fazer(f func()) { m.fazerComo("outro", f) }
+
+func (m *Motor) fazerComo(origem string, f func()) {
 	done := make(chan struct{})
-	m.fila <- func() { defer close(done); f() }
+	m.entrar(origem, func() { defer close(done); f() })
 	<-done
 }
 
+// entrar põe f na fila do motor medindo a espera (métrica fila_espera_segundos{origem}).
+func (m *Motor) entrar(origem string, f func()) {
+	t0 := time.Now()
+	m.fila <- func() {
+		metricas.FilaEspera.Observar(time.Since(t0).Seconds(), origem)
+		f()
+	}
+}
+
+// entrarPedido: um pedido HTTP; a primeira mensagem FIX que ele causar mede pedido_ate_envio.
+func (m *Motor) entrarPedido(pedido string, f func()) {
+	t0 := time.Now()
+	m.entrar("http", func() {
+		m.pedidoEm, m.pedidoRotulo = t0, pedido
+		defer func() { m.pedidoEm = timeZero }()
+		f()
+	})
+}
+
+// entrarFIX: uma mensagem do PnT; a 1014 que um fill de entrada causar mede a espera desde a
+// chegada (protecao_fill_ate_envio_segundos).
+func (m *Motor) entrarFIX(f func()) {
+	t0 := time.Now()
+	m.entrar("fix", func() {
+		m.chegadaFIX = t0
+		defer func() { m.chegadaFIX = timeZero }()
+		f()
+	})
+}
+
 // Tick roda as verificações dependentes de tempo e espera (o executor e o relógio real chamam).
-func (m *Motor) Tick() { m.Fazer(m.tick) }
+func (m *Motor) Tick() { m.fazerComo("tick", m.tick) }
 
 // Processadas conta mensagens FIX de aplicação já tratadas pelo motor (testes).
 func (m *Motor) Processadas() int64 {
@@ -392,7 +435,7 @@ func (m *Motor) Pedir(p Pedido) Resposta { return <-m.PedirAssincrono(p) }
 // não cancela nada: o motor processa o pedido do mesmo jeito.
 func (m *Motor) PedirAssincrono(p Pedido) <-chan Resposta {
 	ch := make(chan Resposta, 1)
-	m.fila <- func() { ch <- m.pedir(p) }
+	m.entrarPedido(p.Papel, func() { ch <- m.pedir(p) })
 	return ch
 }
 
@@ -556,26 +599,32 @@ func (m *Motor) Eventos(desde int64, limite int, modulo string) ([]repo.Publicad
 
 // ---------------------------------------------------------------- pnt.Ouvinte (só enfileira)
 
-func (m *Motor) Logou() { m.fila <- m.aoLogar }
+func (m *Motor) Logou() { m.entrarFIX(m.aoLogar) }
 func (m *Motor) Caiu() {
-	m.fila <- func() {
+	m.entrarFIX(func() {
 		m.conciliando = false
 		m.al.Emitir("SESSAO_CAIU", "", "sessão FIX caiu", 0)
-	}
+	})
 }
-func (m *Motor) Recebeu(msg pnt.Mensagem)          { m.fila <- func() { m.processadas++; m.processar(msg) } }
-func (m *Motor) RejeicaoRecebida(msg pnt.Mensagem) { m.fila <- func() { m.rejeicaoSessao(msg) } }
+func (m *Motor) Recebeu(msg pnt.Mensagem) {
+	metricas.FixMensagens.Inc("recebida", msg.Tipo)
+	m.entrarFIX(func() { m.processadas++; m.processar(msg) })
+}
+func (m *Motor) RejeicaoRecebida(msg pnt.Mensagem) {
+	metricas.FixMensagens.Inc("recebida", "3")
+	m.entrarFIX(func() { m.rejeicaoSessao(msg) })
+}
 func (m *Motor) MensagemIlegivel(texto string) {
-	m.fila <- func() { m.processadas++; m.mensagemIlegivel(texto) }
+	m.entrarFIX(func() { m.processadas++; m.mensagemIlegivel(texto) })
 }
 func (m *Motor) RejeicaoEnviada(msg pnt.Mensagem) {
-	m.fila <- func() { m.processadas++; m.rejeicaoEnviada(msg) }
+	m.entrarFIX(func() { m.processadas++; m.rejeicaoEnviada(msg) })
 }
-func (m *Motor) LogonRecusado(texto string) { m.fila <- func() { m.logonRecusado(texto) } }
+func (m *Motor) LogonRecusado(texto string) { m.entrarFIX(func() { m.logonRecusado(texto) }) }
 func (m *Motor) EventoSessao(tipo, texto string) {
-	m.fila <- func() { m.registrarSessao(tipo, texto) }
+	m.entrarFIX(func() { m.registrarSessao(tipo, texto) })
 }
-func (m *Motor) StoreIlegivel(texto string) { m.fila <- func() { m.storeIlegivel(texto) } }
+func (m *Motor) StoreIlegivel(texto string) { m.entrarFIX(func() { m.storeIlegivel(texto) }) }
 
 // ---------------------------------------------------------------- carga do dia
 
@@ -762,6 +811,11 @@ func (m *Motor) enviar(o *ordem, msg *quickfix.Message, clordid string) bool {
 		seq, err := m.fix.Enviar(msg)
 		if err == nil {
 			ok = true
+			metricas.FixMensagens.Inc("enviada", tipo)
+			if !m.pedidoEm.IsZero() {
+				metricas.PedidoAteEnvio.Observar(time.Since(m.pedidoEm).Seconds(), m.pedidoRotulo)
+				m.pedidoEm = timeZero // só a primeira mensagem do pedido
+			}
 			m.clordPorSeq[seq] = clordid
 			m.enviosRec = append(m.enviosRec, m.agora())
 		} else {

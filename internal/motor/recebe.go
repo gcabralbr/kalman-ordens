@@ -9,6 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
+	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
 	"gammaquant.com.br/kalman-ordens/pnt"
 )
@@ -153,6 +154,7 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 		m.aplicarFill(op, o, cum, avg, last, lastPx, estavaEncerrada)
 	}
 
+	m.medirOrdem(o, et)
 	switch et {
 	case "A":
 		if o.Estado == dominio.Pendente || o.Estado == dominio.Enviando {
@@ -219,6 +221,37 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 	}
 	m.salvarOrdem(o)
 	m.salvarOp(op)
+}
+
+// nomePapel: o rótulo das métricas por ordem.
+func nomePapel(p dominio.Papel) string {
+	switch p {
+	case dominio.Entrada:
+		return "ENTRADA"
+	case dominio.Protecao:
+		return "PROTECAO"
+	}
+	return "SAIDA"
+}
+
+// medirOrdem (v1.9 M): envio → 39=A, 39=A → 39=0, envio → 39=0, só das ordens enviadas neste
+// processo e só a primeira vez de cada.
+func (m *Motor) medirOrdem(o *ordem, et string) {
+	if o.envioReal.IsZero() {
+		return
+	}
+	agora := time.Now()
+	switch {
+	case et == "A" && !o.mediuA:
+		o.mediuA, o.aReal = true, agora
+		metricas.EnvioAte39A.Observar(agora.Sub(o.envioReal).Seconds(), nomePapel(o.Papel))
+	case et == "0" && !o.mediuAceite:
+		o.mediuAceite = true
+		metricas.EnvioAteAceite.Observar(agora.Sub(o.envioReal).Seconds(), nomePapel(o.Papel))
+		if !o.aReal.IsZero() {
+			metricas.De39AAte390.Observar(agora.Sub(o.aReal).Seconds(), nomePapel(o.Papel))
+		}
+	}
 }
 
 // observarDisparo (v1.3 J2): a 1014 dispara dentro do PnT — 150=I 39=B com 20807 (quantidade
@@ -317,6 +350,10 @@ func (m *Motor) aplicarFill(op *operacao, o *ordem, cum int, avg decimal.Decimal
 		o.PrecoMedio = avg
 	} else if px.IsPositive() {
 		o.PrecoMedio = o.PrecoMedio.Mul(decimal.NewFromInt(int64(antes))).Add(px.Mul(decimal.NewFromInt(int64(delta)))).Div(decimal.NewFromInt(int64(cum))).Round(4)
+	}
+	if !o.envioReal.IsZero() && !o.mediuFill {
+		o.mediuFill = true
+		metricas.EnvioAteFill.Observar(time.Since(o.envioReal).Seconds(), nomePapel(o.Papel))
 	}
 	o.QtdExec = cum
 	slog.Info("FILL", "clordid", o.ClOrdAtual, "orderid", o.OrderID, "delta", delta, "preco", px, "cum", cum)

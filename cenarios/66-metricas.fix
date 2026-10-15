@@ -1,0 +1,63 @@
+cenario 66 GET /metrics: filas, tempos por ordem, fill→1014, mensagens FIX, banco, recusas, alertas e HTTP
+hora 2026-10-15 11:40:00
+# SPEC v1.9 M. Formato de texto do Prometheus, só em 127.0.0.1 (o HTTP inteiro). Os contadores e
+# histogramas somam em todos os roteiros do mesmo processo: aqui só ">=".
+
+executa INICIO
+executa COMPRADO OP=6601
+
+# recusa (entrada com a posição máxima já ocupada)
+entrada 6602 C
+resposta aceito=false codigo=POSICAO_MAXIMA
+
+# saída com 39=A antes do 39=0
+saida 6601 V SINAL_OPOSTO
+recebe 35=F 41=KM-P-6601-1 37=dsa.6601.P
+envia @ER 11=KM-P-6601-2 41=KM-P-6601-1 37=dsa.6601.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-6601-1 847=1031
+envia @ER 11=KM-S-6601-1 37=dsa.6601.S 150=A 39=A 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+avanca 100ms
+envia @ER 11=KM-S-6601-1 37=dsa.6601.S 150=0 39=0 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-S-6601-1 37=dsa.6601.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=6601
+avanca 200ms
+
+# fila do motor, por origem; capacidade
+metrica kalman_ordens_fila_espera_segundos_count origem=http >= 2
+metrica kalman_ordens_fila_espera_segundos_count origem=fix >= 7
+metrica kalman_ordens_fila_espera_segundos_count origem=tick >= 1
+metrica kalman_ordens_fila_espera_segundos_bucket origem=http le=+Inf >= 2
+metrica kalman_ordens_fila_capacidade = 10000
+metrica kalman_ordens_fila_tamanho >= 0
+# do POST até a primeira mensagem FIX
+metrica kalman_ordens_pedido_ate_envio_segundos_count pedido=ENTRADA >= 1
+metrica kalman_ordens_pedido_ate_envio_segundos_count pedido=SAIDA >= 1
+# por ordem: envio → 39=A, 39=A → 39=0, envio → 39=0, envio → fill
+metrica kalman_ordens_ordem_envio_ate_39a_segundos_count papel=SAIDA >= 1
+metrica kalman_ordens_ordem_39a_ate_39_0_segundos_count papel=SAIDA >= 1
+metrica kalman_ordens_ordem_envio_ate_aceite_segundos_count papel=ENTRADA >= 1
+metrica kalman_ordens_ordem_envio_ate_aceite_segundos_count papel=PROTECAO >= 1
+metrica kalman_ordens_ordem_envio_ate_fill_segundos_count papel=ENTRADA >= 1
+metrica kalman_ordens_ordem_envio_ate_fill_segundos_count papel=SAIDA >= 1
+# a 1014 depois do fill de entrada
+metrica kalman_ordens_protecao_fill_ate_envio_segundos_count >= 1
+# mensagens FIX
+metrica kalman_ordens_fix_mensagens_total direcao=enviada tipo=D >= 3
+metrica kalman_ordens_fix_mensagens_total direcao=enviada tipo=F >= 1
+metrica kalman_ordens_fix_mensagens_total direcao=enviada tipo=AF >= 1
+metrica kalman_ordens_fix_mensagens_total direcao=recebida tipo=8 >= 7
+# banco
+metrica kalman_ordens_banco_segundos_count operacao=SalvarOrdem >= 3
+metrica kalman_ordens_banco_segundos_count operacao=RegistrarEvento >= 10
+metrica kalman_ordens_banco_segundos_count operacao=Publicar >= 5
+# recusas e alertas por código
+metrica kalman_ordens_recusas_total pedido=ENTRADA codigo=POSICAO_MAXIMA >= 1
+metrica kalman_ordens_alertas_total codigo=CONCILIACAO >= 1
+# HTTP por rota e status
+metrica kalman_ordens_http_segundos_count rota="POST /ordens" status=200 >= 3
+# estado (atualizado no tick)
+metrica kalman_ordens_sessao_logada = 1
+metrica kalman_ordens_posicao_total = 0
+metrica kalman_ordens_operacoes_abertas = 0
+metrica kalman_ordens_go_goroutines > 0
+metrica kalman_ordens_processo_cpu_segundos > 0

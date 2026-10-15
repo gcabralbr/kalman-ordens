@@ -11,6 +11,7 @@ import (
 
 	"gammaquant.com.br/kalman-ordens/internal/alerta"
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
+	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/usuario"
 	"gammaquant.com.br/kalman-ordens/pnt"
@@ -283,6 +284,7 @@ func (m *Motor) recusar(p Pedido, r *recusa) Resposta {
 			m.ativarParada("BLOQUEAR", "auto", fmt.Sprintf("%d recusas por limite em 1 min (última: %s)", len(m.recusasLimite), r.codigo))
 		}
 	}
+	metricas.Recusas.Inc(p.Papel, r.codigo)
 	return Resposta{"aceito": false, "codigo": r.codigo, "motivo": alerta.ASCII(r.motivo)}
 }
 
@@ -306,6 +308,7 @@ func (m *Motor) enviarNova(op *operacao, o *ordem) bool {
 		return false
 	}
 	o.enviada = m.agora()
+	o.envioReal = time.Now()
 	return true
 }
 

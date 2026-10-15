@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/motor"
 )
 
@@ -210,11 +211,37 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 			escrever(w, http.StatusServiceUnavailable, motor.Resposta{"erro": "RESULTADO_DESCONHECIDO", "motivo": "a consulta nao terminou a tempo"})
 		}
 	})
+	// métricas no formato do Prometheus (v1.9 M); o HTTP inteiro só escuta em 127.0.0.1
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		metricas.Escrever(w)
+	})
 	mux.HandleFunc("GET /saude", func(w http.ResponseWriter, r *http.Request) {
 		escrever(w, http.StatusOK, m.Saude())
 	})
-	return mux
+	return medirHTTP(mux)
 }
+
+// medirHTTP: duração de cada requisição por rota (o padrão do mux) e status (http_segundos).
+func medirHTTP(mux *http.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t0 := time.Now()
+		sw := &comStatus{ResponseWriter: w, status: http.StatusOK}
+		mux.ServeHTTP(sw, r)
+		rota := r.Pattern
+		if rota == "" {
+			rota = "desconhecida"
+		}
+		metricas.HTTP.Observar(time.Since(t0).Seconds(), rota, strconv.Itoa(sw.status))
+	})
+}
+
+type comStatus struct {
+	http.ResponseWriter
+	status int
+}
+
+func (c *comStatus) WriteHeader(s int) { c.status = s; c.ResponseWriter.WriteHeader(s) }
 
 // esperaConsultaPnT: folga do GET /pnt/ordens sobre a espera da própria consulta (CONSULTA_PNT_ESPERA_S).
 const esperaConsultaPnT = 10 * time.Second

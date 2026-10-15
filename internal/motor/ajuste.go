@@ -31,13 +31,13 @@ const (
 // não cancela nada, como no POST /ordens).
 func (m *Motor) AjustarStopAssincrono(id int64, a AjusteStop) <-chan Resposta {
 	ch := make(chan Resposta, 1)
-	m.fila <- func() {
+	m.entrarPedido("STOP", func() {
 		r, rec := m.ajustarStop(id, a)
 		if rec != nil {
 			r = m.recusar(Pedido{Modulo: a.Modulo, OperacaoID: &id, Papel: "STOP"}, rec)
 		}
 		ch <- r
-	}
+	})
 	return ch
 }
 

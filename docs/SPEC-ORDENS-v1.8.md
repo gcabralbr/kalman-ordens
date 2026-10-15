@@ -6,6 +6,9 @@ diz nada, vale a v1.7.
 Tema: **habilitação do usuário pelo admin** (contrato oficial do responsável, 15/10; o lado do
 Kalman implementa depois, contra esta versão) e um defeito da CLI `usuario`.
 
+**Revista pela [v1.9](SPEC-ORDENS-v1.9.md)** (15/10): métricas (`GET /metrics`) e teste de carga; envio
+sem mudança.
+
 Data: 2026-10-15.
 
 ---

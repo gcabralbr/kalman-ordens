@@ -8,6 +8,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
+	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/pnt"
 )
 
@@ -43,6 +44,10 @@ func (m *Motor) ajustarProtecao(op *operacao) {
 			m.salvarOrdem(o)
 			op.retentativaProtEm = agora.Add(m.p.RetentativaProtecao)
 			return
+		}
+		if !m.chegadaFIX.IsZero() {
+			// a 1014 nova saiu por causa de uma mensagem do PnT (o fill da entrada): quanto esperou
+			metricas.FillAteProtecao.Observar(time.Since(m.chegadaFIX).Seconds())
 		}
 		slog.Info("PROTEÇÃO enviada", "clordid", o.ClOrdAtual, "stop", stop, "limite", lim, "qtd", qtd)
 		return

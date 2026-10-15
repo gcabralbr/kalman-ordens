@@ -435,6 +435,8 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return e.httpAsync(p.Args[0], p.Args[1], corpo)
 	case "http_aguarda":
 		return e.httpAguarda()
+	case "metrica":
+		return e.metrica(p.Args)
 	case "resposta":
 		return conferir(e.resposta, p.Args)
 	case "saude":
@@ -677,6 +679,64 @@ func (e *Executor) conferirASCII() error {
 		}
 	}
 	return nil
+}
+
+// metrica: GET /metrics (texto do Prometheus); NOME [rotulo=valor ...] OP N, OP em = >= > <=.
+// A série é a que tem exatamente esses rótulos (fora "le"). Os contadores somam em todos os
+// roteiros do processo: os roteiros afirmam ">=".
+func (e *Executor) metrica(args []string) error {
+	if len(args) < 3 {
+		return fmt.Errorf("metrica NOME [rotulo=valor...] OP N")
+	}
+	nome, op, alvoTxt := args[0], args[len(args)-2], args[len(args)-1]
+	alvo, err := strconv.ParseFloat(alvoTxt, 64)
+	if err != nil {
+		return err
+	}
+	quer := map[string]string{}
+	for _, a := range args[1 : len(args)-2] {
+		k, v, _ := strings.Cut(a, "=")
+		quer[k] = v
+	}
+	w := httptest.NewRecorder()
+	e.svc.http.ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
+	texto := w.Body.String()
+	for _, linha := range strings.Split(texto, "\n") {
+		if strings.HasPrefix(linha, "#") || linha == "" {
+			continue
+		}
+		i := strings.LastIndex(linha, " ") // o valor vem depois do último espaço (rótulo pode ter espaço)
+		serie, valorTxt := linha[:i], linha[i+1:]
+		n, rot, _ := strings.Cut(serie, "{")
+		if n != nome {
+			continue
+		}
+		tem := map[string]string{}
+		for _, par := range strings.Split(strings.TrimSuffix(rot, "}"), "\",") {
+			if k, v, ok := strings.Cut(par, "="); ok {
+				tem[k] = strings.Trim(v, "\"")
+			}
+		}
+		if len(tem) != len(quer) {
+			continue
+		}
+		casa := true
+		for k, v := range quer {
+			if tem[k] != v {
+				casa = false
+			}
+		}
+		if !casa {
+			continue
+		}
+		v, _ := strconv.ParseFloat(valorTxt, 64)
+		ok := map[string]bool{"=": v == alvo, ">=": v >= alvo, ">": v > alvo, "<=": v <= alvo}[op]
+		if !ok {
+			return fmt.Errorf("%s%v = %v, esperava %s %v", nome, quer, v, op, alvo)
+		}
+		return nil
+	}
+	return fmt.Errorf("métrica %s%v ausente do /metrics", nome, quer)
 }
 
 // httpAsync: a requisição fica em curso (ex.: GET /pnt/ordens, que espera as respostas do PnT

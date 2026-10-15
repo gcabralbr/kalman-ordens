@@ -71,6 +71,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 | `stop OP preco=N\|pts=N [uid=N] [modulo=M]` | `POST /operacoes/OP/stop` (ajuste da proteção, SPEC v1.4 K): `preco=` vira `preco_stop`, `pts=` vira `stop_pts` |
 | `http METODO /caminho [json]` | requisição livre |
 | `http_async METODO /caminho [json]` / `http_aguarda` | a requisição fica em curso enquanto o roteiro segue (ex.: `GET /pnt/ordens`, que espera as respostas do PnT falso ao AF); `http_aguarda` espera a resposta (tempo real, até 15 s) e ela vira a "última resposta" |
+| `metrica NOME [rotulo=valor ...] OP N` | `GET /metrics` (texto do Prometheus): a série `NOME` com exatamente esses rótulos (fora o `le`) tem valor `OP N` (`=`, `>=`, `>`, `<=`); os contadores somam em todos os roteiros do processo, então os roteiros usam `>=` |
 | `resposta campo=valor ...` | confere o corpo da última resposta HTTP (`parada.modo=BLOQUEAR`; `null`; `*` = presente; numa lista, `mensagens.0.msgtype` e `mensagens.#` = tamanho; resposta que é uma lista fica em `_lista`); `_status` é o código HTTP |
 | `saude campo=valor ...` | `GET /saude` e confere |
 | `evento TIPO campo=valor ...` | existe em `GET /eventos` um evento desse tipo, ainda não casado, que bate; ele passa a contar como casado |

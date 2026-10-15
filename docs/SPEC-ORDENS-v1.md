@@ -472,6 +472,7 @@ Estado no fim da F1 (HML do PnT, 14/10/2026; detalhes na [SPEC v1.3](SPEC-ORDENS
 | PnT-16 | self-trade | registrar; tratar como rejeição comum | não observado |
 | PnT-17 | a 1014 é suportada no DSA? (o dicionário de 13/10 não a tem) | 1014 (D2) até a resposta | **fechada**: a 1014 funciona no DSA; D2 fica |
 | PnT-18 | depois do 39=6 de uma 1014 sem ordem filha (20807=0), ela ainda pode disparar? ([SPEC v1.4](SPEC-ORDENS-v1.4.md) seção 3) | a saída espera o 39=4 (Parte 3.5) | **aberta** (15/10): se não puder, a saída sai no 39=6 e a virada de mão ganha ~3-4 s |
+| PnT-19 | limite de mensagens por segundo da sessão DSA (e por conta); o que acontece acima dele | sem limitador (v1.9: o motor não passa de ~340 msg/s) | **aberta** (15/10): necessária para o limitador de taxa ([CARGA-2026-10-15](CARGA-2026-10-15.md) 6.3) |
 
 ---|---|---|
 | PnT-1 | usuário novo, IP da .51 | HML com usuário de homologação |

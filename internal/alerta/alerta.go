@@ -5,6 +5,7 @@ package alerta
 
 import (
 	"fmt"
+	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"log/slog"
 	"sort"
 	"time"
@@ -60,6 +61,7 @@ func Novo(n Notificador, p Publicador, rel relogio.Relogio, repeticao time.Durat
 // (uma segunda emissão com a mesma chave não duplica) e ele repete até Resolver(chave).
 func (a *Alertas) Emitir(codigo, chave, texto string, operacaoID int64) {
 	texto = ASCII(texto)
+	metricas.Alertas.Inc(codigo)
 	cr, ok := Catalogo[codigo]
 	if !ok {
 		slog.Error("alerta fora do catálogo", "codigo", codigo)

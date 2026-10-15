@@ -9,6 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
+	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
 )
@@ -19,6 +20,7 @@ func (m *Motor) tick() {
 	}
 	m.al.Tick()
 	m.fecharConsultaSePronta(true)
+	m.atualizarMetricas()
 	agora := m.agora()
 	m.observarPreco()
 	logado := m.fix != nil && m.fix.Logado()
@@ -338,4 +340,20 @@ func (m *Motor) ativarParadaCom(modo, origem, motivo, origemSaida string) {
 			m.iniciarSaida(op, origemSaida, origemSaida)
 		}
 	}
+}
+
+// atualizarMetricas: os medidores de estado do /metrics (v1.9 M).
+func (m *Motor) atualizarMetricas() {
+	vivas, abertas := 0, 0
+	for _, op := range m.ops {
+		if !op.Estado.Final() {
+			abertas++
+		}
+		for _, o := range op.ordens {
+			if o.viva() {
+				vivas++
+			}
+		}
+	}
+	metricas.DefinirEstado(vivas, abertas, m.posicaoTotal(), m.fix != nil && m.fix.Logado())
 }

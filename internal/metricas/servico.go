@@ -1,0 +1,92 @@
+package metricas
+
+import (
+	"runtime"
+	"sync/atomic"
+	"syscall"
+	"time"
+)
+
+// Métricas do serviço (SPEC v1.9 M). Durações em tempo real (não no relógio do motor).
+var (
+	FilaEspera = NovoHistograma("fila_espera_segundos",
+		"Espera na fila do motor: de entrar na fila a começar a ser tratado, por origem (http, fix, tick, outro).", "origem")
+	PedidoAteEnvio = NovoHistograma("pedido_ate_envio_segundos",
+		"Do pedido HTTP entrar na fila do motor até a primeira mensagem FIX que ele causou (ENTRADA: a 1031; SAIDA: o cancel da 1014 ou a 1031).", "pedido")
+	EnvioAte39A     = NovoHistograma("ordem_envio_ate_39a_segundos", "NewOrderSingle enviada até o 39=A (pendente) do PnT.", "papel")
+	De39AAte390     = NovoHistograma("ordem_39a_ate_39_0_segundos", "39=A até o 39=0 (aceita) do PnT.", "papel")
+	EnvioAteAceite  = NovoHistograma("ordem_envio_ate_aceite_segundos", "NewOrderSingle enviada até o 39=0 (aceita), com ou sem 39=A.", "papel")
+	EnvioAteFill    = NovoHistograma("ordem_envio_ate_fill_segundos", "NewOrderSingle enviada até o primeiro fill tratado pelo motor.", "papel")
+	FillAteProtecao = NovoHistograma("protecao_fill_ate_envio_segundos",
+		"Chegada (à sessão) do fill de entrada até a 1014 enviada: quanto a posição ficou sem proteção pedida.")
+	FixMensagens = NovoContador("fix_mensagens_total", "Mensagens FIX de aplicação enviadas e recebidas, por tipo (35).", "direcao", "tipo")
+	Banco        = NovoHistograma("banco_segundos", "Latência de cada operação no banco, por operação do repositório.", "operacao")
+	BancoErros   = NovoContador("banco_erros_total", "Operações no banco que falharam.", "operacao")
+	Recusas      = NovoContador("recusas_total", "Pedidos recusados, por pedido (ENTRADA, SAIDA, STOP...) e código.", "pedido", "codigo")
+	Alertas      = NovoContador("alertas_total", "Alertas emitidos, por código.", "codigo")
+	HTTP         = NovoHistograma("http_segundos", "Duração das requisições HTTP, por rota e status.", "rota", "status")
+)
+
+// Estado: medidores escritos pelo motor (tick) e lidos na coleta.
+var (
+	filaTamanho, filaCapacidade   atomic.Int64
+	ordensVivas, operacoesAbertas atomic.Int64
+	posicaoTotal                  atomic.Int64
+	sessaoLogada                  atomic.Int64
+	lerFila                       atomic.Pointer[func() int]
+)
+
+// DefinirFila: o motor em execução informa como ler o tamanho da fila (o último vale).
+func DefinirFila(tamanho func() int, capacidade int) {
+	lerFila.Store(&tamanho)
+	filaCapacidade.Store(int64(capacidade))
+}
+
+// Estado do motor, atualizado a cada tick.
+func DefinirEstado(vivas, abertas, posicao int, logada bool) {
+	ordensVivas.Store(int64(vivas))
+	operacoesAbertas.Store(int64(abertas))
+	posicaoTotal.Store(int64(posicao))
+	if logada {
+		sessaoLogada.Store(1)
+	} else {
+		sessaoLogada.Store(0)
+	}
+}
+
+var inicio = time.Now()
+
+func init() {
+	NovoMedidor("fila_tamanho", "Itens na fila do motor agora.", func() float64 {
+		if f := lerFila.Load(); f != nil {
+			return float64((*f)())
+		}
+		return 0
+	})
+	NovoMedidor("fila_capacidade", "Capacidade da fila do motor (cheia = quem enfileira espera).", func() float64 { return float64(filaCapacidade.Load()) })
+	NovoMedidor("ordens_vivas", "Ordens vivas no motor.", func() float64 { return float64(ordensVivas.Load()) })
+	NovoMedidor("operacoes_abertas", "Operações do dia não encerradas.", func() float64 { return float64(operacoesAbertas.Load()) })
+	NovoMedidor("posicao_total", "Posição somada de todas as operações.", func() float64 { return float64(posicaoTotal.Load()) })
+	NovoMedidor("sessao_logada", "1 com a sessão FIX logada.", func() float64 { return float64(sessaoLogada.Load()) })
+	NovoMedidor("go_goroutines", "Goroutines do processo.", func() float64 { return float64(runtime.NumGoroutine()) })
+	NovoMedidor("memoria_heap_bytes", "Heap em uso (Go).", func() float64 {
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		return float64(ms.HeapAlloc)
+	})
+	NovoMedidor("processo_cpu_segundos", "CPU do processo (usuário + sistema) desde que subiu.", func() float64 {
+		var r syscall.Rusage
+		if syscall.Getrusage(syscall.RUSAGE_SELF, &r) != nil {
+			return 0
+		}
+		return float64(r.Utime.Sec+r.Stime.Sec) + float64(r.Utime.Usec+r.Stime.Usec)/1e6
+	})
+	NovoMedidor("processo_rss_maximo_bytes", "Maior memória residente do processo desde que subiu.", func() float64 {
+		var r syscall.Rusage
+		if syscall.Getrusage(syscall.RUSAGE_SELF, &r) != nil {
+			return 0
+		}
+		return float64(r.Maxrss) * 1024
+	})
+	NovoMedidor("processo_no_ar_segundos", "Segundos desde que o processo subiu.", func() float64 { return time.Since(inicio).Seconds() })
+}
