@@ -309,6 +309,28 @@ curl -s '127.0.0.1:9096/saude'                  # disponivel, conectado, feed_ok
 
 No kalman-ordens em HML: `PRECOS_URL=http://127.0.0.1:9096` e restart. Ao fim do teste: de volta
 ao `PRECOS_URL` anterior, restart do kalman-ordens e `sudo systemctl stop kalman-pnt-md-hml`.
+
+**O Kalman da .53 NÃO vai para a 9096 só por configuração** (verificado no código em 16/10). A
+fonte dele é `KALMAN_GO_BASE` (`/etc/kalman/service.env`; padrão `http://172.16.110.53:9090`), mas:
+
+1. ele pede `GET /precos/atual` **sem** `?ativo=` (`fonte_dados.py`), e o pnt-md-hml responde 400
+   sem `ativo=WINFUT` (a precos-hml também) — o Kalman ficaria sem preço. Mudança pequena no
+   pnt-md-hml (aceitar o pedido sem `ativo`), a combinar;
+2. o histórico do motor (os candles de 5 min) vem da `precocandle` do mercado **real** de hoje;
+   trocar só o preço ao vivo misturaria o pregão real com o D-1 que a HML toca;
+3. o Kalman da .53 atende todos os usuários daquela instância: a troca muda os sinais e o paper de
+   todos.
+
+Enquanto isso não for decidido, o Kalman decide sobre o mercado real e o kalman-ordens executa
+contra o book da HML (D-1): a comparação decisão → execução e o PnL do REAL **não** medem o mesmo
+preço.
+
+**Volta (sempre sem posição aberta e antes de ligar o REAL do 1450):** a precos-hml (9095)
+continua rodando; voltar é `PRECOS_URL=http://127.0.0.1:9095` + `sudo systemctl restart
+kalman-ordens` (e o Kalman, se um dia a fonte dele for trocada). O `PRECOS_HML_ADIANTO_MS` (ex.:
+−900, para alinhar a precos-hml com a HML, que toca a fita ~0,8–1 s atrasada) só vale para a
+precos-hml — e a instalada na .53 é a `bca4f5b`, anterior ao parâmetro (instalar o binário novo do
+`scripts/build.sh` para usar).
 Opcional em `/etc/kalman-ordens/pnt-md-hml.env`: `PNT_MD_ATIVO` (WINZ26), `PNT_MD_PORTA` (9096),
 `PNT_MD_TOKEN`. Testes: `tools/pnt-md-hml/.venv/bin/python -m unittest tools/pnt-md-hml/test_pnt_md_hml.py`
 (unidade e a gravação de 16/10 como fonte) e `go test ./internal/preco -run PntMdHml` (o contrato pelo
