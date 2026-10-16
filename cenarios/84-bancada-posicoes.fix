@@ -1,0 +1,17 @@
+cenario 84 Bancada da HML: RequestForPositions (35=AN) pela sessão do serviço, resposta crua de volta
+hora 2026-10-16 13:00:00
+# Teste exploratório de 16/10 (o PnT responde a 35=AN?). POST /bancada/posicoes {conta, espera_s}
+# (CLI: kalman-ordens teste-posicao -conta C) manda 35=AN — 710, 724=0, Parties (448=conta, 447=D,
+# 452=3), 1, 581=1, 715=hoje, 60 — e devolve o que o PnT mandou na espera. O PnT falso valida o AN
+# contra o dicionário da DSA (campos obrigatórios). Nada muda no motor.
+executa INICIO
+http_async POST /bancada/posicoes {"conta":"12345","espera_s":0.5}
+recebe 35=AN 710=>REQ 724=0 1=12345 581=1 715=20261016 453=1 448=12345 447=D 452=3 116=12345
+envia 35=AO 721=POS-1 710=$REQ 727=1 728=0 729=0 453=1 448=12345 447=D 452=3 1=12345 581=1
+envia 35=AP 721=POS-2 710=$REQ 727=1 728=0 715=20261016 453=1 448=12345 447=D 452=3 1=12345 581=1 55=WINZ26 730=0 731=1 734=0 702=1 703=TQ 704=1 705=0 753=1 707=FMTM 708=0
+http_aguarda
+resposta _status=200 aceito=true conta=12345 n_recebidas=2 enviada.#=1 recebidas.0.msgtype=AO recebidas.1.msgtype=AP enviada.0.fix_raw=*
+# (um AP real sem campo obrigatório do dicionário teria resposta 35=3 da nossa sessão; a resposta crua
+# fica registrada do mesmo jeito)
+nada
+saude posicao=0 parada=null divergente=false

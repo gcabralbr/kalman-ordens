@@ -420,3 +420,23 @@ func (m *Monitor) ritmo(agora time.Time) []Segundo {
 	}
 	return r
 }
+
+// UltimoSeq: o seq da última mensagem registrada (bancada: o ponto de partida).
+func (m *Monitor) UltimoSeq() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.seq
+}
+
+// Desde: as mensagens do buffer com seq > desde (todas, em ordem).
+func (m *Monitor) Desde(desde int64) []Mensagem {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var r []Mensagem
+	for i := 0; i < m.n; i++ {
+		if x := m.buf[(m.ini+i)%Capacidade]; x.Seq > desde {
+			r = append(r, x)
+		}
+	}
+	return r
+}

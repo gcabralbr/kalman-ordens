@@ -176,6 +176,27 @@ func MassStatus(conta, reqID string) *quickfix.Message {
 	return m
 }
 
+// PedidoPosicoes: RequestForPositions (35=AN), bancada da HML (16/10: o PnT responde?). 724=0
+// (posições), 581=1, 715 = dia do pregão (AAAAMMDD), Parties (obrigatório no dicionário) com a
+// conta: 448=conta, 447=D, 452=3 (CLIENT_ID; o dicionário da DSA não tem o 24).
+func PedidoPosicoes(id Identificacao, reqID, diaPregao string, agora time.Time) *quickfix.Message {
+	m := base(id, "AN")
+	m.Body.SetString(quickfix.Tag(710), reqID)
+	m.Body.SetInt(quickfix.Tag(724), 0)
+	g := quickfix.NewRepeatingGroup(quickfix.Tag(453), quickfix.GroupTemplate{
+		quickfix.GroupElement(quickfix.Tag(448)), quickfix.GroupElement(quickfix.Tag(447)), quickfix.GroupElement(quickfix.Tag(452))})
+	p := g.Add()
+	p.SetString(quickfix.Tag(448), id.Conta)
+	p.SetString(quickfix.Tag(447), "D")
+	p.SetInt(quickfix.Tag(452), 3)
+	m.Body.SetGroup(g)
+	m.Body.SetString(quickfix.Tag(1), id.Conta)
+	m.Body.SetInt(quickfix.Tag(581), 1)
+	m.Body.SetString(quickfix.Tag(715), diaPregao)
+	m.Body.SetString(quickfix.Tag(60), utc(agora))
+	return m
+}
+
 func base(id Identificacao, tipo string) *quickfix.Message {
 	m := quickfix.NewMessage()
 	m.Header.SetString(quickfix.Tag(35), tipo)

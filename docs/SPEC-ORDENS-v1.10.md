@@ -387,3 +387,20 @@ Roteiros: 82 (39=7 no 150=I da consulta → saída em erro, cancel e saída nova
 sonda com a 1014 primeiro, volta pela execução da saída, 1014 retidas primeiro, replace velho não sai,
 entradas só depois de 60 s), 81 (regra genérica; rejeição de entrada não conta; volta por aceite
 limpo da sonda).
+
+## 10. Bancada da HML: RequestForPositions (16/10, exploratório)
+
+Pergunta: o PnT responde a 35=AN? Só bancada e registro, nada no fluxo do serviço.
+
+- `kalman-ordens teste-posicao -conta C [-espera S]` (CLI) → `POST /bancada/posicoes
+  {"conta","espera_s"}` no serviço em execução: a sessão FIX é dele (uma segunda sessão com o mesmo
+  SenderCompID derrubaria a dele). **Só com `ORDENS_AMBIENTE=HML`** (senão 400 `SO_HML`).
+- Manda 35=AN: `710` = `KM-POS-<ms>`, `724=0` (posições), `453=1` / `448=conta` / `447=D` /
+  `452=3` (CLIENT_ID — o dicionário da DSA não tem o 24), `1=conta`, `581=1`, `715` = hoje
+  (AAAAMMDD), `60`; cabeçalho como as ordens (`116=conta`, `142`).
+- Espera `espera_s` (padrão 5, até 30) e devolve, cru (`fix_raw`, senha mascarada), o AN enviado e
+  toda mensagem de aplicação recebida no intervalo (35=AO, 35=AP, 35=j, 35=3...). O motor ignora
+  AO/AP; um AP real sem campo obrigatório do dicionário leva um 35=3 da nossa sessão, e a resposta
+  crua fica registrada mesmo assim.
+
+Roteiro 84 (o AN passa no dicionário; AO e AP voltam crus).

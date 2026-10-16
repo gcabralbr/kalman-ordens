@@ -55,6 +55,7 @@ const ajuda = `uso: kalman-ordens <comando> [opções]
   zerar   -motivo X               parada ZERAR (HTTP local)
   retomar -motivo X               retira a parada (sempre manual)
   saude                           GET /saude
+  teste-posicao -conta C [-espera S]   bancada da HML: RequestForPositions (35=AN) pela sessão do serviço; imprime a resposta crua
   versao                          commit embutido no binário
 `
 
@@ -79,6 +80,8 @@ func executar(args []string, saida, erros io.Writer) int {
 		err = servir(ctx, config.DoAmbiente())
 	case "migrar":
 		err = cliMigrar(config.DoAmbiente(), args, saida)
+	case "teste-posicao":
+		err = testePosicao(config.DoAmbiente(), args)
 	case "parar", "zerar", "retomar", "saude":
 		err = cli(config.DoAmbiente(), cmd, args)
 	case "usuario":
@@ -306,6 +309,38 @@ func cli(cfg config.Config, cmd string, args []string) error {
 		b, _ = json.MarshalIndent(v, "", "  ")
 	}
 	fmt.Println(string(b))
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// testePosicao (bancada da HML, 16/10): o PnT responde a RequestForPositions (35=AN)? Pede ao
+// serviço em execução (a sessão FIX é dele) e imprime o que voltou, cru.
+func testePosicao(cfg config.Config, args []string) error {
+	fs := flag.NewFlagSet("teste-posicao", flag.ContinueOnError)
+	conta := fs.String("conta", "", "conta (tag 1), obrigatória")
+	espera := fs.Float64("espera", 5, "segundos esperando as respostas do PnT (até 30)")
+	endereco := fs.String("endereco", cfg.Texto("HTTP_ENDERECO", "127.0.0.1:9092"), "HTTP local do serviço")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *conta == "" {
+		return fmt.Errorf("teste-posicao exige -conta")
+	}
+	b, _ := json.Marshal(map[string]any{"conta": *conta, "espera_s": *espera})
+	cliente := &http.Client{Timeout: time.Duration(*espera+15) * time.Second}
+	resp, err := cliente.Post("http://"+*endereco+"/bancada/posicoes", "application/json", bytes.NewReader(b))
+	if err != nil {
+		return fmt.Errorf("serviço não respondeu em %s: %w", *endereco, err)
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	var v any
+	if json.Unmarshal(out, &v) == nil {
+		out, _ = json.MarshalIndent(v, "", "  ")
+	}
+	fmt.Println(string(out))
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}

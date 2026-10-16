@@ -264,6 +264,29 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 			escrever(w, http.StatusServiceUnavailable, motor.Resposta{"erro": "RESULTADO_DESCONHECIDO", "motivo": "a consulta nao terminou a tempo"})
 		}
 	})
+	// bancada da HML (16/10): RequestForPositions (35=AN) pela sessão do serviço; devolve o que o
+	// PnT mandou na espera, cru. Só com ORDENS_AMBIENTE=HML; nada muda no motor.
+	mux.HandleFunc("POST /bancada/posicoes", func(w http.ResponseWriter, r *http.Request) {
+		corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))
+		var b struct {
+			Conta   string  `json:"conta"`
+			EsperaS float64 `json:"espera_s"`
+		}
+		if err := decodificar(corpo, &b); err != nil {
+			escrever(w, http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()})
+			return
+		}
+		if b.EsperaS <= 0 {
+			b.EsperaS = 5
+		}
+		b.EsperaS = min(b.EsperaS, 30)
+		resp := m.BancadaPosicoes(b.Conta, time.Duration(b.EsperaS*float64(time.Second)))
+		status := http.StatusOK
+		if resp["aceito"] != true {
+			status = http.StatusBadRequest
+		}
+		escrever(w, status, resp)
+	})
 	// métricas no formato do Prometheus (v1.9 M); o HTTP inteiro só escuta em 127.0.0.1
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
