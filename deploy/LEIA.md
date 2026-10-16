@@ -277,6 +277,43 @@ kalman-ordens`):
 Ao fim do teste: `PRECOS_URL` de volta ao marketdata (`http://172.16.110.53:9090`), restart do
 kalman-ordens e `sudo systemctl stop kalman-precos-hml`.
 
+### 1.10 Preço da HML pelo feed da própria HML (`pnt-md-hml`, só na .53)
+
+A precos-hml serve o tick file do Kalman do pregão anterior; o `pnt-md-hml` serve **o que a HML
+toca de fato**, lido do WebBroker Market Data (WB_MD) da PnT (SignalR `/mdhub`), no **mesmo contrato
+do marketdata**, em `127.0.0.1:9096`: `preco` = último LastTrade, `bid`/`ask` = topo do AggrBook,
+`status84` = 0 com o papel em negociação (`SecurityStatus` "Trading" / 17; senão ≠ 0), `ts` /
+`idade_seg` pela chegada. Sem fonte — feed caído (`OnFeederUnavailable`), conexão fechada, token
+inválido, sem dado de hoje — responde `{}` (o kalman-ordens recusa a entrada com `SEM_PRECO`). Cada
+queda e volta vai ao journal. Medição de 16/10: a HML toca os negócios do pregão anterior ~0,8 s
+atrás do horário original (SPEC v1.10, seção 8.1).
+
+Token (uma vez, como `gammaquant`; a unidade renova sozinha pelo refresh token):
+
+```
+cd ~/kalman-ordens && tools/pnt-md-spike/.venv/bin/python tools/pnt-md-spike/md_spike.py login-auto --usuario pnt_external_gammaq --corretora SIMULACAO
+```
+
+Instalar e subir (o código e o ambiente Python ficam no repositório: `tools/pnt-md-hml`):
+
+```
+cd ~/kalman-ordens && git pull
+python3 -m venv tools/pnt-md-hml/.venv && tools/pnt-md-hml/.venv/bin/pip install -r tools/pnt-md-hml/requirements.txt
+sudo install -o root -g root -m 644 deploy/kalman-pnt-md-hml.service /etc/systemd/system/kalman-pnt-md-hml.service
+sudo systemctl daemon-reload
+sudo systemctl start kalman-pnt-md-hml          # não habilitar: ferramenta de teste
+journalctl -u kalman-pnt-md-hml -f              # "fonte de volta (conectado)"
+curl -s '127.0.0.1:9096/precos/atual?ativo=WINFUT'
+curl -s '127.0.0.1:9096/saude'                  # disponivel, conectado, feed_ok, token_ok, motivo
+```
+
+No kalman-ordens em HML: `PRECOS_URL=http://127.0.0.1:9096` e restart. Ao fim do teste: de volta
+ao `PRECOS_URL` anterior, restart do kalman-ordens e `sudo systemctl stop kalman-pnt-md-hml`.
+Opcional em `/etc/kalman-ordens/pnt-md-hml.env`: `PNT_MD_ATIVO` (WINZ26), `PNT_MD_PORTA` (9096),
+`PNT_MD_TOKEN`. Testes: `tools/pnt-md-hml/.venv/bin/python -m unittest tools/pnt-md-hml/test_pnt_md_hml.py`
+(unidade e a gravação de 16/10 como fonte) e `go test ./internal/preco -run PntMdHml` (o contrato pelo
+parser do serviço).
+
 ---
 
 ## 2. Checklist da F1 (SPEC v1 Parte 11.2)

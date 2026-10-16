@@ -1,0 +1,28 @@
+# kalman-pnt-md-hml — /precos/atual da HML a partir do WebBroker Market Data (WB_MD) da PnT, em
+# 127.0.0.1:9096, no mesmo contrato do marketdata. Só na .53, ferramenta de teste: NÃO habilitar no
+# boot. Sem fonte (feed caído, token inválido, sem dado de hoje) responde {} (SEM_PRECO no serviço).
+#
+# Token: tools/pnt-md-spike/md_spike.py login-auto (uma vez, como gammaquant); a unidade renova sozinha.
+# Instalação e uso: deploy/LEIA.md, seção 1.10.
+[Unit]
+Description=kalman-pnt-md-hml — /precos/atual da HML a partir do WB_MD da PnT (só na .53, teste)
+After=network-online.target
+
+[Service]
+Type=simple
+User=gammaquant
+Group=gammaquant
+EnvironmentFile=-/etc/kalman-ordens/pnt-md-hml.env
+WorkingDirectory=/home/gammaquant/kalman-ordens
+ExecStart=/home/gammaquant/kalman-ordens/tools/pnt-md-hml/.venv/bin/python /home/gammaquant/kalman-ordens/tools/pnt-md-hml/pnt_md_hml.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+# o token é renovado e regravado aqui
+ReadWritePaths=/home/gammaquant/.config/pnt-md-spike
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

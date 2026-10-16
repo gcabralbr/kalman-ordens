@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -132,4 +133,24 @@ func esperar(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("tempo esgotado")
+}
+
+// O pnt-md-hml (tools/pnt-md-hml: o /precos/atual da HML a partir do WB_MD da PnT) responde no
+// mesmo contrato do marketdata: a fixture é uma resposta real dele (com a gravação de 16/10 como
+// fonte), lida pelo mesmo parser.
+func TestContratoPntMdHml(t *testing.T) {
+	corpo, err := os.ReadFile(filepath.Join("..", "..", "cenarios", "referencia", "precos-atual-pnt-md-hml.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := Interpretar(200, corpo, "WINFUT", time.Now())
+	if l.Situacao != OK || l.Ticker != "WINZ26" || l.Status84 != 0 || l.Preco == nil || l.Bid == nil || l.Ask == nil {
+		t.Fatalf("leitura %+v", l)
+	}
+	if !l.Bid.LessThan(*l.Ask) {
+		t.Fatalf("bid %s >= ask %s", l.Bid, l.Ask)
+	}
+	if v := Interpretar(200, []byte("{}"), "WINFUT", time.Now()); v.Situacao == OK {
+		t.Fatalf("{} devia ser sem preço: %+v", v)
+	}
 }
