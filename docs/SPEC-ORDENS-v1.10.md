@@ -264,6 +264,19 @@ banco e sem a fila do motor**: tudo da memória, responde mesmo com o motor ocup
   `latencia_aceite_p50_ms` / `latencia_aceite_max_ms` (no buffer, de cada 35=D enviada à primeira
   35=8 do mesmo 11 com 39 = 0, 1 ou 2; nulos sem par).
 
+- **`ritmo`** (acréscimo de 16/10): os últimos 300 s, um item por segundo até o atual (o mais
+  antigo primeiro; segundo sem mensagem = zeros), contadores em memória:
+  `{t, enviadas:{entrada, protecao, saida, cancel, replace, af}, recebidas:{aceite_A, aceite_0,
+  fill, cancelada, replace_ok, rejeicao, erro, status, outras, cancel_reject, reject_sessao, bmr_j},
+  sessao:{test_request:{env, rec}, resend:{env, rec}, seq_reset:{env, rec}, logon:{env, rec},
+  logout:{env, rec}},
+  heartbeat_env, heartbeat_rec}`. `t` = início do segundo (RFC3339 `-03:00`). Enviadas: 35=D pelo
+  papel do ClOrdID (E, P, S), 35=F, 35=G, 35=AF. Recebidas: 35=8 pelo 150 — A, 0, F, 4 (cancelada),
+  5 (replace_ok), 8 (rejeicao), 7 (erro), 6/E/I/D (status), qualquer outro (outras); 35=9, 35=3,
+  35=j. Sessão: 35=1, 2, 4, A, 5 em cada sentido; 35=0 nos heartbeats. (O 35=3 que a nossa
+  biblioteca envia, raro, não tem contador no ritmo; aparece em `mensagens`.)
+
 Implementação: `internal/aovivo`; a camada de sessão manda cada mensagem do fio
 (`pnt.ConfigSessao.Espelho`, no espião do log da sessão). Testes: `internal/aovivo` (buffer
-circular, `desde`/`limite`, senha mascarada, operação e uid, latência, `msgs_min`); roteiro 75.
+circular, `desde`/`limite`, senha mascarada, operação e uid, latência, `msgs_min`, ritmo: cada
+tipo no seu contador e a janela de 300 s); roteiro 75.

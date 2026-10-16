@@ -23,7 +23,7 @@ func TestMonitor(t *testing.T) {
 	m.Registrar(false, fix("35=D", "34=2", "11=KM-E-7501-1", "54=1", "38=1", "44=130020"))
 	rel.Avancar(40 * time.Millisecond)
 	m.Registrar(true, fix("35=8", "34=2", "11=KM-E-7501-1", "37=dsa.1", "150=0", "39=0", "54=1", "38=1", "44=130020"))
-	m.Registrar(true, fix("35=8", "34=3", "11=KM-PT-E-9-1", "150=0", "39=0"))   // outro módulo, uid desconhecido
+	m.Registrar(true, fix("35=8", "34=3", "11=KM-PT-E-9-1", "150=0", "39=0"))     // outro módulo, uid desconhecido
 	m.Registrar(true, fix("35=8", "34=4", "11=OUTRO-1", "150=0", "39=0", "58=x")) // ordem que não é KM
 
 	r := m.Consultar(0, 0, Estado{Logada: true, Fila: 3})
@@ -83,5 +83,69 @@ func TestMonitorCircular(t *testing.T) {
 	}
 	if l := m.Consultar(0, 99999, Estado{})["mensagens"].([]Mensagem); len(l) != LimiteMax {
 		t.Fatalf("limite máximo: %d", len(l))
+	}
+}
+
+// Ritmo: 300 itens, um por segundo, até o atual; cada mensagem num contador (nada some).
+func TestRitmo(t *testing.T) {
+	rel := relogio.NovoControlado(time.Date(2026, 10, 16, 13, 0, 0, 0, time.UTC))
+	m := Novo(rel)
+	env := func(c ...string) { m.Registrar(false, fix(c...)) }
+	rec := func(c ...string) { m.Registrar(true, fix(c...)) }
+	env("35=A")
+	rec("35=A")
+	rel.Avancar(2 * time.Second)
+	env("35=D", "11=KM-E-1-1")
+	env("35=D", "11=KM-PT-P-2-1")
+	env("35=D", "11=KM-S-3-1")
+	env("35=F", "11=KM-P-2-2")
+	env("35=G", "11=KM-P-2-3")
+	env("35=AF")
+	env("35=0")
+	env("35=1")
+	env("35=2")
+	env("35=4")
+	env("35=5")
+	for _, e := range []string{"A", "0", "F", "4", "5", "8", "7", "6", "E", "I", "D", "C"} {
+		rec("35=8", "150="+e)
+	}
+	rec("35=9")
+	rec("35=3")
+	rec("35=j")
+	rec("35=0")
+	rec("35=1")
+	rec("35=2")
+	rec("35=4")
+	rec("35=5")
+	r := m.Consultar(0, 0, Estado{})["ritmo"].([]Segundo)
+	if len(r) != JanelaRitmo || r[len(r)-1].T != "2026-10-16T10:00:02.000-03:00" || r[0].T != "2026-10-16T09:55:03.000-03:00" {
+		t.Fatalf("janela: %d itens, %s..%s", len(r), r[0].T, r[len(r)-1].T)
+	}
+	s0, s2 := r[len(r)-3], r[len(r)-1]
+	if s0.Sessao.Logon != (Sentidos{Env: 1, Rec: 1}) || s0.total != 2 {
+		t.Fatalf("logon: %+v", s0)
+	}
+	e := s2.Enviadas
+	if e != (Enviadas{Entrada: 1, Protecao: 1, Saida: 1, Cancel: 1, Replace: 1, AF: 1}) || s2.HeartbeatEnv != 1 || s2.HeartbeatRec != 1 {
+		t.Fatalf("enviadas: %+v", s2)
+	}
+	if s2.Recebidas != (Recebidas{AceiteA: 1, Aceite0: 1, Fill: 1, Cancelada: 1, ReplaceOK: 1, Rejeicao: 1, Erro: 1, Status: 4, Outras: 1,
+		CancelReject: 1, RejectSessao: 1, BmrJ: 1}) {
+		t.Fatalf("recebidas: %+v", s2.Recebidas)
+	}
+	um := Sentidos{Env: 1, Rec: 1}
+	if (s2.Sessao != Sessao{TestRequest: um, Resend: um, SeqReset: um, Logout: um}) {
+		t.Fatalf("sessão: %+v", s2.Sessao)
+	}
+	// 300 s depois, o segundo do logon saiu da janela
+	rel.Avancar(299 * time.Second)
+	r = m.Consultar(0, 0, Estado{})["ritmo"].([]Segundo)
+	if r[0].Enviadas.Entrada != 1 || r[0].T != "2026-10-16T10:00:02.000-03:00" {
+		t.Fatalf("janela depois: %+v", r[0])
+	}
+	for _, x := range r[1:] {
+		if x.total != 0 {
+			t.Fatalf("segundo sem mensagem: %+v", x)
+		}
 	}
 }

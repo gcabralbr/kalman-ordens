@@ -69,14 +69,14 @@ type Monitor struct {
 	ultimaEnv  time.Time
 	seqEntrada int
 	seqSaida   int
-	logonEm    time.Time // último 35=A recebido (logon aceito)
-	porSegundo map[int64]int
-	donos      map[chaveOp]int // (modulo, operacao_id) → uid, informado pelo motor
+	logonEm    time.Time          // último 35=A recebido (logon aceito)
+	porSegundo map[int64]*Segundo // ritmo: os últimos JanelaRitmo segundos
+	donos      map[chaveOp]int    // (modulo, operacao_id) → uid, informado pelo motor
 }
 
 // Novo monitor com o relógio do serviço (o dos roteiros, nos testes).
 func Novo(rel relogio.Relogio) *Monitor {
-	return &Monitor{rel: rel, buf: make([]Mensagem, Capacidade), porSegundo: map[int64]int{}, donos: map[chaveOp]int{}}
+	return &Monitor{rel: rel, buf: make([]Mensagem, Capacidade), porSegundo: map[int64]*Segundo{}, donos: map[chaveOp]int{}}
 }
 
 // Associar: o uid da operação (o motor chama ao criar ou carregar cada operação).
@@ -87,7 +87,7 @@ func (m *Monitor) Associar(modulo string, operacaoID int64, uid int) {
 }
 
 // reClOrd: KM-<papel>-<op>-<n> (KALMAN) ou KM-<MODULO>-<papel>-<op>-<n> (v1.3 M3).
-var reClOrd = regexp.MustCompile(`^KM-(?:([A-Z][A-Z0-9]{1,7})-)?[EPS]-(\d+)-\d+$`)
+var reClOrd = regexp.MustCompile(`^KM-(?:([A-Z][A-Z0-9]{1,7})-)?([EPS])-(\d+)-\d+$`)
 
 // Registrar: uma mensagem que passou no fio (entrada = do PnT). Chamado pela camada de sessão.
 func (m *Monitor) Registrar(entrada bool, bruta []byte) {
@@ -136,14 +136,19 @@ func (m *Monitor) Registrar(entrada bool, bruta []byte) {
 		}
 	}
 	seg := agora.Unix()
-	m.porSegundo[seg]++
-	if len(m.porSegundo) > 120 {
-		for s := range m.porSegundo {
-			if s < seg-60 {
-				delete(m.porSegundo, s)
+	b := m.porSegundo[seg]
+	if b == nil {
+		b = &Segundo{}
+		m.porSegundo[seg] = b
+		if len(m.porSegundo) > JanelaRitmo+10 {
+			for s := range m.porSegundo {
+				if s <= seg-JanelaRitmo {
+					delete(m.porSegundo, s)
+				}
 			}
 		}
 	}
+	b.contar(entrada, x.MsgType, x.execTipo, papelDo(msg.Texto(11)))
 	if m.n < Capacidade {
 		m.buf[(m.ini+m.n)%Capacidade] = x
 		m.n++
@@ -158,7 +163,7 @@ func operacaoDo(cl string) (string, int64, bool) {
 	if p == nil {
 		return "", 0, false
 	}
-	id, err := strconv.ParseInt(p[2], 10, 64)
+	id, err := strconv.ParseInt(p[3], 10, 64)
 	if err != nil {
 		return "", 0, false
 	}
@@ -194,9 +199,9 @@ func (m *Monitor) Consultar(desde int64, limite int, e Estado) map[string]any {
 		}
 	}
 	minuto := 0
-	for s, c := range m.porSegundo {
+	for s, b := range m.porSegundo {
 		if s > agora.Unix()-60 {
-			minuto += c
+			minuto += b.total
 		}
 	}
 	p50, max := m.latenciaAceite()
@@ -208,7 +213,7 @@ func (m *Monitor) Consultar(desde int64, limite int, e Estado) map[string]any {
 	if e.Logada {
 		saude["logada_desde"] = emOuNulo(m.logonEm)
 	}
-	return map[string]any{"mensagens": lista, "ultimo_seq": m.seq, "saude": saude}
+	return map[string]any{"mensagens": lista, "ultimo_seq": m.seq, "saude": saude, "ritmo": m.ritmo(agora)}
 }
 
 // latenciaAceite: no buffer, de cada NewOrderSingle (35=D) enviada até a primeira resposta do PnT
@@ -241,4 +246,173 @@ func emOuNulo(t time.Time) any {
 		return nil
 	}
 	return t.In(relogio.Fuso).Format(formatoEm)
+}
+
+// ---------------------------------------------------------------- ritmo
+
+// JanelaRitmo: o ritmo cobre os últimos 300 s, um item por segundo.
+const JanelaRitmo = 300
+
+// Segundo: as mensagens de um segundo, por tipo (contrato do ritmo).
+type Segundo struct {
+	T            string    `json:"t"`
+	Enviadas     Enviadas  `json:"enviadas"`
+	Recebidas    Recebidas `json:"recebidas"`
+	Sessao       Sessao    `json:"sessao"`
+	HeartbeatEnv int       `json:"heartbeat_env"`
+	HeartbeatRec int       `json:"heartbeat_rec"`
+	total        int
+}
+
+// Enviadas: 35=D pelo papel do ClOrdID (E, P, S), 35=F, 35=G, 35=AF.
+type Enviadas struct {
+	Entrada  int `json:"entrada"`
+	Protecao int `json:"protecao"`
+	Saida    int `json:"saida"`
+	Cancel   int `json:"cancel"`
+	Replace  int `json:"replace"`
+	AF       int `json:"af"`
+}
+
+// Recebidas: 35=8 pelo 150 (A, 0, F, 4, 5, 8, 7; 6/E/I/D = status; o resto = outras), 35=9, 35=3,
+// 35=j.
+type Recebidas struct {
+	AceiteA      int `json:"aceite_A"`
+	Aceite0      int `json:"aceite_0"`
+	Fill         int `json:"fill"`
+	Cancelada    int `json:"cancelada"`
+	ReplaceOK    int `json:"replace_ok"`
+	Rejeicao     int `json:"rejeicao"`
+	Erro         int `json:"erro"`
+	Status       int `json:"status"`
+	Outras       int `json:"outras"`
+	CancelReject int `json:"cancel_reject"`
+	RejectSessao int `json:"reject_sessao"`
+	BmrJ         int `json:"bmr_j"`
+}
+
+// Sessao: mensagens de sessão (fora o heartbeat), cada uma {env, rec}.
+type Sessao struct {
+	TestRequest Sentidos `json:"test_request"`
+	Resend      Sentidos `json:"resend"`
+	SeqReset    Sentidos `json:"seq_reset"`
+	Logon       Sentidos `json:"logon"`
+	Logout      Sentidos `json:"logout"`
+}
+
+// Sentidos: enviadas pelo serviço (env) e recebidas do PnT (rec).
+type Sentidos struct {
+	Env int `json:"env"`
+	Rec int `json:"rec"`
+}
+
+func (s *Sentidos) contar(entrada bool) {
+	if entrada {
+		s.Rec++
+	} else {
+		s.Env++
+	}
+}
+
+func papelDo(cl string) string {
+	if p := reClOrd.FindStringSubmatch(cl); p != nil {
+		return p[2]
+	}
+	return ""
+}
+
+func (b *Segundo) contar(entrada bool, tipo, exec, papel string) {
+	b.total++
+	ses := &b.Sessao
+	switch tipo {
+	case "0":
+		if entrada {
+			b.HeartbeatRec++
+		} else {
+			b.HeartbeatEnv++
+		}
+		return
+	case "1":
+		ses.TestRequest.contar(entrada)
+		return
+	case "2":
+		ses.Resend.contar(entrada)
+		return
+	case "4":
+		ses.SeqReset.contar(entrada)
+		return
+	case "A":
+		ses.Logon.contar(entrada)
+		return
+	case "5":
+		ses.Logout.contar(entrada)
+		return
+	}
+	if !entrada {
+		e := &b.Enviadas
+		switch tipo {
+		case "D":
+			switch papel {
+			case "E":
+				e.Entrada++
+			case "P":
+				e.Protecao++
+			case "S":
+				e.Saida++
+			}
+		case "F":
+			e.Cancel++
+		case "G":
+			e.Replace++
+		case "AF":
+			e.AF++
+		}
+		return
+	}
+	r := &b.Recebidas
+	switch tipo {
+	case "9":
+		r.CancelReject++
+	case "3":
+		r.RejectSessao++
+	case "j":
+		r.BmrJ++
+	case "8":
+		switch exec {
+		case "A":
+			r.AceiteA++
+		case "0":
+			r.Aceite0++
+		case "F":
+			r.Fill++
+		case "4":
+			r.Cancelada++
+		case "5":
+			r.ReplaceOK++
+		case "8":
+			r.Rejeicao++
+		case "7":
+			r.Erro++
+		case "6", "E", "I", "D":
+			r.Status++
+		default:
+			r.Outras++
+		}
+	}
+}
+
+// ritmo: os últimos JanelaRitmo segundos até o atual, do mais antigo ao mais novo (segundo sem
+// mensagem = zeros). Com m.mu.
+func (m *Monitor) ritmo(agora time.Time) []Segundo {
+	fim := agora.Unix()
+	r := make([]Segundo, 0, JanelaRitmo)
+	for s := fim - JanelaRitmo + 1; s <= fim; s++ {
+		var x Segundo
+		if b := m.porSegundo[s]; b != nil {
+			x = *b
+		}
+		x.T = time.Unix(s, 0).In(relogio.Fuso).Format(formatoEm)
+		r = append(r, x)
+	}
+	return r
 }
