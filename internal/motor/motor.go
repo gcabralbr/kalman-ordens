@@ -135,6 +135,7 @@ type operacao struct {
 	saidaDivergente       bool
 	congelada             bool
 	violacaoDesde         time.Time // invariante de proteção violada desde
+	zeradaEm              time.Time // virada de mão (v1.10 L); zero depois de um restart
 	recriacoes            int       // recriações da 1014 na janela de 30 s (P8)
 	ultimaRecriacao       time.Time
 	// lote (v1.10 B): já gravada uma vez e a cópia da última gravação
@@ -247,6 +248,12 @@ func (op *operacao) clordid(p dominio.Papel, n int) string {
 	return fmt.Sprintf("KM-%s-%d-%d", p, op.OperacaoID, n)
 }
 
+// ladoUID: a última entrada de um uid em cada sentido (LIMITE_INTERVALO_UID_S).
+type ladoUID struct {
+	uid  int
+	lado dominio.Lado
+}
+
 // chaveOperacao: a operação é única por (módulo, operacao_id) (v1.3 M1).
 type chaveOperacao struct {
 	modulo string
@@ -318,28 +325,32 @@ type Motor struct {
 	ultimos     map[string]ultimoPreco // último preco conhecido por ticker (B5.c com a posição em outro)
 	proxConfere time.Time              // próxima conferência da conta das posições abertas (U4)
 
-	ultimaEntrada  time.Time
-	entradasRec    []time.Time
-	enviosRec      []time.Time
-	recusasLimite  []time.Time
-	entradasHoje   int
-	zeragemFeita   bool
-	jaLogou        bool
-	presaDesde     time.Time // primeiro logon recusado pelo PnT ("already logged on") desde o último logon
-	presaTexto     string
-	conciliando    bool
-	massReqIDs     map[string]bool // os 584 do mass status em curso (um AF por conta)
-	massUltima     time.Time
-	massTentativas int
-	massProxima    time.Time
-	massRespostas  []*pnt.Mensagem // nil = ordem de outro (PT)
-	massChegadas   []time.Time     // quando cada resposta chegou (o registro usa este horário)
-	processadas    int64
-	seqOrdens      int64
-	proxInvariante time.Time
-	massCorte      int64                 // ordens com seq até aqui existiam quando o mass status foi pedido
-	massEstado     map[string]*massConta // por 584 (v1.10 C6)
-	massCom911     bool                  // alguma resposta trouxe 911/912: fecha pela contagem
+	ultimaEntrada time.Time
+	entradasRec   []time.Time
+	// limites por uid (v1.10 L)
+	entradasUID      map[int][]time.Time
+	ultimaEntradaUID map[ladoUID]time.Time
+	ultimaOpUID      map[int]*operacao
+	enviosRec        []time.Time
+	recusasLimite    []time.Time
+	entradasHoje     int
+	zeragemFeita     bool
+	jaLogou          bool
+	presaDesde       time.Time // primeiro logon recusado pelo PnT ("already logged on") desde o último logon
+	presaTexto       string
+	conciliando      bool
+	massReqIDs       map[string]bool // os 584 do mass status em curso (um AF por conta)
+	massUltima       time.Time
+	massTentativas   int
+	massProxima      time.Time
+	massRespostas    []*pnt.Mensagem // nil = ordem de outro (PT)
+	massChegadas     []time.Time     // quando cada resposta chegou (o registro usa este horário)
+	processadas      int64
+	seqOrdens        int64
+	proxInvariante   time.Time
+	massCorte        int64                 // ordens com seq até aqui existiam quando o mass status foi pedido
+	massEstado       map[string]*massConta // por 584 (v1.10 C6)
+	massCom911       bool                  // alguma resposta trouxe 911/912: fecha pela contagem
 
 	// POST /sinais (v1.10 §6): os sinais em memória, o contador k por módulo e o sinal da parte em
 	// tratamento (pedirEntrada / pedirSaida adiam o envio)
@@ -374,14 +385,15 @@ func Novo(c config.Config, rel relogio.Relogio, r repo.Repositorio, f preco.Font
 		p: p, rel: rel, repo: repo.Medir(r), precos: f,
 		ultimos: map[string]ultimoPreco{}, massReqIDs: map[string]bool{},
 		p0: make(chan func(), capFilaP0), p1: make(chan func(), capFilaP1), p2: make(chan func(), capFilaP2),
-		fim:        make(chan struct{}),
-		execVistos: map[string]bool{},
-		v:          &estadoVolta{opsSujas: map[*operacao]bool{}, ordensSujas: map[*ordem]bool{}},
-		usuarios:   novoCacheUsuarios(),
-		sinais:     map[chaveSinal]*sinal{},
-		sinalK:     map[string]int64{},
-		sinaisFila: map[chaveSinal]int{},
-		aoVivo:     aovivo.Novo(rel),
+		fim:         make(chan struct{}),
+		execVistos:  map[string]bool{},
+		v:           &estadoVolta{opsSujas: map[*operacao]bool{}, ordensSujas: map[*ordem]bool{}},
+		usuarios:    novoCacheUsuarios(),
+		sinais:      map[chaveSinal]*sinal{},
+		sinalK:      map[string]int64{},
+		sinaisFila:  map[chaveSinal]int{},
+		aoVivo:      aovivo.Novo(rel),
+		entradasUID: map[int][]time.Time{}, ultimaEntradaUID: map[ladoUID]time.Time{}, ultimaOpUID: map[int]*operacao{},
 	}
 	m.al = alerta.Novo(n, m.publicarAlerta, rel, p.RepeticaoAlerta)
 	metricas.DefinirFilas(func() [3]int { return [3]int{len(m.p0), len(m.p1), len(m.p2)} }, capFilaP0+capFilaP1+capFilaP2)
@@ -770,6 +782,12 @@ func (m *Motor) carregarDia() error {
 		}
 	}
 	sort.Slice(m.entradasRec, func(i, j int) bool { return m.entradasRec[i].Before(m.entradasRec[j]) })
+	m.entradasUID, m.ultimaEntradaUID, m.ultimaOpUID = map[int][]time.Time{}, map[ladoUID]time.Time{}, map[int]*operacao{}
+	ordenadas := append([]*operacao(nil), m.ops...)
+	sort.SliceStable(ordenadas, func(i, j int) bool { return ordenadas[i].CriadaEm.Before(ordenadas[j].CriadaEm) })
+	for _, op := range ordenadas {
+		m.registrarEntradaUID(op)
+	}
 	if n, err := m.repo.EnviosDesde(umMinuto); err == nil {
 		for i := 0; i < n; i++ {
 			m.enviosRec = append(m.enviosRec, m.agora())

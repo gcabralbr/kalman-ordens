@@ -72,7 +72,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 		m.al.Emitir("SIMBOLO_INVALIDO", "", fmt.Sprintf("ticker do marketdata %q não é um contrato de WIN: entrada recusada", l.Ticker), 0)
 		return nil, simples("SIMBOLO_INVALIDO", fmt.Sprintf("ticker do marketdata %q não é um contrato de WIN", l.Ticker))
 	}
-	if r := m.verificarLimites(*p.Qtd, l, hab, *p.UID); r != nil {
+	if r := m.verificarLimites(*p.Qtd, l, hab, *p.UID, lado); r != nil {
 		return nil, r
 	}
 	if r := m.verificarPrecoEntrada(l); r != nil {
@@ -113,6 +113,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	}
 	m.ultimaEntrada = agora
 	m.entradasRec = append(m.entradasRec, agora)
+	m.registrarEntradaUID(op)
 	m.entradasHoje++
 
 	rp := m.respostaAtual
@@ -223,7 +224,7 @@ func (m *Motor) contaParaEntrada(uid int) (usuario.Resolvido, *recusa) {
 	return r, simples(f.Codigo, f.Motivo)
 }
 
-func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitacao, uid int) *recusa {
+func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitacao, uid int, lado dominio.Lado) *recusa {
 	agora := m.agora()
 	h := m.horaDoDia()
 	if h < m.p.JanelaInicio || h >= m.p.JanelaFim {
@@ -245,6 +246,9 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitac
 		if doUID+qtd > hab.PosicaoMax {
 			return limite("POSICAO_MAXIMA", fmt.Sprintf("posição + entradas pendentes do uid %d = %d, máximo %d", uid, doUID, hab.PosicaoMax))
 		}
+	}
+	if r := m.verificarLimitesUID(uid, lado, agora); r != nil {
+		return r
 	}
 	if !m.ultimaEntrada.IsZero() && agora.Sub(m.ultimaEntrada) < m.p.IntervaloEntradas {
 		return limite("INTERVALO_MINIMO", fmt.Sprintf("última entrada há %s", agora.Sub(m.ultimaEntrada)))
@@ -270,6 +274,43 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitac
 		}
 	}
 	return nil
+}
+
+// verificarLimitesUID (v1.10 L): o laço de reentrada de um uid — no máximo LIMITE_ENTRADAS_MIN_UID
+// entradas por minuto e LIMITE_INTERVALO_UID_S entre duas no mesmo sentido. Barra só o uid: não
+// conta para a parada automática (LIMITE_RECUSAS_PARADA) nem emite alerta. A virada de mão (entrada
+// oposta até LIMITE_VIRADA_S depois do ZERADA por SINAL_OPOSTO da última operação do uid) não passa
+// por aqui.
+func (m *Motor) verificarLimitesUID(uid int, lado dominio.Lado, agora time.Time) *recusa {
+	if m.viradaDeMao(uid, lado, agora) {
+		return nil
+	}
+	recentes := aparar(m.entradasUID[uid], agora.Add(-time.Minute))
+	m.entradasUID[uid] = recentes
+	if m.p.EntradasPorMinutoUID > 0 && len(recentes) >= m.p.EntradasPorMinutoUID {
+		return simples("ENTRADAS_POR_MINUTO_UID", fmt.Sprintf("uid %d: %d entradas no último minuto, máximo %d", uid, len(recentes), m.p.EntradasPorMinutoUID))
+	}
+	if t, ok := m.ultimaEntradaUID[ladoUID{uid, lado}]; ok && m.p.IntervaloUID > 0 && agora.Sub(t) < m.p.IntervaloUID {
+		return simples("INTERVALO_MINIMO_UID", fmt.Sprintf("uid %d: entrada %s há %s, mínimo %s no mesmo sentido", uid, lado.Letra(), agora.Sub(t).Truncate(time.Millisecond), m.p.IntervaloUID))
+	}
+	return nil
+}
+
+// viradaDeMao: a última operação do uid zerou por SINAL_OPOSTO há no máximo LIMITE_VIRADA_S e a
+// entrada nova é do lado oposto.
+func (m *Motor) viradaDeMao(uid int, lado dominio.Lado, agora time.Time) bool {
+	op := m.ultimaOpUID[uid]
+	return op != nil && op.Estado == dominio.Zerada && op.MotivoSaida == "SINAL_OPOSTO" && lado == op.Lado.Oposto() &&
+		!op.zeradaEm.IsZero() && agora.Sub(op.zeradaEm) <= m.p.JanelaVirada
+}
+
+// registrarEntradaUID: a entrada aceita conta nos limites do uid.
+func (m *Motor) registrarEntradaUID(op *operacao) {
+	m.entradasUID[op.UID] = append(m.entradasUID[op.UID], op.CriadaEm)
+	m.ultimaEntradaUID[ladoUID{op.UID, op.Lado}] = op.CriadaEm
+	if u := m.ultimaOpUID[op.UID]; u == nil || !op.CriadaEm.Before(u.CriadaEm) {
+		m.ultimaOpUID[op.UID] = op
+	}
 }
 
 // comprometidoTotal: |posição| + o que falta executar das entradas vivas.

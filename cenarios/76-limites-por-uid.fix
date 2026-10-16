@@ -1,0 +1,66 @@
+cenario 76 Limites por usuário: o laço de reentrada de um uid é barrado sem afetar os outros nem parar o serviço
+hora 2026-10-16 10:00:00
+# SPEC v1.10 L. Por uid: no máximo LIMITE_ENTRADAS_MIN_UID (3) entradas por minuto e
+# LIMITE_INTERVALO_UID_S (30 s) entre duas no MESMO sentido. A recusa barra só o uid: não conta para
+# a parada automática (aqui LIMITE_RECUSAS_PARADA=2) nem emite alerta. Globais nos padrões da v1.10
+# (soma de todos os usuários). As entradas ficam pendentes (TIMEOUT_ENTRADA_S longo).
+config LIMITE_POSICAO_MAX=200
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=400
+config LIMITE_MENSAGENS_MIN=3000
+config LIMITE_ENTRADAS_DIA=3000
+config LIMITE_RECUSAS_PARADA=2
+config LIMITE_ENTRADAS_MIN_UID=3
+config LIMITE_INTERVALO_UID_S=30
+config TIMEOUT_ENTRADA_S=600
+usuario 8 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 8
+
+executa INICIO
+entrada 7601 C
+resposta aceito=true
+recebe 35=D 11=KM-E-7601-1 54=1
+envia @ER 11=KM-E-7601-1 37=dsa.7601.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+# mesmo uid, mesmo sentido, 0 s depois: barrada
+entrada 7602 C
+resposta aceito=false codigo=INTERVALO_MINIMO_UID
+# sentido oposto: o intervalo não vale
+entrada 7603 V
+resposta aceito=true
+recebe 35=D 11=KM-E-7603-1 54=2
+envia @ER 11=KM-E-7603-1 37=dsa.7603.E 150=0 39=0 54=2 38=1 44=130020 847=1031 14=0 151=1 6=0
+# outro uid: não é afetado
+entrada 7611 C uid=8
+resposta aceito=true
+recebe 35=D 11=KM-E-7611-1
+envia @ER 11=KM-E-7611-1 37=dsa.7611.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+entrada 7612 C uid=8
+resposta aceito=false codigo=INTERVALO_MINIMO_UID
+
+avanca 31s
+entrada 7604 C
+resposta aceito=true
+recebe 35=D 11=KM-E-7604-1
+envia @ER 11=KM-E-7604-1 37=dsa.7604.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+# 3 entradas do uid 7 no último minuto (7601, 7603, 7604): a quarta é barrada, em qualquer sentido
+entrada 7605 V
+resposta aceito=false codigo=ENTRADAS_POR_MINUTO_UID
+# o uid 8 segue
+entrada 7613 V uid=8
+resposta aceito=true
+recebe 35=D 11=KM-E-7613-1
+envia @ER 11=KM-E-7613-1 37=dsa.7613.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+nada
+# três recusas por uid com LIMITE_RECUSAS_PARADA=2: nenhuma parada, nenhum alerta de limite
+saude parada=null
+sem_alerta PARADA
+sem_alerta LIMITE
+metrica kalman_ordens_recusas_total pedido=ENTRADA codigo=ENTRADAS_POR_MINUTO_UID >= 1
+
+# passado o minuto, o uid 7 volta
+avanca 31s
+entrada 7606 V
+resposta aceito=true
+recebe 35=D 11=KM-E-7606-1
+envia @ER 11=KM-E-7606-1 37=dsa.7606.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+nada

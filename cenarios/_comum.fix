@@ -9,6 +9,20 @@ usuario 7 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta"
 habilita 7
 config FIX_RECONEXAO_S=1
 
+# Limites: os roteiros até a v1.10 foram escritos com os padrões de um usuário só (posição 1, uma
+# entrada por minuto, 60 s entre entradas, 10 mensagens/min, 15 entradas/dia, parada em 3 recusas).
+# Os padrões globais da v1.10 L são para rajadas de 190 usuários; os limites por uid e o repreço
+# espaçado depois de SAIDA_ESGOTOU ficam desligados aqui. Roteiro que testa um deles o liga.
+config LIMITE_POSICAO_MAX=1
+config LIMITE_INTERVALO_ENTRADAS_S=60
+config LIMITE_ENTRADAS_MIN=1
+config LIMITE_MENSAGENS_MIN=10
+config LIMITE_ENTRADAS_DIA=15
+config LIMITE_RECUSAS_PARADA=3
+config LIMITE_ENTRADAS_MIN_UID=0
+config LIMITE_INTERVALO_UID_S=0
+config REPRECO_ESGOTADO_S=0
+
 # ExecutionReport do PnT (campos fixos da conta e do símbolo)
 modelo ER 35=8 1=12345 55=WINZ26 207=XBMF 40=2 59=0
 

@@ -130,10 +130,16 @@ type Parametros struct {
 	SinalEsperaPartes                  time.Duration
 	SinalMaxItensParte, SinalMaxPartes int
 
+	// Limites GLOBAIS (soma de todos os usuários; v1.10: padrões para rajadas de 190 usuários)
 	PosicaoMax, QtdMaxOrdem, EntradasPorMinuto, MensagensPorMinuto, EntradasPorDia, RecusasParaParada int
-	IntervaloEntradas                                                                                 time.Duration
-	PerdaDiaPts, BookDescoladoPts                                                                     int64
-	JanelaInicio, JanelaFim, HoraZeragem                                                              time.Duration
+	// Limites POR USUÁRIO (v1.10 L): o laço de reentrada de um uid; a virada de mão (entrada oposta
+	// até LIMITE_VIRADA_S depois de um ZERADA por SINAL_OPOSTO) não passa por eles
+	EntradasPorMinutoUID                 int
+	IntervaloUID, JanelaVirada           time.Duration
+	ReprecoEsgotado                      time.Duration // repreço da saída depois de SAIDA_ESGOTOU
+	IntervaloEntradas                    time.Duration
+	PerdaDiaPts, BookDescoladoPts        int64
+	JanelaInicio, JanelaFim, HoraZeragem time.Duration
 }
 
 // Parametros lê tudo com os padrões da SPEC (v1 + v1.1).
@@ -178,18 +184,23 @@ func (c Config) Parametros() Parametros {
 		SinalMaxItensParte:      c.Inteiro("SINAL_MAX_ITENS_PARTE", 1000),
 		SinalMaxPartes:          c.Inteiro("SINAL_MAX_PARTES", 10),
 
-		PosicaoMax:         c.Inteiro("LIMITE_POSICAO_MAX", 1),
+		PosicaoMax:         c.Inteiro("LIMITE_POSICAO_MAX", 200),
 		QtdMaxOrdem:        c.Inteiro("LIMITE_QTD_ORDEM", 1),
-		IntervaloEntradas:  c.Segundos("LIMITE_INTERVALO_ENTRADAS_S", 60),
-		EntradasPorMinuto:  c.Inteiro("LIMITE_ENTRADAS_MIN", 1),
-		MensagensPorMinuto: c.Inteiro("LIMITE_MENSAGENS_MIN", 10),
-		EntradasPorDia:     c.Inteiro("LIMITE_ENTRADAS_DIA", 15),
+		IntervaloEntradas:  c.Segundos("LIMITE_INTERVALO_ENTRADAS_S", 0),
+		EntradasPorMinuto:  c.Inteiro("LIMITE_ENTRADAS_MIN", 400),
+		MensagensPorMinuto: c.Inteiro("LIMITE_MENSAGENS_MIN", 3000),
+		EntradasPorDia:     c.Inteiro("LIMITE_ENTRADAS_DIA", 3000),
 		PerdaDiaPts:        c.Pontos("LIMITE_PERDA_DIA_PTS", 1500),
 		BookDescoladoPts:   c.Pontos("LIMITE_BOOK_DESCOLADO_PTS", 150),
-		RecusasParaParada:  c.Inteiro("LIMITE_RECUSAS_PARADA", 3),
-		JanelaInicio:       c.Hora("JANELA_INICIO", "09:00:00"),
-		JanelaFim:          c.Hora("JANELA_FIM", "14:00:00"),
-		HoraZeragem:        c.Hora("HORA_ZERAGEM", "14:30:00"),
+		RecusasParaParada:  c.Inteiro("LIMITE_RECUSAS_PARADA", 50),
+
+		EntradasPorMinutoUID: c.Inteiro("LIMITE_ENTRADAS_MIN_UID", 3),
+		IntervaloUID:         c.Segundos("LIMITE_INTERVALO_UID_S", 30),
+		JanelaVirada:         c.Segundos("LIMITE_VIRADA_S", 10),
+		ReprecoEsgotado:      c.Segundos("REPRECO_ESGOTADO_S", 10),
+		JanelaInicio:         c.Hora("JANELA_INICIO", "09:00:00"),
+		JanelaFim:            c.Hora("JANELA_FIM", "14:00:00"),
+		HoraZeragem:          c.Hora("HORA_ZERAGEM", "14:30:00"),
 	}
 }
 

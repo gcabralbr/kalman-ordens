@@ -1,0 +1,404 @@
+cenario 78 Rajada de 190 usuários no mesmo sinal passa nos limites globais da v1.10 (padrões)
+hora 2026-10-16 10:00:00
+# SPEC v1.10 L. Os limites globais somam todos os usuários; os padrões da v1.10 são para rajadas
+# de 190 (posição 200, 400 entradas/min, intervalo global 0, 3.000 mensagens/min, 3.000/dia, parada
+# em 50 recusas). Aqui os padrões são repostos (o _comum.fix fixa os de um usuário só) e os limites
+# por uid ficam ligados nos padrões (3/min, 30 s): uma entrada por uid não esbarra em nada.
+# Gerado: 190 uids (2000–2189), todos na conta 12345.
+config LIMITE_POSICAO_MAX=200
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=400
+config LIMITE_MENSAGENS_MIN=3000
+config LIMITE_ENTRADAS_DIA=3000
+config LIMITE_RECUSAS_PARADA=50
+config LIMITE_ENTRADAS_MIN_UID=3
+config LIMITE_INTERVALO_UID_S=30
+config FIX_TAXA_MSG_S=1000
+config FIX_RAJADA_MSG=1000
+usuario 2000 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2000
+usuario 2001 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2001
+usuario 2002 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2002
+usuario 2003 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2003
+usuario 2004 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2004
+usuario 2005 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2005
+usuario 2006 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2006
+usuario 2007 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2007
+usuario 2008 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2008
+usuario 2009 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2009
+usuario 2010 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2010
+usuario 2011 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2011
+usuario 2012 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2012
+usuario 2013 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2013
+usuario 2014 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2014
+usuario 2015 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2015
+usuario 2016 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2016
+usuario 2017 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2017
+usuario 2018 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2018
+usuario 2019 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2019
+usuario 2020 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2020
+usuario 2021 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2021
+usuario 2022 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2022
+usuario 2023 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2023
+usuario 2024 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2024
+usuario 2025 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2025
+usuario 2026 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2026
+usuario 2027 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2027
+usuario 2028 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2028
+usuario 2029 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2029
+usuario 2030 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2030
+usuario 2031 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2031
+usuario 2032 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2032
+usuario 2033 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2033
+usuario 2034 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2034
+usuario 2035 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2035
+usuario 2036 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2036
+usuario 2037 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2037
+usuario 2038 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2038
+usuario 2039 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2039
+usuario 2040 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2040
+usuario 2041 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2041
+usuario 2042 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2042
+usuario 2043 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2043
+usuario 2044 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2044
+usuario 2045 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2045
+usuario 2046 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2046
+usuario 2047 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2047
+usuario 2048 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2048
+usuario 2049 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2049
+usuario 2050 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2050
+usuario 2051 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2051
+usuario 2052 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2052
+usuario 2053 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2053
+usuario 2054 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2054
+usuario 2055 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2055
+usuario 2056 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2056
+usuario 2057 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2057
+usuario 2058 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2058
+usuario 2059 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2059
+usuario 2060 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2060
+usuario 2061 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2061
+usuario 2062 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2062
+usuario 2063 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2063
+usuario 2064 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2064
+usuario 2065 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2065
+usuario 2066 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2066
+usuario 2067 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2067
+usuario 2068 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2068
+usuario 2069 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2069
+usuario 2070 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2070
+usuario 2071 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2071
+usuario 2072 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2072
+usuario 2073 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2073
+usuario 2074 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2074
+usuario 2075 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2075
+usuario 2076 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2076
+usuario 2077 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2077
+usuario 2078 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2078
+usuario 2079 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2079
+usuario 2080 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2080
+usuario 2081 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2081
+usuario 2082 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2082
+usuario 2083 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2083
+usuario 2084 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2084
+usuario 2085 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2085
+usuario 2086 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2086
+usuario 2087 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2087
+usuario 2088 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2088
+usuario 2089 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2089
+usuario 2090 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2090
+usuario 2091 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2091
+usuario 2092 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2092
+usuario 2093 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2093
+usuario 2094 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2094
+usuario 2095 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2095
+usuario 2096 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2096
+usuario 2097 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2097
+usuario 2098 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2098
+usuario 2099 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2099
+usuario 2100 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2100
+usuario 2101 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2101
+usuario 2102 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2102
+usuario 2103 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2103
+usuario 2104 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2104
+usuario 2105 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2105
+usuario 2106 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2106
+usuario 2107 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2107
+usuario 2108 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2108
+usuario 2109 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2109
+usuario 2110 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2110
+usuario 2111 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2111
+usuario 2112 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2112
+usuario 2113 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2113
+usuario 2114 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2114
+usuario 2115 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2115
+usuario 2116 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2116
+usuario 2117 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2117
+usuario 2118 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2118
+usuario 2119 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2119
+usuario 2120 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2120
+usuario 2121 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2121
+usuario 2122 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2122
+usuario 2123 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2123
+usuario 2124 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2124
+usuario 2125 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2125
+usuario 2126 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2126
+usuario 2127 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2127
+usuario 2128 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2128
+usuario 2129 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2129
+usuario 2130 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2130
+usuario 2131 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2131
+usuario 2132 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2132
+usuario 2133 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2133
+usuario 2134 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2134
+usuario 2135 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2135
+usuario 2136 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2136
+usuario 2137 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2137
+usuario 2138 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2138
+usuario 2139 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2139
+usuario 2140 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2140
+usuario 2141 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2141
+usuario 2142 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2142
+usuario 2143 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2143
+usuario 2144 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2144
+usuario 2145 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2145
+usuario 2146 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2146
+usuario 2147 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2147
+usuario 2148 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2148
+usuario 2149 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2149
+usuario 2150 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2150
+usuario 2151 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2151
+usuario 2152 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2152
+usuario 2153 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2153
+usuario 2154 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2154
+usuario 2155 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2155
+usuario 2156 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2156
+usuario 2157 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2157
+usuario 2158 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2158
+usuario 2159 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2159
+usuario 2160 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2160
+usuario 2161 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2161
+usuario 2162 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2162
+usuario 2163 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2163
+usuario 2164 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2164
+usuario 2165 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2165
+usuario 2166 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2166
+usuario 2167 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2167
+usuario 2168 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2168
+usuario 2169 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2169
+usuario 2170 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2170
+usuario 2171 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2171
+usuario 2172 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2172
+usuario 2173 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2173
+usuario 2174 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2174
+usuario 2175 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2175
+usuario 2176 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2176
+usuario 2177 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2177
+usuario 2178 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2178
+usuario 2179 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2179
+usuario 2180 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2180
+usuario 2181 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2181
+usuario 2182 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2182
+usuario 2183 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2183
+usuario 2184 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2184
+usuario 2185 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2185
+usuario 2186 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2186
+usuario 2187 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2187
+usuario 2188 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2188
+usuario 2189 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 2189
+
+executa INICIO
+sinal KALMAN-R190 e=7800:C:2000 e=7801:C:2001 e=7802:C:2002 e=7803:C:2003 e=7804:C:2004 e=7805:C:2005 e=7806:C:2006 e=7807:C:2007 e=7808:C:2008 e=7809:C:2009 e=7810:C:2010 e=7811:C:2011 e=7812:C:2012 e=7813:C:2013 e=7814:C:2014 e=7815:C:2015 e=7816:C:2016 e=7817:C:2017 e=7818:C:2018 e=7819:C:2019 e=7820:C:2020 e=7821:C:2021 e=7822:C:2022 e=7823:C:2023 e=7824:C:2024 e=7825:C:2025 e=7826:C:2026 e=7827:C:2027 e=7828:C:2028 e=7829:C:2029 e=7830:C:2030 e=7831:C:2031 e=7832:C:2032 e=7833:C:2033 e=7834:C:2034 e=7835:C:2035 e=7836:C:2036 e=7837:C:2037 e=7838:C:2038 e=7839:C:2039 e=7840:C:2040 e=7841:C:2041 e=7842:C:2042 e=7843:C:2043 e=7844:C:2044 e=7845:C:2045 e=7846:C:2046 e=7847:C:2047 e=7848:C:2048 e=7849:C:2049 e=7850:C:2050 e=7851:C:2051 e=7852:C:2052 e=7853:C:2053 e=7854:C:2054 e=7855:C:2055 e=7856:C:2056 e=7857:C:2057 e=7858:C:2058 e=7859:C:2059 e=7860:C:2060 e=7861:C:2061 e=7862:C:2062 e=7863:C:2063 e=7864:C:2064 e=7865:C:2065 e=7866:C:2066 e=7867:C:2067 e=7868:C:2068 e=7869:C:2069 e=7870:C:2070 e=7871:C:2071 e=7872:C:2072 e=7873:C:2073 e=7874:C:2074 e=7875:C:2075 e=7876:C:2076 e=7877:C:2077 e=7878:C:2078 e=7879:C:2079 e=7880:C:2080 e=7881:C:2081 e=7882:C:2082 e=7883:C:2083 e=7884:C:2084 e=7885:C:2085 e=7886:C:2086 e=7887:C:2087 e=7888:C:2088 e=7889:C:2089 e=7890:C:2090 e=7891:C:2091 e=7892:C:2092 e=7893:C:2093 e=7894:C:2094 e=7895:C:2095 e=7896:C:2096 e=7897:C:2097 e=7898:C:2098 e=7899:C:2099 e=7900:C:2100 e=7901:C:2101 e=7902:C:2102 e=7903:C:2103 e=7904:C:2104 e=7905:C:2105 e=7906:C:2106 e=7907:C:2107 e=7908:C:2108 e=7909:C:2109 e=7910:C:2110 e=7911:C:2111 e=7912:C:2112 e=7913:C:2113 e=7914:C:2114 e=7915:C:2115 e=7916:C:2116 e=7917:C:2117 e=7918:C:2118 e=7919:C:2119 e=7920:C:2120 e=7921:C:2121 e=7922:C:2122 e=7923:C:2123 e=7924:C:2124 e=7925:C:2125 e=7926:C:2126 e=7927:C:2127 e=7928:C:2128 e=7929:C:2129 e=7930:C:2130 e=7931:C:2131 e=7932:C:2132 e=7933:C:2133 e=7934:C:2134 e=7935:C:2135 e=7936:C:2136 e=7937:C:2137 e=7938:C:2138 e=7939:C:2139 e=7940:C:2140 e=7941:C:2141 e=7942:C:2142 e=7943:C:2143 e=7944:C:2144 e=7945:C:2145 e=7946:C:2146 e=7947:C:2147 e=7948:C:2148 e=7949:C:2149 e=7950:C:2150 e=7951:C:2151 e=7952:C:2152 e=7953:C:2153 e=7954:C:2154 e=7955:C:2155 e=7956:C:2156 e=7957:C:2157 e=7958:C:2158 e=7959:C:2159 e=7960:C:2160 e=7961:C:2161 e=7962:C:2162 e=7963:C:2163 e=7964:C:2164 e=7965:C:2165 e=7966:C:2166 e=7967:C:2167 e=7968:C:2168 e=7969:C:2169 e=7970:C:2170 e=7971:C:2171 e=7972:C:2172 e=7973:C:2173 e=7974:C:2174 e=7975:C:2175 e=7976:C:2176 e=7977:C:2177 e=7978:C:2178 e=7979:C:2179 e=7980:C:2180 e=7981:C:2181 e=7982:C:2182 e=7983:C:2183 e=7984:C:2184 e=7985:C:2185 e=7986:C:2186 e=7987:C:2187 e=7988:C:2188 e=7989:C:2189
+resposta _status=200 fechado=true k=1 resultados.#=190 motivo="190 de 190 itens aceitos" resultados.0.aceito=true resultados.189.aceito=true resultados.189.codigo=null
+descarta 35=D
+saude parada=null limites.entradas_ultimo_minuto=190
+metrica kalman_ordens_sinais_itens_total papel=ENTRADA resultado=aceito >= 190

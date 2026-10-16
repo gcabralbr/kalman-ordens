@@ -280,3 +280,35 @@ Implementação: `internal/aovivo`; a camada de sessão manda cada mensagem do f
 (`pnt.ConfigSessao.Espelho`, no espião do log da sessão). Testes: `internal/aovivo` (buffer
 circular, `desde`/`limite`, senha mascarada, operação e uid, latência, `msgs_min`, ritmo: cada
 tipo no seu contador e a janela de 300 s); roteiro 75.
+
+## 8. Limites globais e por usuário (L, 16/10)
+
+Os limites da Parte 5 são **globais (soma de todos os usuários)**; os padrões até aqui (posição 1,
+uma entrada por minuto, 60 s entre entradas, 10 mensagens/min, 15/dia, parada em 3 recusas) eram
+de um usuário só. Na HML em 16/10 o `LIMITE_MENSAGENS_MIN=10` recusou uma entrada (#234070,
+`ORDENS_POR_MINUTO`) por causa de uma saída presa (L3).
+
+| # | Regra | Teste |
+|---|---|---|
+| L1 | **Globais, novos padrões** (todos configuráveis): `LIMITE_POSICAO_MAX` 200, `LIMITE_ENTRADAS_MIN` 400, `LIMITE_INTERVALO_ENTRADAS_S` 0 (desligado), `LIMITE_MENSAGENS_MIN` 3.000 (recusa só entradas, nunca saídas), `LIMITE_ENTRADAS_DIA` 3.000, `LIMITE_RECUSAS_PARADA` 50. Uma rajada de 190 usuários passa. | `TestPadroesLimites`; roteiro 78 |
+| L2 | **Por usuário (novos)**, para o laço de reentrada de um uid: `LIMITE_ENTRADAS_MIN_UID` (3 entradas aceitas do uid no último minuto, em qualquer sentido) → `ENTRADAS_POR_MINUTO_UID`; `LIMITE_INTERVALO_UID_S` (30 s desde a última entrada do uid **no mesmo sentido**) → `INTERVALO_MINIMO_UID`. Barram só o uid: **não contam para a parada automática** e não emitem alerta. 0 desliga. | roteiro 76 |
+| L2' | **Virada de mão**: a entrada do lado oposto ao da última operação do uid, até `LIMITE_VIRADA_S` (10 s) depois do `ZERADA` dela com motivo `SINAL_OPOSTO`, não passa pelos limites do uid (os globais valem). A janela é da memória do processo: depois de um restart não há virada até a próxima zeragem. | roteiro 77 |
+| L3 | **Repreço da saída depois de `SAIDA_ESGOTOU`**: a cada `REPRECO_ESGOTADO_S` (10 s) em vez de `TIMEOUT_SAIDA_S` (2 s), mantendo o alerta crítico. HML 16/10: a saída da #234066 (compra para zerar a venda, com a HML acima da fita) foi reapregoada 43 vezes em 80 s. | roteiro 79 |
+
+Os roteiros até o 75 foram escritos com os padrões de um usuário só: o `_comum.fix` fixa esses
+valores e desliga L2 e L3; os roteiros novos ligam o que testam. Os limites do uid na habilitação
+(posição e quantidade, v1.2 U5) continuam como estavam.
+
+**`LIMITE_PERDA_DIA_PTS` (1.500) também é global** (o resultado do dia soma todos os usuários): com
+190 usuários, é ~8 pts por usuário. Fica como está até decisão (não entrou nesta revisão).
+
+### 8.1 A HML não serve para medir execução
+
+A HML da DSA é **compartilhada** e reproduz a fita do pregão anterior (a de 15/10 em 16/10: os
+fills de hoje erram 50 pts em média contra a fita de 15/10, contra 1.000+ pts contra as de 13 e
+14/10), mas **o book dela se descola da fita**: até ~09:34 os fills de compra ficaram a ±25 pts do
+ask da fita; a partir daí, de dezenas a ±200 pts (09:33 −110, 10:03 +105, 10:13 +205, 10:19 −55),
+sem deslocamento de tempo constante — com a HML acima da fita, a compra a ask + 15 não executa e a
+venda executa bem acima do limite. O relógio do PnT (o 52) está ~0,45 s atrás do nosso, o que não
+explica isso. **A HML serve para validar o fluxo (mensagens, estados, proteção, conciliação), não
+para medir execução, preço ou slippage.**

@@ -1,0 +1,50 @@
+cenario 77 Virada de mão: a entrada oposta logo depois do ZERADA por SINAL_OPOSTO não passa pelos limites do uid
+hora 2026-10-16 10:00:00
+# SPEC v1.10 L. Com LIMITE_ENTRADAS_MIN_UID=1 o uid só entra uma vez por minuto — salvo na virada
+# de mão: a entrada do lado oposto ao da última operação do uid, até LIMITE_VIRADA_S (10 s) depois
+# do ZERADA dela com motivo SINAL_OPOSTO. Fora da janela, ou no mesmo lado, o limite vale.
+config LIMITE_POSICAO_MAX=200
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=400
+config LIMITE_MENSAGENS_MIN=3000
+config LIMITE_ENTRADAS_DIA=3000
+config LIMITE_ENTRADAS_MIN_UID=1
+config LIMITE_INTERVALO_UID_S=30
+config LIMITE_VIRADA_S=10
+
+executa INICIO
+executa COMPRADO OP=7701
+saida 7701 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-7701-2 41=KM-P-7701-1
+envia @ER 11=KM-P-7701-2 41=KM-P-7701-1 37=dsa.7701.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-7701-1 54=2 847=1031
+envia @ER 11=KM-S-7701-1 37=dsa.7701.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=7701 origem=GESTOR motivo=SINAL_OPOSTO
+
+# a virada: vendida logo depois, apesar de 1 entrada por minuto
+avanca 2s
+entrada 7702 V
+resposta aceito=true
+recebe 35=D 11=KM-E-7702-1 54=2 847=1031
+# a mesma operação não vira de novo: a última do uid agora é a 7702 (não zerada)
+entrada 7703 C
+resposta aceito=false codigo=ENTRADAS_POR_MINUTO_UID
+envia @ER 11=KM-E-7702-1 37=dsa.7702.E 150=F 39=2 54=2 38=1 44=129985 847=1031 32=1 31=129990 14=1 151=0 6=129990
+recebe 35=D 11=KM-P-7702-1 54=1 847=1014
+envia @ER 11=KM-P-7702-1 37=dsa.7702.P 150=0 39=0 54=1 38=1 44=130590 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=7702
+
+# zerada de novo por SINAL_OPOSTO, mas a entrada oposta vem depois da janela (11 s): barrada
+saida 7702 C SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-7702-2 41=KM-P-7702-1
+envia @ER 11=KM-P-7702-2 41=KM-P-7702-1 37=dsa.7702.P 150=4 39=4 54=1 38=1 44=130590 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-7702-1 54=1 847=1031
+envia @ER 11=KM-S-7702-1 37=dsa.7702.S 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+evento ZERADA operacao_id=7702 motivo=SINAL_OPOSTO
+avanca 11s
+entrada 7704 C
+resposta aceito=false codigo=ENTRADAS_POR_MINUTO_UID
+nada
+saude posicao=0 parada=null

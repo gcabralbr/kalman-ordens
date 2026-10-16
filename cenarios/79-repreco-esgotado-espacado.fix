@@ -1,0 +1,58 @@
+cenario 79 Saída que esgotou os repreços reapregoa a cada REPRECO_ESGOTADO_S (10 s), com o alerta crítico mantido
+hora 2026-10-13 10:45:00
+# SPEC v1.10 L. Até MAX_REPRECO_SAIDA (3), repreço a cada TIMEOUT_SAIDA_S (2 s); esgotado
+# (SAIDA_ESGOTOU, crítico), a cada REPRECO_ESGOTADO_S — uma saída presa não ocupa a sessão (HML 16/10:
+# 43 replaces em 80 s). Mesmo começo do roteiro 07 (stop furado).
+config REPRECO_ESGOTADO_S=10
+
+executa INICIO
+executa COMPRADO OP=7901
+
+# gap: último abaixo do limite da 1014 (129410) e a 1014 não executa
+preco bid=129295 ask=129300 preco=129300
+avanca 5s
+nada
+avanca 1s
+alerta STOP_FURADO
+recebe 35=F 11=KM-P-7901-2 41=KM-P-7901-1 37=dsa.7901.P
+envia @ER 11=KM-P-7901-2 41=KM-P-7901-1 37=dsa.7901.P 150=6 39=6 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+envia @ER 11=KM-P-7901-2 41=KM-P-7901-1 37=dsa.7901.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+
+# saída a partir do passo 3: bid 129295 − 50 = 129245
+recebe 35=D 11=KM-S-7901-1 38=1 40=2 44=129245 54=2 847=1031
+envia @ER 11=KM-S-7901-1 37=dsa.7901.S 150=0 39=0 54=2 38=1 44=129245 847=1031 14=0 151=1 6=0
+
+# sem execução em TIMEOUT_SAIDA (2 s): replace com +50 a cada vez (−100, −150, −200)
+avanca 2s
+recebe 35=G 11=KM-S-7901-2 41=KM-S-7901-1 37=dsa.7901.S 38=1 44=129195 54=2 847=1031
+envia @ER 11=KM-S-7901-2 41=KM-S-7901-1 37=dsa.7901.S 150=5 39=5 54=2 38=1 44=129195 847=1031 14=0 151=1 6=0
+avanca 2s
+recebe 35=G 11=KM-S-7901-3 41=KM-S-7901-2 37=dsa.7901.S 44=129145
+envia @ER 11=KM-S-7901-3 41=KM-S-7901-2 37=dsa.7901.S 150=5 39=5 54=2 38=1 44=129145 847=1031 14=0 151=1 6=0
+avanca 2s
+recebe 35=G 11=KM-S-7901-4 41=KM-S-7901-3 37=dsa.7901.S 44=129095
+envia @ER 11=KM-S-7901-4 41=KM-S-7901-3 37=dsa.7901.S 150=5 39=5 54=2 38=1 44=129095 847=1031 14=0 151=1 6=0
+sem_alerta SAIDA_ESGOTOU
+
+# esgotou MAX_REPRECO_SAIDA (3): alerta crítico e continua reapregoando,
+# no afastamento máximo (−200) sobre o mercado do momento
+preco bid=129200 ask=129205 preco=129200
+avanca 2s
+alerta SAIDA_ESGOTOU
+recebe 35=G 11=KM-S-7901-5 41=KM-S-7901-4 37=dsa.7901.S 44=129000
+envia @ER 11=KM-S-7901-5 41=KM-S-7901-4 37=dsa.7901.S 150=5 39=5 54=2 38=1 44=129000 847=1031 14=0 151=1 6=0
+# esgotado: o próximo repreço só 10 s depois, não 2 s
+avanca 9900ms
+nada
+saude alertas_criticos.SAIDA_ESGOTOU:7901=*
+avanca 100ms
+recebe 35=G 11=KM-S-7901-6 41=KM-S-7901-5 37=dsa.7901.S 44=129000
+envia @ER 11=KM-S-7901-6 41=KM-S-7901-5 37=dsa.7901.S 150=5 39=5 54=2 38=1 44=129000 847=1031 14=0 151=1 6=0
+avanca 9900ms
+nada
+avanca 100ms
+recebe 35=G 11=KM-S-7901-7 41=KM-S-7901-6 37=dsa.7901.S
+envia @ER 11=KM-S-7901-7 41=KM-S-7901-6 37=dsa.7901.S 150=5 39=5 54=2 38=1 44=129000 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-S-7901-7 37=dsa.7901.S 150=F 39=2 54=2 38=1 44=129000 847=1031 32=1 31=129200 14=1 151=0 6=129200
+evento ZERADA operacao_id=7901 origem=STOP_FURADO
+saude posicao=0

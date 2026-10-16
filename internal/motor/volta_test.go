@@ -72,7 +72,8 @@ func novoMotorTeste(t *testing.T, extra map[string]string) (*Motor, *registro, *
 			t.Fatal(err)
 		}
 	}
-	v := map[string]string{"ORDENS_AMBIENTE": "HML", "ORDENS_CONTAS_HML": "12345"}
+	// limites por uid (v1.10 L) desligados: os testes mandam várias entradas do mesmo uid
+	v := map[string]string{"ORDENS_AMBIENTE": "HML", "ORDENS_CONTAS_HML": "12345", "LIMITE_ENTRADAS_MIN_UID": "0", "LIMITE_INTERVALO_UID_S": "0"}
 	for k, x := range extra {
 		v[k] = x
 	}

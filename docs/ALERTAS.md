@@ -87,11 +87,13 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `SIMBOLO_DIVERGENTE` | SAIDA: a posição está num contrato que não é mais o vigente e o último preço dele tem mais de 60 s (a entrada nunca diverge: vai no vigente) | não | `SAIDA_BLOQUEADA_PRECO_ANTIGO` |
 | `FORA_JANELA` | fora de 09:00–14:00 | sim | — |
 | `QTD_MAXIMA` | qtd > limite por ordem | sim | — |
-| `POSICAO_MAXIMA` | posição + entradas pendentes + qtd > máximo | sim | — |
-| `INTERVALO_MINIMO` | menos de 60 s desde a última entrada | sim | — |
-| `ENTRADAS_POR_MINUTO` | limite de entradas por minuto | sim | — |
-| `ORDENS_POR_MINUTO` | limite de mensagens por minuto | sim | `LIMITE` |
-| `ENTRADAS_POR_DIA` | limite de entradas por dia | sim | `LIMITE` |
+| `POSICAO_MAXIMA` | posição + entradas pendentes + qtd > máximo (global: soma de todos os usuários, `LIMITE_POSICAO_MAX`; ou o do uid na habilitação) | sim | — |
+| `INTERVALO_MINIMO` | menos de `LIMITE_INTERVALO_ENTRADAS_S` desde a última entrada de qualquer usuário (global; padrão 0 = desligado) | sim | — |
+| `ENTRADAS_POR_MINUTO` | `LIMITE_ENTRADAS_MIN` entradas no último minuto, somando todos os usuários (global) | sim | — |
+| `ORDENS_POR_MINUTO` | `LIMITE_MENSAGENS_MIN` mensagens ao PnT no último minuto (global); recusa só entradas, nunca saídas | sim | `LIMITE` |
+| `ENTRADAS_POR_DIA` | `LIMITE_ENTRADAS_DIA` entradas no dia (global) | sim | `LIMITE` |
+| `ENTRADAS_POR_MINUTO_UID` | o uid já teve `LIMITE_ENTRADAS_MIN_UID` entradas no último minuto (v1.10 L; não vale na virada de mão) | não | — |
+| `INTERVALO_MINIMO_UID` | menos de `LIMITE_INTERVALO_UID_S` desde a última entrada do uid no mesmo sentido (v1.10 L) | não | — |
 | `PERDA_DIARIA` | perda do dia atingida (e BLOQUEAR) | sim | `PARADA` |
 | `SEM_PRECO` | sem resposta de preço, `{}`, 404, 400, ou falta preco/bid/ask | sim | — |
 | `LEILAO` | `status84 != 0` | sim | — |

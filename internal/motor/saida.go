@@ -74,6 +74,16 @@ func (m *Motor) pedirSaida(p Pedido) (Resposta, *recusa) {
 	return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "posicao": op.posicao()}, nil
 }
 
+// intervaloRepreco: TIMEOUT_SAIDA_S entre repreços; depois de esgotar MAX_REPRECO_SAIDA
+// (SAIDA_ESGOTOU, alerta crítico mantido), REPRECO_ESGOTADO_S — uma saída presa não ocupa a sessão
+// (v1.10 L; HML 16/10: 43 replaces em 80 s).
+func (m *Motor) intervaloRepreco(op *operacao) time.Duration {
+	if op.repreco > m.p.MaxRepreco && m.p.ReprecoEsgotado > m.p.TimeoutSaida {
+		return m.p.ReprecoEsgotado
+	}
+	return m.p.TimeoutSaida
+}
+
 // iniciarSaida começa a Parte 3.5. Idempotente.
 func (m *Motor) iniciarSaida(op *operacao, motivo, origem string) {
 	if op.Estado.Final() || op.Estado.Saindo() || op.saidaAposEntrada {
@@ -148,7 +158,7 @@ func (m *Motor) enviarSaida(op *operacao) {
 	m.salvarOrdem(o)
 	m.indexar(op, o)
 	op.saidaDivergente = divergente
-	op.proximoRepreco = m.agora().Add(m.p.TimeoutSaida)
+	op.proximoRepreco = m.agora().Add(m.intervaloRepreco(op))
 	m.enviarNova(op, o, func() {
 		o.Estado = dominio.FalhaEnvio
 		m.salvarOrdem(o)
@@ -213,6 +223,7 @@ func (m *Motor) zerada(op *operacao) {
 		}
 	}
 	op.PnL = op.pnlRealizado()
+	op.zeradaEm = m.agora()
 	m.mudar(op, dominio.Zerada)
 	for _, k := range []string{"SEM_PROTECAO", "STOP_FURADO", "SAIDA_ESGOTOU", "CANCEL_SEM_RESPOSTA", "SAIDA_SEM_PRECO", "SAIDA_SEM_FILL", "SAIDA_DIVERGENTE", "SAIDA_BLOQUEADA", "PROTECAO_RECRIADA", "PROTECAO_INSTAVEL", "PROTECAO_EM_ERRO", "PROTECAO_EM_ERRO_PRESA", "CONTA_ALTERADA", "SIMBOLO"} {
 		m.al.Resolver(chaveOp(k, op))
@@ -305,7 +316,7 @@ func (m *Motor) tickSaida(op *operacao) {
 	if k > m.p.MaxRepreco {
 		k = m.p.MaxRepreco
 	}
-	op.proximoRepreco = agora.Add(m.p.TimeoutSaida)
+	op.proximoRepreco = agora.Add(m.intervaloRepreco(op))
 	px, _, _, ok := m.precoSaida(op, s.Lado, k+1)
 	if !ok {
 		m.al.Emitir("SAIDA_SEM_PRECO", chaveOp("SAIDA_SEM_PRECO", op), fmt.Sprintf("sem preço para reapregoar a saída da operação %d", op.OperacaoID), op.OperacaoID)
