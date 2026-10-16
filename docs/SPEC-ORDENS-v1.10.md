@@ -240,3 +240,30 @@ outro sinal, 503 e reenvio, histórico e lista do dia), 73 (partes, fechamento p
 `TestDeslocamento`, `TestSinalEnvioNoFechamento` (nada sai antes do fechamento; a validade na fila
 conta dele), `TestContratoLote` (rajada gravada e relida, memória e MariaDB). Teste de carga:
 `KALMAN_CARGA_SINAIS=1` ([relatório](CARGA-2026-10-15.md), seção 9).
+
+## 7. Monitor ao vivo da sessão (contrato oficial da tela de admin, 16/10)
+
+`GET /sessao/ao-vivo?desde=<seq>[&limite=500]` (só 127.0.0.1, como todo o HTTP do serviço). **Sem
+banco e sem a fila do motor**: tudo da memória, responde mesmo com o motor ocupado.
+
+- **Buffer das últimas 2.000 mensagens FIX** que passaram no fio, de aplicação e de sessão (A, 0, 1,
+  2, 4, 5, 3...), nos dois sentidos, como o QuickFIX/Go as entregou ao log da sessão (reenvios e
+  gap fills incluídos). Cada uma: `seq` (interno, crescente desde a subida do processo), `em`
+  (RFC3339 `-03:00`, milissegundos), `direcao` (`ENV` = do serviço ao PnT, `REC` = do PnT),
+  `msgtype`, `campos` (as tags presentes entre 11, 37, 39, 150, 54, 38, 44, 31, 32, 58, como texto),
+  `operacao_id` e `uid` quando o 11 (ou o 41) é um ClOrdID KM (`uid` nulo se a operação não é deste
+  processo), `fix_raw` (senha 554/925 mascarada, SOH como `|`).
+- Resposta: `{mensagens, ultimo_seq, saude}`. `mensagens` = as de `seq > desde`, as mais antigas
+  primeiro, no máximo `limite` (padrão 500, máximo 2.000); `desde` anterior ao buffer começa na mais
+  antiga que restou. O cliente pede de novo com `desde = ultimo_seq` recebido. `desde`/`limite`
+  inválidos: 400.
+- `saude`: `logada`; `logada_desde` (o último logon aceito; nulo se não logada);
+  `ultima_recebida_em`, `ultima_enviada_em`; `seq_entrada`, `seq_saida` (o último MsgSeqNum visto
+  em cada sentido); `msgs_min` (mensagens nos últimos 60 s, os dois sentidos); `fila` (itens nas
+  filas do motor); `parada` (a do `GET /saude`, vista no último tick: até 100 ms de atraso);
+  `latencia_aceite_p50_ms` / `latencia_aceite_max_ms` (no buffer, de cada 35=D enviada à primeira
+  35=8 do mesmo 11 com 39 = 0, 1 ou 2; nulos sem par).
+
+Implementação: `internal/aovivo`; a camada de sessão manda cada mensagem do fio
+(`pnt.ConfigSessao.Espelho`, no espião do log da sessão). Testes: `internal/aovivo` (buffer
+circular, `desde`/`limite`, senha mascarada, operação e uid, latência, `msgs_min`); roteiro 75.

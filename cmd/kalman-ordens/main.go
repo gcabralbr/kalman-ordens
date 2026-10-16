@@ -193,6 +193,8 @@ func servir(ctx context.Context, cfg config.Config) error {
 		ResetOnLogon: cfg.Bool("FIX_RESET_ON_LOGON", false),
 		// fsync do store FIX a cada mensagem (padrão: sim); ver docs/CARGA-2026-10-15.md seção 7
 		SemSyncStore: !cfg.Bool("FIX_STORE_SYNC", true),
+		// monitor ao vivo (GET /sessao/ao-vivo): cada mensagem do fio, em memória
+		Espelho: m.AoVivo().Registrar,
 	}, m)
 	if err != nil {
 		return err

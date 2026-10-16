@@ -1,0 +1,48 @@
+cenario 75 Monitor ao vivo da sessão: as mensagens do fio (aplicação e sessão) e a saúde, da memória
+hora 2026-10-16 10:00:00
+# Contrato oficial da tela de admin: GET /sessao/ao-vivo?desde=<seq>[&limite=500] →
+# {mensagens:[{seq, em, direcao, msgtype, campos{11,37,39,150,54,38,44,31,32,58}, operacao_id, uid,
+# fix_raw}], ultimo_seq, saude:{logada, logada_desde, ultima_recebida_em, ultima_enviada_em,
+# seq_entrada, seq_saida, msgs_min, fila, parada, latencia_aceite_p50_ms, latencia_aceite_max_ms}}.
+# Buffer das últimas 2.000 mensagens; sem banco. Aqui: logon (A nos dois sentidos) e uma posição
+# protegida (D, 8, 8, D, 8). Senha no logon: no fix_raw vai mascarada (teste de unidade confere).
+config FIX_USUARIO=KALMAN
+config FIX_SENHA=segredo123
+
+executa INICIO
+executa COMPRADO OP=7501
+
+http GET /sessao/ao-vivo?desde=0
+resposta _status=200 ultimo_seq=7 mensagens.#=7
+resposta mensagens.0.seq=1 mensagens.0.direcao=ENV mensagens.0.msgtype=A mensagens.0.operacao_id=null mensagens.0.uid=null mensagens.0.fix_raw=*
+resposta mensagens.1.direcao=REC mensagens.1.msgtype=A
+resposta mensagens.2.direcao=ENV mensagens.2.msgtype=D mensagens.2.operacao_id=7501 mensagens.2.uid=7 mensagens.2.campos.11=KM-E-7501-1 mensagens.2.campos.54=1 mensagens.2.campos.38=1 mensagens.2.campos.44=130020 mensagens.2.campos.39=null
+resposta mensagens.3.direcao=REC mensagens.3.msgtype=8 mensagens.3.campos.150=0 mensagens.3.campos.39=0 mensagens.3.campos.37=dsa.7501.E mensagens.3.uid=7
+resposta mensagens.4.campos.150=F mensagens.4.campos.39=2 mensagens.4.campos.32=1 mensagens.4.campos.31=130010
+resposta mensagens.5.direcao=ENV mensagens.5.campos.11=KM-P-7501-1 mensagens.5.operacao_id=7501 mensagens.6.campos.11=KM-P-7501-1 mensagens.6.em=2026-10-16T10:00:03.000-03:00
+resposta saude.logada=true saude.logada_desde=2026-10-16T10:00:00.000-03:00 saude.ultima_enviada_em=2026-10-16T10:00:03.000-03:00 saude.ultima_recebida_em=2026-10-16T10:00:03.000-03:00
+resposta saude.seq_entrada=* saude.seq_saida=* saude.msgs_min=7 saude.fila=0 saude.parada=null saude.latencia_aceite_p50_ms=0 saude.latencia_aceite_max_ms=0
+
+# desde e limite
+http GET /sessao/ao-vivo?desde=5
+resposta mensagens.#=2 mensagens.0.seq=6 ultimo_seq=7
+http GET /sessao/ao-vivo?desde=0&limite=2
+resposta mensagens.#=2 mensagens.1.seq=2
+http GET /sessao/ao-vivo?desde=7
+resposta mensagens.#=0 ultimo_seq=7
+http GET /sessao/ao-vivo?desde=abc
+resposta _status=400
+
+# a parada aparece (vista no tick seguinte) e a sessão caída também
+http POST /parada {"modo":"BLOQUEAR","origem":"admin","motivo":"teste","por":1450}
+avanca 100ms
+http GET /sessao/ao-vivo?desde=7
+resposta saude.parada.modo=BLOQUEAR saude.parada.motivo=teste
+http POST /retomar {"origem":"admin","motivo":"fim","por":1450}
+avanca 100ms
+http GET /sessao/ao-vivo?desde=7
+resposta saude.parada=null
+derruba_sessao
+aguarda_logon
+http GET /sessao/ao-vivo?desde=7
+resposta saude.logada=true mensagens.0.direcao=ENV mensagens.0.msgtype=A

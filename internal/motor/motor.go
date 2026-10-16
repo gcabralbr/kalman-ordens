@@ -19,6 +19,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"gammaquant.com.br/kalman-ordens/internal/alerta"
+	"gammaquant.com.br/kalman-ordens/internal/aovivo"
 	"gammaquant.com.br/kalman-ordens/internal/config"
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/metricas"
@@ -355,6 +356,11 @@ type Motor struct {
 	pedidoRotulo string
 	chegadaFIX   time.Time
 
+	// monitor ao vivo da sessão (GET /sessao/ao-vivo): o buffer das mensagens no fio e a parada
+	// vista no último tick (a consulta não passa pela fila do motor)
+	aoVivo      *aovivo.Monitor
+	paradaVista atomic.Pointer[Parada]
+
 	// GET /pnt/ordens (v1.7 C): a consulta em curso e a última (intervalo mínimo)
 	consulta         *consultaPnT
 	ultimaConsulta   Resposta
@@ -375,10 +381,26 @@ func Novo(c config.Config, rel relogio.Relogio, r repo.Repositorio, f preco.Font
 		sinais:     map[chaveSinal]*sinal{},
 		sinalK:     map[string]int64{},
 		sinaisFila: map[chaveSinal]int{},
+		aoVivo:     aovivo.Novo(rel),
 	}
 	m.al = alerta.Novo(n, m.publicarAlerta, rel, p.RepeticaoAlerta)
 	metricas.DefinirFilas(func() [3]int { return [3]int{len(m.p0), len(m.p1), len(m.p2)} }, capFilaP0+capFilaP1+capFilaP2)
 	return m
+}
+
+// AoVivo: o monitor da sessão — a camada de sessão manda cada mensagem do fio a ele
+// (pnt.ConfigSessao.Espelho = m.AoVivo().Registrar).
+func (m *Motor) AoVivo() *aovivo.Monitor { return m.aoVivo }
+
+// ConsultarAoVivo (GET /sessao/ao-vivo): da memória, sem a fila do motor — responde mesmo com o
+// motor ocupado. A parada é a do último tick (até 100 ms).
+func (m *Motor) ConsultarAoVivo(desde int64, limite int) map[string]any {
+	var parada any
+	if p := m.paradaVista.Load(); p != nil {
+		parada = p
+	}
+	f := len(m.p0) + len(m.p1) + len(m.p2)
+	return m.aoVivo.Consultar(desde, limite, aovivo.Estado{Logada: m.fix != nil && m.fix.Logado(), Fila: f, Parada: parada})
 }
 
 // Usar liga a sessão FIX.
@@ -390,6 +412,7 @@ func (m *Motor) Iniciar() error {
 		return err
 	}
 	m.carregarUsuarios()
+	m.verParada()
 	go m.laco()
 	return nil
 }
@@ -709,6 +732,7 @@ func (m *Motor) carregarDia() error {
 	}
 	for i := range ops {
 		op := &operacao{Operacao: ops[i], persistida: true, gravada: ops[i].Copia()}
+		m.aoVivo.Associar(op.Modulo, op.OperacaoID, op.UID)
 		m.ops = append(m.ops, op)
 		m.porOp[chaveOperacao{op.Modulo, op.OperacaoID}] = op
 		if op.Estado == dominio.PosicionadaSemProtecao {

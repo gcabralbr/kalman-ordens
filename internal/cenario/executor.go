@@ -220,6 +220,7 @@ func (e *Executor) subir() error {
 		Usuario: e.cfg.Texto("FIX_USUARIO", ""), Senha: e.cfg.Texto("FIX_SENHA", ""),
 		ReconexaoS: e.cfg.Inteiro("FIX_RECONEXAO_S", 1), ReconexaoMaxS: e.cfg.Inteiro("FIX_RECONEXAO_MAX_S", 60),
 		SincroniaMs: e.cfg.Inteiro("FIX_SINCRONIA_MS", 500),
+		Espelho:     m.AoVivo().Registrar,
 	}, m)
 	if err != nil {
 		return err

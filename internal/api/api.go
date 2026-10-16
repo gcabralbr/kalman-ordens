@@ -124,6 +124,27 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		h, err := motor.HistoricoOperacao(m.Repo(), r.URL.Query().Get("modulo"), id, r.URL.Query().Get("cru") == "1")
 		responderHistorico(w, h, err)
 	})
+	// monitor ao vivo da sessão (contrato oficial da tela de admin): as últimas 2.000 mensagens do
+	// fio e a saúde da sessão, da memória (sem banco e sem a fila do motor)
+	mux.HandleFunc("GET /sessao/ao-vivo", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		var desde int64
+		limite := 0
+		var err error
+		if v := q.Get("desde"); v != "" {
+			if desde, err = strconv.ParseInt(v, 10, 64); err != nil || desde < 0 {
+				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "desde invalido"})
+				return
+			}
+		}
+		if v := q.Get("limite"); v != "" {
+			if limite, err = strconv.Atoi(v); err != nil || limite <= 0 {
+				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "limite invalido"})
+				return
+			}
+		}
+		escrever(w, http.StatusOK, m.ConsultarAoVivo(desde, limite))
+	})
 	mux.HandleFunc("GET /sessao/eventos", func(w http.ResponseWriter, r *http.Request) {
 		l, err := motor.EventosDaSessao(m.Repo(), r.URL.Query().Get("dia"))
 		responderHistorico(w, l, err)

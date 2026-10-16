@@ -356,6 +356,16 @@ func (m *Motor) ativarParadaCom(modo, origem, motivo, origemSaida string) {
 }
 
 // atualizarMetricas: os medidores de estado do /metrics (v1.9 M).
+// verParada: a cópia da parada que a consulta ao vivo lê (outra goroutine).
+func (m *Motor) verParada() {
+	if m.parada == nil {
+		m.paradaVista.Store(nil)
+		return
+	}
+	p := *m.parada
+	m.paradaVista.Store(&p)
+}
+
 func (m *Motor) atualizarMetricas() {
 	vivas, abertas := 0, 0
 	for _, op := range m.ops {
@@ -369,4 +379,5 @@ func (m *Motor) atualizarMetricas() {
 		}
 	}
 	metricas.DefinirEstado(vivas, abertas, m.posicaoTotal(), m.fix != nil && m.fix.Logado())
+	m.verParada()
 }

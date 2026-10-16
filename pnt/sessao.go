@@ -52,6 +52,10 @@ type ConfigSessao struct {
 	SemLogArquivo bool
 	// SemSyncStore: o store FIX sem fsync por mensagem (FileStoreSync=N). Padrão: com fsync.
 	SemSyncStore bool
+	// Espelho: cada mensagem como passou no fio (aplicação e sessão; entrada = do PnT), na
+	// goroutine da biblioteca — o monitor ao vivo (internal/aovivo). Quem implementa só copia.
+	// A senha está nela: quem guarda mascara.
+	Espelho func(entrada bool, bruta []byte)
 }
 
 // Ouvinte recebe os eventos da sessão. Os métodos são chamados nas goroutines do QuickFIX/Go:
@@ -603,12 +607,13 @@ func (f *fabricaLogEspia) CreateSessionLog(id quickfix.SessionID) (quickfix.Log,
 		}
 		f.sessoes[id] = l
 	}
-	return logEspia{base: l, s: f.s}, nil
+	return logEspia{base: l, s: f.s, sessao: true}, nil
 }
 
 type logEspia struct {
-	base quickfix.Log
-	s    *Sessao
+	base   quickfix.Log
+	s      *Sessao
+	sessao bool // o log da sessão (o global não vê mensagens)
 }
 
 // registrar escreve um evento da camada no log de eventos da sessão.
@@ -623,6 +628,9 @@ func (f *fabricaLogEspia) registrar(id quickfix.SessionID, texto string) {
 
 func (l logEspia) OnIncoming(b []byte) {
 	l.base.OnIncoming(Mascarar(b))
+	if l.sessao && l.s.cfg.Espelho != nil {
+		l.s.cfg.Espelho(true, b)
+	}
 	if bytes.Contains(b, []byte("\x0135=2\x01")) {
 		l.s.transicao.Lock()
 		if l.s.conectada && !l.s.logado.Load() {
@@ -634,7 +642,12 @@ func (l logEspia) OnIncoming(b []byte) {
 		l.base.OnEvent(ev)
 	}
 }
-func (l logEspia) OnOutgoing(b []byte) { l.base.OnOutgoing(Mascarar(b)) }
+func (l logEspia) OnOutgoing(b []byte) {
+	l.base.OnOutgoing(Mascarar(b))
+	if l.sessao && l.s.cfg.Espelho != nil {
+		l.s.cfg.Espelho(false, b)
+	}
+}
 func (l logEspia) OnEvent(s string) {
 	s = MascararTexto(s)
 	l.base.OnEvent(s)

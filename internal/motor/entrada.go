@@ -87,6 +87,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 		ContadorN: map[string]int{},
 	}}
 	m.salvarOp(op)
+	m.aoVivo.Associar(op.Modulo, op.OperacaoID, op.UID)
 	m.ops = append(m.ops, op)
 	m.porOp[chaveOperacao{op.Modulo, op.OperacaoID}] = op
 
