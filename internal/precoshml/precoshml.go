@@ -231,6 +231,9 @@ type Servidor struct {
 	// fixa), o pregão é recarregado.
 	Arquivo func(hoje time.Time) (string, error)
 	Log     func(format string, args ...any)
+	// Adianto: a leitura do arquivo vai esta duração à frente da hora de agora (negativo: atrás) —
+	// para alinhar com o pregão que a HML toca (PRECOS_HML_ADIANTO_MS).
+	Adianto time.Duration
 
 	mu     sync.Mutex
 	pregao *Pregao
@@ -281,19 +284,25 @@ func (s *Servidor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	l, ok := p.Em(HoraDoDia(agora))
+	l, ok := p.Em(HoraDoDia(agora) + s.Adianto)
 	if !ok {
 		io.WriteString(w, "{}")
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]payload{Conceito: Resposta(l, s.Ticker, agora)})
+	json.NewEncoder(w).Encode(map[string]payload{Conceito: RespostaComAdianto(l, s.Ticker, agora, s.Adianto)})
 }
 
 // Resposta: a linha reposicionada em hoje. O ts é o do campo mais fresco no pregão original
 // (hora da linha − idade informada naquele momento), na data de hoje; idade_seg = agora − ts.
 func Resposta(l Linha, ticker string, agora time.Time) payload {
+	return RespostaComAdianto(l, ticker, agora, 0)
+}
+
+// RespostaComAdianto: Resposta com a leitura deslocada — a linha da hora H vale para agora em
+// H − adianto, e o ts acompanha (a idade é a do pregão original).
+func RespostaComAdianto(l Linha, ticker string, agora time.Time, adianto time.Duration) payload {
 	meiaNoite := time.Date(agora.Year(), agora.Month(), agora.Day(), 0, 0, 0, 0, agora.Location())
-	ts := meiaNoite.Add(l.Hora - time.Duration(l.IdadeSeg*float64(time.Second)))
+	ts := meiaNoite.Add(l.Hora - adianto - time.Duration(l.IdadeSeg*float64(time.Second)))
 	return payload{
 		Ticker: ticker, Preco: l.Preco, Bid: l.Bid, Ask: l.Ask, Status84: l.Status84,
 		TS:       ts.Format(time.RFC3339),

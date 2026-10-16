@@ -280,3 +280,36 @@ func TestLerFeriados(t *testing.T) {
 		t.Fatal(f, err)
 	}
 }
+
+// PRECOS_HML_ADIANTO_MS: com adianto +500 ms, às 09:01:31.451 já vale a linha das 09:01:31.951; com
+// −500 ms, só às 09:01:32.451. O ts acompanha (a idade é a do pregão original: 0,2 s).
+func TestAdianto(t *testing.T) {
+	arq := escrever(t, t.TempDir(), "w.csv", false)
+	agora := hoje(9, 1, 31, 451)
+	s := servidor(t, &agora, arq)
+	s.Adianto = 500 * time.Millisecond
+	var v map[string]map[string]any
+	if err := json.Unmarshal(get(t, s, "/precos/atual?ativo=WINFUT").Body.Bytes(), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v["WINFUT"]["preco"] != 211020.0 || v["WINFUT"]["idade_seg"] != 0.2 {
+		t.Fatalf("adianto +500: %v", v)
+	}
+	s.Adianto = 0
+	_ = json.Unmarshal(get(t, s, "/precos/atual?ativo=WINFUT").Body.Bytes(), &v)
+	if v["WINFUT"]["preco"] != 210395.0 {
+		t.Fatalf("sem adianto: %v", v)
+	}
+	// −500 ms: a linha das 09:01:31.951 só vale a partir das 09:01:32.451
+	s.Adianto = -500 * time.Millisecond
+	agora = hoje(9, 1, 32, 400)
+	_ = json.Unmarshal(get(t, s, "/precos/atual?ativo=WINFUT").Body.Bytes(), &v)
+	if v["WINFUT"]["preco"] != 210395.0 {
+		t.Fatalf("adianto -500 antes da linha valer: %v", v)
+	}
+	agora = hoje(9, 1, 32, 500)
+	_ = json.Unmarshal(get(t, s, "/precos/atual?ativo=WINFUT").Body.Bytes(), &v)
+	if v["WINFUT"]["preco"] != 211020.0 || v["WINFUT"]["idade_seg"] != 0.2 {
+		t.Fatalf("adianto -500: %v", v)
+	}
+}

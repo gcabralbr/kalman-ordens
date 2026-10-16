@@ -34,6 +34,11 @@ func main() {
 	porta := flag.Int("porta", porta0, "porta em 127.0.0.1")
 	dir := flag.String("dir", "/var/lib/kalman/tick", "diretório dos tick files do Kalman")
 	feriados := flag.String("feriados", "/var/lib/kalman/feriados.json", "feriados (gerado pelo Kalman da anferiado)")
+	adianto0, err := strconv.Atoi(env("PRECOS_HML_ADIANTO_MS", "0"))
+	if err != nil {
+		log.Fatalf("precos-hml: PRECOS_HML_ADIANTO_MS %q: inteiro em ms (negativo atrasa)", os.Getenv("PRECOS_HML_ADIANTO_MS"))
+	}
+	adianto := flag.Int("adianto-ms", adianto0, "a leitura do arquivo vai N ms à frente da hora de agora (negativo: atrás)")
 	flag.Parse()
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
@@ -52,9 +57,10 @@ func main() {
 
 	var diaCache, arqCache string // o arquivo só muda na virada do dia (chamado sob a trava do Servidor)
 	srv := &precoshml.Servidor{
-		Ticker: *ticker,
-		Agora:  func() time.Time { return time.Now().In(loc) },
-		Log:    log.Printf,
+		Ticker:  *ticker,
+		Agora:   func() time.Time { return time.Now().In(loc) },
+		Log:     log.Printf,
+		Adianto: time.Duration(*adianto) * time.Millisecond,
 		Arquivo: func(hoje time.Time) (string, error) {
 			if dia := hoje.Format("2006-01-02"); dia == diaCache {
 				return arqCache, nil
@@ -83,7 +89,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("precos-hml %s: ticker %s, em http://%s/precos/atual?ativo=%s", versao, *ticker, ln.Addr(), precoshml.Conceito)
+	log.Printf("precos-hml %s: ticker %s, adianto %d ms, em http://%s/precos/atual?ativo=%s", versao, *ticker, *adianto, ln.Addr(), precoshml.Conceito)
 	log.Fatal((&http.Server{Handler: srv, ReadHeaderTimeout: 5 * time.Second}).Serve(ln))
 }
 

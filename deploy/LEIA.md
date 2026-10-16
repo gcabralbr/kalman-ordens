@@ -241,6 +241,11 @@ Kalman daquele dia (`/var/lib/kalman/tick/winfut-AAAA-MM-DD.csv.gz` ou `.csv`), 
 - Dia do arquivo: `PRECOS_HML_DATA` (`AAAA-MM-DD`) ou, vazio, o dia útil anterior pelo
   `/var/lib/kalman/feriados.json` (gerado pelo Kalman da `anferiado` a cada subida), recalculado
   na virada do dia. Sem o arquivo do dia, não sobe (e responde 503 se faltar depois).
+- `PRECOS_HML_ADIANTO_MS` (padrão 0; `-adianto-ms`): a leitura do arquivo vai N ms à frente da
+  hora de agora (negativo: atrás), para alinhar com a fita que a HML toca; o `ts` acompanha. Medição
+  de 16/10 (15 fills de 09:07 a 10:03 contra a fita de 15/10): o melhor encaixe é com a HML **atrás**
+  da precos-hml, de 1,4 a 2,0 s (Δ ≈ −1.400 a −2.000 ms) — evidência fraca (erro médio de 25 pts no
+  melhor Δ). O relógio do PnT (o 52) está ~0,45 s atrás do nosso (chrony).
 
 Instalar (o `scripts/build.sh` gera `dist/precos-hml` junto):
 
@@ -251,6 +256,7 @@ sudo tee /etc/kalman-ordens/precos-hml.env >/dev/null <<'EOF'
 PRECOS_HML_TICKER=WINZ26
 PRECOS_HML_DATA=
 PRECOS_HML_PORTA=9095
+PRECOS_HML_ADIANTO_MS=0
 EOF
 sudo systemctl daemon-reload
 sudo systemctl start kalman-precos-hml          # não habilitar: ferramenta de teste
@@ -259,7 +265,7 @@ curl -s '127.0.0.1:9095/precos/atual?ativo=WINFUT'
 ```
 
 A unidade roda como `gammaquant` (dono de `/var/lib/kalman`, 750), só leitura. Rodar à mão:
-`dist/precos-hml -ticker WINZ26 [-data 2026-10-14] [-porta 9095]`.
+`dist/precos-hml -ticker WINZ26 [-data 2026-10-14] [-porta 9095] [-adianto-ms N]`.
 
 No kalman-ordens em HML (`sudoedit /etc/kalman-ordens/service.env`, depois `systemctl restart
 kalman-ordens`):
