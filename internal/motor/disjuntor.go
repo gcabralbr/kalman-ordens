@@ -29,6 +29,7 @@ type disjuntor struct {
 	texto       string                 // a rejeição que abriu o estado
 	retidos     []envioPendente        // mensagens não enviadas no estado (ordem de decisão)
 	proxSonda   time.Time              // próxima sonda
+	proxSondaEn time.Time              // próxima entrada que pode sair como sonda (nada retido)
 	sondas      int                    // sondas soltas no estado
 	recuperada  time.Time              // a última saída do estado (D5)
 	ultimaRej   time.Time              // a última rejeição (D5)
@@ -55,7 +56,14 @@ func (m *Motor) classificarRejeicao(msg pnt.Mensagem) (rejeicao, gatilho bool, t
 	}
 	if msg.Tipo == "8" && et == "I" {
 		// mass status: o texto de gatilho ABRE (16/10: depois do restart, o "Exchange is offline"
-		// só veio nos 150=I da conciliação); não entra na regra genérica e não fecha o estado
+		// só veio nos 150=I da conciliação) — mas só numa ordem viva: o 150=I de uma ordem já
+		// encerrada (39=2/4/8/C) traz o último texto dela, velho (16/10 13:09: uma consulta do
+		// admin reabriu o estado com as ordens do dia, e sem nada a sondar ele não fechava mais).
+		// Não entra na regra genérica e não fecha o estado.
+		switch msg.Texto(39) {
+		case "2", "4", "8", "C":
+			return false, false, texto
+		}
 		return gatilho, gatilho, texto
 	}
 	switch {
@@ -123,6 +131,7 @@ func (m *Motor) abrirDisjuntor(texto, porque string) {
 	}
 	agora := m.agora()
 	d.desde, d.texto, d.proxSonda, d.sondas = agora, texto, agora.Add(m.p.DisjuntorSonda), 0
+	d.proxSondaEn = agora.Add(m.p.DisjuntorSonda)
 	m.bolsaVista.Store(agora.UnixNano())
 	metricas.Disjuntor.Inc("abriu")
 	t := fmt.Sprintf("bolsa indisponível no PnT (%s): %q; entradas novas recusadas, saídas e 1014 em sonda a cada %s",
@@ -159,6 +168,15 @@ func (m *Motor) fecharDisjuntor(porque string) {
 func (m *Motor) bolsaRecusaEntrada() *recusa {
 	d := &m.bolsa
 	if !d.desde.IsZero() {
+		// sem saída nem 1014 retida não há o que sondar: uma entrada a cada DISJUNTOR_SONDA_S sai
+		// como sonda (rejeitada: o fluxo normal da recusa do PnT; aceita limpa: fecha o estado)
+		if agora := m.agora(); len(d.retidos) == 0 && !agora.Before(d.proxSondaEn) {
+			d.proxSondaEn = agora.Add(m.p.DisjuntorSonda)
+			d.sondas++
+			metricas.Disjuntor.Inc("sonda_entrada")
+			slog.Info("disjuntor: entrada como sonda (nada retido)")
+			return nil
+		}
 		return simples(chaveDisjuntor, "bolsa indisponivel no PnT desde "+emBR(d.desde)+": "+cortarTexto(d.texto, 120))
 	}
 	if !d.recuperada.IsZero() && m.p.DisjuntorEstavel > 0 {

@@ -355,7 +355,10 @@ Roteiros com a sequência real de 16/10 (fixture do histórico da #234081).
   is offline" veio em 150=E, 5, 7, 4, 6 e **até em 150=0/39=0** (96 vezes): um aceite com texto de
   rejeição é rejeição. **No 150=I (mass status) o texto de gatilho ABRE o estado** (correção de
   16/10, `3fd1ea1` → seguinte: depois do restart das 12:39:55 o texto só veio nos 150=I da
-  conciliação, e o disjuntor não abriu); o 150=I não entra na regra genérica e **não fecha**.
+  conciliação, e o disjuntor não abriu) — **só numa ordem viva** (39 ≠ 2, 4, 8, C): o 150=I de uma
+  ordem encerrada traz o último texto dela, velho; às 13:09 uma consulta do admin com as ordens do
+  dia reabriu o estado assim e, sem nada a sondar, ele não fechava mais (as entradas ficariam
+  recusadas). O 150=I não entra na regra genérica e **não fecha**.
 - **Volta (D4)**: execução (150=F) ou aceite limpo — 150=0 **ou 150=5** (replace aceito) sem texto de
   rejeição: a saída presa é reapregoada com replace, e o PnT confirma replace com 150=5, não 39=0.
 - **Regra genérica (D1)**: não conta rejeição de **entrada** — cinco contas sem margem numa rajada
@@ -373,8 +376,11 @@ Roteiros com a sequência real de 16/10 (fixture do histórico da #234081).
   no `/sessao/ao-vivo`. Métrica `disjuntor_bolsa_total{evento=abriu|fechou|sonda}`.
 - **Em memória**: depois de um restart o estado recomeça fechado; reabre na primeira rejeição com o
   texto de gatilho.
-- **Limite conhecido**: sem nada retido (nenhuma saída ou 1014 pendente), não há o que sondar, e o
-  estado só fecha com uma resposta limpa que venha por outro caminho; as entradas seguem recusadas.
+- **Entrada como sonda** (aprovado; 16/10 13:09 foi esse caso): sem nada retido (nenhuma saída
+  ou 1014 pendente), no máximo **uma entrada a cada `DISJUNTOR_SONDA_S`** sai como sonda — rejeitada
+  pelo PnT, segue o fluxo da recusa (`ENTRADA_ENCERRADA`); aceita limpa, fluxo normal e fecha o
+  estado. As demais entradas: `PNT_BOLSA_INDISPONIVEL`, e depois da volta `DISJUNTOR_ESTAVEL_S`.
+  A primeira sonda de entrada vale 30 s depois da abertura. Métrica `disjuntor_bolsa_total{evento="sonda_entrada"}`. Roteiro 85.
 
 **O 39 vale em qualquer ExecutionReport, inclusive 150=I** (correção de 16/10): as respostas da
 consulta do admin (`GET /pnt/ordens`, v1.7 C) passam a aplicar o estado das ordens KM que trazem,

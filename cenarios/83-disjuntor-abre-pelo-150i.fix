@@ -33,3 +33,18 @@ recebe 35=AF 585=9 1=12345 584=>AD
 envia @ER 37=dsaGQ2.28862 11=KM-S-8301-1 584=$AD 911=1 912=Y 150=I 39=0 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
 http_aguarda
 saude alertas_criticos.PNT_BOLSA_INDISPONIVEL=PNT_BOLSA_INDISPONIVEL
+
+# --- 16/10 13:09: uma consulta do admin com as ordens encerradas do dia trazendo o texto velho não
+# reabre o estado (sem nada a sondar, ele não fechava mais)
+envia @ER 11=KM-S-8301-1 37=dsaGQ2.28862 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+alerta RESOLVIDO
+evento ZERADA operacao_id=8301
+avanca 11s
+http_async GET /pnt/ordens
+recebe 35=AF 585=9 1=12345 584=>AD2
+envia @ER 37=dsa.8301.P 11=KM-P-8301-1 584=$AD2 911=2 150=I 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0 58="Real Order Rejected! Error: Exchange is offline. Try again later."
+envia @ER 37=dsaGQ2.28862 11=KM-S-8301-1 584=$AD2 911=2 912=Y 150=I 39=2 54=2 38=1 44=129950 847=1031 14=1 151=0 6=130000 58="Real Order Rejected! Error: Exchange is offline. Try again later."
+http_aguarda
+sem_alerta PNT_BOLSA_INDISPONIVEL
+http GET /sessao/ao-vivo?desde=0&limite=1
+resposta saude.bolsa_indisponivel_desde=null
