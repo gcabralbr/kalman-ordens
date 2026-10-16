@@ -16,8 +16,8 @@ func TestTodosOsRoteirosLeem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cs) != 81 {
-		t.Fatalf("esperava 81 roteiros, li %d", len(cs))
+	if len(cs) != 84 {
+		t.Fatalf("esperava 84 roteiros, li %d", len(cs))
 	}
 	for _, c := range cs {
 		if len(c.Passos) == 0 {
@@ -45,7 +45,7 @@ func TestCoerencia(t *testing.T) {
 		pedido := false
 		for _, p := range c.Passos {
 			switch p.Verbo {
-			case "entrada", "saida", "stop", "http", "http_aguarda":
+			case "entrada", "saida", "stop", "sinal", "http", "http_aguarda":
 				pedido = true
 			case "resposta":
 				if !pedido {

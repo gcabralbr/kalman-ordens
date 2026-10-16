@@ -1,0 +1,88 @@
+cenario 73 POST /sinais em partes: o sinal fecha com todas as partes ou no prazo; recusas do lote inteiro
+hora 2026-10-15 10:00:00
+# SPEC v1.10 §6.2–6.3. Cada parte é validada e respondida na hora; o envio espera o fechamento:
+# todas as partes, ou SINAL_ESPERA_PARTES_MS (500 ms) depois da primeira. Parte depois do
+# fechamento: SINAL_FECHADO. A rajada junta as entradas aceitas de todas as partes.
+config LIMITE_POSICAO_MAX=10
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config SINAL_MAX_PARTES=3
+config HTTP_ESPERA_S=0.2
+
+executa INICIO
+# --- duas partes: nada sai até a segunda
+sinal KALMAN-P1 parte=1 partes=2 e=7301:C e=7302:C
+resposta _status=200 aceito=true fechado=false k=null deslocamento=null resultados.0.aceito=true resultados.0.clordid=KM-E-7301-1 resultados.0.posicao=null resultados.1.posicao=null
+nada
+sem_evento ENTRADA_ENVIADA
+http GET /ordens/7301
+resposta estado=ENTRANDO sinal.entrada.sinal_id=KALMAN-P1 sinal.entrada.posicao=null
+avanca 200ms
+nada
+# k = 1, N = 3 (7301, 7302, 7303, todas do uid 7): ⌊1 × 0,618 × 3⌋ = 1 → 7302, 7303, 7301
+sinal KALMAN-P1 parte=2 partes=2 e=7303:C
+resposta _status=200 fechado=true k=1 deslocamento=1 resultados.#=1 resultados.0.operacao_id=7303 resultados.0.posicao=2 resultados.0.tamanho=3
+recebe 35=D 11=KM-E-7302-1
+recebe 35=D 11=KM-E-7303-1
+recebe 35=D 11=KM-E-7301-1
+nada
+evento ENTRADA_ENVIADA operacao_id=7301 sinal_id=KALMAN-P1 posicao=3 tamanho=3
+# a parte 1 reenviada: a resposta original (de antes do fechamento)
+sinal KALMAN-P1 parte=1 partes=2 e=7301:C e=7302:C
+resposta _status=200 repetido=true fechado=false resultados.0.posicao=null
+# parte nova depois do fechamento
+sinal KALMAN-P1 parte=2 partes=2 e=7309:C
+resposta _status=400 aceito=false codigo=DUPLICADA
+
+# --- só a primeira de duas partes chega: fecha 500 ms depois, com o que chegou
+sinal KALMAN-P2 parte=1 partes=2 e=7311:C
+resposta _status=200 fechado=false
+avanca 400ms
+nada
+avanca 100ms
+recebe 35=D 11=KM-E-7311-1
+evento ENTRADA_ENVIADA operacao_id=7311 sinal_id=KALMAN-P2 posicao=1 tamanho=1
+sinal KALMAN-P2 parte=2 partes=2 e=7312:C
+resposta _status=400 aceito=false codigo=SINAL_FECHADO
+http GET /ordens/7312
+resposta existe=false
+metrica kalman_ordens_sinais_fechados_total como=PRAZO >= 1
+
+# --- recusas do lote inteiro (400; nenhum item tratado)
+sinal KALMAN-P3 parte=1 partes=4 e=7321:C
+resposta _status=400 aceito=false codigo=LIMITE_LOTE
+sinal KALMAN-P3 parte=3 partes=2 e=7321:C
+resposta _status=400 codigo=CAMPO_INVALIDO
+sinal KALMAN-P3
+resposta _status=400 codigo=CAMPO_INVALIDO
+http POST /sinais {"sinal_id":"com espaco","parte":1,"partes":1,"entradas":[{"operacao_id":7321,"uid":7,"lado":"C","qtd":1,"stop_pts":500,"motivo":"SINAL"}],"saidas":[]}
+resposta _status=400 codigo=CAMPO_INVALIDO
+http POST /sinais {"sinal_id":"KALMAN-P3","parte":1,"partes":1,"extra":1,"entradas":[],"saidas":[]}
+resposta _status=400 codigo=CAMPO_INVALIDO
+http GET /ordens/7321
+resposta existe=false
+# campo desconhecido num item: só ele é recusado
+http POST /sinais {"sinal_id":"KALMAN-P4","ts_decisao":"2026-10-15T10:00:04.000-03:00","parte":1,"partes":1,"entradas":[{"operacao_id":7331,"uid":7,"lado":"C","qtd":1,"stop_pts":500,"motivo":"SINAL","papel":"ENTRADA"},{"operacao_id":7332,"uid":7,"lado":"C","qtd":1,"stop_pts":500,"motivo":"SINAL"}],"saidas":[]}
+resposta _status=200 resultados.0.operacao_id=7331 resultados.0.aceito=false resultados.0.codigo=CAMPO_INVALIDO resultados.1.aceito=true resultados.1.posicao=1
+recebe 35=D 11=KM-E-7332-1
+nada
+# --- parte que chegou no prazo mas esperou o motor (fila): o prazo não fecha o sinal sem ela
+sinal KALMAN-P5 parte=1 partes=2 e=7341:C
+resposta _status=200 fechado=false
+motor_lento
+sinal KALMAN-P5 parte=2 partes=2 e=7342:C
+resposta _status=503 codigo=RESULTADO_DESCONHECIDO
+avanca 1s
+motor_normal
+# k = 4, N = 2: ⌊4 × 0,618 × 2⌋ mod 2 = 0 → 7341, 7342
+recebe 35=D 11=KM-E-7341-1
+recebe 35=D 11=KM-E-7342-1
+sinal KALMAN-P5 parte=2 partes=2 e=7342:C
+resposta _status=200 repetido=true fechado=true k=4 resultados.0.posicao=2
+metrica kalman_ordens_sinais_fechados_total como=TODAS_AS_PARTES >= 1
+
+# a recusa do lote fica no histórico de pedidos (lista do dia, sem operação)
+http GET /operacoes?dia=2026-10-15
+resposta _lista.#=15
+saude posicao=0 divergente=false

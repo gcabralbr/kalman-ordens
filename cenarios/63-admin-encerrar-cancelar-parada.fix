@@ -52,7 +52,7 @@ http GET /operacoes/6301/historico
 resposta pedidos.#=8 pedidos.0.rota=ORDENS pedidos.1.rota=ENCERRAR pedidos.1.codigo=CAMPO_INVALIDO pedidos.3.rota=ENCERRAR pedidos.3.http_status=400
 resposta pedidos.4.rota=CANCELAR_ENTRADA pedidos.4.codigo=SEM_ENTRADA_PENDENTE pedidos.5.rota=ENCERRAR pedidos.5.aceito=true pedidos.5.corpo.por=1450
 resposta pedidos.6.codigo=OPERACAO_EM_SAIDA pedidos.7.codigo=OPERACAO_ENCERRADA
-resposta eventos.3.tipo=ADMIN_ACAO eventos.3.dados.acao=ENCERRAR eventos.3.dados.por=1450 operacao.origem_saida=ADMIN operacao.motivo_saida=cliente_pediu
+resposta eventos.4.tipo=ADMIN_ACAO eventos.4.dados.acao=ENCERRAR eventos.4.dados.por=1450 operacao.origem_saida=ADMIN operacao.motivo_saida=cliente_pediu
 
 # --- cancelar a entrada pendente (sem posição)
 avanca 61s

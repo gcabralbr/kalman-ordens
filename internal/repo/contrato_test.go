@@ -512,6 +512,8 @@ func TestContratoLote(t *testing.T) {
 			}
 			// segundo lote: as mesmas operação e ordem já gravadas, mudadas; o fill repetido; mais um publicado
 			op.Estado, op.StopAjustado, op.ContadorN["P"] = dominio.Protegida, 129700, 1
+			// v1.10 §6: a posição na rajada do sinal (entrada) volta igual; a saída avulsa, vazia
+			op.SinalEntrada = dominio.Rajada{SinalID: "KALMAN-S1", K: 7, Posicao: 2, Tamanho: 3, Deslocamento: 1, Criterio: "ROTATIVA_AUREA"}
 			ord.Estado, ord.QtdExec, ord.OrderID, ord.PrecoMedio = dominio.Executada, 1, "dsa.1", px
 			if err := r.GravarLote(&Lote{Operacoes: []dominio.Operacao{op}, Ordens: []dominio.Ordem{ord}, Eventos: []EventoFIX{fill},
 				Publicados: []PublicadoNovo{{Tipo: "PROTEGIDA", OperacaoID: 7001, Dados: []byte(`{}`), Em: em}}}); err != nil {
@@ -523,6 +525,15 @@ func TestContratoLote(t *testing.T) {
 			}
 			if g := ops[0]; g.ID != 41 || g.Estado != dominio.Protegida || g.StopAjustado != 129700 || g.ContadorN["P"] != 1 || g.Conta != "12345" {
 				t.Fatalf("operação: %+v", g)
+			}
+			if g := ops[0]; g.SinalEntrada != op.SinalEntrada || !g.SinalSaida.Vazia() {
+				t.Fatalf("rajada: %+v / %+v", g.SinalEntrada, g.SinalSaida)
+			}
+			if ex, err := r.OperacoesExistentes("", []int64{7001, 7002}); err != nil || len(ex) != 1 || !ex[7001] {
+				t.Fatalf("existentes: %v %v", ex, err)
+			}
+			if ex, _ := r.OperacoesExistentes("PT", []int64{7001}); len(ex) != 0 {
+				t.Fatalf("existentes em outro módulo: %v", ex)
 			}
 			if g := ords[0]; g.ID != 90 || g.Estado != dominio.Executada || g.QtdExec != 1 || g.OrderID != "dsa.1" || !g.PrecoMedio.Equal(px) || g.Preco != 130020 {
 				t.Fatalf("ordem: %+v", g)

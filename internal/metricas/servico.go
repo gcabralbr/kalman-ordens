@@ -32,6 +32,11 @@ var (
 	EsperaEnvio = NovoHistograma("envio_espera_segundos",
 		"Da decisão do motor ao envio ao PnT (commit do lote e, na entrada, o limitador de taxa), por prioridade.", "prioridade")
 	EntradasExpiradasFila = NovoContador("entradas_expiradas_fila_total", "Entradas descartadas por passar de ENTRADA_TTL_FILA_S esperando a taxa.")
+	// v1.10 §6: POST /sinais
+	SinaisPartes   = NovoContador("sinais_partes_total", "Partes de POST /sinais tratadas pelo motor, por código (LOTE_ACEITO, repetida, recusas do lote).", "codigo")
+	SinaisItens    = NovoContador("sinais_itens_total", "Itens de POST /sinais, por papel e resultado (aceito, recusado, repetido).", "papel", "resultado")
+	SinaisFechados = NovoContador("sinais_fechados_total", "Sinais fechados, por como fecharam (TODAS_AS_PARTES, PRAZO).", "como")
+	SinalTamanho   = NovoHistogramaBaldes("sinal_itens_aceitos", "Itens aceitos por sinal fechado (o tamanho da rajada).", []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000})
 )
 
 // Estado: medidores escritos pelo motor (tick) e lidos na coleta.

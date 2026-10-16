@@ -41,14 +41,14 @@ func inserir(tx *sql.Tx, cabeca string, ncol int, linhas [][]any, sufixo string)
 
 const colunasOp = `id, data, modulo, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida, stop_pts, stop_ajustado, estado,
 	motivo_entrada, ts_decisao, motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts, encerrou_entrada, contador_n,
-	pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, criado_em, atualizado_em`
+	pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, sinal_entrada, sinal_saida, criado_em, atualizado_em`
 
 func linhaOp(o dominio.Operacao, agora time.Time) []any {
 	cn, _ := json.Marshal(o.ContadorN)
 	return []any{o.ID, o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(o.Conta), o.Destino, nulo(o.Simbolo), o.Lado.Letra(), o.QtdPedida,
 		o.StopPts, nuloInt(o.StopAjustado), string(o.Estado), nulo(o.MotivoEntrada), nulo(o.TsDecisao), nulo(o.MotivoSaida), nulo(o.OrigemSaida),
 		utc(o.SaidaPedidaEm), o.Divergente, o.PnL.String(), o.EncerrouEntrada, string(cn), nulo(o.PedidoEntrada), nulo(o.RespostaEntrada),
-		nulo(o.PedidoSaida), nulo(o.RespostaSaida), utc(o.CriadaEm), agora}
+		nulo(o.PedidoSaida), nulo(o.RespostaSaida), rajadaSQL(o.SinalEntrada), rajadaSQL(o.SinalSaida), utc(o.CriadaEm), agora}
 }
 
 const colunasOrdem = `id, data, modulo, uid, operacao_id, papel, conta, simbolo, clordid_base, clordid_atual, orderid37, secid198,
@@ -88,7 +88,7 @@ func (r *MariaDB) GravarLote(l *Lote) error {
 		origem_saida=VALUES(origem_saida), saida_pedida_em=VALUES(saida_pedida_em), divergente=VALUES(divergente), pnl_pts=VALUES(pnl_pts),
 		encerrou_entrada=VALUES(encerrou_entrada), contador_n=VALUES(contador_n), pedido_entrada=VALUES(pedido_entrada),
 		resposta_entrada=VALUES(resposta_entrada), pedido_saida=VALUES(pedido_saida), resposta_saida=VALUES(resposta_saida),
-		atualizado_em=VALUES(atualizado_em)`); err != nil {
+		sinal_entrada=VALUES(sinal_entrada), sinal_saida=VALUES(sinal_saida), atualizado_em=VALUES(atualizado_em)`); err != nil {
 		return err
 	}
 	novas, velhas = nil, nil
@@ -212,6 +212,32 @@ func (r *MariaDB) ChavesFillDoDia(de, ate time.Time) (map[string]bool, error) {
 }
 
 // ConfigUsuarios: usutxtconfig e usutxtconfigprd de vários uids (cache do motor, v1.10 B).
+func (r *MariaDB) OperacoesExistentes(mod string, ids []int64) (map[int64]bool, error) {
+	out := map[int64]bool{}
+	for ini := 0; ini < len(ids); ini += 500 {
+		fim := min(ini+500, len(ids))
+		args := []any{modulo(mod)}
+		for _, id := range ids[ini:fim] {
+			args = append(args, id)
+		}
+		rows, err := r.db.Query("SELECT operacao_id FROM kalmanordemoperacao WHERE modulo = ? AND operacao_id IN ("+
+			strings.TrimSuffix(strings.Repeat("?,", fim-ini), ",")+")", args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[id] = true
+		}
+		rows.Close()
+	}
+	return out, nil
+}
+
 func (r *MariaDB) ConfigUsuarios(uids []int) (map[int][2]string, error) {
 	out := map[int][2]string{}
 	for ini := 0; ini < len(uids); ini += 500 {

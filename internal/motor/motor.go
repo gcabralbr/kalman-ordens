@@ -96,6 +96,7 @@ type ordem struct {
 	canceladaPorErro bool
 	decidirNoMass    bool  // cancel da 1014 em erro rejeitado por outro motivo: o mass status decide (F17)
 	seq              int64 // ordem de criação neste processo (0 = carregada do banco)
+	adiada           bool  // entrada de um sinal aberto: sai quando ele fechar (v1.10 §6)
 	// lote (v1.10 B): já gravada uma vez e a cópia da última gravação (para não regravar igual)
 	persistida bool
 	gravada    dominio.Ordem
@@ -288,7 +289,8 @@ type Motor struct {
 	fim        chan struct{}
 
 	v              *estadoVolta    // o que a volta acumula até o commit
-	esperandoTaxa  []envioPendente // entradas esperando o limitador de taxa
+	esperandoTaxa  []envioPendente // esperando o limitador de taxa (entradas) ou a próxima volta (maxEnviosPorVolta)
+	voltaAgendada  bool
 	tokens         float64
 	tokensEm       time.Time
 	chegadas       sync.Map     // ClOrdID → chegada à sessão (relógio do motor)
@@ -338,6 +340,16 @@ type Motor struct {
 	massEstado     map[string]*massConta // por 584 (v1.10 C6)
 	massCom911     bool                  // alguma resposta trouxe 911/912: fecha pela contagem
 
+	// POST /sinais (v1.10 §6): os sinais em memória, o contador k por módulo e o sinal da parte em
+	// tratamento (pedirEntrada / pedirSaida adiam o envio)
+	sinais     map[chaveSinal]*sinal
+	sinalK     map[string]int64
+	sinalAtual *sinal
+	cache      *cacheFatia // agregados da fatia em tratamento (sinais.go)
+	// partes de sinal na fila do motor ou em tratamento (as goroutines HTTP somam)
+	muSinaisFila sync.Mutex
+	sinaisFila   map[chaveSinal]int
+
 	// métricas (v1.9 M), tempo real: o pedido HTTP e a mensagem FIX em tratamento
 	pedidoEm     time.Time
 	pedidoRotulo string
@@ -360,6 +372,9 @@ func Novo(c config.Config, rel relogio.Relogio, r repo.Repositorio, f preco.Font
 		execVistos: map[string]bool{},
 		v:          &estadoVolta{opsSujas: map[*operacao]bool{}, ordensSujas: map[*ordem]bool{}},
 		usuarios:   novoCacheUsuarios(),
+		sinais:     map[chaveSinal]*sinal{},
+		sinalK:     map[string]int64{},
+		sinaisFila: map[chaveSinal]int{},
 	}
 	m.al = alerta.Novo(n, m.publicarAlerta, rel, p.RepeticaoAlerta)
 	metricas.DefinirFilas(func() [3]int { return [3]int{len(m.p0), len(m.p1), len(m.p2)} }, capFilaP0+capFilaP1+capFilaP2)

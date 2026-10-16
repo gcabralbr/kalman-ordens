@@ -24,8 +24,10 @@ evento ZERADA operacao_id=6101 origem=GESTOR
 # --- linha do tempo da operação
 http GET /operacoes/6101/historico
 resposta _status=200 operacao.existe=true operacao.operacao_id=6101 operacao.estado=ZERADA operacao.posicao=0 operacao.preco_medio_entrada=130010 operacao.pnl_pts=-10 operacao.ordens.#=3
-resposta eventos.#=5 eventos.0.tipo=ENTRADA_EXECUTADA eventos.0.seq=* eventos.0.em=2026-10-15T11:00:03.000-03:00 eventos.0.dados.preco=130010
-resposta eventos.1.tipo=ENTRADA_ENCERRADA eventos.2.tipo=PROTEGIDA eventos.2.dados.preco_stop=129510 eventos.3.tipo=SAIDA_EXECUTADA eventos.4.tipo=ZERADA eventos.4.dados.pnl_pts=-10
+# v1.10 §6.4: a entrada avulsa também publica ENTRADA_ENVIADA (sem sinal_id/posicao)
+resposta eventos.#=6 eventos.0.tipo=ENTRADA_ENVIADA eventos.0.dados.clordid=KM-E-6101-1 eventos.0.dados.sinal_id=null eventos.0.dados.posicao=null eventos.0.dados.enviada_em=2026-10-15T11:00:03.000-03:00
+resposta eventos.1.tipo=ENTRADA_EXECUTADA eventos.1.seq=* eventos.1.em=2026-10-15T11:00:03.000-03:00 eventos.1.dados.preco=130010
+resposta eventos.2.tipo=ENTRADA_ENCERRADA eventos.3.tipo=PROTEGIDA eventos.3.dados.preco_stop=129510 eventos.4.tipo=SAIDA_EXECUTADA eventos.5.tipo=ZERADA eventos.5.dados.pnl_pts=-10 operacao.sinal=null
 resposta mensagens.#=10 mensagens.0.fix_raw=null
 # entrada: D, 8 (0/0), 8 (F/2 com 32, 31, 14, 6)
 resposta mensagens.0.direcao=ENV mensagens.0.msgtype=D mensagens.0.clordid=KM-E-6101-1 mensagens.0.orderid=null mensagens.0.em=2026-10-15T11:00:03.000-03:00

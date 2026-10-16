@@ -19,6 +19,7 @@ func (m *Motor) tick() {
 		m.virarDia()
 	}
 	m.al.Tick()
+	m.tickSinais()
 	m.fecharConsultaSePronta(true)
 	m.recarregarUsuarios(m.agora())
 	m.atualizarMetricas()

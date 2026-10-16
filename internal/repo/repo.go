@@ -98,6 +98,9 @@ type Repositorio interface {
 	ChavesFillDoDia(de, ate time.Time) (map[string]bool, error)
 	// ConfigUsuarios: a configuração de vários uids de uma vez (cache do motor); uid sem linha não vem.
 	ConfigUsuarios(uids []int) (map[int][2]string, error)
+	// OperacoesExistentes: dos operacao_id dados, os que já existem no módulo (qualquer dia) —
+	// o POST /sinais confere a fatia inteira numa consulta (v1.10 §6).
+	OperacoesExistentes(modulo string, ids []int64) (map[int64]bool, error)
 
 	// ConfigUsuario lê a configuração do usuário no GQ (dbecotools.acusuario, v1.2 U1):
 	// usutxtconfig (HML) e usutxtconfigprd (PRODUCAO). achou=false: uid sem linha.

@@ -207,7 +207,7 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 			"qtd": d.QtdPedida, "preco_medio_entrada": medioOuNulo(op, true), "preco_medio_saida": medioOuNulo(op, false),
 			"pnl_pts": d.PnL, "motivo_saida": textoOuNulo(d.MotivoSaida), "origem_saida": textoOuNulo(d.OrigemSaida),
 			"criada_em": emBR(d.CriadaEm), "zerada_em": emBROuNulo(zerada[k]), "alertas_n": alertas[k],
-			"em": d.CriadaEm,
+			"sinal": sinalDe(op), "em": d.CriadaEm,
 		})
 	}
 	// v1.6 P1: pedido recusado que não virou operação (limite, preço, habilitação, corpo ilegível...)
@@ -217,14 +217,23 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 		return nil, err
 	}
 	for _, p := range ps {
-		if p.Aceito || existe[chave{p.Modulo, p.OperacaoID}] || (p.Rota != "ORDENS" && p.Rota != "STOP") {
+		if p.Aceito || existe[chave{p.Modulo, p.OperacaoID}] || (p.Rota != "ORDENS" && p.Rota != "STOP" && p.Rota != RotaSinais) ||
+			(p.Rota == RotaSinais && p.HTTPStatus == 503) {
+			// do POST /sinais (v1.10 §6): o item recusado e a recusa do lote inteiro; o 503 não (o
+			// motor tratou a parte, os itens têm linha própria)
 			continue
 		}
 		var c struct {
-			Lado string `json:"lado"`
-			Qtd  *int   `json:"qtd"`
+			Lado     string            `json:"lado"`
+			Qtd      *int              `json:"qtd"`
+			Entradas []json.RawMessage `json:"entradas"`
+			Saidas   []json.RawMessage `json:"saidas"`
 		}
 		_ = json.Unmarshal([]byte(p.Corpo), &c)
+		if p.Rota == RotaSinais && p.OperacaoID != 0 && len(c.Entradas)+len(c.Saidas) == 1 {
+			// a linha de um item: lado e qtd do item
+			_ = json.Unmarshal(append(c.Entradas, c.Saidas...)[0], &c)
+		}
 		var resp struct {
 			Motivo string `json:"motivo"`
 		}

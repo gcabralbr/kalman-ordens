@@ -126,6 +126,9 @@ type Parametros struct {
 	// v1.10 C6: espera máxima da conciliação com 911/912 em uso
 	EsperaMaxMassStatus time.Duration
 	CacheUsuarios       time.Duration
+	// v1.10 §6: POST /sinais — fechamento do sinal em partes e limites do lote
+	SinalEsperaPartes                  time.Duration
+	SinalMaxItensParte, SinalMaxPartes int
 
 	PosicaoMax, QtdMaxOrdem, EntradasPorMinuto, MensagensPorMinuto, EntradasPorDia, RecusasParaParada int
 	IntervaloEntradas                                                                                 time.Duration
@@ -171,6 +174,9 @@ func (c Config) Parametros() Parametros {
 		TTLFilaEntrada:          c.Segundos("ENTRADA_TTL_FILA_S", 5),
 		EsperaMaxMassStatus:     c.Segundos("MASS_STATUS_ESPERA_MAX_S", 30),
 		CacheUsuarios:           c.Segundos("CACHE_USUARIOS_S", 30),
+		SinalEsperaPartes:       time.Duration(c.Inteiro("SINAL_ESPERA_PARTES_MS", 500)) * time.Millisecond,
+		SinalMaxItensParte:      c.Inteiro("SINAL_MAX_ITENS_PARTE", 1000),
+		SinalMaxPartes:          c.Inteiro("SINAL_MAX_PARTES", 10),
 
 		PosicaoMax:         c.Inteiro("LIMITE_POSICAO_MAX", 1),
 		QtdMaxOrdem:        c.Inteiro("LIMITE_QTD_ORDEM", 1),

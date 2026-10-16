@@ -3,6 +3,7 @@ package motor
 import (
 	"time"
 
+	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 )
 
@@ -79,7 +80,25 @@ func (m *Motor) descrever(op *operacao) Resposta {
 	return Resposta{"existe": true, "modulo": op.Modulo, "operacao_id": op.OperacaoID, "estado": op.Estado, "divergente": op.Divergente, "posicao": op.posicao(),
 		"uid": op.UID, "conta": op.Conta, "destino": op.Destino, "simbolo": op.Simbolo,
 		"preco_medio_entrada": pe, "preco_medio_saida": ps, "motivo_saida": op.MotivoSaida, "origem_saida": op.OrigemSaida,
-		"pnl_pts": op.PnL, "preco_stop_ajustado": op.StopAjustado, "ordens": os}
+		"pnl_pts": op.PnL, "preco_stop_ajustado": op.StopAjustado, "ordens": os, "sinal": sinalDe(op)}
+}
+
+// sinalDe (v1.10 §6): a posição da entrada e da saída nas rajadas dos sinais; nulo = avulsa.
+func sinalDe(op *operacao) any {
+	if op.SinalEntrada.Vazia() && op.SinalSaida.Vazia() {
+		return nil
+	}
+	f := func(r dominio.Rajada) any {
+		if r.Vazia() {
+			return nil
+		}
+		x := map[string]any{"sinal_id": r.SinalID, "k": nil, "posicao": nil, "tamanho": nil, "deslocamento": nil, "criterio": r.Criterio}
+		if r.Posicao > 0 {
+			x["k"], x["posicao"], x["tamanho"], x["deslocamento"] = r.K, r.Posicao, r.Tamanho, r.Deslocamento
+		}
+		return x
+	}
+	return map[string]any{"entrada": f(op.SinalEntrada), "saida": f(op.SinalSaida)}
 }
 
 func (m *Motor) algumaDivergente() bool {

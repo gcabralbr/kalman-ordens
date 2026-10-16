@@ -39,6 +39,36 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		m.RegistrarPedidoHTTP("ORDENS", p.Modulo, valor(p.OperacaoID), valor(p.UID), p.Papel, corpo, status, resp)
 		escrever(w, status, resp)
 	})
+	// POST em lote por sinal (v1.10 §6): o motor responde por parte; cada item fica no histórico de
+	// pedidos da operação (rota "POST /sinais", gravado pelo motor). Aqui só a recusa do lote
+	// inteiro, o 503 e o reenvio (repetido) viram uma linha do lote.
+	mux.HandleFunc(motor.RotaSinais, func(w http.ResponseWriter, r *http.Request) {
+		corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpoSinais+1))
+		var p motor.PedidoSinal
+		status, resp := http.StatusOK, motor.Resposta(nil)
+		switch err := decodificar(corpo, &p); {
+		case len(corpo) > limiteCorpoSinais:
+			corpo = corpo[:limiteCorpoSinais]
+			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "LIMITE_LOTE", "motivo": "corpo acima de 1 MB"}
+		case err != nil:
+			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()}
+		default:
+			select {
+			case resp = <-m.SinalAssincrono(p):
+				if resp["aceito"] != true {
+					status = http.StatusBadRequest
+				}
+			case <-time.After(espera):
+				// o motor segue com a parte; o gestor reenvia o mesmo corpo e recebe a resposta original
+				status, resp = http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "RESULTADO_DESCONHECIDO",
+					"motivo": "o motor nao respondeu a tempo; reenviar o mesmo corpo"}
+			}
+		}
+		if status != http.StatusOK || resp["repetido"] == true {
+			m.RegistrarPedidoHTTP(motor.RotaSinais, p.Modulo, 0, 0, "", corpo, status, resp)
+		}
+		escrever(w, status, resp)
+	})
 	// ajuste da proteção (v1.4 K1): novo stop em preço (preco_stop) ou em pontos da entrada (stop_pts)
 	mux.HandleFunc("POST /operacoes/{id}/stop", func(w http.ResponseWriter, r *http.Request) {
 		corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))
@@ -253,8 +283,11 @@ func (c *comStatus) WriteHeader(s int) { c.status = s; c.ResponseWriter.WriteHea
 // esperaConsultaPnT: folga do GET /pnt/ordens sobre a espera da própria consulta (CONSULTA_PNT_ESPERA_S).
 const esperaConsultaPnT = 10 * time.Second
 
-// limiteCorpo: os pedidos têm algumas centenas de bytes.
-const limiteCorpo = 64 * 1024
+// limiteCorpo: os pedidos têm algumas centenas de bytes; o POST /sinais, até 1.000 itens (v1.10 §6).
+const (
+	limiteCorpo       = 64 * 1024
+	limiteCorpoSinais = 1 << 20
+)
 
 // decodificar: JSON estrito (campo desconhecido = erro), como antes da v1.6.
 func decodificar(corpo []byte, v any) error {

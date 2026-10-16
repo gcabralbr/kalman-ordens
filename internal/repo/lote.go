@@ -135,6 +135,22 @@ func (m *Memoria) ChavesFillDoDia(de, ate time.Time) (map[string]bool, error) {
 	return r, nil
 }
 
+func (m *Memoria) OperacoesExistentes(mod string, ids []int64) (map[int64]bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	quer := map[int64]bool{}
+	for _, id := range ids {
+		quer[id] = true
+	}
+	out := map[int64]bool{}
+	for _, x := range m.ops {
+		if x.Modulo == modulo(mod) && quer[x.OperacaoID] {
+			out[x.OperacaoID] = true
+		}
+	}
+	return out, nil
+}
+
 func (m *Memoria) ConfigUsuarios(uids []int) (map[int][2]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

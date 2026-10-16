@@ -57,7 +57,7 @@ var verbos = map[string]int{
 	"aguarda_logon": -1, "derruba_sessao": 0, "reinicia_servico": 0, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
 	"usuario": -1, "habilita": -1, "desabilita": 1,
 	"pnt_recusa_logon": 1, "pnt_aceita_logon": 0, "aguarda_recusas": 1, "pnt_espera_seq": 1, "pnt_esquece": 1,
-	"corrompe_store": 0, "descarta": -1,
+	"corrompe_store": 0, "descarta": -1, "sinal": -1,
 }
 
 // verbosDePreparo também valem no _comum.fix e no cabeçalho (Cenario.Preparo).
@@ -461,6 +461,23 @@ func conferir(p Passo, capturas map[string]bool) error {
 	case "saida":
 		if len(p.Args) < 3 || (p.Args[1] != "C" && p.Args[1] != "V") {
 			return fmt.Errorf("%s: saida OP C|V MOTIVO [qtd=]", p.Origem)
+		}
+	case "sinal":
+		if len(p.Args) < 1 {
+			return fmt.Errorf("%s: sinal ID [parte=N] [partes=N] [modulo=M] [ts=T] e=OP:C|V[:UID] ... s=OP:C|V:MOTIVO[:UID] ...", p.Origem)
+		}
+		for _, a := range p.Args[1:] {
+			k, v, _ := strings.Cut(a, "=")
+			switch k {
+			case "parte", "partes", "modulo", "ts":
+			case "e", "s":
+				c := strings.Split(v, ":")
+				if len(c) < 2 || (c[1] != "C" && c[1] != "V") || (k == "s" && len(c) < 3) {
+					return fmt.Errorf("%s: sinal: item %q (e=OP:C|V[:UID], s=OP:C|V:MOTIVO[:UID])", p.Origem, a)
+				}
+			default:
+				return fmt.Errorf("%s: sinal: argumento %q", p.Origem, a)
+			}
 		}
 	case "stop":
 		for _, a := range p.Args[min(1, len(p.Args)):] {

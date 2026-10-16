@@ -7,7 +7,9 @@
 //	KALMAN_CARGA=190,1000,4000 KALMAN_TESTE_MARIADB=... go test -run TestCarga -timeout 60m -v ./teste/carga
 //
 // KALMAN_CARGA_TAXA: FIX_TAXA_MSG_S e FIX_RAJADA_MSG do serviço (vazio = o padrão); KALMAN_CARGA_SUFIXO
-// entra no nome do JSON.
+// entra no nome do JSON. KALMAN_CARGA_SINAIS=1: as rajadas vão pelo POST /sinais (SPEC v1.10 §6) —
+// um sinal de entradas e um de saídas, em partes de 1.000 mandadas juntas — e o resultado confere a
+// ordem de chegada ao PnT contra a rajada (deslocamento áureo).
 package carga
 
 import (
@@ -98,7 +100,9 @@ type Resultado struct {
 	FilaMax             float64            `json:"fila_tamanho_max"`
 	Alertas             map[string]float64 `json:"alertas"`
 	Recusas             map[string]float64 `json:"recusas"`
-	Respostas           map[string]int     `json:"respostas"` // status/código dos POST
+	Respostas           map[string]int     `json:"respostas"`        // status/código dos POST
+	Sinais              map[string]any     `json:"sinais,omitempty"` // KALMAN_CARGA_SINAIS: k, deslocamento e ordem de chegada
+	EntradasExpiradas   int                `json:"entradas_expiradas_na_fila"`
 	Erros               []string           `json:"erros,omitempty"`
 }
 
@@ -162,6 +166,9 @@ func ms(d time.Duration) float64 { return arred(float64(d) / float64(time.Millis
 
 func rodada(t *testing.T, bin, dsn string, n int) Resultado {
 	res := Resultado{N: n, Respostas: map[string]int{}}
+	if os.Getenv("KALMAN_CARGA_SINAIS") == "1" {
+		res.Sinais = map[string]any{}
+	}
 	dir := t.TempDir()
 
 	// banco: schema de teste limpo, N usuários (conta própria cada um) habilitados
@@ -290,15 +297,26 @@ func rodada(t *testing.T, bin, dsn string, n int) Resultado {
 	}
 	// --- rajada de entradas
 	// concluída = todas as N protegidas: o motor processa também os pedidos que voltaram 503
-	res.Entradas = rajada(t, cli, base, n, "ENTRADA", resp, res.Respostas, func() bool {
-		return resp.protegidas.Load() >= int64(n)
+	// (v1.10 P5: com a taxa padrão, parte das entradas expira na fila — conta como resolvida)
+	var expiradas float64
+	ultimaLeitura := time.Time{}
+	res.Entradas = rajada(t, cli, base, n, "ENTRADA", resp, res.Respostas, res.Sinais, func() bool {
+		if resp.protegidas.Load() >= int64(n) {
+			return true
+		}
+		if time.Since(ultimaLeitura) > 500*time.Millisecond {
+			ultimaLeitura, expiradas = time.Now(), contador(cli, base, "kalman_ordens_entradas_expiradas_fila_total")
+		}
+		return resp.protegidas.Load()+int64(expiradas) >= int64(n)
 	})
 	res.Entradas.Concluidas = int(resp.protegidas.Load())
+	res.EntradasExpiradas = int(contador(cli, base, "kalman_ordens_entradas_expiradas_fila_total"))
 	time.Sleep(2 * time.Second)
 
-	// --- rajada de saídas
-	res.Saidas = rajada(t, cli, base, n, "SAIDA", resp, res.Respostas, func() bool {
-		return resp.zeradas.Load() >= int64(n)
+	// --- rajada de saídas (das posições abertas; as expiradas recebem SEM_POSICAO)
+	abertas := resp.protegidas.Load()
+	res.Saidas = rajada(t, cli, base, n, "SAIDA", resp, res.Respostas, res.Sinais, func() bool {
+		return resp.zeradas.Load() >= abertas
 	})
 	res.Saidas.Concluidas = int(resp.zeradas.Load())
 	time.Sleep(1 * time.Second)
@@ -323,15 +341,18 @@ func rodada(t *testing.T, bin, dsn string, n int) Resultado {
 }
 
 // rajada: N POST no mesmo instante (cada um na sua goroutine, liberados juntos), depois espera
-// `pronto` (até 5 min).
-func rajada(t *testing.T, cli *http.Client, base string, n int, papel string, resp *respondedor, respostas map[string]int, pronto func() bool) Fase {
+// `pronto` (até 5 min). Com sinais != nil, um POST /sinais por parte de 1.000 (todas juntas).
+func rajada(t *testing.T, cli *http.Client, base string, n int, papel string, resp *respondedor, respostas map[string]int, sinais map[string]any, pronto func() bool) Fase {
 	var f Fase
 	durs := make([]float64, n)
 	inicios := make([]time.Time, n)
 	codigos := make([]string, n)
 	var wg sync.WaitGroup
 	largada := make(chan struct{})
-	for i := 0; i < n; i++ {
+	if sinais != nil {
+		lancarSinal(cli, base, n, papel, &wg, largada, durs, inicios, codigos, sinais)
+	}
+	for i := 0; i < n && sinais == nil; i++ {
 		corpo := fmt.Sprintf(`{"operacao_id":%d,"uid":%d,"papel":%q,"lado":"C","qtd":1,"stop_pts":500,"motivo":"SINAL","ts_decisao":"carga"}`,
 			opBase+i, uidBase+i, papel)
 		if papel == "SAIDA" {
@@ -391,7 +412,135 @@ func rajada(t *testing.T, cli *http.Client, base string, n int, papel string, re
 	}
 	f.PostAteFIX = quantis(ateFIX)
 	f.TodasNoPnTMs = ms(ultima.Sub(t0))
+	if sinais != nil {
+		conferirRajada(papel, resp, sinais, codigos)
+	}
 	return f
+}
+
+const itensPorParte = 1000
+
+// lancarSinal: o sinal de N itens em partes de 1.000, cada parte na sua goroutine (liberadas
+// juntas pela largada). A duração e o código de cada item são os da parte dele.
+func lancarSinal(cli *http.Client, base string, n int, papel string, wg *sync.WaitGroup, largada chan struct{}, durs []float64, inicios []time.Time, codigos []string, sinais map[string]any) {
+	partes := (n + itensPorParte - 1) / itensPorParte
+	id := fmt.Sprintf("CARGA-%s-%d", papel, n)
+	var mu sync.Mutex
+	for p := 0; p < partes; p++ {
+		de, ate := p*itensPorParte, min(n, (p+1)*itensPorParte)
+		var itens []string
+		for i := de; i < ate; i++ {
+			if papel == "SAIDA" {
+				itens = append(itens, fmt.Sprintf(`{"operacao_id":%d,"uid":%d,"lado":"V","motivo":"SINAL_OPOSTO"}`, opBase+i, uidBase+i))
+			} else {
+				itens = append(itens, fmt.Sprintf(`{"operacao_id":%d,"uid":%d,"lado":"C","qtd":1,"stop_pts":500,"motivo":"SINAL"}`, opBase+i, uidBase+i))
+			}
+		}
+		lista := "[" + strings.Join(itens, ",") + "]"
+		ent, sai := lista, "[]"
+		if papel == "SAIDA" {
+			ent, sai = "[]", lista
+		}
+		corpo := fmt.Sprintf(`{"sinal_id":%q,"ts_decisao":"carga","parte":%d,"partes":%d,"entradas":%s,"saidas":%s}`, id, p+1, partes, ent, sai)
+		wg.Add(1)
+		go func(de, ate int, corpo string) {
+			defer wg.Done()
+			<-largada
+			t0 := time.Now()
+			r, err := cli.Post(base+"/sinais", "application/json", strings.NewReader(corpo))
+			d := ms(time.Since(t0))
+			for i := de; i < ate; i++ {
+				inicios[i], durs[i] = t0, d
+			}
+			if err != nil {
+				for i := de; i < ate; i++ {
+					codigos[i] = "erro:" + err.Error()
+				}
+				return
+			}
+			var v struct {
+				Codigo       any              `json:"codigo"`
+				Fechado      bool             `json:"fechado"`
+				K            any              `json:"k"`
+				Deslocamento any              `json:"deslocamento"`
+				Resultados   []map[string]any `json:"resultados"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&v)
+			r.Body.Close()
+			if v.Fechado {
+				mu.Lock()
+				sinais[papel+"_k"], sinais[papel+"_deslocamento"] = v.K, v.Deslocamento
+				mu.Unlock()
+			}
+			for j, i := 0, de; i < ate; i, j = i+1, j+1 {
+				c := fmt.Sprintf("%d %v", r.StatusCode, v.Codigo)
+				if j < len(v.Resultados) {
+					if v.Resultados[j]["aceito"] == true {
+						c = fmt.Sprintf("%d aceito", r.StatusCode)
+					} else {
+						c = fmt.Sprintf("%d %v", r.StatusCode, v.Resultados[j]["codigo"])
+					}
+				}
+				codigos[i] = c
+			}
+		}(de, ate, corpo)
+	}
+}
+
+// conferirRajada: a ordem em que as primeiras mensagens chegaram ao PnT falso contra a da rajada
+// (as aceitas por uid crescente = i crescente, a partir do deslocamento): fora_de_ordem = chegadas
+// com posição menor que a da anterior (com a mesma prioridade e a taxa, devia ser 0; as expiradas
+// na fila só faltam).
+func conferirRajada(papel string, resp *respondedor, sinais map[string]any, codigos []string) {
+	rank := map[int64]int{}
+	for i, c := range codigos {
+		if strings.HasSuffix(c, "aceito") {
+			rank[int64(opBase+i)] = len(rank)
+		}
+	}
+	n := len(rank)
+	d, ok := sinais[papel+"_deslocamento"].(float64)
+	if !ok {
+		sinais[papel+"_erro"] = "sem deslocamento (o sinal não fechou numa resposta)"
+		return
+	}
+	resp.mu.Lock()
+	chegada := append([]int64(nil), resp.ordemChegada[papel]...)
+	resp.mu.Unlock()
+	fora, ant := 0, -1
+	for _, op := range chegada {
+		r, ok := rank[op]
+		if !ok || n == 0 {
+			fora++
+			continue
+		}
+		pos := ((r-int(d))%n + n) % n
+		if pos < ant {
+			fora++
+		}
+		ant = pos
+	}
+	sinais[papel+"_chegadas"], sinais[papel+"_fora_de_ordem"] = len(chegada), fora
+	if len(chegada) > 0 {
+		sinais[papel+"_primeira_op_i"] = chegada[0] - opBase
+	}
+}
+
+// contador: o valor de uma série sem rótulos do /metrics (0 se ausente).
+func contador(cli *http.Client, base, nome string) float64 {
+	r, err := cli.Get(base + "/metrics")
+	if err != nil {
+		return 0
+	}
+	defer r.Body.Close()
+	b, _ := io.ReadAll(r.Body)
+	for _, l := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(l, nome+" "); ok {
+			f, _ := strconv.ParseFloat(v, 64)
+			return f
+		}
+	}
+	return 0
 }
 
 func esperar(f func() bool, limite time.Duration) error {
@@ -452,13 +601,14 @@ type respondedor struct {
 	enviadasSeg    map[int64]int
 	totRec, totEnv int
 	zeradasOp      map[int64]bool
+	ordemChegada   map[string][]int64 // papel → operações na ordem da 1ª mensagem recebida
 }
 
 func novoRespondedor(p *falso.Falso) *respondedor {
 	return &respondedor{pnt: p, fim: make(chan struct{}), ordens: map[string]*ordemFalsa{}, rajadaEm: map[string]time.Time{},
 		primeiraMsg: map[string]map[int64]time.Time{"ENTRADA": {}, "SAIDA": {}}, fillEntrada: map[int64]time.Time{},
 		d1014: map[int64]time.Time{}, cancel4: map[int64]time.Time{}, dSaida: map[int64]time.Time{},
-		recebidasSeg: map[int64]int{}, enviadasSeg: map[int64]int{}, zeradasOp: map[int64]bool{}}
+		recebidasSeg: map[int64]int{}, enviadasSeg: map[int64]int{}, zeradasOp: map[int64]bool{}, ordemChegada: map[string][]int64{}}
 }
 
 func (r *respondedor) parar() { close(r.fim) }
@@ -596,6 +746,7 @@ func (r *respondedor) tratar(m falso.Recebida) {
 		case "E":
 			if _, ja := r.primeiraMsg["ENTRADA"][op]; !ja {
 				r.primeiraMsg["ENTRADA"][op] = agora
+				r.ordemChegada["ENTRADA"] = append(r.ordemChegada["ENTRADA"], op)
 			}
 		case "P":
 			if _, ja := r.d1014[op]; !ja {
@@ -635,6 +786,7 @@ func (r *respondedor) tratar(m falso.Recebida) {
 		if papel == "P" {
 			if _, ja := r.primeiraMsg["SAIDA"][op]; !ja {
 				r.primeiraMsg["SAIDA"][op] = agora
+				r.ordemChegada["SAIDA"] = append(r.ordemChegada["SAIDA"], op)
 			}
 		}
 		r.mu.Unlock()

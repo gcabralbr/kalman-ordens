@@ -42,7 +42,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 		// a idempotência (repetido) já tratou o reenvio; aqui só chega operação sem pedido guardado
 		return nil, simples("DUPLICADA", "operação já recebida")
 	}
-	if existe, _ := m.repo.OperacaoExiste(p.modulo(), *p.OperacaoID); existe {
+	if m.operacaoJaExistiu(p.modulo(), *p.OperacaoID) {
 		return nil, simples("DUPLICADA", "operação já recebida (outro dia)")
 	}
 	if m.parada != nil {
@@ -65,8 +65,9 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if r != nil {
 		return nil, r
 	}
-	// símbolo: o contrato vigente (ticker do /precos/atual), congelado na operação (v1.2 S1)
-	l := m.precos.Ler()
+	// símbolo: o contrato vigente (ticker do /precos/atual), congelado na operação (v1.2 S1); num
+	// sinal (v1.10 §6), uma leitura para o sinal inteiro
+	l := m.lerPreco()
 	if l.Situacao == preco.OK && !reWIN.MatchString(l.Ticker) {
 		m.al.Emitir("SIMBOLO_INVALIDO", "", fmt.Sprintf("ticker do marketdata %q não é um contrato de WIN: entrada recusada", l.Ticker), 0)
 		return nil, simples("SIMBOLO_INVALIDO", fmt.Sprintf("ticker do marketdata %q não é um contrato de WIN", l.Ticker))
@@ -100,13 +101,24 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	o.MotivoGestor = p.Motivo
 	m.salvarOrdem(o)
 	m.indexar(op, o)
+	var falhou func()
 
+	if c := m.cache; c != nil {
+		// a fatia do sinal segue com os agregados atualizados pela entrada aceita
+		c.comprometido += *p.Qtd
+		if c.porUID != nil {
+			c.porUID[*p.UID] += *p.Qtd
+		}
+	}
 	m.ultimaEntrada = agora
 	m.entradasRec = append(m.entradasRec, agora)
 	m.entradasHoje++
 
 	rp := m.respostaAtual
-	m.enviarNova(op, o, func() {
+	enviar := func() {
+		m.enviarNova(op, o, falhou, func() { m.publicarEnviada("ENTRADA_ENVIADA", op, op.SinalEntrada, o.ClOrdAtual) })
+	}
+	falhou = func() {
 		// a entrada não saiu (sessão caiu antes do envio): a operação encerra sem entrada
 		o.Estado = dominio.FalhaEnvio
 		m.salvarOrdem(o)
@@ -129,9 +141,26 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 			m.publicar("ENTRADA_ENCERRADA", op, map[string]any{"qtd_final": 0, "preco_medio": 0, "motivo": "REJEITADA"})
 		}
 		m.salvarOp(op)
-	})
+	}
+	if m.sinalAtual != nil {
+		m.adiarEntrada(op, o, enviar) // sai quando o sinal fechar, na ordem da rajada
+	} else {
+		enviar()
+	}
 	slog.Info("ENTRADA decidida", "clordid", o.ClOrdAtual, "preco", o.Preco, "conta", op.Conta, "simbolo", op.Simbolo)
 	return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "clordid": o.ClOrdAtual, "preco": o.Preco}, nil
+}
+
+// lerPreco: a leitura do marketdata; dentro de um sinal, a primeira do sinal (v1.10 §6).
+func (m *Motor) lerPreco() preco.Leitura {
+	if s := m.sinalAtual; s != nil {
+		if s.leitura == nil {
+			l := m.precos.Ler()
+			s.leitura = &l
+		}
+		return *s.leitura
+	}
+	return m.precos.Ler()
 }
 
 // reWIN: contrato de WIN (mês FGHJKMNQUVXZ, ano com 2 dígitos). O ticker do /precos/atual vem da
@@ -202,12 +231,7 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitac
 	if qtd > m.p.QtdMaxOrdem {
 		return limite("QTD_MAXIMA", fmt.Sprintf("qtd %d > %d", qtd, m.p.QtdMaxOrdem))
 	}
-	comprometido := abs(m.posicaoTotal())
-	for _, op := range m.ops {
-		if e := op.viva(dominio.Entrada); e != nil {
-			comprometido += e.Qtd - e.QtdExec
-		}
-	}
+	comprometido := m.comprometidoTotal()
 	if comprometido+qtd > m.p.PosicaoMax {
 		return limite("POSICAO_MAXIMA", fmt.Sprintf("posição + entradas pendentes = %d, máximo %d", comprometido, m.p.PosicaoMax))
 	}
@@ -216,16 +240,7 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitac
 		return limite("QTD_MAXIMA", fmt.Sprintf("qtd %d > %d (limite do uid %d)", qtd, hab.QtdMaxOrdem, uid))
 	}
 	if hab.PosicaoMax > 0 {
-		doUID := 0
-		for _, op := range m.ops {
-			if op.UID != uid {
-				continue
-			}
-			doUID += abs(op.posicao())
-			if e := op.viva(dominio.Entrada); e != nil {
-				doUID += e.Qtd - e.QtdExec
-			}
-		}
+		doUID := m.comprometidoDoUID(uid)
 		if doUID+qtd > hab.PosicaoMax {
 			return limite("POSICAO_MAXIMA", fmt.Sprintf("posição + entradas pendentes do uid %d = %d, máximo %d", uid, doUID, hab.PosicaoMax))
 		}
@@ -246,7 +261,7 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitac
 		m.al.Emitir("LIMITE", "", fmt.Sprintf("limite de entradas por dia (%d)", m.entradasHoje), 0)
 		return limite("ENTRADAS_POR_DIA", "limite de entradas por dia")
 	}
-	if ultimo, ok := m.precoDoDia(l); ok {
+	if ultimo, ok := m.precoDoDiaFatia(l); ok {
 		r := m.resultadoDoDia(ultimo)
 		if r.LessThanOrEqual(decimal.NewFromInt(-m.p.PerdaDiaPts)) {
 			m.ativarParada("BLOQUEAR", "auto", "perda do dia "+r.String()+" pts")
@@ -254,6 +269,71 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitac
 		}
 	}
 	return nil
+}
+
+// comprometidoTotal: |posição| + o que falta executar das entradas vivas.
+func (m *Motor) comprometidoTotal() int {
+	if m.cache != nil {
+		return m.cache.comprometido
+	}
+	c := abs(m.posicaoTotal())
+	for _, op := range m.ops {
+		if e := op.viva(dominio.Entrada); e != nil {
+			c += e.Qtd - e.QtdExec
+		}
+	}
+	return c
+}
+
+// comprometidoDoUID: o mesmo, só das operações do uid (limite do uid, v1.2 U5).
+func (m *Motor) comprometidoDoUID(uid int) int {
+	if c := m.cache; c != nil {
+		if c.porUID == nil {
+			c.porUID = map[int]int{}
+			for _, op := range m.ops {
+				c.porUID[op.UID] += comprometidoDa(op)
+			}
+		}
+		return c.porUID[uid]
+	}
+	n := 0
+	for _, op := range m.ops {
+		if op.UID == uid {
+			n += comprometidoDa(op)
+		}
+	}
+	return n
+}
+
+func comprometidoDa(op *operacao) int {
+	n := abs(op.posicao())
+	if e := op.viva(dominio.Entrada); e != nil {
+		n += e.Qtd - e.QtdExec
+	}
+	return n
+}
+
+// operacaoJaExistiu: (modulo, operacao_id) já recebido em outro dia (DUPLICADA). Na fatia de um
+// sinal, pela consulta única da fatia.
+func (m *Motor) operacaoJaExistiu(modulo string, id int64) bool {
+	if c := m.cache; c != nil && c.existentes != nil && modulo == c.modulo {
+		return c.existentes[id]
+	}
+	existe, _ := m.repo.OperacaoExiste(modulo, id)
+	return existe
+}
+
+// precoDoDiaFatia: precoDoDia, uma vez por fatia de sinal (a posição não muda dentro dela).
+func (m *Motor) precoDoDiaFatia(l preco.Leitura) (*decimal.Decimal, bool) {
+	c := m.cache
+	if c == nil {
+		return m.precoDoDia(l)
+	}
+	if !c.precoLido {
+		c.preco, c.precoOK = m.precoDoDia(l)
+		c.precoLido = true
+	}
+	return c.preco, c.precoOK
 }
 
 // verificarPrecoEntrada (SPEC v1.1 B1), na ordem de docs/referencia/precos-atual.md.
@@ -360,6 +440,9 @@ func (m *Motor) expirarNaFila(op *operacao, o *ordem) {
 }
 
 func (m *Motor) haSemConfirmacao() bool {
+	if m.cache != nil {
+		return m.cache.semConfirmacao
+	}
 	for _, op := range m.ops {
 		for _, o := range op.ordens {
 			if o.Estado == dominio.SemConfirmacao {

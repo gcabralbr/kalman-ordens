@@ -416,6 +416,8 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return e.pedido(p)
 	case "stop":
 		return e.ajusteStop(p)
+	case "sinal":
+		return e.sinal(p)
 	case "usuario", "habilita", "desabilita":
 		if err := e.usuario(p); err != nil {
 			return err
@@ -641,6 +643,51 @@ func (e *Executor) pedido(p roteiro.Passo) error {
 	}
 	j, _ := json.Marshal(b)
 	return e.http("POST", "/ordens", string(j))
+}
+
+// sinal: sinal ID [parte=N] [partes=N] [modulo=M] [ts=T] e=OP:C|V[:UID] ... s=OP:C|V:MOTIVO[:UID]
+// ... → POST /sinais (v1.10 §6). Entrada: qtd 1, stop_pts 500, motivo SINAL; uid 7 se ausente.
+// ts_decisao = hora do relógio no primeiro envio do sinal e o mesmo nos reenvios.
+func (e *Executor) sinal(p roteiro.Passo) error {
+	id := p.Args[0]
+	ts, ok := e.tsPorOp["sinal:"+id]
+	if !ok {
+		ts = e.rel.Agora().In(relogio.Fuso).Format("2006-01-02T15:04:05.000-07:00")
+		e.tsPorOp["sinal:"+id] = ts
+	}
+	b := map[string]any{"sinal_id": id, "ts_decisao": ts, "parte": 1, "partes": 1}
+	entradas, saidas := []any{}, []any{}
+	for _, a := range p.Args[1:] {
+		k, v, _ := strings.Cut(a, "=")
+		switch k {
+		case "parte", "partes":
+			b[k], _ = strconv.Atoi(v)
+		case "modulo":
+			b["modulo"] = v
+		case "ts":
+			b["ts_decisao"] = v
+		case "e", "s":
+			c := strings.Split(v, ":")
+			op, _ := strconv.ParseInt(c[0], 10, 64)
+			it := map[string]any{"operacao_id": op, "uid": UIDRoteiro, "lado": c[1]}
+			if k == "e" {
+				it["qtd"], it["stop_pts"], it["motivo"] = 1, 500, "SINAL"
+				if len(c) > 2 {
+					it["uid"], _ = strconv.Atoi(c[2])
+				}
+				entradas = append(entradas, it)
+			} else {
+				it["motivo"] = c[2]
+				if len(c) > 3 {
+					it["uid"], _ = strconv.Atoi(c[3])
+				}
+				saidas = append(saidas, it)
+			}
+		}
+	}
+	b["entradas"], b["saidas"] = entradas, saidas
+	j, _ := json.Marshal(b)
+	return e.http("POST", "/sinais", string(j))
 }
 
 // ajusteStop: stop OP preco=N | pts=N [modulo=M] [uid=N] → POST /operacoes/OP/stop (v1.4 K1).

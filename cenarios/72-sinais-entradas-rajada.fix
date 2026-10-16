@@ -1,0 +1,77 @@
+cenario 72 POST /sinais: entradas de um sinal validadas na chegada e enviadas em ordem rotativa (deslocamento áureo)
+hora 2026-10-15 10:00:00
+# SPEC v1.10 §6. Uma parte (partes=1): cada item é validado como no POST /ordens; o sinal fecha
+# com a parte. As entradas aceitas vão por uid crescente (empate: operacao_id) e giram pelo
+# deslocamento ⌊k·φ·N⌋ mod N, k = o contador de sinais do módulo (1 no primeiro sinal).
+# Aqui: aceitas 7203 (uid 7), 7201 (uid 8), 7202 (uid 9) → N = 3, k = 1,
+# ⌊1 × 0,618 × 3⌋ = 1 → a rajada começa no segundo da lista: 7201, 7202, 7203.
+config LIMITE_POSICAO_MAX=10
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config HTTP_ESPERA_S=0.2
+usuario 8 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 8
+usuario 9 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 9
+
+executa INICIO
+sinal KALMAN-S1 e=7201:C:8 e=7202:C:9 e=7203:V:7 e=7204:C:99
+resposta _status=200 aceito=true codigo=LOTE_ACEITO sinal_id=KALMAN-S1 parte=1 partes=1 fechado=true criterio=ROTATIVA_AUREA k=1 deslocamento=1
+resposta resultados.#=4 resultados.0.operacao_id=7201 resultados.0.papel=ENTRADA resultados.0.aceito=true resultados.0.clordid=KM-E-7201-1 resultados.0.preco=130020 resultados.0.posicao=1 resultados.0.tamanho=3
+resposta resultados.1.operacao_id=7202 resultados.1.posicao=2 resultados.2.operacao_id=7203 resultados.2.posicao=3 resultados.2.preco=129985
+# item recusado: só ele (uid 99 não habilitado), sem posição
+resposta resultados.3.operacao_id=7204 resultados.3.aceito=false resultados.3.codigo=UID_NAO_HABILITADO resultados.3.posicao=null
+# a ordem de envio é a da rajada
+recebe 35=D 11=KM-E-7201-1 54=1 847=1031
+recebe 35=D 11=KM-E-7202-1 54=1 847=1031
+recebe 35=D 11=KM-E-7203-1 54=2 847=1031
+nada
+evento ENTRADA_ENVIADA operacao_id=7201 uid=8 sinal_id=KALMAN-S1 posicao=1 tamanho=3 clordid=KM-E-7201-1 enviada_em=2026-10-15T10:00:03.000-03:00
+evento ENTRADA_ENVIADA operacao_id=7202 sinal_id=KALMAN-S1 posicao=2 tamanho=3
+evento ENTRADA_ENVIADA operacao_id=7203 sinal_id=KALMAN-S1 posicao=3 tamanho=3
+sem_evento ENTRADA_ENVIADA operacao_id=7204
+
+# a posição fica na operação (GET /ordens/{id}, histórico, lista do dia)
+http GET /ordens/7202
+resposta sinal.entrada.sinal_id=KALMAN-S1 sinal.entrada.k=1 sinal.entrada.posicao=2 sinal.entrada.tamanho=3 sinal.entrada.deslocamento=1 sinal.entrada.criterio=ROTATIVA_AUREA sinal.saida=null
+http GET /operacoes/7202/historico
+resposta pedidos.#=1 pedidos.0.rota="POST /sinais" pedidos.0.papel=ENTRADA pedidos.0.aceito=true pedidos.0.http_status=200
+resposta pedidos.0.corpo.sinal_id=KALMAN-S1 pedidos.0.corpo.parte=1 pedidos.0.corpo.partes=1 pedidos.0.corpo.entradas.#=1 pedidos.0.corpo.entradas.0.operacao_id=7202 pedidos.0.corpo.saidas.#=0
+resposta pedidos.0.resposta.sinal_id=KALMAN-S1 pedidos.0.resposta.posicao=2 pedidos.0.resposta.clordid=KM-E-7202-1 operacao.sinal.entrada.posicao=2
+http GET /operacoes?dia=2026-10-15
+resposta _lista.#=4 _lista.0.operacao_id=7201 _lista.0.sinal.entrada.posicao=1 _lista.3.operacao_id=7204 _lista.3.estado=RECUSADA _lista.3.rota="POST /sinais" _lista.3.codigo=UID_NAO_HABILITADO _lista.3.lado=C _lista.3.qtd=1
+
+# reenvio da mesma parte (mesmo corpo): a resposta original, nada sai de novo
+sinal KALMAN-S1 e=7201:C:8 e=7202:C:9 e=7203:V:7 e=7204:C:99
+resposta _status=200 repetido=true fechado=true k=1 resultados.0.posicao=1 resultados.3.codigo=UID_NAO_HABILITADO
+nada
+# a mesma parte com outro corpo: DUPLICADA no lote inteiro
+sinal KALMAN-S1 e=7201:C:8 e=7202:C:9
+resposta _status=400 aceito=false codigo=DUPLICADA
+alerta DUPLICADA_DIFERENTE
+nada
+
+# um item que repete uma operação de outro sinal com o mesmo conteúdo: o resultado original
+# (repetido), fora da rajada; o k não sobe sem item novo aceito
+sinal KALMAN-S2 e=7205:C:7 e=7201:C:8
+resposta _status=200 fechado=true k=2 deslocamento=0 resultados.0.posicao=1 resultados.0.tamanho=1 resultados.1.repetido=true resultados.1.aceito=true resultados.1.posicao=null
+recebe 35=D 11=KM-E-7205-1
+nada
+
+# 503: o motor trata a parte mesmo assim; o reenvio do mesmo corpo recebe a resposta original
+motor_lento
+sinal KALMAN-S3 e=7206:C:7
+resposta _status=503 aceito=false codigo=RESULTADO_DESCONHECIDO
+motor_normal
+recebe 35=D 11=KM-E-7206-1
+sinal KALMAN-S3 e=7206:C:7
+resposta _status=200 repetido=true k=3 resultados.0.aceito=true resultados.0.posicao=1
+nada
+http GET /operacoes/7206/historico
+resposta pedidos.#=1 pedidos.0.rota="POST /sinais" pedidos.0.aceito=true
+
+metrica kalman_ordens_sinais_partes_total codigo=LOTE_ACEITO >= 3
+metrica kalman_ordens_sinais_partes_total codigo=REPETIDA >= 2
+metrica kalman_ordens_sinais_itens_total papel=ENTRADA resultado=aceito >= 5
+saude posicao=0 divergente=false

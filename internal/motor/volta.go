@@ -40,6 +40,13 @@ const (
 	capFilaP0        = 1 << 20 // nunca bloqueia a goroutine da sessão FIX
 	capFilaP1        = 100000
 	capFilaP2        = 100000
+	// maxEnviosPorVolta: cancel, saída e entrada enviados por volta (a 1014 e o mass status não
+	// contam); o resto sai na volta seguinte — uma rajada de 4.000 não prende o motor no envio
+	// enquanto os fills (e as 1014 deles) esperam.
+	maxEnviosPorVolta = 250
+	// maxP0ParaEntrada: com mais que isto na P0 (fills e respostas do PnT esperando o motor), a
+	// entrada espera — mais entrada agora só traria mais fills para a frente das 1014.
+	maxP0ParaEntrada = 200
 )
 
 // envioPendente: uma mensagem decidida numa volta, enviada depois do commit.
@@ -208,6 +215,11 @@ func (m *Motor) montarLote() *repo.Lote {
 			l.Ordens = append(l.Ordens, c)
 		}
 	}
+	// em ordem de ID (os mapas não têm ordem): o banco e a memória ficam na ordem de criação
+	sort.Slice(l.NovasOperacoes, func(i, j int) bool { return l.NovasOperacoes[i].ID < l.NovasOperacoes[j].ID })
+	sort.Slice(l.Operacoes, func(i, j int) bool { return l.Operacoes[i].ID < l.Operacoes[j].ID })
+	sort.Slice(l.NovasOrdens, func(i, j int) bool { return l.NovasOrdens[i].ID < l.NovasOrdens[j].ID })
+	sort.Slice(l.Ordens, func(i, j int) bool { return l.Ordens[i].ID < l.Ordens[j].ID })
 	return l
 }
 
@@ -288,8 +300,17 @@ func (m *Motor) despachar() {
 	sort.SliceStable(pend, func(i, j int) bool { return pend[i].prio < pend[j].prio })
 	agora := m.agora()
 	m.recarregarTokens(agora)
+	enviados := 0
 	for _, e := range pend {
+		limitado := e.o != nil && e.prio != prioProtecao
+		if limitado && enviados >= maxEnviosPorVolta {
+			m.esperandoTaxa = append(m.esperandoTaxa, e)
+			continue
+		}
 		if e.prio != prioEntrada {
+			if limitado {
+				enviados++
+			}
 			m.despacharUm(e)
 			continue
 		}
@@ -300,12 +321,22 @@ func (m *Motor) despachar() {
 			}
 			continue
 		}
-		if m.tokens < 1 {
+		if m.tokens < 1 || len(m.p0) > maxP0ParaEntrada {
 			m.esperandoTaxa = append(m.esperandoTaxa, e)
 			continue
 		}
 		m.tokens--
+		enviados++
 		m.despacharUm(e)
+	}
+	if enviados >= maxEnviosPorVolta && len(m.esperandoTaxa) > 0 && !m.voltaAgendada {
+		// sobrou envio pelo limite da volta: uma volta logo (depois do que estiver na P0 e na P1)
+		m.voltaAgendada = true
+		select {
+		case m.p2 <- func() { m.voltaAgendada = false }:
+		default:
+			m.voltaAgendada = false
+		}
 	}
 }
 
@@ -354,9 +385,15 @@ func nomePrio(p int) string {
 	return "ENTRADA"
 }
 
-// retirarDaFila: a NewOrderSingle da ordem ainda não saiu (esperando a taxa ou nesta volta)?
+// retirarDaFila: a NewOrderSingle da ordem ainda não saiu (sinal aberto, esperando a taxa ou nesta
+// volta)?
 // Então sai da fila e nunca vai ao PnT.
 func (m *Motor) retirarDaFila(o *ordem) bool {
+	if o.adiada {
+		// entrada de um sinal ainda aberto (v1.10 §6): não sai quando ele fechar
+		o.adiada = false
+		return true
+	}
 	for _, lista := range []*[]envioPendente{&m.esperandoTaxa, &m.v.envios} {
 		for i, e := range *lista {
 			if e.o == o {

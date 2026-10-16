@@ -180,12 +180,13 @@ func (r *MariaDB) SalvarOperacao(o *dominio.Operacao) error {
 		o.Modulo = modulo(o.Modulo) // o padrão da coluna
 		res, err := r.db.Exec(`INSERT INTO kalmanordemoperacao (data, modulo, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida,
 			stop_pts, stop_ajustado, estado, motivo_entrada, ts_decisao, motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts,
-			encerrou_entrada, contador_n, pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, criado_em, atualizado_em)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			encerrou_entrada, contador_n, pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, sinal_entrada, sinal_saida,
+			criado_em, atualizado_em)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(o.Conta), o.Destino, nulo(o.Simbolo), o.Lado.Letra(), o.QtdPedida, o.StopPts, nuloInt(o.StopAjustado), string(o.Estado),
 			nulo(o.MotivoEntrada), nulo(o.TsDecisao), nulo(o.MotivoSaida), nulo(o.OrigemSaida), utc(o.SaidaPedidaEm),
 			o.Divergente, pnl, o.EncerrouEntrada, string(cn), nulo(o.PedidoEntrada), nulo(o.RespostaEntrada),
-			nulo(o.PedidoSaida), nulo(o.RespostaSaida), utc(o.CriadaEm), agora)
+			nulo(o.PedidoSaida), nulo(o.RespostaSaida), rajadaSQL(o.SinalEntrada), rajadaSQL(o.SinalSaida), utc(o.CriadaEm), agora)
 		if err != nil {
 			var me *mysql.MySQLError
 			if errors.As(err, &me) && me.Number == 1062 {
@@ -198,10 +199,10 @@ func (r *MariaDB) SalvarOperacao(o *dominio.Operacao) error {
 	}
 	_, err := r.db.Exec(`UPDATE kalmanordemoperacao SET estado=?, stop_ajustado=?, motivo_saida=?, origem_saida=?, saida_pedida_em=?,
 		divergente=?, pnl_pts=?, encerrou_entrada=?, contador_n=?, pedido_entrada=?, resposta_entrada=?, pedido_saida=?,
-		resposta_saida=?, atualizado_em=? WHERE id=?`,
+		resposta_saida=?, sinal_entrada=?, sinal_saida=?, atualizado_em=? WHERE id=?`,
 		string(o.Estado), nuloInt(o.StopAjustado), nulo(o.MotivoSaida), nulo(o.OrigemSaida), utc(o.SaidaPedidaEm), o.Divergente, pnl,
 		o.EncerrouEntrada, string(cn), nulo(o.PedidoEntrada), nulo(o.RespostaEntrada), nulo(o.PedidoSaida),
-		nulo(o.RespostaSaida), agora, o.ID)
+		nulo(o.RespostaSaida), rajadaSQL(o.SinalEntrada), rajadaSQL(o.SinalSaida), agora, o.ID)
 	return err
 }
 
@@ -324,7 +325,7 @@ func (r *MariaDB) GravarEstado(k, v string, em time.Time) error {
 func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem, error) {
 	rows, err := r.db.Query(`SELECT id, data, modulo, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida, stop_pts, stop_ajustado, estado, motivo_entrada, ts_decisao,
 		motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts, encerrou_entrada, contador_n, pedido_entrada,
-		resposta_entrada, pedido_saida, resposta_saida, criado_em FROM kalmanordemoperacao WHERE data=? ORDER BY id`, data)
+		resposta_entrada, pedido_saida, resposta_saida, sinal_entrada, sinal_saida, criado_em FROM kalmanordemoperacao WHERE data=? ORDER BY id`, data)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -333,12 +334,12 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 		var o dominio.Operacao
 		var d time.Time
 		var lado, estado, cn string
-		var me, ts, ms, os, pe, re, ps, rs, pnl, conta, simb sql.NullString
+		var me, ts, ms, os, pe, re, ps, rs, pnl, conta, simb, se, ss sql.NullString
 		var dest sql.NullInt64
 		var sp sql.NullTime
 		var sa sql.NullInt64
 		if err := rows.Scan(&o.ID, &d, &o.Modulo, &o.OperacaoID, &o.UID, &conta, &dest, &simb, &lado, &o.QtdPedida, &o.StopPts, &sa, &estado, &me, &ts, &ms, &os,
-			&sp, &o.Divergente, &pnl, &o.EncerrouEntrada, &cn, &pe, &re, &ps, &rs, &o.CriadaEm); err != nil {
+			&sp, &o.Divergente, &pnl, &o.EncerrouEntrada, &cn, &pe, &re, &ps, &rs, &se, &ss, &o.CriadaEm); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
@@ -357,6 +358,7 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 		}
 		o.ContadorN = map[string]int{}
 		_ = json.Unmarshal([]byte(cn), &o.ContadorN)
+		o.SinalEntrada, o.SinalSaida = rajadaDoSQL(se), rajadaDoSQL(ss)
 		ops = append(ops, o)
 	}
 	rows.Close()
@@ -544,4 +546,21 @@ func modulo(m string) string {
 		return dominio.ModuloPadrao
 	}
 	return m
+}
+
+// rajadaSQL / rajadaDoSQL (v1.10 §6): a posição no sinal como JSON; NULL = pedido avulso.
+func rajadaSQL(r dominio.Rajada) any {
+	if r.Vazia() {
+		return nil
+	}
+	b, _ := json.Marshal(r)
+	return string(b)
+}
+
+func rajadaDoSQL(s sql.NullString) dominio.Rajada {
+	var r dominio.Rajada
+	if s.Valid && s.String != "" {
+		_ = json.Unmarshal([]byte(s.String), &r)
+	}
+	return r
 }

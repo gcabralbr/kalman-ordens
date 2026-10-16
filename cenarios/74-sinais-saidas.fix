@@ -1,0 +1,61 @@
+cenario 74 POST /sinais com saídas: rotação entre as saídas do sinal, SAIDA_ENVIADA na primeira mensagem; entrada de sinal aberto cancelada antes de sair
+hora 2026-10-15 10:00:00
+# SPEC v1.10 §6.2 e §6.4. As saídas aceitas do sinal seguem a mesma regra das entradas (por uid e
+# operacao_id, giradas pelo deslocamento com o N delas): a primeira mensagem de cada saída (o cancel
+# da 1014, ou a 1031) sai nessa ordem, na fila de saída, e publica SAIDA_ENVIADA com a posição.
+config LIMITE_POSICAO_MAX=10
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+
+executa INICIO
+executa COMPRADO OP=7401
+# a segunda posição (o bloco COMPRADO confere posição 1)
+entrada 7402 C
+recebe 35=D 11=KM-E-7402-1 847=1031
+envia @ER 11=KM-E-7402-1 37=dsa.7402.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+recebe 35=D 11=KM-P-7402-1 847=1014
+envia @ER 11=KM-P-7402-1 37=dsa.7402.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=7402
+saude posicao=2
+
+# k = 1 (primeiro sinal), N = 2: ⌊1 × 0,618 × 2⌋ = 1 → 7402, depois 7401. A 7499 não tem posição.
+sinal KALMAN-X1 s=7401:V:SINAL_OPOSTO s=7402:V:SINAL_OPOSTO s=7499:V:SINAL_OPOSTO
+resposta _status=200 fechado=true k=1 deslocamento=1 resultados.0.operacao_id=7401 resultados.0.papel=SAIDA resultados.0.aceito=true resultados.0.posicao=2 resultados.0.tamanho=2
+resposta resultados.1.operacao_id=7402 resultados.1.posicao=1 resultados.2.operacao_id=7499 resultados.2.aceito=false resultados.2.codigo=SEM_POSICAO
+alerta SEM_POSICAO
+recebe 35=F 11=KM-P-7402-2 41=KM-P-7402-1
+recebe 35=F 11=KM-P-7401-2 41=KM-P-7401-1
+nada
+evento SAIDA_ENVIADA operacao_id=7402 sinal_id=KALMAN-X1 posicao=1 tamanho=2 clordid=KM-P-7402-2
+evento SAIDA_ENVIADA operacao_id=7401 sinal_id=KALMAN-X1 posicao=2 tamanho=2 clordid=KM-P-7401-2
+envia @ER 11=KM-P-7402-2 41=KM-P-7402-1 37=dsa.7402.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-7402-1 54=2 847=1031
+envia @ER 11=KM-P-7401-2 41=KM-P-7401-1 37=dsa.7401.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-7401-1 54=2 847=1031
+envia @ER 11=KM-S-7402-1 37=dsa.7402.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+envia @ER 11=KM-S-7401-1 37=dsa.7401.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=7402 origem=GESTOR motivo=SINAL_OPOSTO
+evento ZERADA operacao_id=7401 origem=GESTOR
+# só uma SAIDA_ENVIADA por saída (a 1031 depois do cancel não publica de novo)
+conta_eventos SAIDA_ENVIADA operacao_id=7401 = 1
+http GET /ordens/7401
+resposta sinal.entrada=null sinal.saida.sinal_id=KALMAN-X1 sinal.saida.posicao=2 sinal.saida.k=1
+http GET /operacoes/7401/historico
+resposta pedidos.#=2 pedidos.0.rota=ORDENS pedidos.1.rota="POST /sinais" pedidos.1.papel=SAIDA pedidos.1.corpo.saidas.0.operacao_id=7401 pedidos.1.corpo.entradas.#=0 pedidos.1.resposta.posicao=2
+
+# --- a entrada de um sinal ainda aberto, cancelada antes de ele fechar, nunca vai ao PnT
+sinal KALMAN-X2 parte=1 partes=2 e=7405:C
+resposta _status=200 fechado=false resultados.0.aceito=true
+saida 7405 V SINAL_OPOSTO
+resposta aceito=true
+evento ENTRADA_ENCERRADA operacao_id=7405 qtd_final=0 motivo=CANCELADA
+sinal KALMAN-X2 parte=2 partes=2 e=7406:C
+# a 7405 (já encerrada) fica fora da rajada: N = 1
+resposta _status=200 fechado=true k=2 deslocamento=0 resultados.0.posicao=1 resultados.0.tamanho=1
+recebe 35=D 11=KM-E-7406-1
+nada
+sem_evento ENTRADA_ENVIADA operacao_id=7405
+http GET /ordens/7405
+resposta estado=ENCERRADA_SEM_ENTRADA posicao=0 ordens.0.estado=CANCELADA
+saude posicao=0 divergente=false

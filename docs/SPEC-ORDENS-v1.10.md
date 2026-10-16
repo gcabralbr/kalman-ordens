@@ -5,7 +5,8 @@ diz nada, vale a v1.9.
 
 Tema: **escala** — decisões do responsável sobre a seção 6 do
 [relatório de carga](CARGA-2026-10-15.md) (15/10): itens 1, 2, 3 e 5 implementados; o 4 (POST em
-lote por sinal) tem o contrato fechado na seção 6 (o Kalman implementa primeiro; o serviço depois).
+lote por sinal) tem o contrato fechado na seção 6 — implementado no Kalman (KalmanWIN `6b74789`,
+chave `KALMAN_ORDENS_SINAIS`) e no serviço (seção 6.6).
 Segunda rodada de decisões (15/10, depois do teste com fsync): balde separado da entrada com
 reserva para a proteção e a saída, validade da entrada na fila (P4, P5) e conciliação por 911/912
 (seção 3, C6). Resultado do teste
@@ -81,17 +82,22 @@ silêncio (como até aqui). Roteiros 71 (fechamento por 912/911, conta sem respo
 | `CACHE_USUARIOS_S` | 30 | B4 |
 | `FIX_STORE_SYNC` | `Y` | fsync do store FIX a cada mensagem (o padrão do QuickFIX/Go, como até aqui). Com `N`, sem fsync: ver o relatório, seções 7.2 e 8. **Decisão de 15/10: `N` em produção, depois dos testes de SIGKILL e de queda da máquina na HML** (com o banco em `innodb_flush_log_at_trx_commit=1` o custo é nenhum — seção 8) |
 | `DEBUG_PPROF` | — | `1` expõe `/debug/pprof/` no HTTP local (diagnóstico; o teste de carga usa) |
+| `SINAL_ESPERA_PARTES_MS` | 500 | §6: fechamento do sinal em partes |
+| `SINAL_MAX_ITENS_PARTE` | 1000 | §6 |
+| `SINAL_MAX_PARTES` | 10 | §6 |
 
-Sem migração nova.
+Migração **0008** (§6): `kalmanordemoperacao.sinal_entrada` e `sinal_saida`.
 
 ## 5. Métricas novas
 
 `lote_segundos`, `lote_linhas`, `envio_espera_segundos{prioridade}` (da decisão ao envio: commit e
 taxa), `fila_tamanho_p0|p1|p2`, `envios_aguardando_taxa`, `entradas_expiradas_fila_total`; `fila_espera_segundos{origem}` com
-`http_entrada` e `http_saida`; `banco_segundos{operacao="GravarLote"}`. `alertas_total` passa a
+`http_entrada` e `http_saida`; `banco_segundos{operacao="GravarLote"}`. §6: `sinais_partes_total{codigo}`,
+`sinais_itens_total{papel,resultado}`, `sinais_fechados_total{como}` (`TODAS_AS_PARTES`, `PRAZO`),
+`sinal_itens_aceitos` (histograma do tamanho da rajada). `alertas_total` passa a
 contar só os alertas que saem (um crítico já ativo não conta de novo).
 
-## 6. Contrato — POST em lote por sinal (fechado em 15/10; o Kalman implementa, o serviço depois)
+## 6. Contrato — POST em lote por sinal (fechado em 15/10; implementado nos dois lados)
 
 O Kalman manda **as entradas e/ou as saídas de um sinal** em lote; o serviço valida cada item como
 no `POST /ordens`, **ordena de forma rotativa** (deslocamento áureo) e registra a posição de cada
@@ -127,16 +133,22 @@ POST /sinais
    campos, duplicada, parada, sessão, conta, limites do uid, preço — **uma leitura de preço para o
    sinal**; saída: reduce-only, posição, uid da operação). A resposta da parte sai depois do commit.
 2. O sinal **fecha** quando chegam todas as `partes`, ou `SINAL_ESPERA_PARTES_MS` (500 ms) depois da
-   primeira; uma parte que chega depois do fechamento é recusada inteira (`SINAL_FECHADO`).
+   primeira; uma parte que chega depois do fechamento é recusada inteira (`SINAL_FECHADO`). **Parte
+   que já chegou ao serviço e ainda espera o motor (fila ou em tratamento) segura o prazo** (até
+   30 s): o teste de carga mostrou a 4ª parte de 1.000 recusada por ter esperado as outras três.
 3. Fechado o sinal, as **entradas aceitas** de todas as partes são ordenadas por **uid crescente**
    (empate: `operacao_id`) e **giradas**: com N aceitas e k = o contador de sinais do módulo
-   (persistente entre dias, sobe a cada sinal com pelo menos uma entrada aceita),
+   (persistente entre dias, `kalmanordemestado` `sinal_k:<modulo>`; sobe a cada sinal que fecha com
+   pelo menos um item novo aceito — entrada ou saída, para as saídas também girarem),
    `deslocamento = ⌊k · 0,6180339887 · N⌋ mod N`; a fila de envio começa na posição `deslocamento`
    da lista ordenada e dá a volta. **As saídas aceitas** do sinal: a mesma regra, com o seu N (e o
    mesmo k).
 4. O envio segue essa ordem: saídas na fila de saída (P1; cancel da 1014, depois a 1031), entradas no
    balde da entrada (P4). **A validade na fila (`ENTRADA_TTL_FILA_S`) conta do fechamento do sinal.**
    A proteção de cada posição continua imediata.
+5. Entrada aceita que é cancelada antes de o sinal fechar (saída do gestor, parada, cancelar-entrada
+   do admin) encerra na hora (`ENTRADA_ENCERRADA motivo=CANCELADA`), nunca vai ao PnT e **fica fora
+   da rajada** (não conta no N).
 
 ### 6.3 Resposta (por parte)
 
@@ -163,17 +175,34 @@ POST /sinais
   `SINAL_FECHADO`, `DUPLICADA` (mesmo `sinal_id` e `parte` com corpo diferente). Idempotência: mesmo
   `sinal_id` e `parte` com o mesmo corpo → a resposta original com `repetido: true`. 503
   `RESULTADO_DESCONHECIDO` como no `POST /ordens` (o motor segue; reenviar o mesmo corpo).
-- Item que repete um `(modulo, operacao_id, papel)` já recebido → `DUPLICADA` só nele.
+- Item que repete um `(modulo, operacao_id, papel)` já recebido: **com o mesmo conteúdo, o resultado
+  original com `repetido: true`** (como o `POST /ordens`; é o que acontece no reenvio de uma parte
+  depois de um restart, quando o serviço já não lembra do sinal) e fora da rajada; com outro
+  conteúdo, `DUPLICADA` só nele (alerta `DUPLICADA_DIFERENTE`).
+- No resultado de uma saída, `posicao` é a posição na rajada (não a posição em contratos do
+  `POST /ordens`).
 
 ### 6.4 Eventos e registro
 
 - **`ENTRADA_ENVIADA`** quando a 1031 de entrada sai ao PnT: `{operacao_id, modulo, uid, sinal_id,
   posicao, tamanho, clordid, enviada_em}`. **`SAIDA_ENVIADA`** quando a primeira mensagem da saída
   do sinal sai (o cancel da 1014, ou a 1031): o mesmo, com a posição entre as saídas. A entrada
-  avulsa (`POST /ordens`) também publica `ENTRADA_ENVIADA` (sem `sinal_id`/`posicao`).
-- Por operação (migração nova): `sinal_id`, `sinal_k`, `posicao_rajada`, `tamanho_rajada`,
-  `deslocamento`, `criterio`; no `GET /ordens/{id}` (objeto `sinal`), no histórico e na lista do dia
-  da tela de admin.
+  avulsa (`POST /ordens`) também publica `ENTRADA_ENVIADA` (`sinal_id`, `posicao` e `tamanho`
+  nulos); a saída avulsa não publica `SAIDA_ENVIADA`. `enviada_em` no formato do histórico
+  (`-03:00`, milissegundos).
+- **Histórico de pedidos (acréscimo do Kalman, 15/10):** cada item fica em `pedidos[]` da operação
+  com **`rota` = `"POST /sinais"`** (exatamente), `papel`, `aceito`, `codigo`, `http_status` 200,
+  `corpo` = a parte reduzida ao item (`sinal_id`, `modulo` se veio, `ts_decisao`, `parte`,
+  `partes`, `entradas`/`saidas` com o item só) e `resposta` = o resultado do item mais `sinal_id`,
+  `parte`, `partes`. O item recusado que não virou operação aparece na lista do dia como
+  `RECUSADA` (com `rota`, `lado` e `qtd` do item). A recusa do lote inteiro (400) vira uma linha sem
+  operação (lista do dia: `RECUSADA`); o 503 e o reenvio repetido também ficam registrados (sem
+  operação; fora da lista do dia).
+- Por operação (migração 0008): a posição da **entrada** e a da **saída**, cada uma
+  `{sinal_id, k, posicao, tamanho, deslocamento, criterio}` (colunas JSON `sinal_entrada` e
+  `sinal_saida`). No `GET /ordens/{id}`, no histórico (`operacao`) e na lista do dia:
+  `"sinal": {"entrada": {...} | null, "saida": {...} | null}`, ou `"sinal": null` na operação
+  avulsa; com o sinal ainda aberto, `k`, `posicao`, `tamanho` e `deslocamento` nulos.
 - `POST /ordens` continua para entrada e saída avulsas (sem rajada: ordem de chegada).
 
 ### 6.5 Configuração
@@ -183,3 +212,31 @@ POST /sinais
 | `SINAL_ESPERA_PARTES_MS` | 500 | fechamento do sinal em partes |
 | `SINAL_MAX_ITENS_PARTE` | 1000 | limite por requisição |
 | `SINAL_MAX_PARTES` | 10 | |
+
+### 6.6 Implementação no serviço e teste
+
+Rota `POST /sinais` (corpo até 1 MB; o resto como o `POST /ordens`: `HTTP_ESPERA_S`, 503). A parte
+com saída entra na fila P1 do motor; só com entradas, na P2. **A parte é tratada em fatias de 250
+itens**, cada uma numa volta do motor: entre elas o motor atende a P0 (fills, 1014), e uma parte de
+1.000 não segura a proteção. O que a entrada confere varrendo as operações do dia (posição e
+entradas pendentes, ordem sem confirmação, preço do resultado do dia) é calculado uma vez por fatia,
+e o `DUPLICADA` de outro dia é uma consulta por fatia (`OperacoesExistentes`), não uma por item —
+1.000 entradas com 3.000 operações no dia: ~700 ms → ~65 ms no motor. Um reenvio da parte durante o
+tratamento dela recebe a resposta da original (`repetido`).
+
+Envio (vale também para o `POST /ordens`): **cada volta envia no máximo 250 mensagens que não são
+1014** (cancel, saída, entrada; o resto sai na volta seguinte, que o motor agenda), e **a entrada
+só sai com a P0 curta** (até 200 itens esperando o motor): mais entrada com fills na fila só poria
+mais fills na frente das 1014. A entrada que espera por isso conta na validade da fila (P5) como a
+que espera a taxa. Os sinais ficam em memória (uma hora
+depois de fechados, para o reenvio repetido); o que vai ao banco é a rajada de cada operação, o
+contador k e o histórico de pedidos. Num sinal com entradas e saídas (o Kalman não manda), a
+resposta traz `deslocamento` das entradas e `deslocamento_saidas`.
+
+Roteiros: 72 (rajada de entradas, item recusado, reenvio repetido, DUPLICADA, item repetido de
+outro sinal, 503 e reenvio, histórico e lista do dia), 73 (partes, fechamento pelo prazo,
+`SINAL_FECHADO`, `LIMITE_LOTE`, `CAMPO_INVALIDO` no lote e no item), 74 (rajada de saídas,
+`SAIDA_ENVIADA` na primeira mensagem, entrada de sinal aberto cancelada antes do fechamento).
+`TestDeslocamento`, `TestSinalEnvioNoFechamento` (nada sai antes do fechamento; a validade na fila
+conta dele), `TestContratoLote` (rajada gravada e relida, memória e MariaDB). Teste de carga:
+`KALMAN_CARGA_SINAIS=1` ([relatório](CARGA-2026-10-15.md), seção 9).

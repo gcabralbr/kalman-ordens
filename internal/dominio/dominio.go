@@ -168,7 +168,23 @@ type Operacao struct {
 	ContadorN       map[string]int // último n do ClOrdID, por papel
 	// Idempotência do POST /ordens: pedido e resposta originais (JSON).
 	PedidoEntrada, RespostaEntrada, PedidoSaida, RespostaSaida string
+	// POST /sinais (v1.10 §6): a posição da entrada e da saída na rajada do sinal (zero = avulsa).
+	SinalEntrada, SinalSaida Rajada
 }
+
+// Rajada: a posição de um item no envio de um sinal (POST /sinais, SPEC v1.10 §6). Posicao 0 =
+// sinal ainda aberto (a ordem sai quando ele fecha).
+type Rajada struct {
+	SinalID      string `json:"sinal_id"`
+	K            int64  `json:"k"`
+	Posicao      int    `json:"posicao"`
+	Tamanho      int    `json:"tamanho"`
+	Deslocamento int    `json:"deslocamento"`
+	Criterio     string `json:"criterio"`
+}
+
+// Vazia: a operação não veio (nesse papel) de um sinal.
+func (r Rajada) Vazia() bool { return r.SinalID == "" }
 
 // Copia devolve uma cópia profunda.
 func (o Operacao) Copia() Operacao {

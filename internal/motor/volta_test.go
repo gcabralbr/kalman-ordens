@@ -255,3 +255,113 @@ func TestResultadoDoDiaAgregado(t *testing.T) {
 		t.Fatalf("sem preço: %s", got)
 	}
 }
+
+// v1.10 §6: deslocamento ⌊k·φ·N⌋ mod N — dentro de [0, N) e espalhado (k seguidos não repetem o
+// mesmo início em N pequeno).
+func TestDeslocamento(t *testing.T) {
+	casos := []struct {
+		k    int64
+		n, d int
+	}{{1, 3, 1}, {2, 1, 0}, {1, 2, 1}, {2, 2, 0}, {3, 4000, 3416}, {1873, 1000, 577}, {5, 0, 0}}
+	for _, c := range casos {
+		if got := Deslocamento(c.k, c.n); got != c.d {
+			t.Errorf("Deslocamento(%d, %d) = %d, esperava %d", c.k, c.n, got, c.d)
+		}
+	}
+	vistos := map[int]bool{}
+	for k := int64(1); k <= 10; k++ {
+		d := Deslocamento(k, 10)
+		if d < 0 || d >= 10 {
+			t.Fatalf("fora da faixa: %d", d)
+		}
+		vistos[d] = true
+	}
+	if len(vistos) < 8 {
+		t.Fatalf("10 sinais seguidos com N = 10 deviam começar em quase 10 lugares diferentes: %v", vistos)
+	}
+}
+
+// v1.10 §6: sinal em duas partes — nada sai antes do fechamento; depois, as entradas saem na ordem
+// da rajada, e a validade na fila da taxa conta do fechamento (não da chegada da parte).
+func TestSinalEnvioNoFechamento(t *testing.T) {
+	m, reg, _, rel := novoMotorTeste(t, map[string]string{"LIMITE_POSICAO_MAX": "10", "LIMITE_INTERVALO_ENTRADAS_S": "0",
+		"LIMITE_ENTRADAS_MIN": "10", "LIMITE_MENSAGENS_MIN": "1000", "ENTRADA_TTL_FILA_S": "1", "FIX_TAXA_MSG_S": "1000", "SINAL_ESPERA_PARTES_MS": "5000"})
+	item := func(op int64) []byte {
+		return []byte(fmt.Sprintf(`{"operacao_id":%d,"uid":7,"lado":"C","qtd":1,"stop_pts":500,"motivo":"SINAL"}`, op))
+	}
+	parte := func(n int, ops ...int64) PedidoSinal {
+		p := PedidoSinal{SinalID: "S", TsDecisao: "t", Parte: ptr(n), Partes: ptr(2)}
+		for _, op := range ops {
+			p.Entradas = append(p.Entradas, item(op))
+		}
+		return p
+	}
+	r := m.Sinal(parte(1, 11, 12))
+	if r["fechado"] != false || len(reg.lista()) == 0 {
+		t.Fatalf("parte 1: %v", r)
+	}
+	for _, s := range reg.lista() {
+		if strings.HasPrefix(s, "envio") {
+			t.Fatalf("nada sai antes do fechamento: %v", reg.lista())
+		}
+	}
+	rel.Avancar(1200 * time.Millisecond) // contada da chegada da parte 1, a validade (1 s) já teria vencido
+	r = m.Sinal(parte(2, 13))
+	if r["fechado"] != true || r["k"] != int64(1) || r["deslocamento"] != 1 {
+		t.Fatalf("parte 2: %v", r)
+	}
+	var envios []string
+	for _, s := range reg.lista() {
+		if strings.HasPrefix(s, "envio") {
+			envios = append(envios, strings.TrimPrefix(s, "envio D "))
+		}
+	}
+	if strings.Join(envios, ",") != "KM-E-12-1,KM-E-13-1,KM-E-11-1" {
+		t.Fatalf("ordem da rajada: %v", envios)
+	}
+}
+
+// v1.10 §6: uma parte maior que a fatia (tamanhoFatia) é tratada em várias voltas e responde uma
+// vez, com a rajada inteira na ordem certa.
+func TestSinalParteEmFatias(t *testing.T) {
+	m, reg, _, _ := novoMotorTeste(t, map[string]string{"LIMITE_POSICAO_MAX": "10000", "LIMITE_INTERVALO_ENTRADAS_S": "0",
+		"LIMITE_ENTRADAS_MIN": "10000", "LIMITE_MENSAGENS_MIN": "100000", "LIMITE_ENTRADAS_DIA": "10000", "FIX_TAXA_MSG_S": "100000",
+		"FIX_RAJADA_MSG": "100000"})
+	n := 2*tamanhoFatia + 100
+	p := PedidoSinal{SinalID: "G", TsDecisao: "t", Parte: ptr(1), Partes: ptr(1)}
+	for i := 1; i <= n; i++ {
+		p.Entradas = append(p.Entradas, []byte(fmt.Sprintf(`{"operacao_id":%d,"uid":7,"lado":"C","qtd":1,"stop_pts":500,"motivo":"SINAL"}`, i)))
+	}
+	r := m.Sinal(p)
+	res := r["resultados"].([]Resposta)
+	if r["fechado"] != true || len(res) != n {
+		t.Fatalf("resposta: fechado=%v resultados=%d", r["fechado"], len(res))
+	}
+	desl := Deslocamento(1, n)
+	for i, x := range res {
+		if x["aceito"] != true || x["posicao"] != ((i-desl)%n+n)%n+1 {
+			t.Fatalf("item %d: %v (deslocamento %d)", i+1, x, desl)
+		}
+	}
+	// no máximo maxEnviosPorVolta por volta: o resto sai nas seguintes (agendadas pelo motor)
+	var envios []string
+	for fim := time.Now().Add(2 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		envios = nil
+		for _, s := range reg.lista() {
+			if strings.HasPrefix(s, "envio") {
+				envios = append(envios, s)
+			}
+		}
+		if len(envios) >= n || time.Now().After(fim) {
+			break
+		}
+	}
+	if len(envios) != n {
+		t.Fatalf("envios: %d de %d", len(envios), n)
+	}
+	for i, e := range envios {
+		if want := fmt.Sprintf("envio D KM-E-%d-1", (desl+i)%n+1); e != want {
+			t.Fatalf("envio %d: %q, esperava %q (a ordem da rajada atravessa as voltas)", i, e, want)
+		}
+	}
+}

@@ -64,7 +64,13 @@ func (m *Motor) pedirSaida(p Pedido) (Resposta, *recusa) {
 	if p.Qtd != nil && *p.Qtd < abs(pos) {
 		slog.Warn("saída parcial tratada como total na v1", "op", op.OperacaoID, "qtd", *p.Qtd, "posicao", pos)
 	}
-	m.iniciarSaida(op, p.Motivo, "GESTOR")
+	if m.sinalAtual != nil {
+		// sinal (v1.10 §6): a saída começa quando ele fechar, na ordem da rajada
+		motivo := p.Motivo
+		m.adiarSaida(op, func() { m.iniciarSaida(op, motivo, "GESTOR") })
+	} else {
+		m.iniciarSaida(op, p.Motivo, "GESTOR")
+	}
 	return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "posicao": op.posicao()}, nil
 }
 

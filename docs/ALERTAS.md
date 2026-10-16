@@ -124,6 +124,20 @@ Precedência na ENTRADA: habilitação → campos → DUPLICADA → PARADA → D
 SEM_CONFIRMACAO → CONCILIANDO → conta e destino (acusuario) → SIMBOLO_INVALIDO → limites (globais
 e do uid) → preço. A SAIDA não olha habilitação nem a conta atual do GQ: usa o que a entrada gravou.
 
+## `POST /sinais` (lote por sinal, SPEC v1.10 §6)
+
+Cada item tem o resultado do `POST /ordens` do papel (os códigos acima, mais `CAMPO_INVALIDO` para
+campo desconhecido no item, e `repetido: true` para o item igual a um já recebido). O lote:
+
+| Código | Quando |
+|---|---|
+| `LOTE_ACEITO` | aceito (200): a parte foi tratada; o resultado de cada item em `resultados` |
+| `CAMPO_INVALIDO` | (400) JSON inválido ou com campo desconhecido; `sinal_id` ausente ou fora de `[A-Za-z0-9._:-]{1,64}`; `parte`/`partes` ausentes, `parte` fora de 1..`partes`, `partes` diferente do da primeira parte; nenhum item; `modulo` inválido |
+| `LIMITE_LOTE` | (400) mais de `SINAL_MAX_ITENS_PARTE` (1.000) itens na parte, mais de `SINAL_MAX_PARTES` (10) partes, mais de 10.000 no sinal, corpo acima de 1 MB |
+| `SINAL_FECHADO` | (400) parte nova de um sinal já fechado (todas as partes chegaram, ou `SINAL_ESPERA_PARTES_MS` depois da primeira) |
+| `DUPLICADA` | (400) mesmo `sinal_id` e `parte` com outro corpo (alerta `DUPLICADA_DIFERENTE`); com o mesmo corpo, a resposta original com `repetido: true` |
+| `RESULTADO_DESCONHECIDO` | (HTTP 503) o motor não respondeu a tempo; a parte segue; reenviar o mesmo corpo |
+
 ## Códigos de recusa das ações de admin (SPEC v1.7 A)
 
 `POST /operacoes/{id}/encerrar` e `POST /operacoes/{id}/cancelar-entrada`. Nenhum conta para a

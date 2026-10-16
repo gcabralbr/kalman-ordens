@@ -159,6 +159,10 @@ func (m *Medido) MaioresIDs() (int64, int64, error) {
 func (m *Medido) ChavesFillDoDia(de, ate time.Time) (map[string]bool, error) {
 	return medir("ChavesFillDoDia", func() (map[string]bool, error) { return m.Base.ChavesFillDoDia(de, ate) })
 }
+func (m *Medido) OperacoesExistentes(mod string, ids []int64) (map[int64]bool, error) {
+	return medir("OperacoesExistentes", func() (map[int64]bool, error) { return m.Base.OperacoesExistentes(mod, ids) })
+}
+
 func (m *Medido) ConfigUsuarios(uids []int) (map[int][2]string, error) {
 	return medir("ConfigUsuarios", func() (map[int][2]string, error) { return m.Base.ConfigUsuarios(uids) })
 }
