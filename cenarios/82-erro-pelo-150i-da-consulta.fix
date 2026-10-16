@@ -1,0 +1,36 @@
+cenario 82 O 39 vale em qualquer ER, inclusive 150=I: 39=7 vindo na consulta do admin põe a saída em erro (F14)
+hora 2026-10-16 12:39:00
+# HML 16/10 (#234081): a saída KM-S-234081-3230 recebeu às 12:41:00, na consulta do admin
+# (GET /pnt/ordens, 584=KM-AD-...), 150=I/39=7 "This strategy was changed to Error state, because
+# offer RealOrder Id: 7740 is Rejected." O serviço só lia a consulta: a ordem ficou ATIVA e a regra
+# de saída em erro (cancelar e seguir, v1.1 F14) não rodou. As mensagens abaixo são as reais
+# (conta e operação do roteiro). O disjuntor fica fora deste roteiro (texto de gatilho que não vem).
+config DISJUNTOR_TEXTOS=texto-que-o-pnt-nao-manda
+config DISJUNTOR_REJEICOES=0
+
+executa INICIO
+executa COMPRADO OP=8201
+saida 8201 V SINAL_OPOSTO
+recebe 35=F 11=KM-P-8201-2 41=KM-P-8201-1
+envia @ER 11=KM-P-8201-2 41=KM-P-8201-1 37=dsa.8201.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-8201-1 54=2 847=1031
+envia @ER 11=KM-S-8201-1 37=dsaGQ2.28862 150=0 39=0 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+avanca 2s
+recebe 35=G 11=KM-S-8201-2 41=KM-S-8201-1 37=dsaGQ2.28862
+# 12:39:53: as respostas ao replace (reais)
+envia @ER 37=dsaGQ2.28862 198=PNT-7101600186 11=KM-S-8201-2 41=KM-S-8201-1 17=PendRep_2047433:hC.OUT 150=E 39=E 54=2 38=1 44=129900 847=1031 59=6 168=20261016-15:39:47 126=20261016-21:25:00 151=1 14=0 20807=0 20806=0 6=0 58="Real Order Rejected! Error: Exchange is offline. Try again later." 20770=Y 20773=Y 20871=N 20882=N
+envia @ER 37=dsaGQ2.28862 198=PNT-7101600186 11=KM-S-8201-2 41=KM-S-8201-1 17=Rep_2047434:hC.OUU 150=5 39=5 54=2 38=1 44=129900 847=1031 59=6 168=20261016-15:39:47 126=20261016-21:25:00 151=1 14=0 20807=0 20806=0 6=0 58="Real Order Rejected! Error: Exchange is offline. Try again later." 20770=Y 20773=N 20871=N 20882=N
+
+# 12:41:00: a consulta do admin traz o 39=7 (real); antes da correção, nada acontecia
+http_async GET /pnt/ordens
+recebe 35=AF 585=9 1=12345 584=>AD
+envia @ER 37=dsaGQ2.28862 198=PNT-7101600186 11=KM-S-8201-2 41=KM-S-8201-1 584=$AD 911=1 912=Y 17=OrderStatus_2047799:hC.OaB 150=I 39=7 54=2 38=1 44=129900 847=1031 59=6 168=20261016-15:39:47 126=20261016-21:25:00 151=1 14=0 20807=0 20806=0 6=0 58="This strategy was changed to Error state, because offer RealOrder Id: 7740 is Rejected." 20770=Y 20773=N 20871=N 20882=N
+http_aguarda
+resposta _status=200 completo=true
+# a saída fica em erro e, sem reativação em ESPERA_ERRO_S, é cancelada (F14); a saída segue
+avanca 2s
+alerta SAIDA_EM_ERRO
+recebe 35=F 41=KM-S-8201-2 37=dsaGQ2.28862
+envia @ER 37=dsaGQ2.28862 11=KM-S-8201-3 41=KM-S-8201-2 150=4 39=4 54=2 38=1 44=129900 847=1031 14=0 151=0 6=0
+avanca 2s
+recebe 35=D 11=KM-S-8201-4 54=2 847=1031

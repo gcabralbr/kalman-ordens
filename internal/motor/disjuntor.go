@@ -47,14 +47,16 @@ func normalizarRejeicao(t string) string {
 func (m *Motor) classificarRejeicao(msg pnt.Mensagem) (rejeicao, gatilho bool, texto string) {
 	texto = msg.Texto(58)
 	et := msg.Texto(150)
-	if msg.Tipo == "8" && et == "I" {
-		return false, false, texto
-	}
 	baixo := strings.ToLower(texto)
 	for _, g := range m.p.DisjuntorTextos {
 		if g != "" && strings.Contains(baixo, strings.ToLower(g)) {
 			gatilho = true
 		}
+	}
+	if msg.Tipo == "8" && et == "I" {
+		// mass status: o texto de gatilho ABRE (16/10: depois do restart, o "Exchange is offline"
+		// só veio nos 150=I da conciliação); não entra na regra genérica e não fecha o estado
+		return gatilho, gatilho, texto
 	}
 	switch {
 	case msg.Tipo == "9":

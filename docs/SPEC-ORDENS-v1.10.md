@@ -353,7 +353,9 @@ Roteiros com a sequência real de 16/10 (fixture do histórico da #234081).
 
 - **O que é rejeição**: 35=9; 35=8 com 150=8 ou 7, ou com "rejected" no 58. Na HML o texto "Exchange
   is offline" veio em 150=E, 5, 7, 4, 6 e **até em 150=0/39=0** (96 vezes): um aceite com texto de
-  rejeição é rejeição. **150=I (mass status) não conta** nem para abrir nem para fechar.
+  rejeição é rejeição. **No 150=I (mass status) o texto de gatilho ABRE o estado** (correção de
+  16/10, `3fd1ea1` → seguinte: depois do restart das 12:39:55 o texto só veio nos 150=I da
+  conciliação, e o disjuntor não abriu); o 150=I não entra na regra genérica e **não fecha**.
 - **Volta (D4)**: execução (150=F) ou aceite limpo — 150=0 **ou 150=5** (replace aceito) sem texto de
   rejeição: a saída presa é reapregoada com replace, e o PnT confirma replace com 150=5, não 39=0.
 - **Regra genérica (D1)**: não conta rejeição de **entrada** — cinco contas sem margem numa rajada
@@ -374,7 +376,14 @@ Roteiros com a sequência real de 16/10 (fixture do histórico da #234081).
 - **Limite conhecido**: sem nada retido (nenhuma saída ou 1014 pendente), não há o que sondar, e o
   estado só fecha com uma resposta limpa que venha por outro caminho; as entradas seguem recusadas.
 
-Roteiros: 80 (a sequência real: queda no meio da saída, 1014 canceladas pelo PnT e recriadas retidas,
+**O 39 vale em qualquer ExecutionReport, inclusive 150=I** (correção de 16/10): as respostas da
+consulta do admin (`GET /pnt/ordens`, v1.7 C) passam a aplicar o estado das ordens KM que trazem,
+como a conciliação já fazia — às 12:41:00 a saída KM-S-234081-3230 recebeu 150=I/39=7 numa consulta,
+continuou ATIVA, e a regra de saída em erro (F14: cancelar e seguir) não rodou. A consulta continua
+sem conciliar: ordem ausente não é julgada, ordem desconhecida não é criada, nada é enviado por ela.
+
+Roteiros: 82 (39=7 no 150=I da consulta → saída em erro, cancel e saída nova; mensagens reais da
+3230), 83 (gatilho num 150=I da conciliação depois do restart abre; 150=I limpo não fecha), 80 (a sequência real: queda no meio da saída, 1014 canceladas pelo PnT e recriadas retidas,
 sonda com a 1014 primeiro, volta pela execução da saída, 1014 retidas primeiro, replace velho não sai,
 entradas só depois de 60 s), 81 (regra genérica; rejeição de entrada não conta; volta por aceite
 limpo da sonda).

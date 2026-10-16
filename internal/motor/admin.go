@@ -178,7 +178,12 @@ func (m *Motor) respostaDaConsulta(msg pnt.Mensagem) {
 	c := m.consulta
 	conta := c.contaDoID[msg.Texto(584)]
 	o := m.localizar(msg.Texto(37), msg.Texto(11), msg.Texto(41))
-	m.registrarRecebida(o, msg)
+	if novo := m.registrarRecebida(o, msg); novo && o != nil {
+		// o estado da ordem vem do 39 em qualquer ExecutionReport, inclusive no 150=I da consulta
+		// (16/10: o 39=7 de uma saída só veio aqui, e a regra de erro F14 não rodou). A consulta
+		// continua sem conciliar: ordem ausente não é julgada, desconhecida não é criada.
+		m.aplicarExecReport(m.donoDa[o], o, msg)
+	}
 	c.recebidas[conta]++
 	if ehNosso(msg.Texto(11)) || ehNosso(msg.Texto(41)) {
 		c.respostas = append(c.respostas, msg)

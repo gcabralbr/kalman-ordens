@@ -1,0 +1,35 @@
+cenario 83 Disjuntor abre pelo texto de gatilho num 150=I (conciliação depois do restart); 150=I não fecha
+hora 2026-10-16 12:39:00
+# HML 16/10: o serviço reiniciou (12:39:55) com a bolsa offline; o "Exchange is offline" só veio
+# no 150=I da conciliação do logon (real: KM-S-234081-3230, 39=0) e o disjuntor não abriu, porque o
+# gatilho ignorava 150=I. Agora o texto de gatilho abre em qualquer ER; o 150=I não fecha (só a
+# execução ou o aceite limpo fecham).
+executa INICIO
+executa COMPRADO OP=8301
+saida 8301 V SINAL_OPOSTO
+recebe 35=F 11=KM-P-8301-2 41=KM-P-8301-1
+envia @ER 11=KM-P-8301-2 41=KM-P-8301-1 37=dsa.8301.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-8301-1 54=2 847=1031
+envia @ER 11=KM-S-8301-1 37=dsaGQ2.28862 150=0 39=0 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+sem_alerta PNT_BOLSA_INDISPONIVEL
+
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345 584=>MS
+# a resposta real da conciliação (12:39:55), com o 912=Y
+envia @ER 37=dsaGQ2.28862 198=PNT-7101600186 11=KM-S-8301-1 584=$MS 911=1 912=Y 17=OrderStatus_2047614:hC.OXI 150=I 39=0 54=2 38=1 44=129950 847=1031 59=6 168=20261016-15:39:47 126=20261016-21:25:00 151=1 14=0 20807=0 20806=0 6=0 58="Real Order Rejected! Error: Exchange is offline. Try again later." 20770=Y 20773=N 20871=N 20882=N
+alerta PNT_BOLSA_INDISPONIVEL
+alerta CONCILIACAO
+entrada 8302 C
+resposta aceito=false codigo=PNT_BOLSA_INDISPONIVEL
+# o repreço da saída fica retido (antes da correção: um replace a cada 2 s)
+avanca 2s
+nada
+avanca 2s
+nada
+# um 150=I sem texto (outra consulta) não fecha o estado
+http_async GET /pnt/ordens
+recebe 35=AF 585=9 1=12345 584=>AD
+envia @ER 37=dsaGQ2.28862 11=KM-S-8301-1 584=$AD 911=1 912=Y 150=I 39=0 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+http_aguarda
+saude alertas_criticos.PNT_BOLSA_INDISPONIVEL=PNT_BOLSA_INDISPONIVEL
