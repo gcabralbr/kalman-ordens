@@ -110,6 +110,23 @@ class TestEstado(unittest.TestCase):
         self.assertEqual(p["status84"], 21)
 
 
+class TestToken(unittest.TestCase):
+    """Dois processos no mesmo arquivo de token: o que vê o próprio expirado relê o arquivo antes de
+    renovar (o outro pode ter girado o refresh token)."""
+
+    def test_usa_o_renovado_por_outro(self):
+        import tempfile
+        d = tempfile.mkdtemp()
+        arq = os.path.join(d, "token.json")
+        velho = {"access_token": "VELHO", "refresh_token": "R1", "expires_in": 3600, "obtido_em": time.time() - 4000}
+        json.dump(velho, open(arq, "w"))
+        t = m.Tokens(arq)
+        novo = dict(velho, access_token="NOVO", refresh_token="R2", obtido_em=time.time())
+        json.dump(novo, open(arq, "w"))
+        t.renovar = lambda: self.fail("não devia renovar: o arquivo já tem um token válido")
+        self.assertEqual(t.atual(), "NOVO")
+
+
 @unittest.skipUnless(os.path.exists(GRAVACAO), "sem a gravação de 16/10")
 class TestComGravacao(unittest.TestCase):
     """O serviço com a gravação de 16/10 como fonte (×20), consultado por HTTP durante a reprodução."""

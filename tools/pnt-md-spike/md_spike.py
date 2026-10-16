@@ -218,7 +218,12 @@ class Tokens:
 
     def atual(self):
         if time.time() > self.expira_em() - 300:
-            self.renovar()
+            # outro processo (o pnt-md-hml) pode ter renovado e girado o refresh token: relê antes
+            disco = ler_token()
+            if disco.get("obtido_em", 0) > self.t.get("obtido_em", 0):
+                self.t = disco
+            if time.time() > self.expira_em() - 300:
+                self.renovar()
         return self.t["access_token"]
 
 
