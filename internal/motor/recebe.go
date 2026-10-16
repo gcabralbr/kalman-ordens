@@ -19,6 +19,7 @@ var timeZero time.Time
 func ehNosso(cl string) bool { return strings.HasPrefix(cl, "KM-") }
 
 func (m *Motor) processar(msg pnt.Mensagem) {
+	m.observarBolsa(msg) // disjuntor de bolsa indisponível (SPEC v1.10 §9)
 	switch msg.Tipo {
 	case "8":
 		m.execReport(msg)

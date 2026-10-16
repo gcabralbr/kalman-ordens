@@ -45,7 +45,7 @@ func TestMonitor(t *testing.T) {
 		t.Fatalf("operação: %+v / %+v", l[4], l[5])
 	}
 	s := r["saude"].(map[string]any)
-	if s["logada"] != true || s["logada_desde"] != "2026-10-16T10:00:00.000-03:00" || s["seq_entrada"] != 4 || s["seq_saida"] != 2 ||
+	if s["boot"] != "2026-10-16T10:00:00.000-03:00" || s["logada"] != true || s["logada_desde"] != "2026-10-16T10:00:00.000-03:00" || s["seq_entrada"] != 4 || s["seq_saida"] != 2 ||
 		s["msgs_min"] != 6 || s["fila"] != 3 || s["parada"] != nil || s["latencia_aceite_p50_ms"] != 40.0 || s["latencia_aceite_max_ms"] != 40.0 ||
 		s["ultima_enviada_em"] != "2026-10-16T10:00:01.000-03:00" || s["ultima_recebida_em"] != "2026-10-16T10:00:01.040-03:00" {
 		t.Fatalf("saúde: %v", s)

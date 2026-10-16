@@ -1,0 +1,57 @@
+cenario 81 Disjuntor pela regra genérica: N rejeições iguais (texto normalizado) em X s; rejeição de entrada não conta
+hora 2026-10-16 10:00:00
+# SPEC v1.10 §9 D1. Sem texto de gatilho (DISJUNTOR_TEXTOS não casa), o estado abre com
+# DISJUNTOR_REJEICOES (3) rejeições seguidas com o mesmo texto normalizado (números = #) em
+# DISJUNTOR_JANELA_S. Rejeições de ENTRADA não contam: "sem margem" em várias contas numa rajada é de
+# cada conta, não da bolsa.
+config LIMITE_POSICAO_MAX=10
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config LIMITE_RECUSAS_PARADA=50
+config DISJUNTOR_TEXTOS=texto-que-o-pnt-nao-manda
+config DISJUNTOR_REJEICOES=3
+config DISJUNTOR_JANELA_S=30
+
+executa INICIO
+# três entradas rejeitadas pelo PnT com o mesmo texto: nada de disjuntor
+entrada 8101 C
+recebe 35=D 11=KM-E-8101-1
+envia @ER 11=KM-E-8101-1 37=dsa.8101.E 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="Risk rejected: insufficient margin (account 12345)"
+entrada 8102 C
+recebe 35=D 11=KM-E-8102-1
+envia @ER 11=KM-E-8102-1 37=dsa.8102.E 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="Risk rejected: insufficient margin (account 12345)"
+entrada 8103 C
+recebe 35=D 11=KM-E-8103-1
+envia @ER 11=KM-E-8103-1 37=dsa.8103.E 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="Risk rejected: insufficient margin (account 12345)"
+sem_alerta PNT_BOLSA_INDISPONIVEL
+
+# uma posição cuja saída é rejeitada três vezes com o mesmo texto (números diferentes)
+executa COMPRADO OP=8104
+saida 8104 V SINAL_OPOSTO
+recebe 35=F 11=KM-P-8104-2 41=KM-P-8104-1
+envia @ER 11=KM-P-8104-2 41=KM-P-8104-1 37=dsa.8104.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-8104-1 54=2 847=1031
+envia @ER 11=KM-S-8104-1 37=dsa.8104.S1 150=8 39=8 54=2 38=1 44=129950 847=1031 14=0 151=0 6=0 58="Order 7001 rejected: matching engine unavailable"
+avanca 2s
+recebe 35=D 11=KM-S-8104-2 54=2 847=1031
+envia @ER 11=KM-S-8104-2 37=dsa.8104.S2 150=8 39=8 54=2 38=1 44=129950 847=1031 14=0 151=0 6=0 58="Order 7002 rejected: matching engine unavailable"
+sem_alerta PNT_BOLSA_INDISPONIVEL
+avanca 2s
+recebe 35=D 11=KM-S-8104-3 54=2 847=1031
+envia @ER 11=KM-S-8104-3 37=dsa.8104.S3 150=8 39=8 54=2 38=1 44=129950 847=1031 14=0 151=0 6=0 58="Order 7003 rejected: matching engine unavailable"
+alerta PNT_BOLSA_INDISPONIVEL
+# no estado, a próxima saída fica retida (antes: uma 1031 nova a cada 2 s)
+avanca 2s
+nada
+entrada 8105 C
+resposta aceito=false codigo=PNT_BOLSA_INDISPONIVEL
+# a sonda (30 s depois da abertura) leva a 1031 retida; o aceite limpo (150=0 sem texto de rejeição)
+# fecha o estado — antes de qualquer execução
+avanca 28s
+recebe 35=D 11=KM-S-8104-4 54=2 847=1031
+envia @ER 11=KM-S-8104-4 37=dsa.8104.S4 150=0 39=0 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+alerta RESOLVIDO
+sem_alerta PNT_BOLSA_INDISPONIVEL
+envia @ER 11=KM-S-8104-4 37=dsa.8104.S4 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=8104

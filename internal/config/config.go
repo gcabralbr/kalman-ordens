@@ -134,12 +134,16 @@ type Parametros struct {
 	PosicaoMax, QtdMaxOrdem, EntradasPorMinuto, MensagensPorMinuto, EntradasPorDia, RecusasParaParada int
 	// Limites POR USUÁRIO (v1.10 L): o laço de reentrada de um uid; a virada de mão (entrada oposta
 	// até LIMITE_VIRADA_S depois de um ZERADA por SINAL_OPOSTO) não passa por eles
-	EntradasPorMinutoUID                 int
-	IntervaloUID, JanelaVirada           time.Duration
-	ReprecoEsgotado                      time.Duration // repreço da saída depois de SAIDA_ESGOTOU
-	IntervaloEntradas                    time.Duration
-	PerdaDiaPts, BookDescoladoPts        int64
-	JanelaInicio, JanelaFim, HoraZeragem time.Duration
+	EntradasPorMinutoUID       int
+	IntervaloUID, JanelaVirada time.Duration
+	ReprecoEsgotado            time.Duration // repreço da saída depois de SAIDA_ESGOTOU
+	// v1.10 §9: disjuntor de bolsa indisponível
+	DisjuntorTextos                                   []string
+	DisjuntorRejeicoes                                int
+	DisjuntorJanela, DisjuntorSonda, DisjuntorEstavel time.Duration
+	IntervaloEntradas                                 time.Duration
+	PerdaDiaPts, BookDescoladoPts                     int64
+	JanelaInicio, JanelaFim, HoraZeragem              time.Duration
 }
 
 // Parametros lê tudo com os padrões da SPEC (v1 + v1.1).
@@ -198,6 +202,11 @@ func (c Config) Parametros() Parametros {
 		IntervaloUID:         c.Segundos("LIMITE_INTERVALO_UID_S", 30),
 		JanelaVirada:         c.Segundos("LIMITE_VIRADA_S", 10),
 		ReprecoEsgotado:      c.Segundos("REPRECO_ESGOTADO_S", 10),
+		DisjuntorTextos:      lista(c.Texto("DISJUNTOR_TEXTOS", "Exchange is offline")),
+		DisjuntorRejeicoes:   c.Inteiro("DISJUNTOR_REJEICOES", 5),
+		DisjuntorJanela:      c.Segundos("DISJUNTOR_JANELA_S", 30),
+		DisjuntorSonda:       c.Segundos("DISJUNTOR_SONDA_S", 30),
+		DisjuntorEstavel:     c.Segundos("DISJUNTOR_ESTAVEL_S", 60),
 		JanelaInicio:         c.Hora("JANELA_INICIO", "09:00:00"),
 		JanelaFim:            c.Hora("JANELA_FIM", "14:00:00"),
 		HoraZeragem:          c.Hora("HORA_ZERAGEM", "14:30:00"),
@@ -208,6 +217,17 @@ func listaContas(s string) []string {
 	var r []string
 	for _, x := range strings.FieldsFunc(s, func(c rune) bool { return c == ',' || c == ' ' || c == ';' }) {
 		r = append(r, x)
+	}
+	return r
+}
+
+// lista: textos separados por "|" (vazios fora).
+func lista(s string) []string {
+	var r []string
+	for _, x := range strings.Split(s, "|") {
+		if x = strings.TrimSpace(x); x != "" {
+			r = append(r, x)
+		}
 	}
 	return r
 }

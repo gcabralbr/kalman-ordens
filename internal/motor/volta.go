@@ -62,6 +62,8 @@ type envioPendente struct {
 	aoEnviar     func()
 	aoFalhar     func()
 	aoExpirar    func() // entrada que passou de ENTRADA_TTL_FILA_S esperando a taxa: descartada
+	nova         bool   // NewOrderSingle da ordem (não cancel/replace): retirarDaFila só casa esta
+	daRetencao   bool   // solta pelo disjuntor na volta da bolsa
 }
 
 // estadoVolta: o que a volta acumula até o commit.
@@ -302,6 +304,17 @@ func (m *Motor) despachar() {
 	m.recarregarTokens(agora)
 	enviados := 0
 	for _, e := range pend {
+		if m.reter(e) {
+			continue // disjuntor de bolsa indisponível: só a sonda sai
+		}
+		if e.daRetencao && !e.nova && e.o != nil && e.o.Estado.Final() {
+			// cancel/replace retido de uma ordem que terminou enquanto esperava (a saída executou na
+			// volta da bolsa): não sai — seria só uma rejeição
+			if e.o.clPend == e.clordid {
+				e.o.pend, e.o.clPend = semPendencia, ""
+			}
+			continue
+		}
 		limitado := e.o != nil && e.prio != prioProtecao
 		if limitado && enviados >= maxEnviosPorVolta {
 			m.esperandoTaxa = append(m.esperandoTaxa, e)
@@ -329,14 +342,22 @@ func (m *Motor) despachar() {
 		enviados++
 		m.despacharUm(e)
 	}
-	if enviados >= maxEnviosPorVolta && len(m.esperandoTaxa) > 0 && !m.voltaAgendada {
+	if enviados >= maxEnviosPorVolta && len(m.esperandoTaxa) > 0 {
 		// sobrou envio pelo limite da volta: uma volta logo (depois do que estiver na P0 e na P1)
-		m.voltaAgendada = true
-		select {
-		case m.p2 <- func() { m.voltaAgendada = false }:
-		default:
-			m.voltaAgendada = false
-		}
+		m.agendarVolta()
+	}
+}
+
+// agendarVolta: uma volta logo, para o que ficou esperando sair (uma por vez).
+func (m *Motor) agendarVolta() {
+	if m.voltaAgendada {
+		return
+	}
+	m.voltaAgendada = true
+	select {
+	case m.p2 <- func() { m.voltaAgendada = false }:
+	default:
+		m.voltaAgendada = false
 	}
 }
 
@@ -394,10 +415,13 @@ func (m *Motor) retirarDaFila(o *ordem) bool {
 		o.adiada = false
 		return true
 	}
-	for _, lista := range []*[]envioPendente{&m.esperandoTaxa, &m.v.envios} {
+	// só a NewOrderSingle conta: um cancel ou replace da ordem esperando a vez (maxEnviosPorVolta,
+	// disjuntor) não quer dizer que ela nunca saiu
+	for _, lista := range []*[]envioPendente{&m.esperandoTaxa, &m.v.envios, &m.bolsa.retidos} {
 		for i, e := range *lista {
-			if e.o == o {
+			if e.o == o && e.nova {
 				*lista = append((*lista)[:i], (*lista)[i+1:]...)
+				o.retida = false
 				return true
 			}
 		}

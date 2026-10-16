@@ -58,7 +58,8 @@ type chaveOp struct {
 
 // Monitor: o buffer e o estado da sessão visto no fio.
 type Monitor struct {
-	rel relogio.Relogio
+	rel  relogio.Relogio
+	boot time.Time // subida do processo (a tela detecta o restart e o buffer novo)
 
 	mu         sync.Mutex
 	buf        []Mensagem // circular
@@ -76,7 +77,7 @@ type Monitor struct {
 
 // Novo monitor com o relógio do serviço (o dos roteiros, nos testes).
 func Novo(rel relogio.Relogio) *Monitor {
-	return &Monitor{rel: rel, buf: make([]Mensagem, Capacidade), porSegundo: map[int64]*Segundo{}, donos: map[chaveOp]int{}}
+	return &Monitor{rel: rel, boot: rel.Agora(), buf: make([]Mensagem, Capacidade), porSegundo: map[int64]*Segundo{}, donos: map[chaveOp]int{}}
 }
 
 // Associar: o uid da operação (o motor chama ao criar ou carregar cada operação).
@@ -179,6 +180,8 @@ type Estado struct {
 	Logada bool
 	Fila   int
 	Parada any // a parada ativa (objeto do GET /saude) ou nil
+	// BolsaIndisponivelDesde: o disjuntor de bolsa indisponível (SPEC v1.10 §9); zero = fora dele
+	BolsaIndisponivelDesde time.Time
 }
 
 // Consultar: as mensagens com seq > desde (no máximo limite, as mais antigas primeiro), o último
@@ -206,9 +209,10 @@ func (m *Monitor) Consultar(desde int64, limite int, e Estado) map[string]any {
 	}
 	p50, max := m.latenciaAceite()
 	saude := map[string]any{
-		"logada": e.Logada, "logada_desde": nil, "ultima_recebida_em": emOuNulo(m.ultimaRec), "ultima_enviada_em": emOuNulo(m.ultimaEnv),
+		"boot": emOuNulo(m.boot), "logada": e.Logada, "logada_desde": nil, "ultima_recebida_em": emOuNulo(m.ultimaRec), "ultima_enviada_em": emOuNulo(m.ultimaEnv),
 		"seq_entrada": m.seqEntrada, "seq_saida": m.seqSaida, "msgs_min": minuto, "fila": e.Fila, "parada": e.Parada,
 		"latencia_aceite_p50_ms": p50, "latencia_aceite_max_ms": max,
+		"bolsa_indisponivel_desde": emOuNulo(e.BolsaIndisponivelDesde),
 	}
 	if e.Logada {
 		saude["logada_desde"] = emOuNulo(m.logonEm)

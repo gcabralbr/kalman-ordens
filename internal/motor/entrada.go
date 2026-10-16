@@ -51,6 +51,9 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if m.divergente {
 		return nil, simples("DIVERGENTE", "estado divergente; requer retomada manual")
 	}
+	if r := m.bolsaRecusaEntrada(); r != nil {
+		return nil, r
+	}
 	if m.fix == nil || !m.fix.Logado() {
 		return nil, simples("SEM_SESSAO", "sessão FIX não logada")
 	}
@@ -458,7 +461,7 @@ func (m *Motor) enviarNova(op *operacao, o *ordem, aoFalhar func(), aoEnviar ...
 	if prio == prioEntrada {
 		aoExpirar = func() { m.expirarNaFila(op, o) }
 	}
-	m.enfileirarEnvio(envioPendente{o: o, msg: msg, clordid: o.ClOrdAtual, prio: prio, aoFalhar: aoFalhar, aoExpirar: aoExpirar, aoEnviar: func() {
+	m.enfileirarEnvio(envioPendente{o: o, msg: msg, clordid: o.ClOrdAtual, prio: prio, nova: true, aoFalhar: aoFalhar, aoExpirar: aoExpirar, aoEnviar: func() {
 		o.enviada = m.agora()
 		o.envioReal = time.Now()
 		for _, f := range aoEnviar {

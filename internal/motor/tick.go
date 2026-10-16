@@ -20,6 +20,7 @@ func (m *Motor) tick() {
 	}
 	m.al.Tick()
 	m.tickSinais()
+	m.tickDisjuntor()
 	m.fecharConsultaSePronta(true)
 	m.recarregarUsuarios(m.agora())
 	m.atualizarMetricas()
@@ -137,7 +138,7 @@ func (m *Motor) alertasDeTempo(op *operacao, agora time.Time) {
 			limite, desde = m.p.EsperaEncerramento, o.cancelPendenteEm
 			chegou = m.chegouDepois(desde, o.clPend)
 		}
-		if o.pend == pendCancel && !desde.IsZero() && agora.Sub(desde) >= limite && !chegou {
+		if o.pend == pendCancel && !o.retida && !desde.IsZero() && agora.Sub(desde) >= limite && !chegou {
 			m.al.Emitir("CANCEL_SEM_RESPOSTA", chaveOp("CANCEL_SEM_RESPOSTA", op), fmt.Sprintf("cancelamento sem resposta: %s", o.ClOrdAtual), op.OperacaoID)
 		}
 	}

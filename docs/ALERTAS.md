@@ -20,6 +20,7 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `PROTECAO_EM_ERRO` | 1014 em estado de erro (39=7) sem reativação em `ESPERA_ERRO_S`: cancelada e recriada sob o limite da P8; leva o texto 58; resolvido quando a recriada é aceita | sim |
 | `PROTECAO_EM_ERRO_PRESA` | 1014 em erro, cancel rejeitado e o mass status mostra que ela continua viva em 39=7: não é recriada nem a posição zerada (pode reativar pelo 20856); entradas bloqueadas, decisão humana; resolvido quando ela sai do erro | sim |
 | `SAIDA_EM_ERRO` | saída em estado de erro (39=7) sem reativação: cancelada, a saída segue com o próximo repreço; leva o texto 58 | sim |
+| `PNT_BOLSA_INDISPONIVEL` | disjuntor de bolsa indisponível (SPEC v1.10 §9): rejeição do PnT com texto de `DISJUNTOR_TEXTOS` ("Exchange is offline"), ou `DISJUNTOR_REJEICOES` rejeições iguais em `DISJUNTOR_JANELA_S`; entradas recusadas, saídas e 1014 em sonda a cada `DISJUNTOR_SONDA_S`; resolve no primeiro aceite ou execução limpos | sim |
 | `ENTRADA_EM_ERRO` | entrada em estado de erro (39=7) sem reativação: cancelada; leva o texto 58 | não |
 | `CONCILIACAO` | resultado da conciliação do logon (ordens KM, ignoradas, divergências, posição); o mass status vazio (35=j 380=101 "No orders found.") é só registrado (v1.3 E2) | não |
 | `MASS_STATUS_REJEITADO` | mass status rejeitado por motivo diferente de 380=4; entradas bloqueadas | sim |
@@ -82,6 +83,7 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `PARADA` | serviço em parada | não | — |
 | `DIVERGENTE` | estado divergente | não | — |
 | `SEM_SESSAO` | sessão FIX não logada | não | — |
+| `PNT_BOLSA_INDISPONIVEL` | disjuntor de bolsa indisponível aberto, ou a bolsa voltou há menos de `DISJUNTOR_ESTAVEL_S` sem rejeição (v1.10 §9) | não | — |
 | `CONCILIANDO` | conciliação do logon em andamento | não | — |
 | `SEM_CONFIRMACAO` | há ordem sem confirmação do PnT | não | — |
 | `SIMBOLO_DIVERGENTE` | SAIDA: a posição está num contrato que não é mais o vigente e o último preço dele tem mais de 60 s (a entrada nunca diverge: vai no vigente) | não | `SAIDA_BLOQUEADA_PRECO_ANTIGO` |
@@ -122,7 +124,7 @@ Nenhum conta para a parada automática; nenhum gera alerta.
 Aceito: `situacao` = `ENVIADO` (35=G enviado), `AGUARDANDO` (sai quando o pedido em curso da 1014
 responder; só o último), `IGNORADO` (menos de `AJUSTE_DEGRAU_MIN_PTS` do que está no PnT).
 
-Precedência na ENTRADA: habilitação → campos → DUPLICADA → PARADA → DIVERGENTE → SEM_SESSAO →
+Precedência na ENTRADA: habilitação → campos → DUPLICADA → PARADA → DIVERGENTE → PNT_BOLSA_INDISPONIVEL → SEM_SESSAO →
 SEM_CONFIRMACAO → CONCILIANDO → conta e destino (acusuario) → SIMBOLO_INVALIDO → limites (globais
 e do uid) → preço. A SAIDA não olha habilitação nem a conta atual do GQ: usa o que a entrada gravou.
 

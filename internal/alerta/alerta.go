@@ -28,6 +28,7 @@ var Catalogo = map[string]bool{
 	"USUARIO_CONFIG": false, "CONTA_AMBIENTE": true, "CONTA_ALTERADA_COM_POSICAO": true, "SAIDA_DIVERGENTE_NAO_EXECUTOU": true,
 	"SAIDA_BLOQUEADA_PRECO_ANTIGO": true, "FIM_DIA_POSICAO": true, "RESUMO_DIA": false,
 	"VIRADA_COM_OPERACAO": true, "ERRO_INTERNO": true, "RESOLVIDO": false,
+	"PNT_BOLSA_INDISPONIVEL": true,
 }
 
 // Notificador entrega o alerta para fora (Telegram). Não pode bloquear.

@@ -98,6 +98,7 @@ type ordem struct {
 	decidirNoMass    bool  // cancel da 1014 em erro rejeitado por outro motivo: o mass status decide (F17)
 	seq              int64 // ordem de criação neste processo (0 = carregada do banco)
 	adiada           bool  // entrada de um sinal aberto: sai quando ele fechar (v1.10 §6)
+	retida           bool  // mensagem retida pelo disjuntor de bolsa indisponível (v1.10 §9)
 	// lote (v1.10 B): já gravada uma vez e a cópia da última gravação (para não regravar igual)
 	persistida bool
 	gravada    dominio.Ordem
@@ -371,6 +372,10 @@ type Motor struct {
 	// vista no último tick (a consulta não passa pela fila do motor)
 	aoVivo      *aovivo.Monitor
 	paradaVista atomic.Pointer[Parada]
+	// disjuntor de bolsa indisponível (disjuntor.go); bolsaVista: desde quando (UnixNano), para o
+	// /sessao/ao-vivo
+	bolsa      disjuntor
+	bolsaVista atomic.Int64
 
 	// GET /pnt/ordens (v1.7 C): a consulta em curso e a última (intervalo mínimo)
 	consulta         *consultaPnT
@@ -412,7 +417,11 @@ func (m *Motor) ConsultarAoVivo(desde int64, limite int) map[string]any {
 		parada = p
 	}
 	f := len(m.p0) + len(m.p1) + len(m.p2)
-	return m.aoVivo.Consultar(desde, limite, aovivo.Estado{Logada: m.fix != nil && m.fix.Logado(), Fila: f, Parada: parada})
+	var bolsa time.Time
+	if n := m.bolsaVista.Load(); n != 0 {
+		bolsa = time.Unix(0, n)
+	}
+	return m.aoVivo.Consultar(desde, limite, aovivo.Estado{Logada: m.fix != nil && m.fix.Logado(), Fila: f, Parada: parada, BolsaIndisponivelDesde: bolsa})
 }
 
 // Usar liga a sessão FIX.

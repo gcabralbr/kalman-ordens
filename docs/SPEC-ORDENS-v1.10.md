@@ -257,7 +257,9 @@ banco e sem a fila do motor**: tudo da memória, responde mesmo com o motor ocup
   primeiro, no máximo `limite` (padrão 500, máximo 2.000); `desde` anterior ao buffer começa na mais
   antiga que restou. O cliente pede de novo com `desde = ultimo_seq` recebido. `desde`/`limite`
   inválidos: 400.
-- `saude`: `logada`; `logada_desde` (o último logon aceito; nulo se não logada);
+- `saude`: `boot` (RFC3339 da subida do processo — o `seq` e o buffer recomeçam nela: a tela que
+  vir um `boot` novo descarta o que tinha e pede `desde=0`; acréscimo de 16/10); `logada`;
+  `logada_desde` (o último logon aceito; nulo se não logada);
   `ultima_recebida_em`, `ultima_enviada_em`; `seq_entrada`, `seq_saida` (o último MsgSeqNum visto
   em cada sentido); `msgs_min` (mensagens nos últimos 60 s, os dois sentidos); `fila` (itens nas
   filas do motor); `parada` (a do `GET /saude`, vista no último tick: até 100 ms de atraso);
@@ -312,3 +314,67 @@ sem deslocamento de tempo constante — com a HML acima da fita, a compra a ask 
 venda executa bem acima do limite. O relógio do PnT (o 52) está ~0,45 s atrás do nosso, o que não
 explica isso. **A HML serve para validar o fluxo (mensagens, estados, proteção, conciliação), não
 para medir execução, preço ou slippage.**
+
+### 8.2 Episódio: a bolsa da HML offline (16/10, a partir de 11:11)
+
+A partir de **11:11:05** o PnT da HML respondeu a toda ordem `Real Order Rejected! Error: Exchange
+is offline. Try again later.` (e `This strategy was changed to Error state, because offer RealOrder
+Id: N is Rejected.`); às 12:10 continuava. A saída da **#234081** (comprada a 207.970 às 10:48,
+saída pedida às 10:49:42 por `SINAL_OPOSTO`) seguiu o fluxo de sempre — repreço a cada 2 s, e a
+cada estratégia em erro (F14) cancel e 1031 nova:
+
+| até 12:10 | |
+|---|---|
+| mensagens da operação (os dois sentidos) | **7.552** |
+| enviadas pelo serviço | 2.375 (2.193 replaces 35=G, 92 NewOrderSingle 35=D, 90 cancels 35=F) |
+| rejeições "Exchange is offline" | **2.882** |
+| ritmo | ~29 enviadas/min só dela; ~200 mensagens/min na sessão (`msgs_min` do monitor) |
+| alertas | `SAIDA_ESGOTOU` e `SAIDA_EM_ERRO` (2 de cada), **nenhum alerta que diga "a bolsa está fora"** |
+
+Um restart às 12:01:40 (com a posição aberta, para alargar `COLAR_SAIDA_PTS` para 1.000) não mudou
+nada: a venda saiu ~4.000 pts abaixo do bid e foi rejeitada igual. Com o `REPRECO_ESGOTADO_S` da L3
+o ritmo cairia para ~1 replace a cada 10 s, mas o problema de fundo — o serviço não reconhece que a
+bolsa está indisponível — continua. Proposta na seção 9.
+
+## 9. Disjuntor `PNT_BOLSA_INDISPONIVEL` (fechado e implementado em 16/10)
+
+| # | Regra |
+|---|---|
+| D1 | **Entrada no estado**: uma rejeição do PnT (35=8 com 150=8, ou 150=5/E com texto de rejeição, ou 35=9) cujo texto contém um item da lista `DISJUNTOR_TEXTOS` (configurável; o padrão inclui `Exchange is offline`) → na hora; ou a regra genérica: `DISJUNTOR_REJEICOES` (5) rejeições seguidas **com o mesmo texto normalizado** (números trocados por `#`: "RealOrder Id: 4890" = "RealOrder Id: #") em `DISJUNTOR_JANELA_S` (30 s). |
+| D2 | **No estado**: entradas novas recusadas com `PNT_BOLSA_INDISPONIVEL` (não conta para a parada automática); as entradas já no PnT ficam como estão. **Saídas e 1014** não saem no ritmo normal: **uma sonda única a cada `DISJUNTOR_SONDA_S` (30 s)** — uma tentativa de uma operação pendente (fila circular), sem repreço entre elas. |
+| D3 | **Alerta CRÍTICO `PNT_BOLSA_INDISPONIVEL`** ao entrar (topo do admin, Telegram; texto do PnT e horário da primeira rejeição) e `RESOLVIDO` ao sair; **evento na sessão** (`GET /sessao/eventos`, e `saude.bolsa_indisponivel_desde` no `/sessao/ao-vivo` para a faixa do PnT marcar o período). |
+| D4 | **Saída do estado**, sozinha: o primeiro aceite (39=0) ou execução (150=F) de qualquer ordem. As pendências voltam **pela fila normal** (limitador e prioridade), não em rajada, **com as 1014 primeiro**: toda posição recupera a proteção antes de qualquer outra mensagem. |
+| D5 | **Entradas novas** só voltam depois de `DISJUNTOR_ESTAVEL_S` (60 s) sem rejeição desde a recuperação (até lá, `PNT_BOLSA_INDISPONIVEL`); uma rejeição de gatilho nesse intervalo volta ao estado. |
+| D6 | A parada manual (`POST /parada`) é independente: o disjuntor não a liga nem a desliga; ela só sai pelo `POST /retomar`. |
+
+Roteiros com a sequência real de 16/10 (fixture do histórico da #234081).
+
+### 9.1 Como ficou (decisões da implementação, a partir da sequência real)
+
+- **O que é rejeição**: 35=9; 35=8 com 150=8 ou 7, ou com "rejected" no 58. Na HML o texto "Exchange
+  is offline" veio em 150=E, 5, 7, 4, 6 e **até em 150=0/39=0** (96 vezes): um aceite com texto de
+  rejeição é rejeição. **150=I (mass status) não conta** nem para abrir nem para fechar.
+- **Volta (D4)**: execução (150=F) ou aceite limpo — 150=0 **ou 150=5** (replace aceito) sem texto de
+  rejeição: a saída presa é reapregoada com replace, e o PnT confirma replace com 150=5, não 39=0.
+- **Regra genérica (D1)**: não conta rejeição de **entrada** — cinco contas sem margem numa rajada
+  (mesmo texto) não são a bolsa fora; a bolsa fora rejeita também saídas e 1014. O texto de gatilho
+  vale para qualquer ordem.
+- **Retenção (D2)**: no estado, toda mensagem que não é entrada nem mass status fica retida (como
+  cada ordem tem no máximo uma pendência, o repreço e os cancels param sozinhos); os prazos de
+  cancel (`CANCEL_SEM_RESPOSTA`) não contam para a retida. A sonda é a primeira retida por
+  prioridade (1014 antes), direto à sessão.
+- **Volta (D4)**: as retidas entram na fila normal (limitador, 250 por volta, prioridade: 1014
+  primeiro); **cancel/replace retido de uma ordem que terminou enquanto esperava não sai** (a saída
+  executou na volta: seria só uma rejeição, que ainda atrasaria as entradas pela D5).
+- **Eventos da sessão**: `BOLSA_FORA` / `BOLSA_VOLTOU` (`GET /sessao/eventos`; o tipo tem até 16
+  caracteres), além do `ALERTA` `PNT_BOLSA_INDISPONIVEL` e do `RESOLVIDO`; `saude.bolsa_indisponivel_desde`
+  no `/sessao/ao-vivo`. Métrica `disjuntor_bolsa_total{evento=abriu|fechou|sonda}`.
+- **Em memória**: depois de um restart o estado recomeça fechado; reabre na primeira rejeição com o
+  texto de gatilho.
+- **Limite conhecido**: sem nada retido (nenhuma saída ou 1014 pendente), não há o que sondar, e o
+  estado só fecha com uma resposta limpa que venha por outro caminho; as entradas seguem recusadas.
+
+Roteiros: 80 (a sequência real: queda no meio da saída, 1014 canceladas pelo PnT e recriadas retidas,
+sonda com a 1014 primeiro, volta pela execução da saída, 1014 retidas primeiro, replace velho não sai,
+entradas só depois de 60 s), 81 (regra genérica; rejeição de entrada não conta; volta por aceite
+limpo da sonda).

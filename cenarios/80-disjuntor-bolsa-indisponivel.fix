@@ -1,0 +1,96 @@
+cenario 80 Disjuntor de bolsa indisponível (sequência real da HML de 16/10): estado, sonda, 1014 primeiro na volta
+hora 2026-10-16 11:10:00
+# SPEC v1.10 §9, com os textos e a ordem das respostas da HML em 16/10 (#234081, a partir de 11:11:05;
+# fixture: o histórico da operação). A bolsa cai com a saída da 8001 reapregoando; o PnT responde ao
+# replace 150=E e 150=5 com "Exchange is offline", e cancela por conta própria as 1014 das outras
+# posições (150=4 "Status changed; Real Order Rejected!..."). O disjuntor abre na primeira rejeição
+# com o texto; entradas recusadas; saídas e 1014 retidas, uma sonda a cada 30 s (1014 primeiro); a
+# execução limpa da saída fecha o estado; as 1014 retidas saem primeiro; entradas só 60 s depois.
+config LIMITE_POSICAO_MAX=10
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config DISJUNTOR_SONDA_S=30
+config DISJUNTOR_ESTAVEL_S=60
+
+executa INICIO
+executa COMPRADO OP=8001
+entrada 8003 C
+recebe 35=D 11=KM-E-8003-1 847=1031
+envia @ER 11=KM-E-8003-1 37=dsa.8003.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+recebe 35=D 11=KM-P-8003-1 847=1014
+envia @ER 11=KM-P-8003-1 37=dsa.8003.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+entrada 8005 C
+recebe 35=D 11=KM-E-8005-1 847=1031
+envia @ER 11=KM-E-8005-1 37=dsa.8005.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+recebe 35=D 11=KM-P-8005-1 847=1014
+envia @ER 11=KM-P-8005-1 37=dsa.8005.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+saude posicao=3
+
+# a saída da 8001 (como a #234081): cancel da 1014, 1031, aceita, e o primeiro repreço
+saida 8001 V SINAL_OPOSTO
+recebe 35=F 11=KM-P-8001-2 41=KM-P-8001-1
+envia @ER 11=KM-P-8001-2 41=KM-P-8001-1 37=dsa.8001.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-8001-1 54=2 847=1031
+envia @ER 11=KM-S-8001-1 37=dsa.8001.S 150=0 39=0 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+avanca 2s
+recebe 35=G 11=KM-S-8001-2 41=KM-S-8001-1
+sem_alerta PNT_BOLSA_INDISPONIVEL
+
+# a bolsa cai: as respostas ao replace trazem o texto (como às 11:11:05.826)
+envia @ER 11=KM-S-8001-2 41=KM-S-8001-1 37=dsa.8001.S 150=E 39=E 54=2 38=1 44=129900 847=1031 14=0 151=1 6=0 58="Real Order Rejected! Error: Exchange is offline. Try again later."
+envia @ER 11=KM-S-8001-2 41=KM-S-8001-1 37=dsa.8001.S 150=5 39=5 54=2 38=1 44=129900 847=1031 14=0 151=1 6=0 58="Real Order Rejected! Error: Exchange is offline. Try again later."
+alerta PNT_BOLSA_INDISPONIVEL
+saude alertas_criticos.PNT_BOLSA_INDISPONIVEL=PNT_BOLSA_INDISPONIVEL
+http GET /sessao/ao-vivo?desde=0&limite=1
+resposta saude.bolsa_indisponivel_desde=2026-10-16T11:10:05.000-03:00
+http GET /sessao/eventos?dia=2026-10-16
+resposta _lista.#=* 
+entrada 8002 C
+resposta aceito=false codigo=PNT_BOLSA_INDISPONIVEL
+
+# o PnT cancela as 1014 das outras posições (150=4 com o texto): as recriadas ficam retidas
+envia @ER 11=KM-P-8003-1 37=dsa.8003.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0 58="Status changed; Real Order Rejected! Error: Exchange is offline. Try again later."
+envia @ER 11=KM-P-8005-1 37=dsa.8005.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0 58="Status changed; Real Order Rejected! Error: Exchange is offline. Try again later."
+# o tráfego para: nem repreço da saída nem 1014 nova saem (antes: um replace a cada 2 s)
+avanca 2s
+nada
+avanca 20s
+nada
+
+# a sonda, 30 s depois da abertura: a primeira retida por prioridade (a 1014 da 8003)
+avanca 7900ms
+nada
+avanca 100ms
+recebe 35=D 11=KM-P-8003-2 847=1014
+nada
+envia @ER 11=KM-P-8003-2 37=dsa.8003.P2 150=8 39=8 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0 58="Real Order Rejected! Error: Exchange is offline. Try again later."
+saude alertas_criticos.PNT_BOLSA_INDISPONIVEL=PNT_BOLSA_INDISPONIVEL
+metrica kalman_ordens_disjuntor_bolsa_total evento=sonda >= 1
+
+# a bolsa volta: a saída viva da 8001 executa (limpa) e fecha o estado; as 1014 retidas saem
+# primeiro; o replace velho da 8001 (ordem já executada) não sai
+avanca 5s
+envia @ER 11=KM-S-8001-2 37=dsa.8001.S 150=F 39=2 54=2 38=1 44=129900 847=1031 32=1 31=130000 14=1 151=0 6=130000
+alerta RESOLVIDO
+evento ZERADA operacao_id=8001 origem=GESTOR
+# (a 1014 da 8003 rejeitada na sonda foi recriada e retida de novo: saem as duas)
+recebe 35=D 11=KM-P-8005-2 847=1014
+recebe 35=D 11=KM-P-8003-3 847=1014
+nada
+envia @ER 11=KM-P-8005-2 37=dsa.8005.P2 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+envia @ER 11=KM-P-8003-3 37=dsa.8003.P3 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=8005
+http GET /sessao/ao-vivo?desde=0&limite=1
+resposta saude.bolsa_indisponivel_desde=null
+metrica kalman_ordens_disjuntor_bolsa_total evento=fechou >= 1
+
+# entradas novas só depois de DISJUNTOR_ESTAVEL_S (60 s) sem rejeição
+entrada 8006 C
+resposta aceito=false codigo=PNT_BOLSA_INDISPONIVEL
+avanca 60s
+entrada 8007 C
+resposta aceito=true
+recebe 35=D 11=KM-E-8007-1 847=1031
+envia @ER 11=KM-E-8007-1 37=dsa.8007.E 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+saude parada=null divergente=false
