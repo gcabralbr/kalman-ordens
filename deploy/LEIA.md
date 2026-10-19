@@ -337,6 +337,40 @@ Opcional em `/etc/kalman-ordens/pnt-md-hml.env`: `PNT_MD_ATIVO` (WINZ26), `PNT_M
 (unidade e a gravação de 16/10 como fonte) e `go test ./internal/preco -run PntMdHml` (o contrato pelo
 parser do serviço).
 
+### 1.11 Emergência KHML (instância HML do Kalman, módulo `KHML`)
+
+A tela de admin da principal fala com o módulo `KALMAN`; para uma operação da KHML
+(`operacao_id` a partir de 900000000), direto no kalman-ordens, na .53. **O `?modulo=KHML` é
+obrigatório**: sem ele a ação procura a operação no KALMAN e responde `OPERACAO_INEXISTENTE`.
+`motivo` (texto) e `por` (uid do admin, inteiro > 0) são obrigatórios.
+
+```
+OP=900000123; POR=<uid do admin>; B=127.0.0.1:9092
+# achar a operação (do dia, só leitura)
+curl -s "$B/operacoes?dia=$(date +%F)&modulo=KHML&uid=1450"
+curl -s "$B/ordens/$OP?modulo=KHML"
+# encerrar: zera a posição pelo fluxo de saída (origem ADMIN); a operação fecha com ZERADA
+curl -s -X POST "$B/operacoes/$OP/encerrar?modulo=KHML" -H 'Content-Type: application/json' \
+     -d "{\"motivo\":\"emergencia KHML\",\"por\":$POR}"
+# cancelar a entrada: só sem posição e com a entrada viva
+curl -s -X POST "$B/operacoes/$OP/cancelar-entrada?modulo=KHML" -H 'Content-Type: application/json' \
+     -d "{\"motivo\":\"emergencia KHML\",\"por\":$POR}"
+```
+
+Respostas: `ENCERRANDO`, `CANCELANDO` / `JA_CANCELANDO` (aceitas); `OPERACAO_INEXISTENTE` (id ou
+módulo errado), `OPERACAO_ENCERRADA`, `OPERACAO_EM_SAIDA` (a saída já está em curso: acompanhar,
+não repetir), `SEM_POSICAO`, `SEM_ENTRADA_PENDENTE`, `COM_POSICAO` (a entrada já executou: usar
+encerrar), `SIMBOLO_DIVERGENTE`, `CAMPO_INVALIDO` (sem motivo/por); `503 RESULTADO_DESCONHECIDO` →
+consultar `GET /ordens/$OP?modulo=KHML` antes de repetir. A ação vira `ADMIN_ACAO` na linha do tempo
+da operação (`/eventos?modulo=KHML`).
+
+Último recurso, **para todos os módulos** (a parada é global, e o evento dela só aparece em
+`?modulo=KALMAN` ou sem filtro): `POST /parada` com `{"modo":"BLOQUEAR"|"ZERAR","origem":"admin",
+"motivo":"...","por":N}`; volta com `POST /retomar`.
+
+Testado em 19/10 07:57 (sem efeito) com um id inexistente: `encerrar` e `cancelar-entrada` com
+`?modulo=KHML` → `OPERACAO_INEXISTENTE`; sem `por` → `CAMPO_INVALIDO`.
+
 ---
 
 ## 2. Checklist da F1 (SPEC v1 Parte 11.2)
