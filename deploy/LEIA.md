@@ -386,6 +386,12 @@ time", 39=B, 1014 disparada ou terminal) não conta para a regra genérica (rote
   `REPLACES_1014_RESERVA` (95) o ajuste do stop é recusado com `PROTECAO_LIMITE_REPLACES` (evento e
   alerta `PROTECAO_RESERVA_REPLACES`) e o trailing segue pelo TRSP do gestor.
 - **Migrações no journal:** o `servir` registra cada migração aplicada (`migração aplicada`).
+- **Convenção de fuso (conferida em 19/10):** toda coluna `DATETIME(3)` (`em`, `criado_em`,
+  `atualizado_em`, `saida_pedida_em`, `alterado_em`, `aplicada_em`, `resolvida_em`) é **UTC** — o
+  serviço grava com `utc()`/`.UTC()`, a conexão força `loc=UTC` e nenhum SQL usa `NOW()`. As colunas
+  `DATE` (`data` de operação, ordem e pedido) são o **dia do pregão em Brasília** (`relogio.Fuso`). Na
+  API, o histórico sai em −03:00 (`emBR`) e o `/eventos` em UTC com `Z`; os dois com o fuso explícito.
+  Consulta direta no banco: converter com `CONVERT_TZ(em, '+00:00', '-03:00')`.
 
 ### 1.11 Emergência KHML (instância HML do Kalman, módulo `KHML`)
 
