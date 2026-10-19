@@ -135,10 +135,28 @@ def ler_fita(arq):
     return Serie(out)
 
 
+def offset_book(book, fita, offs=(-3, -2.5, -2, -1.5, -1, -0.5, 0, 0.5, 0.8, 1, 1.5, 2)):
+    """O deslocamento (s) com o menor |meio HML − meio fita| por segundo: fita no instante t − off."""
+    seg = {}
+    for t, bid, ask in book:
+        if bid and ask and bid < ask:
+            seg[int(seg_do_dia(t))] = (bid + ask) / 2
+    melhor = None
+    for off in offs:
+        d = [abs(m - (f[2] + f[3]) / 2) for s, m in seg.items()
+             for f in [ultimo(fita, s + 0.999 - off, 2)] if f and f[2] and f[3]]
+        if d and (melhor is None or statistics.mean(d) < melhor[0]):
+            melhor = (statistics.mean(d), off)
+    return melhor[1] if melhor else 0.8
+
+
 def cmd_fills(a):
     neg, book, _, _ = ler_gravacao(a.gravacao)
     neg_s, book_s = Serie(neg), Serie(book)
     fita = ler_fita(a.fita) if a.fita else None
+    off = a.offset if a.offset is not None else (offset_book(book, fita) if fita else 0.8)
+    if fita:
+        print(f"fita no instante do fill − {off} s ({'--offset' if a.offset is not None else 'o melhor pelo book'})")
     uid_op, stop_op, limite_ord = {}, {}, {}
     fills = []
     hoje = dt.datetime.fromtimestamp(neg[0][0], FUSO).date().isoformat() if neg else dt.date.today().isoformat()
@@ -158,7 +176,7 @@ def cmd_fills(a):
         elif msg == "FILL":
             fills.append((t, kv))
     print(f"{'hora':12} {'clordid':16} {'lado':5} {'qtd':>3} {'fill':>7} {'lim':>7} | {'bid':>7} {'ask':>7} {'último':>7} "
-          f"{'idade':>5} | {'fill−ref':>8}" + (" | fita bid/ask (−0,8 s)  fill−ref" if fita else ""))
+          f"{'idade':>5} | {'fill−ref':>8}" + (f" | fita bid/ask (t−{off} s)  fill−ref" if fita else ""))
     entrada_op = {}
     for t, kv in fills:
         p = kv.get("clordid", "").split("-")
@@ -191,7 +209,7 @@ def cmd_fills(a):
                f"{bid or 0:7.0f} {ask or 0:7.0f} {n[1] if n else 0:7.0f} {(t - b[0]) if b else 0:5.1f} | "
                f"{dif if dif is not None else float('nan'):+8.0f}")
         if fita:
-            f = ultimo(fita, seg_do_dia(t) - 0.8, 2)
+            f = ultimo(fita, seg_do_dia(t) - off, 2)
             if f and f[2] and f[3]:
                 fr = f[3] if lado == "C" else f[2]
                 fd = (px - fr) if lado == "C" else (fr - px)
@@ -281,11 +299,12 @@ def main():
     s.add_argument("--fita")
     s.add_argument("--desde", default="08:55")
     s.add_argument("--ate")
+    s.add_argument("--offset", type=float, help="fita no instante t − OFFSET s (padrão: o melhor pelo book)")
     s.add_argument("--journal", help="arquivo com a saída de journalctl -o cat (em vez de chamar o journalctl)")
     s = sub.add_parser("fita")
     s.add_argument("gravacao")
     s.add_argument("--fita", required=True)
-    s.add_argument("--offsets", default="0,0.5,0.8,1,1.5,2")
+    s.add_argument("--offsets", default="-3,-2.5,-2,-1.5,-1,-0.5,0,0.5,0.8,1,1.5,2")
     s.add_argument("--limiar", type=float, default=50, help="marca o minuto com |d| do book acima disto")
     a = ap.parse_args()
     {"status": cmd_status, "fills": cmd_fills, "fita": cmd_fita}[a.cmd](a)
