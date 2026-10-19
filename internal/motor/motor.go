@@ -644,6 +644,10 @@ func (m *Motor) AtivarParada(modo, origem, motivo string, por int) Resposta {
 			r = Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "modo deve ser BLOQUEAR ou ZERAR"}
 			return
 		}
+		if rec := motivoLongo(motivo, dominio.MaxMotivoAdmin); rec != nil {
+			r = Resposta{"aceito": false, "codigo": rec.codigo, "motivo": rec.motivo}
+			return
+		}
 		m.publicar("ADMIN_ACAO", nil, map[string]any{"acao": "PARADA", "modo": modo, "origem": origem, "motivo": motivo, "por": porOuNulo(por)})
 		m.ativarParada(modo, origem, motivoComPor(motivo, por))
 		m.parada.Motivo, m.parada.Por = motivo, por

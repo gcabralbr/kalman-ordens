@@ -21,6 +21,9 @@ func (m *Motor) pedirSaida(p Pedido) (Resposta, *recusa) {
 	if p.OperacaoID == nil {
 		return nil, simples("CAMPO_INVALIDO", "operacao_id ausente")
 	}
+	if r := motivoLongo(p.Motivo, dominio.MaxMotivoSaida); r != nil {
+		return nil, r
+	}
 	lado, ok := dominio.LadoDaLetra(p.Lado)
 	if !ok {
 		return nil, simples("CAMPO_INVALIDO", "lado deve ser C ou V")

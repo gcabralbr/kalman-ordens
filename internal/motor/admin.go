@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/shopspring/decimal"
 
@@ -24,12 +25,23 @@ type AcaoAdmin struct {
 	Por    *int   `json:"por"`
 }
 
-func (a AcaoAdmin) validar() *recusa {
+func (a AcaoAdmin) validar(maxMotivo int) *recusa {
 	if strings.TrimSpace(a.Motivo) == "" {
 		return simples("CAMPO_INVALIDO", "motivo obrigatório")
 	}
+	if r := motivoLongo(a.Motivo, maxMotivo); r != nil {
+		return r
+	}
 	if a.Por == nil || *a.Por <= 0 {
 		return simples("CAMPO_INVALIDO", "por (uid do admin) obrigatório")
+	}
+	return nil
+}
+
+// motivoLongo (v1.12): o motivo cabe na coluna (em caracteres, como o VARCHAR do utf8mb4)?
+func motivoLongo(motivo string, max int) *recusa {
+	if n := utf8.RuneCountInString(motivo); n > max {
+		return simples("CAMPO_INVALIDO", fmt.Sprintf("motivo com %d caracteres (maximo %d)", n, max))
 	}
 	return nil
 }
@@ -54,7 +66,7 @@ func (m *Motor) AcaoOperacaoAssincrona(acao, modulo string, id int64, a AcaoAdmi
 }
 
 func (m *Motor) acaoOperacao(acao, modulo string, id int64, a AcaoAdmin) (Resposta, *recusa) {
-	if rec := a.validar(); rec != nil {
+	if rec := a.validar(dominio.MaxMotivoSaida); rec != nil {
 		return nil, rec
 	}
 	if modulo != "" && !dominio.ModuloValido(modulo) {
@@ -491,7 +503,7 @@ func (m *Motor) alterarHabilitacao(uid int, a HabilitacaoAdmin) (Resposta, *recu
 	if a.Habilitado == nil {
 		return nil, simples("CAMPO_INVALIDO", "habilitado obrigatório")
 	}
-	if rec := (AcaoAdmin{Motivo: a.Motivo, Por: a.Por}).validar(); rec != nil {
+	if rec := (AcaoAdmin{Motivo: a.Motivo, Por: a.Por}).validar(dominio.MaxMotivoAdmin); rec != nil {
 		return nil, rec
 	}
 	hab := *a.Habilitado

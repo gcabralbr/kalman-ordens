@@ -217,3 +217,11 @@ var reModulo = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,7}$`)
 // dos módulos que não são o KALMAN (KM-<MODULO>-E-<operacao_id>-<n>), que tem de caber em 28
 // caracteres [PnT-4].
 func ModuloValido(m string) bool { return reModulo.MatchString(m) }
+
+// Tamanho máximo (caracteres) dos motivos que vão para coluna limitada (v1.12; HML 19/10 10:41: um
+// motivo de 41 caracteres num VARCHAR(30) travou o gravador). A API recusa com CAMPO_INVALIDO.
+const (
+	MaxMotivoEntrada = 20  // kalmanordemoperacao.motivo_entrada (e kalmanordem.motivo_gestor da entrada)
+	MaxMotivoSaida   = 60  // kalmanordemoperacao.motivo_saida, kalmanordem.motivo_gestor (0009)
+	MaxMotivoAdmin   = 200 // habilitação (motivo VARCHAR(200)) e parada (texto da sessão)
+)

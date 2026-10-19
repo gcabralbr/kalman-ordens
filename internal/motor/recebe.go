@@ -271,7 +271,9 @@ func (m *Motor) observarDisparo(op *operacao, o *ordem, st string, msg pnt.Mensa
 		return
 	}
 	q, ok := msg.Inteiro(20807)
-	if !ok || q <= 0 {
+	if (!ok || q <= 0) && op.saidaRep == nil {
+		// v1.12: na saída por replace, qualquer 39=B é o disparo (HML 19/10, op 900000027: o disparo
+		// do gatilho ultrapassado veio só com "Delaying final state", 20807=0)
 		return
 	}
 	o.disparadaEm, o.qtdNoDisparo = m.agora(), o.QtdExec

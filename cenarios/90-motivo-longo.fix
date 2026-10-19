@@ -1,0 +1,50 @@
+cenario 90 Motivo maior que a coluna é recusado na API (CAMPO_INVALIDO): o caso do encerrar de 19/10 10:41
+hora 2026-10-19 10:41:40
+# v1.12. HML 19/10: o encerrar da 900000020 com o motivo "teste do encerrar antes da instalacao A+B"
+# (41 caracteres) foi aceito, e a gravação do motivo_saida (VARCHAR(30)) falhou com o Error 1406 e travou
+# o gravador por 5,5 min. Agora: motivo_saida e motivo_gestor em VARCHAR(60) (migração 0009) e a API
+# recusa o motivo maior que a coluna, em caracteres: entrada 20, saída/encerrar/cancelar-entrada 60,
+# parada e habilitação 200. No backend MariaDB, o motivo de 41 e o de 60 caracteres gravam.
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+
+executa INICIO
+executa COMPRADO OP=9001
+
+# encerrar: 61 caracteres → recusado, nada sai; 41 (o de hoje) → aceito
+http POST /operacoes/9001/encerrar {"motivo":"teste do encerrar antes da instalacao A+B e mais vinte letras","por":1450}
+resposta aceito=false codigo=CAMPO_INVALIDO
+nada
+http POST /operacoes/9001/encerrar {"motivo":"teste do encerrar antes da instalacao A+B","por":1450}
+resposta aceito=true codigo=ENCERRANDO
+recebe 35=F 11=KM-P-9001-2 41=KM-P-9001-1
+envia @ER 11=KM-P-9001-2 41=KM-P-9001-1 37=dsa.9001.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-9001-1 54=2 847=1031
+envia @ER 11=KM-S-9001-1 37=dsa.9001.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=129995 14=1 151=0 6=129995
+evento ZERADA operacao_id=9001 origem=ADMIN motivo="teste do encerrar antes da instalacao A+B"
+sem_alerta ERRO_INTERNO
+http GET /operacoes/9001/historico
+resposta operacao.motivo_saida="teste do encerrar antes da instalacao A+B" operacao.estado=ZERADA
+
+# POST /ordens: saída com motivo de 61 → recusada; entrada com motivo de 21 → recusada
+executa COMPRADO OP=9002
+saida 9002 V MOTIVO_DE_SAIDA_COM_SESSENTA_E_UM_CARACTERES_XXXXXXXXXXXXXXXX
+resposta aceito=false codigo=CAMPO_INVALIDO
+nada
+saida 9002 V SAIDA_COM_EXATOS_SESSENTA_CARACTERES_XXXXXXXXXXXXXXXXXXXXXXX
+resposta aceito=true
+recebe 35=F 11=KM-P-9002-2 41=KM-P-9002-1
+envia @ER 11=KM-P-9002-2 41=KM-P-9002-1 37=dsa.9002.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-9002-1 54=2 847=1031
+envia @ER 11=KM-S-9002-1 37=dsa.9002.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=129995 14=1 151=0 6=129995
+evento ZERADA operacao_id=9002 motivo=SAIDA_COM_EXATOS_SESSENTA_CARACTERES_XXXXXXXXXXXXXXXXXXXXXXX
+sem_alerta ERRO_INTERNO
+entrada 9003 C motivo=ENTRADA_COM_21_CARACT
+resposta aceito=false codigo=CAMPO_INVALIDO
+nada
+
+# parada: 201 caracteres → recusada
+http POST /parada {"modo":"BLOQUEAR","origem":"ADMIN","motivo":"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX","por":1450}
+resposta aceito=false codigo=CAMPO_INVALIDO
+saude parada=null

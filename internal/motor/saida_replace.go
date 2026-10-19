@@ -131,7 +131,6 @@ func (m *Motor) saidaReplaceFalhou(op *operacao, motivo, seguinte string) {
 	m.publicar("SAIDA_REPLACE_FALHOU", op, map[string]any{"motivo": motivo, "seguinte": seguinte})
 }
 
-
 // replaceDeSaidaConfirmado: 150=5 do replace de saída.
 func (m *Motor) replaceDeSaidaConfirmado(op *operacao) {
 	if r := op.saidaRep; r != nil && r.aceitoEm.IsZero() {

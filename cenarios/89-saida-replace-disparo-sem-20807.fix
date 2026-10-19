@@ -1,0 +1,47 @@
+cenario 89 Saída por replace: o disparo vem só com 39=B de 20807=0 (HML 19/10 11:31, op 900000027) → para de subir degrau
+hora 2026-10-19 11:31:20
+# v1.12. Na saída por replace da 900000027, o PnT aceitou o gatilho ultrapassado (150=5) e o disparo
+# veio só com 4 × 150=I/39=B "Delaying final state 'Finished'…" de 20807=0 — sem o [DSA-122] de 20807>0
+# que o observarDisparo esperava. O fill chegou 1,25 s depois do 39=B (2,13 s depois do pedido), 246 ms
+# antes do SAIDA_REPLACE_TIMEOUT_S: mais lento, sairia o replace do degrau 2 sobre a 1014 já disparada.
+# Agora, na saída por replace, qualquer 39=B da 1014 é o disparo: não sobe degrau e espera o fill por
+# ESPERA_STOP_S (5 s). Aqui o fill vem 1,75 s depois do 39=B (2,25 s depois do aceite).
+config SAIDA_POR_REPLACE=1
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+
+executa INICIO
+executa COMPRADO OP=8901
+saida 8901 V MANUAL
+recebe 35=G 11=KM-P-8901-2 41=KM-P-8901-1 37=dsa.8901.P 44=129950 20828=130100 20829=129950
+envia @ER 11=KM-P-8901-2 41=KM-P-8901-1 37=dsa.8901.P 150=E 39=E 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20807=0 20828=130100 20829=129950
+envia @ER 11=KM-P-8901-2 41=KM-P-8901-1 37=dsa.8901.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20807=0 20828=130100 20829=129950
+avanca 500ms
+envia @ER 11=KM-P-8901-2 37=dsa.8901.P 150=I 39=B 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20807=0 58="Delaying final state 'Finished' for 3.00 s, timer started."
+envia @ER 11=KM-P-8901-2 37=dsa.8901.P 150=I 39=B 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20807=0 58="Delaying final state 'Finished' for 966.30 µs / 3.00 s."
+envia @ER 11=KM-P-8901-2 37=dsa.8901.P 150=I 39=B 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20807=0 58="Delaying final state 'Finished' for 1.45 ms / 3.00 s."
+envia @ER 11=KM-P-8901-2 37=dsa.8901.P 150=I 39=B 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20807=0 58="Delaying final state 'Finished' for 1.94 ms / 3.00 s."
+sem_evento PROTECAO_DISPARADA
+# passa do SAIDA_REPLACE_TIMEOUT_S (2 s depois do aceite): nenhum replace do degrau 2
+avanca 1600ms
+nada
+avanca 150ms
+envia @ER 11=KM-P-8901-2 37=dsa.8901.P 150=F 39=2 54=2 38=1 44=129950 847=1014 32=1 31=129990 14=1 151=0 6=129990
+evento SAIDA_EXECUTADA operacao_id=8901 qtd=1 preco=129990 origem=GESTOR
+evento ZERADA operacao_id=8901 motivo=MANUAL origem=GESTOR pnl_pts=-20
+sem_evento SAIDA_POR_REPLACE degrau=2
+saude posicao=0
+nada
+
+# o mesmo disparo de 20807=0 sem fill em ESPERA_STOP_S: o caminho do stop furado
+executa COMPRADO OP=8902
+saida 8902 V MANUAL
+recebe 35=G 11=KM-P-8902-2 41=KM-P-8902-1 37=dsa.8902.P
+envia @ER 11=KM-P-8902-2 41=KM-P-8902-1 37=dsa.8902.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0
+envia @ER 11=KM-P-8902-2 37=dsa.8902.P 150=I 39=B 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20807=0 58="Delaying final state 'Finished' for 3.00 s, timer started."
+avanca 4900ms
+nada
+avanca 100ms
+evento SAIDA_REPLACE_FALHOU operacao_id=8902 seguinte=STOP_FURADO
+recebe 35=F 11=KM-P-8902-3 41=KM-P-8902-2

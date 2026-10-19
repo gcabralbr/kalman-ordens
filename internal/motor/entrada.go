@@ -21,6 +21,9 @@ import (
 // pedirEntrada: precedência de docs/ALERTAS.md — habilitação → campos → DUPLICADA → PARADA →
 // DIVERGENTE → SEM_SESSAO → SEM_CONFIRMACAO → CONCILIANDO → conta e destino → símbolo → limites → preço.
 func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
+	if r := motivoLongo(p.Motivo, dominio.MaxMotivoEntrada); r != nil {
+		return nil, r
+	}
 	hab, r := m.verificarHabilitacao(p)
 	if r != nil {
 		return nil, r
