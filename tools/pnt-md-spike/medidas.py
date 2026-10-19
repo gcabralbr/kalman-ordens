@@ -299,6 +299,69 @@ def cmd_fita(a):
               f"{statistics.mean(n) if n else float('nan'):+8.1f} {max((abs(x) for x in n), default=float('nan')):10.0f}{marca}")
 
 
+# ------------------------------------------------------------------ espera pela 1014
+
+def api(url):
+    import urllib.request
+    with urllib.request.urlopen(url, timeout=10) as r:
+        return json.loads(r.read())
+
+
+def tags(raw):
+    return dict(x.split("=", 1) for x in (raw or "").replace("\x01", "|").split("|") if "=" in x)
+
+
+def cmd_saidas(a):
+    """Cada saída que não foi por stop: do 35=F da 1014 ao fill da saída, e o que o book dava no
+    instante da decisão (o custo da espera pelo cancelamento da 1014)."""
+    neg, book, _, _ = ler_gravacao(a.gravacao)
+    neg_s, book_s = Serie(neg), Serie(book)
+    dia = dt.datetime.fromtimestamp(neg[0][0], FUSO).date().isoformat()
+    ops = api(f"{a.base}/operacoes?dia={dia}&modulo={a.modulo}")
+    custos = []
+    for o in ops:
+        if not o.get("origem_saida") or o.get("origem_saida") == "STOP_SERVIDOR":
+            continue
+        op = o["operacao_id"]
+        h = api(f"{a.base}/operacoes/{op}/historico?modulo={a.modulo}&cru=1")
+        ms = [(dt.datetime.fromisoformat(m["em"]).timestamp(), m["direcao"], tags(m.get("fix_raw"))) for m in h["mensagens"]]
+        f = next((x for x in ms if x[1] == "ENV" and x[2].get("35") == "F" and "-P-" in x[2].get("41", "")), None)
+        d = next((x for x in ms if x[1] == "ENV" and x[2].get("35") == "D" and "-S-" in x[2].get("11", "")), None)
+        fills = [x for x in ms if x[1] == "REC" and x[2].get("35") == "8" and "-S-" in x[2].get("11", "") and x[2].get("150") in ("F", "1")]
+        if not f or not d or not fills:
+            print(f"op {op}: sem 35=F da 1014, saída ou fill ({o.get('motivo_saida')})")
+            continue
+        print(f"\nop {op} ({o['lado']} {o.get('qtd')}, saída {o.get('motivo_saida')}/{o.get('origem_saida')}, {o.get('pnl_pts')} pts)")
+        print(f"  {hora(f[0])} → 35=F da 1014 (decisão de saída)")
+        for x in ms:
+            if f[0] <= x[0] <= d[0] and x[1] == "REC" and "-P-" in (x[2].get("11", "") + x[2].get("41", "")):
+                print(f"  {hora(x[0])} ← 35={x[2].get('35')} 150={x[2].get('150', '-')} 39={x[2].get('39', '-')} (52 {x[2].get('52', '')[9:]}) "
+                      f"+{(x[0] - f[0]) * 1000:.0f} ms  {x[2].get('58', '')[:70]}")
+        print(f"  {hora(d[0])} → 35=D saída, limite {d[2].get('44')}  (+{(d[0] - f[0]) * 1000:.0f} ms)")
+        qtd = sum(int(float(x[2].get("32", 0))) for x in fills)
+        px = sum(float(x[2]["31"]) * int(float(x[2].get("32", 0))) for x in fills) / max(qtd, 1)
+        tf = fills[-1][0]
+        print(f"  {hora(tf)} ← fill {px:.0f} (+{(tf - d[0]) * 1000:.0f} ms do envio)")
+        vende = o["lado"] == "C"
+        lag = tf - d[0]
+        b0, n0 = ultimo(book_s, f[0]), ultimo(neg_s, f[0])
+        b1, n1 = ultimo(book_s, f[0] + lag), ultimo(neg_s, f[0] + lag)
+        bd = ultimo(book_s, d[0])
+        ref0 = b0[1] if vende else b0[2]
+        ref1 = b1[1] if vende else b1[2]
+        refd = bd[1] if vende else bd[2]
+        sinal = 1 if vende else -1  # custo positivo = a espera custou
+        print(f"  book na decisão {b0[1]:.0f}/{b0[2]:.0f} último {n0[1]:.0f}; no envio real {bd[1]:.0f}/{bd[2]:.0f}; "
+              f"na decisão + {lag:.2f} s {b1[1]:.0f}/{b1[2]:.0f} último {n1[1]:.0f}")
+        c0, c1 = sinal * (ref0 - refd), sinal * (ref1 - px)
+        print(f"  custo da espera: {'bid' if vende else 'ask'} na decisão − no envio = {c0:+.0f} pts; "
+              f"fill hipotético (topo na decisão + {lag:.2f} s) − fill real = {c1:+.0f} pts")
+        custos.append((op, c0, c1))
+    if custos:
+        print(f"\n{len(custos)} saída(s): custo pelo topo na decisão {sum(c[1] for c in custos):+.0f} pts; "
+              f"pelo fill hipotético {sum(c[2] for c in custos):+.0f} pts")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -317,8 +380,12 @@ def main():
     s.add_argument("--fita", required=True)
     s.add_argument("--offsets", default="-3,-2.5,-2,-1.5,-1,-0.5,0,0.5,0.8,1,1.5,2")
     s.add_argument("--limiar", type=float, default=50, help="marca o minuto com |d| do book acima disto")
+    s = sub.add_parser("saidas")
+    s.add_argument("gravacao")
+    s.add_argument("--modulo", default="KHML")
+    s.add_argument("--base", default="http://127.0.0.1:9092")
     a = ap.parse_args()
-    {"status": cmd_status, "fills": cmd_fills, "fita": cmd_fita}[a.cmd](a)
+    {"status": cmd_status, "fills": cmd_fills, "fita": cmd_fita, "saidas": cmd_saidas}[a.cmd](a)
 
 
 if __name__ == "__main__":
