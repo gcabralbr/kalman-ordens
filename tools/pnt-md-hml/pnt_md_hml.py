@@ -207,7 +207,9 @@ async def fonte_ao_vivo(estado, args):
             continue
         # pysignalr 1.x só põe o token no header no handshake, depois do negotiate (401 sem ele)
         cab = {"Authorization": "Bearer " + tok}
-        cliente = SignalRClient(args.hub, headers=cab, access_token_factory=tokens.atual)
+        # o padrão do pysignalr é 1 MB: na abertura de 19/10 o WB_MD mandou mensagens maiores (1009, laço
+        # de reconexão a cada ~2 s das 09:01 em diante)
+        cliente = SignalRClient(args.hub, headers=cab, access_token_factory=tokens.atual, max_size=args.max_mb << 20)
 
         async def md(dados):
             if len(dados) >= 3 and dados[0] == args.ativo:
@@ -306,6 +308,8 @@ def main():
     ap.add_argument("--porta", type=int, default=int(os.environ.get("PNT_MD_PORTA", "9096")))
     ap.add_argument("--hub", default=os.environ.get("PNT_MD_HUB", HUB))
     ap.add_argument("--token", default=os.environ.get("PNT_MD_TOKEN", os.path.expanduser("~/.config/pnt-md-spike/token.json")))
+    ap.add_argument("--max-mb", type=int, default=int(os.environ.get("PNT_MD_MAX_MB", "64")),
+                    help="tamanho máximo de uma mensagem do WB_MD (MB)")
     ap.add_argument("--simular", help="JSONL gravado pelo md_spike (fonte simulada, para teste)")
     ap.add_argument("--velocidade", type=float, default=1.0)
     ap.add_argument("--ficar", action="store_true", help="com --simular, continua servindo depois da gravação")

@@ -246,7 +246,7 @@ async def rodar(args):
     # pysignalr 1.x só põe o token no header no handshake, depois do negotiate (que leva 401 sem
     # ele): o header vai já na construção e é atualizado a cada renovação (reconexão também negocia)
     cabecalhos = {"Authorization": "Bearer " + tokens.atual()}
-    cliente = SignalRClient(args.hub, headers=cabecalhos, access_token_factory=tokens.atual)
+    cliente = SignalRClient(args.hub, headers=cabecalhos, access_token_factory=tokens.atual, max_size=64 << 20)  # 1 MB (padrão) não basta na abertura (19/10)
 
     def cabecalho_atual():
         token = "Bearer " + tokens.atual()
