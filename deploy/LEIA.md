@@ -347,6 +347,26 @@ Testes: `tools/pnt-md-hml/.venv/bin/python -m unittest tools/pnt-md-hml/test_pnt
 (unidade e a gravação de 16/10 como fonte) e `go test ./internal/preco -run PntMdHml` (o contrato pelo
 parser do serviço).
 
+### 1.12 Saída por replace da 1014 (`SAIDA_POR_REPLACE`, v1.11)
+
+Com `SAIDA_POR_REPLACE=1`, a saída que não é por stop (SINAL_OPOSTO, TRSP, MANUAL, ADMIN, parada,
+zeragem) troca o gatilho da 1014 para além do preço em vez de cancelar a 1014 e mandar a 1031 (HML
+19/10: cancel em 3,69 s, replace em 468 ms). Venda: gatilho = max(bid, último) +
+`SAIDA_REPLACE_ALEM_PTS` (100), limite = bid − `COLAR_SAIDA_PTS` × k; compra espelhada. Só com a 1014
+ativa e aceita, sem pedido pendente, não disparada, cobrindo a posição, sem entrada viva, sem ticker
+divergente e com o disjuntor fechado; senão, o caminho de antes. 150=5 sem disparo em
+`SAIDA_REPLACE_TIMEOUT_S` (2): degrau seguinte, até `MAX_REPRECO_SAIDA`; esgotado, cancel + 1031.
+Disparada sem fill em `ESPERA_STOP_S`: stop furado. Recusado: com a 1014 disparada/terminal ("in
+time"), espera os fills (AGUARDANDO_STOP); outro motivo, cancel + 1031 na hora. Contrato com o
+Kalman inalterado (estado SAINDO; fill com a origem e o motivo do pedido; sem PROTEGIDA,
+PROTECAO_AJUSTADA nem PROTECAO_DISPARADA); eventos novos `SAIDA_POR_REPLACE` e
+`SAIDA_REPLACE_FALHOU` (o Kalman ignora). O ajuste do stop pedido durante a saída continua
+recusado com `SEM_PROTECAO`. Depois de um restart no meio, o caminho de antes. Teste manual:
+`docs/TESTE-SAIDA-REPLACE.md`. Roteiros 87 e 88.
+
+O disjuntor (v1.11): o 35=9 de cancel/replace da 1014 que perde a corrida para o disparo ("in
+time", 39=B, 1014 disparada ou terminal) não conta para a regra genérica (roteiro 86).
+
 ### 1.11 Emergência KHML (instância HML do Kalman, módulo `KHML`)
 
 A tela de admin da principal fala com o módulo `KALMAN`; para uma operação da KHML
