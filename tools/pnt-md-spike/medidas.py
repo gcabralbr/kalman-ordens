@@ -196,6 +196,8 @@ def cmd_fills(a):
                 fr = f[3] if lado == "C" else f[2]
                 fd = (px - fr) if lado == "C" else (fr - px)
                 lin += f" | {f[2]:7.0f}/{f[3]:7.0f}  {fd:+6.0f}"
+            else:
+                lin += " | sem fita (o tick file vai até ~14:00): só contra o feed"
         print(lin)
     print("\nfill−ref: compra = fill − ask, venda = bid − fill (positivo = pior que o topo do book; negativo = melhor)")
     if difs:
