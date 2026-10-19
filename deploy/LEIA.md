@@ -313,9 +313,10 @@ ao `PRECOS_URL` anterior, restart do kalman-ordens e `sudo systemctl stop kalman
 **O Kalman da .53 NÃO vai para a 9096 só por configuração** (verificado no código em 16/10). A
 fonte dele é `KALMAN_GO_BASE` (`/etc/kalman/service.env`; padrão `http://172.16.110.53:9090`), mas:
 
-1. ele pede `GET /precos/atual` **sem** `?ativo=` (`fonte_dados.py`), e o pnt-md-hml responde 400
-   sem `ativo=WINFUT` (a precos-hml também) — o Kalman ficaria sem preço. Mudança pequena no
-   pnt-md-hml (aceitar o pedido sem `ativo`), a combinar;
+1. ele pede `GET /precos/atual` **sem** `?ativo=` (`fonte_dados.py`). O pnt-md-hml aceita: sem
+   `ativo` vale WINFUT; outro ativo continua 400 (a precos-hml segue exigindo `ativo=WINFUT`). Não
+   há WDOFUT nem `/residuo/atual` na 9096: o Kalman tenta o `/residuo/atual` como reserva (404) e
+   o `monitor.py` dele marca o WDOFUT como sem preço;
 2. o histórico do motor (os candles de 5 min) vem da `precocandle` do mercado **real** de hoje;
    trocar só o preço ao vivo misturaria o pregão real com o D-1 que a HML toca;
 3. o Kalman da .53 atende todos os usuários daquela instância: a troca muda os sinais e o paper de
