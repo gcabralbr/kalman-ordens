@@ -1,0 +1,82 @@
+== ajustes
+op 900000007 09:47:29.480 35=G KM-KHML-P-900000007-2 stop 209160 lim 209060 | 150=E +129 ms (52 12:47:31.432) | 150=5 +468 ms (52 12:47:31.771) [robô E→5 339 ms]
+op 900000014 10:10:51.322 35=G KM-KHML-P-900000014-2 stop 208970 lim 209070 | 150=E +432 ms (52 13:10:53.748) | 150=5 +752 ms (52 13:10:54.069) [robô E→5 321 ms]
+op 900000016 10:19:09.339 35=G KM-KHML-P-900000016-2 stop 209370 lim 209270 | 150=E +70 ms (52 13:19:11.398) | 150=5 +266 ms (52 13:19:11.595) [robô E→5 197 ms]
+op 900000016 10:22:02.505 35=G KM-KHML-P-900000016-3 stop 209470 lim 209370 | 150=E +118 ms (52 13:22:04.611) | 150=5 +430 ms (52 13:22:04.923) [robô E→5 312 ms]
+op 900000016 10:30:00.010 35=G KM-KHML-P-900000016-4 stop 209570 lim 209470 | 150=E +185 ms (52 13:30:02.179) | 150=5 +741 ms (52 13:30:02.735) [robô E→5 556 ms]
+op 900000025 11:20:24.933 35=G KM-KHML-P-900000025-2 stop 210125 lim 210025 | 150=E +507 ms (52 14:20:27.392) | 150=5 +775 ms (52 14:20:27.660) [robô E→5 268 ms]
+op 900000025 11:24:37.405 35=G KM-KHML-P-900000025-3 stop 210230 lim 210075 | 150=E +98 ms (52 14:24:39.451)
+op 900000027 11:29:03.987 35=G KM-KHML-P-900000027-2 stop 209910 lim 210010 | 150=E +50 ms (52 14:29:05.987) | 150=5 +211 ms (52 14:29:06.147) [robô E→5 160 ms]
+op 900000027 11:31:21.304 35=G KM-KHML-P-900000027-3 stop 209600 lim 209750 | 150=E +99 ms (52 14:31:23.351) | 150=5 +379 ms (52 14:31:23.631) [robô E→5 280 ms]
+op 900000028 11:43:08.756 35=G KM-KHML-P-900000028-2 stop 208970 lim 208810 | 150=E +390 ms (52 14:43:11.087) | 150=5 +691 ms (52 14:43:11.390) [robô E→5 303 ms]
+op 900000029 11:47:14.771 35=G KM-KHML-P-900000029-2 stop 208710 lim 208860 | 150=E +26 ms (52 14:47:16.736) | 150=5 +364 ms (52 14:47:17.074) [robô E→5 338 ms]
+op 900000031 11:54:00.540 35=G KM-KHML-P-900000031-2 stop 208955 lim 208855 | 150=E +82 ms (52 14:54:02.554) | 150=5 +241 ms (52 14:54:02.713) [robô E→5 159 ms]
+op 900000031 11:56:59.870 35=G KM-KHML-P-900000031-3 stop 209055 lim 208955 | 150=E +153 ms (52 14:57:01.950) | 150=5 +269 ms (52 14:57:02.068) [robô E→5 118 ms]
+op 900000031 12:06:27.807 35=G KM-KHML-P-900000031-4 stop 209430 lim 209275 | 150=E +49 ms (52 15:06:29.775) | 150=5 +137 ms (52 15:06:29.863) [robô E→5 88 ms]
+op 900000034 13:19:31.035 35=G KM-KHML-P-900000034-2 stop 208470 lim 208625 | 150=E +29 ms (52 16:19:32.908) | 150=5 +149 ms (52 16:19:33.029) [robô E→5 121 ms]
+
+14 replace(s) aceito(s): 35=G → 150=5 p50 372 ms, min 137, máx 775
+== saidas
+  10:03:54.270 → 35=D saída, limite 209330  (+4530 ms)
+  10:03:56.132 ← fill 209380 (+1862 ms do envio)
+  book na decisão 209360/209365 último 209360; no envio real 209380/209385; na decisão + 1.86 s 209365/209370 último 209370
+  custo da espera: bid na decisão − no envio = -20 pts; fill hipotético (topo na decisão + 1.86 s) − fill real = -15 pts
+
+op 900000016 (C 1, saída SINAL_OPOSTO/GESTOR, 460 pts)
+  10:30:29.737 → 35=F da 1014 (decisão de saída)
+  10:30:29.810 ← 35=8 150=6 39=6 (52 13:30:31.793) +73 ms  DSA Order cancellation requested by DSA Client, forwarding it to Robot
+  10:30:33.825 ← 35=8 150=4 39=4 (52 13:30:35.808) +4088 ms  
+  10:30:33.833 → 35=D saída, limite 209590  (+4096 ms)
+  10:30:36.224 ← fill 209630 (+2391 ms do envio)
+  book na decisão 209720/209725 último 209725; no envio real 209635/209640; na decisão + 2.39 s 209640/209645 último 209640
+  custo da espera: bid na decisão − no envio = +85 pts; fill hipotético (topo na decisão + 2.39 s) − fill real = +10 pts
+
+op 900000018 (V 1, saída SINAL_OPOSTO/GESTOR, -140 pts)
+  10:36:00.079 → 35=F da 1014 (decisão de saída)
+  10:36:00.197 ← 35=8 150=6 39=6 (52 13:36:02.177) +118 ms  DSA Order cancellation requested by DSA Client, forwarding it to Robot
+  10:36:03.427 ← 35=8 150=4 39=4 (52 13:36:05.408) +3348 ms  
+  10:36:03.431 → 35=D saída, limite 209755  (+3352 ms)
+  10:36:06.854 ← fill 209800 (+3423 ms do envio)
+  book na decisão 209785/209790 último 209785; no envio real 209700/209705; na decisão + 3.42 s 209700/209705 último 209700
+  custo da espera: ask na decisão − no envio = -85 pts; fill hipotético (topo na decisão + 3.42 s) − fill real = +95 pts
+
+op 900000020 (C 1, saída teste do encerrar antes da instalacao A+B/ADMIN, 95 pts)
+  10:41:44.697 → 35=F da 1014 (decisão de saída)
+  10:41:44.723 ← 35=8 150=6 39=6 (52 13:41:46.699) +26 ms  DSA Order cancellation requested by DSA Client, forwarding it to Robot
+  10:41:48.231 ← 35=8 150=4 39=4 (52 13:41:50.208) +3534 ms  
+  10:41:48.242 → 35=D saída, limite 209905  (+3545 ms)
+  10:41:50.241 ← fill 209935 (+1999 ms do envio)
+  book na decisão 209965/209970 último 209965; no envio real 209955/209960; na decisão + 2.00 s 209945/209950 último 209945
+  custo da espera: bid na decisão − no envio = +10 pts; fill hipotético (topo na decisão + 2.00 s) − fill real = +10 pts
+op 900000027: sem 35=F da 1014, saída ou fill (teste replace)
+
+op 900000028 (C 1, saída SINAL_OPOSTO/GESTOR, -480 pts) — POR REPLACE
+  11:43:08.756 → 35=G da 1014 gatilho 208970 limite 208810 (pedido 11:43:08.756, +0 ms)
+  11:43:09.146 ← 35=8 150=E 39=E (52 14:43:11.087) +390 ms  
+  11:43:09.447 ← 35=8 150=5 39=5 (52 14:43:11.390) +691 ms  
+  11:43:09.885 ← 35=8 150=I 39=B (52 14:43:11.828) +1129 ms  Delaying final state 'Finished' for 3.00 s, timer started.
+  11:43:09.891 ← 35=8 150=I 39=B (52 14:43:11.829) +1135 ms  Delaying final state 'Finished' for 1.61 ms / 3.00 s.
+  11:43:09.893 ← 35=8 150=I 39=B (52 14:43:11.832) +1137 ms  Delaying final state 'Finished' for 4.42 ms / 3.00 s.
+  11:43:09.966 ← 35=8 150=I 39=B (52 14:43:11.909) +1210 ms  Delaying final state 'Finished' for 6.77 ms / 3.00 s.
+  11:43:10.894 ← 35=8 150=F 39=2 (52 14:43:12.838) +2138 ms  
+  fill 208815 +2138 ms do pedido; topo no pedido 208835 → custo +20 pts
+
+op 900000029 (V 1, saída SINAL_OPOSTO/GESTOR, 0 pts) — POR REPLACE
+  11:47:14.771 → 35=G da 1014 gatilho 208710 limite 208860 (pedido 11:47:14.771, +0 ms)
+  11:47:14.797 ← 35=8 150=E 39=E (52 14:47:16.736) +26 ms  
+  11:47:15.135 ← 35=8 150=5 39=5 (52 14:47:17.074) +364 ms  
+  11:47:15.379 ← 35=8 150=I 39=B (52 14:47:17.317) +608 ms  Delaying final state 'Finished' for 3.00 s, timer started.
+  11:47:15.381 ← 35=8 150=I 39=B (52 14:47:17.318) +610 ms  Delaying final state 'Finished' for 651.40 ?s / 3.00 s.
+  11:47:15.629 ← 35=8 150=I 39=B (52 14:47:17.567) +858 ms  Delaying final state 'Finished' for 250.15 ms / 3.00 s.
+  11:47:15.631 ← 35=8 150=I 39=B (52 14:47:17.568) +860 ms  Delaying final state 'Finished' for 250.86 ms / 3.00 s.
+  11:47:16.376 ← 35=8 150=F 39=2 (52 14:47:18.315) +1605 ms  
+  fill 208800 +1605 ms do pedido; topo no pedido 208810 → custo -10 pts
+op 900000031: sem 35=F da 1014, saída ou fill (teste replace 2)
+op 900000034: sem 35=F da 1014, saída ou fill (teste replace 3)
+
+2 saída(s) por replace: custo contra o topo no pedido +10 pts
+
+6 saída(s) por cancel + 1031: custo pelo topo na decisão -55 pts; pelo fill hipotético +95 pts
+/dev/mapper/rl-home   31G   23G  8,3G  73% /home
+
+[exited with code 0]
