@@ -100,6 +100,15 @@ def cmd_status(a):
 
 # ------------------------------------------------------------------ (b)
 
+RE_CLORD = re.compile(r"^KM-(?:[A-Z][A-Z0-9]{1,7}-)?([EPS])-(\d+)-\d+$")  # KM-E-… ou KM-<MODULO>-E-…
+
+
+def clord(cl):
+    """(papel, operacao_id) do ClOrdID, ou None."""
+    m = RE_CLORD.match(cl or "")
+    return (m.group(1), int(m.group(2))) if m else None
+
+
 RE_LINHA = re.compile(r"^time=(\S+) level=\S+ msg=(\"[^\"]*\"|\S+)(.*)$")
 RE_KV = re.compile(r'(\w+)=("(?:[^"\\]|\\.)*"|\S+)')
 
@@ -169,26 +178,28 @@ def cmd_fills(a):
             if "operacao_id" in d and "uid" in d:
                 uid_op[d["operacao_id"]] = d["uid"]
         elif msg in ("ENTRADA decidida", "SAÍDA decidida", "SAIDA decidida") or msg.endswith("decidida"):
-            if "clordid" in kv and "preco" in kv:
-                limite_ord[kv["clordid"]] = float(kv["preco"])
+            if "clordid" in kv and ("preco" in kv or "limite" in kv):
+                limite_ord[kv["clordid"]] = float(kv.get("limite", kv.get("preco")))
             if "stop" in kv and "clordid" in kv:
-                stop_op[int(kv["clordid"].split("-")[2])] = float(kv["stop"])
+                c = clord(kv["clordid"])
+                if c:
+                    stop_op[c[1]] = float(kv["stop"])
         elif msg == "FILL":
             fills.append((t, kv))
-    print(f"{'hora':12} {'clordid':16} {'lado':5} {'qtd':>3} {'fill':>7} {'lim':>7} | {'bid':>7} {'ask':>7} {'último':>7} "
+    print(f"{'hora':12} {'clordid':22} {'lado':5} {'qtd':>3} {'fill':>7} {'lim':>7} | {'bid':>7} {'ask':>7} {'último':>7} "
           f"{'idade':>5} | {'fill−ref':>8}" + (f" | fita bid/ask (t−{off} s)  fill−ref" if fita else ""))
     entrada_op = {}
     for t, kv in fills:
-        p = kv.get("clordid", "").split("-")
-        if len(p) >= 3 and p[1] == "E" and p[2].isdigit():
-            entrada_op.setdefault(int(p[2]), float(kv["preco"]))
+        c = clord(kv.get("clordid"))
+        if c and c[0] == "E":
+            entrada_op.setdefault(c[1], float(kv["preco"]))
     difs = []
     for t, kv in fills:
         cl = kv.get("clordid", "")
-        partes = cl.split("-")
-        if len(partes) < 3 or not partes[2].isdigit():
+        c = clord(cl)
+        if not c:
             continue
-        op = int(partes[2])
+        papel, op = c
         if a.uid and uid_op.get(op) != a.uid:
             continue
         px = float(kv["preco"])
@@ -197,7 +208,7 @@ def cmd_fills(a):
         if stop is None or ent is None:
             lado = "?"
         else:
-            vende = (stop > ent) == (partes[1] == "E")
+            vende = (stop > ent) == (papel == "E")
             lado = "V" if vende else "C"
         n, b = ultimo(neg_s, t), ultimo(book_s, t)
         bid, ask = (b[1], b[2]) if b else (None, None)
@@ -205,7 +216,7 @@ def cmd_fills(a):
         dif = (px - ref) if ref is not None and lado == "C" else (ref - px) if ref is not None else None
         if dif is not None:
             difs.append(dif)
-        lin = (f"{hora(t):12} {cl:16} {lado:5} {kv.get('delta', ''):>3} {px:7.0f} {limite_ord.get(cl, float('nan')):7.0f} | "
+        lin = (f"{hora(t):12} {cl:22} {lado:5} {kv.get('delta', ''):>3} {px:7.0f} {limite_ord.get(cl, float('nan')):7.0f} | "
                f"{bid or 0:7.0f} {ask or 0:7.0f} {n[1] if n else 0:7.0f} {(t - b[0]) if b else 0:5.1f} | "
                f"{dif if dif is not None else float('nan'):+8.0f}")
         if fita:
