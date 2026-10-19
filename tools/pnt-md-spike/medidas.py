@@ -362,6 +362,39 @@ def cmd_saidas(a):
               f"pelo fill hipotético {sum(c[2] for c in custos):+.0f} pts")
 
 
+def cmd_ajustes(a):
+    """Cada replace (35=G) da 1014 no dia: decisão → 35=G → 150=E → 150=5 (ou rejeição), com o 52 do PnT."""
+    dia = a.dia or dt.date.today().isoformat()
+    ops = api(f"{a.base}/operacoes?dia={dia}&modulo={a.modulo}")
+    tempos = []
+    for o in ops:
+        op = o["operacao_id"]
+        h = api(f"{a.base}/operacoes/{op}/historico?modulo={a.modulo}&cru=1")
+        ms = [(dt.datetime.fromisoformat(m["em"]).timestamp(), m["direcao"], tags(m.get("fix_raw"))) for m in h["mensagens"]]
+        for i, (t, d, g) in enumerate(ms):
+            if d != "ENV" or g.get("35") != "G" or "-P-" not in g.get("11", ""):
+                continue
+            cl = g["11"]
+            resp = [(x[0], x[2]) for x in ms[i + 1:] if x[1] == "REC" and x[0] - t < 30 and cl in (x[2].get("11"), x[2].get("41"))
+                    and (x[2].get("35") == "9" or x[2].get("150") in ("E", "5", "8"))][:3]
+            lin = f"op {op} {hora(t)} 35=G {cl} stop {g.get('20828', g.get('99', '?'))} lim {g.get('44')}"
+            pnt_e = None
+            for tr, r in resp:
+                lin += f" | {'35=9' if r.get('35') == '9' else '150=' + r.get('150')} +{(tr - t) * 1000:.0f} ms (52 {r.get('52', '')[9:]})"
+                if r.get("150") == "E":
+                    pnt_e = r.get("52")
+                if r.get("150") == "5":
+                    tempos.append((tr - t) * 1000)
+                    if pnt_e:
+                        f52 = lambda v: dt.datetime.strptime(v, "%Y%m%d-%H:%M:%S.%f").timestamp()  # noqa: E731
+                        lin += f" [robô E→5 {(f52(r['52']) - f52(pnt_e)) * 1000:.0f} ms]"
+            print(lin)
+    if tempos:
+        tempos.sort()
+        print(f"\n{len(tempos)} replace(s) aceito(s): 35=G → 150=5 p50 {statistics.median(tempos):.0f} ms, "
+              f"min {tempos[0]:.0f}, máx {tempos[-1]:.0f}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -384,8 +417,12 @@ def main():
     s.add_argument("gravacao")
     s.add_argument("--modulo", default="KHML")
     s.add_argument("--base", default="http://127.0.0.1:9092")
+    s = sub.add_parser("ajustes")
+    s.add_argument("--dia")
+    s.add_argument("--modulo", default="KHML")
+    s.add_argument("--base", default="http://127.0.0.1:9092")
     a = ap.parse_args()
-    {"status": cmd_status, "fills": cmd_fills, "fita": cmd_fita, "saidas": cmd_saidas}[a.cmd](a)
+    {"status": cmd_status, "fills": cmd_fills, "fita": cmd_fita, "saidas": cmd_saidas, "ajustes": cmd_ajustes}[a.cmd](a)
 
 
 if __name__ == "__main__":
