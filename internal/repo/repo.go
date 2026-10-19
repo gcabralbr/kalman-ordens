@@ -102,6 +102,11 @@ type Repositorio interface {
 	// o POST /sinais confere a fatia inteira numa consulta (v1.10 §6).
 	OperacoesExistentes(modulo string, ids []int64) (map[int64]bool, error)
 
+	// Quarentena do lote (v1.13): a linha recusada por erro de dado; pendente = não resolvida.
+	Quarentenar(Quarentena) (int64, error)
+	QuarentenaPendente() ([]Quarentena, error)
+	ResolverQuarentena(id int64, por, resolucao string, em time.Time) (bool, error)
+
 	// ConfigUsuario lê a configuração do usuário no GQ (dbecotools.acusuario, v1.2 U1):
 	// usutxtconfig (HML) e usutxtconfigprd (PRODUCAO). achou=false: uid sem linha.
 	ConfigUsuario(uid int) (hml, prd string, achou bool, err error)
@@ -133,6 +138,7 @@ type Memoria struct {
 	sessao     []EventoSessao
 	pedidos    []PedidoHTTP
 	proxEvento int64
+	quarentena []Quarentena
 }
 
 func NovaMemoria() *Memoria {

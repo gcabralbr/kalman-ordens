@@ -54,7 +54,7 @@ var verbos = map[string]int{
 	"em_qualquer_ordem": 0,
 	"entrada":           -1, "saida": -1, "stop": -1, "http": -1, "http_async": -1, "http_aguarda": 0, "metrica": -1, "resposta": -1, "saude": -1,
 	"evento": -1, "sem_evento": -1, "conta_eventos": -1, "alerta": 1, "sem_alerta": 1,
-	"aguarda_logon": -1, "derruba_sessao": 0, "reinicia_servico": 0, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
+	"aguarda_logon": -1, "derruba_sessao": 0, "reinicia_servico": 0, "banco_erro_dado": -1, "quarentena_resolver": -1, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
 	"usuario": -1, "habilita": -1, "desabilita": 1,
 	"pnt_recusa_logon": 1, "pnt_aceita_logon": 0, "aguarda_recusas": 1, "pnt_espera_seq": 1, "pnt_esquece": 1,
 	"corrompe_store": 0, "descarta": -1, "sinal": -1,

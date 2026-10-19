@@ -117,7 +117,7 @@ o mesmo da HML de terça) e a habilitação é pela CLI (1.5).
 **Migrar logo em seguida** (com o binário e o service.env instalados; só banco, sem FIX nem HTTP):
 
 ```
-sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql, 0003_execid_por_ordem.sql, 0004_modulo.sql, 0005_stop_ajustado.sql, 0006_historico.sql, 0007_pedidos.sql, 0008_sinais.sql, 0009_motivo_60.sql
+sudo /opt/kalman-ordens/kalman-ordens migrar   # aplicada: 0001_inicial.sql, 0002_conta_simbolo_habilitacao.sql, 0003_execid_por_ordem.sql, 0004_modulo.sql, 0005_stop_ajustado.sql, 0006_historico.sql, 0007_pedidos.sql, 0008_sinais.sql, 0009_motivo_60.sql, 0010_quarentena.sql
 sudo /opt/kalman-ordens/kalman-ordens migrar   # de novo: nenhuma migração pendente
 ```
 
@@ -366,6 +366,26 @@ recusado com `SEM_PROTECAO`. Depois de um restart no meio, o caminho de antes. T
 
 O disjuntor (v1.11): o 35=9 de cancel/replace da 1014 que perde a corrida para o disparo ("in
 time", 39=B, 1014 disparada ou terminal) não conta para a regra genérica (roteiro 86).
+
+### 1.13 Quarentena do banco, IgnoreTunnel e reserva de replaces (v1.13)
+
+- **Quarentena:** a linha que o banco recusa por erro de dado vai para a `kalmanordemquarentena`
+  (alerta crítico `BANCO_QUARENTENA`); o resto grava. **Com linha pendente, o serviço sobe em PARADA**
+  (BLOQUEAR, origem QUARENTENA). Revisar e liberar:
+  ```
+  sudo /opt/kalman-ordens/kalman-ordens quarentena listar
+  sudo /opt/kalman-ordens/kalman-ordens quarentena resolver -id N -por <uid> -motivo "o que foi conferido"
+  sudo /opt/kalman-ordens/kalman-ordens retomar -motivo "quarentena revisada"   # POST /retomar
+  ```
+  O `/retomar` recusa com `QUARENTENA_PENDENTE` enquanto houver linha pendente. Resolver não regrava a
+  linha: o estado real vem da conciliação com o PnT.
+- **IgnoreTunnel:** `20864=Y` na 1014, nos replaces dela e na 1031 de saída; entradas no padrão
+  (`IGNORE_TUNNEL_ENTRADA=1` liga). Mensagem com "tunnel" do PnT: evento `TUNNEL`, métrica
+  `kalman_ordens_tunel_total{papel,tipo}`; recusa de entrada: alerta `TUNNEL_RECUSA_ENTRADA`.
+- **Reserva de replaces:** a 1014 aceita `REPLACES_1014_MAX` (100) replaces; a partir de MAX −
+  `REPLACES_1014_RESERVA` (95) o ajuste do stop é recusado com `PROTECAO_LIMITE_REPLACES` (evento e
+  alerta `PROTECAO_RESERVA_REPLACES`) e o trailing segue pelo TRSP do gestor.
+- **Migrações no journal:** o `servir` registra cada migração aplicada (`migração aplicada`).
 
 ### 1.11 Emergência KHML (instância HML do Kalman, módulo `KHML`)
 

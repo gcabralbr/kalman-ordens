@@ -143,7 +143,7 @@ func (r *MariaDB) LimparTeste() error {
 		return fmt.Errorf("repo: LimparTeste recusado no schema %q (só *_teste)", schema)
 	}
 	for _, t := range []string{"kalmanordemevento", "kalmanordempub", "kalmanordemestado", "kalmanordem", "kalmanordemoperacao",
-		"kalmanordemusuario", "kalmanordemusuariohist", "kalmanordemsessao", "kalmanordempedido", "acusuario_teste", "kalmanordem_migracao"} {
+		"kalmanordemusuario", "kalmanordemusuariohist", "kalmanordemsessao", "kalmanordempedido", "kalmanordemquarentena", "acusuario_teste", "kalmanordem_migracao"} {
 		if _, err := r.db.Exec("DROP TABLE IF EXISTS " + t); err != nil {
 			return err
 		}
@@ -533,11 +533,21 @@ func (r *MariaDB) soTeste() error {
 	return nil
 }
 
+// cortar: no máximo n caracteres (o VARCHAR do utf8mb4 conta caracteres), sem partir um caractere
+// e sem UTF-8 inválido (o 1366 também trava a transação).
 func cortar(s string, n int) string {
+	s = strings.ToValidUTF8(s, "")
 	if len(s) <= n {
 		return s
 	}
-	return s[:n]
+	i := 0
+	for j := range s {
+		if i == n {
+			return s[:j]
+		}
+		i++
+	}
+	return s
 }
 
 // modulo: vazio = o padrão (KALMAN).

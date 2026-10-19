@@ -10,6 +10,7 @@ import (
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/metricas"
+	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
 	"gammaquant.com.br/kalman-ordens/pnt"
 )
@@ -20,6 +21,7 @@ func ehNosso(cl string) bool { return strings.HasPrefix(cl, "KM-") }
 
 func (m *Motor) processar(msg pnt.Mensagem) {
 	m.observarBolsa(msg) // disjuntor de bolsa indisponível (SPEC v1.10 §9)
+	m.observarTunel(msg) // túnel de preço do PnT (v1.13)
 	switch msg.Tipo {
 	case "8":
 		m.execReport(msg)
@@ -29,6 +31,43 @@ func (m *Motor) processar(msg pnt.Mensagem) {
 		m.businessReject(msg)
 	default:
 		slog.Debug("mensagem ignorada", "tipo", msg.Tipo)
+	}
+}
+
+// observarTunel (v1.13): toda mensagem do PnT com "tunnel" no 58 conta (métrica tunel_total) e vira
+// evento TUNNEL com o preço da ordem e o mercado do instante. "ignored tunnel lim: X" (a ordem com
+// 20864=Y; PT 2025) é "ignorado"; qualquer outro texto é "recusa". Recusa de entrada: alerta
+// TUNNEL_RECUSA_ENTRADA (a primeira recusa falsa liga IGNORE_TUNNEL_ENTRADA).
+func (m *Motor) observarTunel(msg pnt.Mensagem) {
+	texto := msg.Texto(58)
+	baixo := strings.ToLower(texto)
+	if !strings.Contains(baixo, "tunnel") {
+		return
+	}
+	tipo := "recusa"
+	if strings.Contains(baixo, "ignored tunnel") {
+		tipo = "ignorado"
+	}
+	o := m.localizar(msg.Texto(37), msg.Texto(11), msg.Texto(41))
+	papel := "?"
+	var op *operacao
+	var precoOrdem int64
+	if o != nil {
+		papel, op, precoOrdem = nomePapel(o.Papel), m.donoDa[o], o.Preco
+	}
+	metricas.Tunel.Inc(papel, tipo)
+	d := map[string]any{"papel": papel, "tipo": tipo, "texto": texto, "msgtype": msg.Tipo, "clordid": msg.Texto(11), "preco_ordem": precoOrdem}
+	if l := m.precos.Ler(); l.Situacao == preco.OK {
+		d["ultimo"], d["bid"], d["ask"] = l.Preco, l.Bid, l.Ask
+	}
+	slog.Warn("túnel de preço do PnT", "papel", papel, "tipo", tipo, "texto", texto, "clordid", msg.Texto(11))
+	m.publicar("TUNNEL", op, d)
+	if o != nil && o.Papel == dominio.Entrada && tipo == "recusa" {
+		id := int64(0)
+		if op != nil {
+			id = op.OperacaoID
+		}
+		m.al.Emitir("TUNNEL_RECUSA_ENTRADA", "", fmt.Sprintf("entrada %s recusada pelo túnel de preço do PnT: %s (preço da ordem %d)", msg.Texto(11), texto, precoOrdem), id)
 	}
 }
 
@@ -750,6 +789,7 @@ func (m *Motor) businessReject(msg pnt.Mensagem) {
 
 // rejeicaoSessao: 35=3 do PnT, ligado à ordem pelo 45.
 func (m *Motor) rejeicaoSessao(msg pnt.Mensagem) {
+	m.observarTunel(msg)
 	m.rejeicaoGenerica(msg, "", fmt.Sprintf("35=3 [373=%s tag %s] %s", msg.Texto(373), msg.Texto(371), msg.Texto(58)))
 }
 

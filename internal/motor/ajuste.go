@@ -69,6 +69,11 @@ func (m *Motor) ajustarStop(id int64, a AjusteStop) (Resposta, *recusa) {
 	if !p.disparadaEm.IsZero() {
 		return nil, simples("PROTECAO_DISPARADA", "a 1014 já disparou no PnT")
 	}
+	if p.replaces >= m.p.Replaces1014Max-m.p.Replaces1014Reserva {
+		// v1.13: a reserva fica para a saída por replace; o trailing segue pelo TRSP do gestor
+		return nil, simples("PROTECAO_LIMITE_REPLACES", fmt.Sprintf("a 1014 já teve %d de %d replaces (reserva de %d para a saída)",
+			p.replaces, m.p.Replaces1014Max, m.p.Replaces1014Reserva))
+	}
 	pos := op.posicao()
 	lado := dominio.ParaZerar(pos)
 	var stop int64

@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -65,6 +66,10 @@ const (
 // ordem = persistido + volátil.
 type ordem struct {
 	dominio.Ordem
+	// v1.13: 35=G enviados a esta 1014 (MaxReplaces 20771, padrão 100); no restart, recontados do
+	// kalmanordemevento. reservaAvisada: PROTECAO_RESERVA_REPLACES já publicado.
+	replaces         int
+	reservaAvisada   bool
 	pend             pendencia
 	clPend           string
 	pendDesde        time.Time
@@ -434,9 +439,64 @@ func (m *Motor) Iniciar() error {
 		return err
 	}
 	m.carregarUsuarios()
+	m.verQuarentena()
 	m.verParada()
 	go m.laco()
 	return nil
+}
+
+// recontarReplaces (v1.13): os 35=G já enviados a cada 1014 viva, do kalmanordemevento.
+func (m *Motor) recontarReplaces() {
+	porID := map[int64]*ordem{}
+	var ids []int64
+	for _, op := range m.ops {
+		for _, o := range op.ordens {
+			if o.Papel == dominio.Protecao && o.viva() {
+				porID[o.ID] = o
+				ids = append(ids, o.ID)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	evs, err := m.repo.EventosFIXDasOrdens(ids)
+	if err != nil {
+		slog.Error("recontagem dos replaces da 1014 falhou", "erro", err)
+		return
+	}
+	for _, e := range evs {
+		if o := porID[e.OrdemID]; o != nil && e.Direcao == "ENV" && e.MsgType == "G" {
+			o.replaces++
+		}
+	}
+	for _, o := range porID {
+		o.reservaAvisada = o.replaces >= m.p.Replaces1014Max-m.p.Replaces1014Reserva
+	}
+}
+
+// verQuarentena (v1.13): com linha da quarentena do banco não resolvida, o estado gravado pode estar
+// atrás do real (a linha que não gravou): sobe em PARADA (BLOQUEAR) com alerta crítico, até a
+// resolução pela CLI (kalman-ordens quarentena) e o POST /retomar.
+func (m *Motor) verQuarentena() {
+	qs, err := m.repo.QuarentenaPendente()
+	if err != nil {
+		slog.Error("quarentena: leitura falhou", "erro", err)
+		return
+	}
+	if len(qs) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(qs))
+	for _, q := range qs {
+		ids = append(ids, fmt.Sprintf("%d (%s)", q.ID, q.Tabela))
+	}
+	texto := fmt.Sprintf("%d linha(s) na quarentena do banco sem resolução: %s; subindo em PARADA até a revisão (kalman-ordens quarentena listar/resolver) e o POST /retomar",
+		len(qs), strings.Join(ids, ", "))
+	m.al.Emitir("BANCO_QUARENTENA", "BANCO_QUARENTENA", texto, 0)
+	if m.parada == nil {
+		m.ativarParada("BLOQUEAR", "QUARENTENA", "linha(s) na quarentena do banco")
+	}
 }
 
 // Parar encerra a goroutine (não mexe em nada no PnT), depois de fechar a volta em curso.
@@ -676,7 +736,14 @@ func motivoComPor(motivo string, por int) string {
 
 // Retomar (POST /retomar). Sempre manual. por: uid do admin (v1.7 A2).
 func (m *Motor) Retomar(origem, motivo string, por int) Resposta {
+	var recusa Resposta
 	m.Fazer(func() {
+		if qs, err := m.repo.QuarentenaPendente(); err == nil && len(qs) > 0 {
+			// v1.13: a parada da quarentena só sai depois da resolução das linhas
+			recusa = Resposta{"aceito": false, "codigo": "QUARENTENA_PENDENTE",
+				"motivo": fmt.Sprintf("%d linha(s) na quarentena do banco sem resolucao (kalman-ordens quarentena listar/resolver)", len(qs))}
+			return
+		}
 		m.publicar("ADMIN_ACAO", nil, map[string]any{"acao": "RETOMAR", "origem": origem, "motivo": motivo, "por": porOuNulo(por)})
 		motivo = motivoComPor(motivo, por)
 		antes := m.parada
@@ -689,7 +756,11 @@ func (m *Motor) Retomar(origem, motivo string, por int) Resposta {
 		m.gravarEstado("parada", "")
 		m.al.Resolver("DIVERGENTE")
 		m.al.Emitir("RETOMADA", "", fmt.Sprintf("retomado por %s: %s (estava: %+v)", origem, motivo, antes), 0)
+		m.al.Resolver("BANCO_QUARENTENA")
 	})
+	if recusa != nil {
+		return recusa
+	}
 	return Resposta{"aceito": true, "codigo": "RETOMADO", "motivo": "parada retirada"}
 }
 
@@ -773,6 +844,7 @@ func (m *Motor) carregarDia() error {
 		o := &ordem{Ordem: ords[i], enviada: ords[i].CriadaEm, persistida: true, gravada: ords[i]}
 		m.indexar(op, o)
 	}
+	m.recontarReplaces()
 	if v, ok, _ := m.repo.LerEstado("parada"); ok && v != "" {
 		var p Parada
 		if json.Unmarshal([]byte(v), &p) == nil {

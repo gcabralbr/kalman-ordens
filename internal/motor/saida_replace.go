@@ -46,7 +46,7 @@ func (m *Motor) saidaPorReplacePossivel(op *operacao, p *ordem) bool {
 		return false
 	}
 	if p.Estado != dominio.Ativa || p.pend != semPendencia || p.cancelarApos || !p.disparadaEm.IsZero() ||
-		!p.emErroDesde.IsZero() || p.retida || p.QtdExec != 0 {
+		!p.emErroDesde.IsZero() || p.retida || p.QtdExec != 0 || p.replaces >= m.p.Replaces1014Max {
 		return false
 	}
 	pos := op.posicao()
@@ -186,7 +186,7 @@ func (m *Motor) tickSaidaReplace(op *operacao) {
 	if agora.Sub(r.aceitoEm) < m.p.SaidaReplaceTimeout {
 		return
 	}
-	if r.degrau > m.p.MaxRepreco {
+	if r.degrau > m.p.MaxRepreco || p.replaces >= m.p.Replaces1014Max {
 		m.saidaReplaceFalhou(op, fmt.Sprintf("a 1014 não disparou em %d replace(s)", r.degrau), "CANCEL_E_NOVA")
 		m.mudar(op, dominio.CancelandoProtecao)
 		op.cancelProtEm = agora

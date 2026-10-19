@@ -141,6 +141,10 @@ type Parametros struct {
 	SaidaPorReplace     bool
 	SaidaReplaceAlemPts int64
 	SaidaReplaceTimeout time.Duration
+	// v1.13: 20864=Y (IgnoreTunnel) também nas entradas (a 1014 e a saída sempre levam)
+	IgnoreTunnelEntrada bool
+	// v1.13: MaxReplaces da 1014 (RoE §4.3.7, padrão 100) e a reserva para a saída por replace
+	Replaces1014Max, Replaces1014Reserva int
 	// v1.10 §9: disjuntor de bolsa indisponível
 	DisjuntorTextos                                   []string
 	DisjuntorRejeicoes                                int
@@ -183,6 +187,9 @@ func (c Config) Parametros() Parametros {
 		SaidaPorReplace:         c.Bool("SAIDA_POR_REPLACE", false),
 		SaidaReplaceAlemPts:     c.Pontos("SAIDA_REPLACE_ALEM_PTS", 100),
 		SaidaReplaceTimeout:     c.Segundos("SAIDA_REPLACE_TIMEOUT_S", 2),
+		IgnoreTunnelEntrada:     c.Bool("IGNORE_TUNNEL_ENTRADA", false),
+		Replaces1014Max:         c.Inteiro("REPLACES_1014_MAX", 100),
+		Replaces1014Reserva:     c.Inteiro("REPLACES_1014_RESERVA", 5),
 		ConsultaPnTEspera:       c.Segundos("CONSULTA_PNT_ESPERA_S", 5),
 		ConsultaPnTIntervalo:    c.Segundos("CONSULTA_PNT_INTERVALO_S", 10),
 		TaxaMsgS:                float64(c.Segundos("FIX_TAXA_MSG_S", 100)) / float64(time.Second),

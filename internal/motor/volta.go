@@ -1,6 +1,7 @@
 package motor
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -174,7 +175,11 @@ func (m *Motor) fecharVolta() {
 		}
 		metricas.Lote.Observar(time.Since(t0).Seconds())
 		metricas.LoteLinhas.Observar(float64(l.Linhas()))
-		if err != nil {
+		if err != nil && repo.ErroDeDado(err) {
+			// v1.13: erro de dado não se resolve repetindo: linha a linha, a ruim para a quarentena
+			slog.Error("gravação do lote: erro de dado, gravando linha a linha", "erro", err, "linhas", l.Linhas())
+			m.isolarLote(l)
+		} else if err != nil {
 			// o que não gravou fica para a próxima volta; o envio segue (proteção não espera o banco)
 			slog.Error("gravação do lote falhou", "erro", err, "linhas", l.Linhas())
 			m.al.Emitir("ERRO_INTERNO", "BANCO_LOTE", "gravação no banco falhou (o envio ao PnT seguiu; nova tentativa na próxima volta): "+cortarTexto(err.Error(), 300), 0)
@@ -247,6 +252,118 @@ func (m *Motor) loteGravado(l *repo.Lote) {
 		}
 	}
 	m.v.opsSujas, m.v.ordensSujas = map[*operacao]bool{}, map[*ordem]bool{}
+}
+
+// itemLote: uma linha do lote, sozinha num lote (isolarLote).
+type itemLote struct {
+	tabela string
+	lote   *repo.Lote
+	linha  any
+}
+
+// quebrarLote: cada linha num lote próprio, na ordem de gravação do GravarLote.
+func quebrarLote(l *repo.Lote) []itemLote {
+	var r []itemLote
+	for _, o := range l.NovasOperacoes {
+		r = append(r, itemLote{"kalmanordemoperacao", &repo.Lote{NovasOperacoes: []dominio.Operacao{o}}, o})
+	}
+	for _, o := range l.Operacoes {
+		r = append(r, itemLote{"kalmanordemoperacao", &repo.Lote{Operacoes: []dominio.Operacao{o}}, o})
+	}
+	for _, o := range l.NovasOrdens {
+		r = append(r, itemLote{"kalmanordem", &repo.Lote{NovasOrdens: []dominio.Ordem{o}}, o})
+	}
+	for _, o := range l.Ordens {
+		r = append(r, itemLote{"kalmanordem", &repo.Lote{Ordens: []dominio.Ordem{o}}, o})
+	}
+	for _, e := range l.Eventos {
+		r = append(r, itemLote{"kalmanordemevento", &repo.Lote{Eventos: []repo.EventoFIX{e}}, e})
+	}
+	for _, p := range l.Publicados {
+		r = append(r, itemLote{"kalmanordempub", &repo.Lote{Publicados: []repo.PublicadoNovo{p}}, p})
+	}
+	for _, e := range l.Estados {
+		r = append(r, itemLote{"kalmanordemestado", &repo.Lote{Estados: []repo.EstadoNovo{e}}, e})
+	}
+	for _, s := range l.Sessao {
+		r = append(r, itemLote{"kalmanordemsessao", &repo.Lote{Sessao: []repo.EventoSessao{s}}, s})
+	}
+	for _, p := range l.Pedidos {
+		r = append(r, itemLote{"kalmanordempedido", &repo.Lote{Pedidos: []repo.PedidoHTTP{p}}, p})
+	}
+	return r
+}
+
+// isolarLote (v1.13): o lote falhou com erro de dado. Cada linha na sua transação, em ordem; a que
+// falha com erro de dado vai para a kalmanordemquarentena com alerta crítico BANCO_QUARENTENA (o
+// estado em memória segue; um restart com quarentena pendente sobe em PARADA). Erro que não é de
+// dado: o resto volta ao lote seguinte, como antes.
+func (m *Motor) isolarLote(l *repo.Lote) {
+	itens := quebrarLote(l)
+	for i, it := range itens {
+		err := m.repo.GravarLote(it.lote)
+		if err == nil {
+			m.linhaGravada(it.lote)
+			continue
+		}
+		if repo.ErroDeDado(err) {
+			b, _ := json.Marshal(it.linha)
+			id, qerr := m.repo.Quarentenar(repo.Quarentena{Tabela: it.tabela, Linha: string(b), Erro: err.Error(), Em: m.agora()})
+			if qerr == nil {
+				m.linhaGravada(it.lote) // não repete: a linha ficou na quarentena
+				slog.Error("linha na quarentena", "id", id, "tabela", it.tabela, "erro", err)
+				m.al.Emitir("BANCO_QUARENTENA", "BANCO_QUARENTENA",
+					fmt.Sprintf("linha de %s recusada pelo banco (%s): na quarentena (id %d); o serviço segue, mas um restart sobe em PARADA até a resolução (kalman-ordens quarentena)",
+						it.tabela, cortarTexto(err.Error(), 200), id), 0)
+				continue
+			}
+			err = qerr
+		}
+		// não é de dado (ou a quarentena falhou): o resto volta ao lote seguinte
+		resto := &repo.Lote{}
+		for _, x := range itens[i:] {
+			resto.Eventos = append(resto.Eventos, x.lote.Eventos...)
+			resto.Publicados = append(resto.Publicados, x.lote.Publicados...)
+			resto.Estados = append(resto.Estados, x.lote.Estados...)
+			resto.Sessao = append(resto.Sessao, x.lote.Sessao...)
+			resto.Pedidos = append(resto.Pedidos, x.lote.Pedidos...)
+		}
+		slog.Error("gravação do lote falhou", "erro", err, "linhas", resto.Linhas())
+		m.al.Emitir("ERRO_INTERNO", "BANCO_LOTE", "gravação no banco falhou (o envio ao PnT seguiu; nova tentativa na próxima volta): "+cortarTexto(err.Error(), 300), 0)
+		m.devolverAoLote(resto)
+		return
+	}
+	for op := range m.v.opsSujas {
+		if op.persistida && reflect.DeepEqual(op.Operacao.Copia(), op.gravada) {
+			delete(m.v.opsSujas, op)
+		}
+	}
+	for o := range m.v.ordensSujas {
+		if o.persistida && reflect.DeepEqual(o.Ordem, o.gravada) {
+			delete(m.v.ordensSujas, o)
+		}
+	}
+	m.al.Resolver("BANCO_LOTE")
+}
+
+// linhaGravada: como loteGravado, só para as operações e ordens deste lote (as outras continuam sujas).
+func (m *Motor) linhaGravada(l *repo.Lote) {
+	for _, c := range append(append([]dominio.Operacao{}, l.NovasOperacoes...), l.Operacoes...) {
+		for op := range m.v.opsSujas {
+			if op.ID == c.ID {
+				op.persistida, op.gravada = true, c
+				delete(m.v.opsSujas, op)
+			}
+		}
+	}
+	for _, c := range append(append([]dominio.Ordem{}, l.NovasOrdens...), l.Ordens...) {
+		for o := range m.v.ordensSujas {
+			if o.ID == c.ID {
+				o.persistida, o.gravada = true, c
+				delete(m.v.ordensSujas, o)
+			}
+		}
+	}
 }
 
 // devolverAoLote: a gravação falhou; o que era do lote volta para a próxima (as operações e ordens

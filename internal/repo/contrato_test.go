@@ -583,3 +583,18 @@ func TestContratoLote(t *testing.T) {
 		})
 	}
 }
+
+func TestCortarPorCaractere(t *testing.T) {
+	casos := []struct {
+		s    string
+		n    int
+		quer string
+	}{
+		{"abc", 5, "abc"}, {"abcdef", 3, "abc"}, {"ação", 2, "aç"}, {"ação", 4, "ação"}, {"çççç", 3, "ççç"}, {"a\xffb", 5, "ab"},
+	}
+	for _, c := range casos {
+		if got := cortar(c.s, c.n); got != c.quer {
+			t.Errorf("cortar(%q, %d) = %q, quer %q", c.s, c.n, got, c.quer)
+		}
+	}
+}

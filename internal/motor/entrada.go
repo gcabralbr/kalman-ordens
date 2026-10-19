@@ -447,10 +447,15 @@ func (m *Motor) novaOrdem(op *operacao, papel dominio.Papel, lado dominio.Lado, 
 // prioridade do papel (1014 > saída > entrada; a entrada sujeita à taxa). aoFalhar roda se não
 // sair; aoEnviar, depois de sair. A entrada que passa da validade na fila da taxa é descartada
 // (expirarNaFila).
+// ignorarTunel (v1.13): 20864=Y na 1014 e na saída; na entrada, só com IGNORE_TUNNEL_ENTRADA.
+func (m *Motor) ignorarTunel(o *ordem) bool {
+	return o.Papel != dominio.Entrada || m.p.IgnoreTunnelEntrada
+}
+
 func (m *Motor) enviarNova(op *operacao, o *ordem, aoFalhar func(), aoEnviar ...func()) {
 	msg := pnt.NovaOrdem(m.idDe(op), pnt.Ordem{
 		ClOrdID: o.ClOrdAtual, Simbolo: op.Simbolo, Lado: o.Lado.FIX(), Qtd: o.Qtd, Preco: o.Preco,
-		Estrategia: o.Estrategia, Stop: o.Stop, StopLim: o.StopLim,
+		Estrategia: o.Estrategia, Stop: o.Stop, StopLim: o.StopLim, IgnorarTunel: m.ignorarTunel(o),
 	}, m.agora())
 	m.salvarOp(op)
 	prio := prioEntrada

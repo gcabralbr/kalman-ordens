@@ -385,7 +385,12 @@ func (m *Motor) replace(o *ordem, qtd int, px, stop, stopLim int64) {
 	o.pend, o.clPend, o.pendDesde = pendReplace, cl, m.agora()
 	o.qtdPend, o.precoPend, o.stopPend, o.stopLimPend = qtd, px, stop, stopLim
 	m.porClOrd[cl] = o
-	novo := pnt.Ordem{ClOrdID: cl, Simbolo: op.Simbolo, Lado: o.Lado.FIX(), Qtd: qtd, Preco: px, Estrategia: o.Estrategia, Stop: stop, StopLim: stopLim}
+	if o.Papel == dominio.Protecao {
+		o.replaces++
+		m.avisarReservaReplaces(op, o)
+	}
+	novo := pnt.Ordem{ClOrdID: cl, Simbolo: op.Simbolo, Lado: o.Lado.FIX(), Qtd: qtd, Preco: px, Estrategia: o.Estrategia, Stop: stop, StopLim: stopLim,
+		IgnorarTunel: m.ignorarTunel(o)}
 	msg := pnt.Replace(m.idDe(op), novo, o.ClOrdAtual, o.OrderID, m.agora())
 	m.salvarOp(op)
 	prio := prioSaida
@@ -395,11 +400,27 @@ func (m *Motor) replace(o *ordem, qtd int, px, stop, stopLim int64) {
 	m.enfileirarEnvio(envioPendente{o: o, msg: msg, clordid: cl, prio: prio,
 		aoEnviar: func() { o.pendDesde = m.agora() },
 		aoFalhar: func() {
+			if o.Papel == dominio.Protecao {
+				o.replaces-- // não saiu
+			}
 			if o.clPend == cl {
 				limparPendencia(o)
 			}
 		}})
 	slog.Info("REPLACE decidido", "ordem", o.ClOrdAtual, "clordid", cl, "qtd", qtd, "preco", px, "stop", stop)
+}
+
+// avisarReservaReplaces (v1.13): a 1014 chegou à reserva (REPLACES_1014_MAX − REPLACES_1014_RESERVA):
+// daqui em diante o ajuste do gestor é recusado (PROTECAO_LIMITE_REPLACES) e o trailing segue pelo
+// TRSP do gestor (a saída por replace cabe na reserva).
+func (m *Motor) avisarReservaReplaces(op *operacao, o *ordem) {
+	if o.reservaAvisada || o.replaces < m.p.Replaces1014Max-m.p.Replaces1014Reserva {
+		return
+	}
+	o.reservaAvisada = true
+	m.publicar("PROTECAO_RESERVA_REPLACES", op, map[string]any{"clordid": o.ClOrdAtual, "replaces": o.replaces, "max": m.p.Replaces1014Max})
+	m.al.Emitir("PROTECAO_RESERVA_REPLACES", "", fmt.Sprintf("1014 %s com %d de %d replaces: ajustes do stop recusados daqui em diante (a saída por replace segue na reserva), operação %d",
+		o.ClOrdAtual, o.replaces, m.p.Replaces1014Max, op.OperacaoID), op.OperacaoID)
 }
 
 func limparPendencia(o *ordem) {

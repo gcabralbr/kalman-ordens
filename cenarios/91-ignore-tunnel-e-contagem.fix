@@ -1,0 +1,45 @@
+cenario 91 IgnoreTunnel (20864=Y) na 1014, nos replaces dela e na saída; a entrada no padrão; mensagens de túnel contadas
+hora 2026-10-19 13:00:00
+# v1.13 (RoE §4.2: 20864 IgnoreTunnel em D, AB e G, padrão False). O túnel do PnT fica desatualizado
+# depois da entrada (limite 210.000 com o preço em 209.990, visto no PTF): a 1014, todo replace dela e a
+# saída (1031) vão com 20864=Y; a entrada fica no padrão (IGNORE_TUNNEL_ENTRADA=N). Toda mensagem do
+# PnT com "tunnel" no 58 vira evento TUNNEL e métrica tunel_total{papel,tipo}; recusa de entrada por
+# túnel: alerta TUNNEL_RECUSA_ENTRADA.
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+
+executa INICIO
+entrada 9101 C
+resposta aceito=true
+recebe 35=D 11=KM-E-9101-1 847=1031 20864=-
+envia @ER 11=KM-E-9101-1 37=dsa.9101.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+recebe 35=D 11=KM-P-9101-1 847=1014 20828=129510 20829=129410 20864=Y
+envia @ER 11=KM-P-9101-1 37=dsa.9101.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=9101
+# o robô avisa que ignorou o túnel (texto do PT 2025)
+envia @ER 11=KM-P-9101-1 37=dsa.9101.P 150=D 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 58="Sent Sell price: 129410 ignored tunnel lim: 129600;  "
+evento TUNNEL operacao_id=9101 papel=PROTECAO tipo=ignorado
+sem_alerta TUNNEL_RECUSA_ENTRADA
+# ajuste do stop: o replace da 1014 também leva 20864=Y
+stop 9101 preco=129800
+resposta aceito=true situacao=ENVIADO
+recebe 35=G 11=KM-P-9101-2 41=KM-P-9101-1 847=1014 20828=129800 20864=Y
+envia @ER 11=KM-P-9101-2 41=KM-P-9101-1 37=dsa.9101.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+# saída pelo caminho cancel + 1031: a 1031 de saída leva 20864=Y
+saida 9101 V SINAL_OPOSTO
+recebe 35=F 11=KM-P-9101-3 41=KM-P-9101-2
+envia @ER 11=KM-P-9101-3 41=KM-P-9101-2 37=dsa.9101.P 150=4 39=4 54=2 38=1 44=129700 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-9101-1 54=2 847=1031 20864=Y
+envia @ER 11=KM-S-9101-1 37=dsa.9101.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=129995 14=1 151=0 6=129995
+evento ZERADA operacao_id=9101
+
+# entrada recusada pelo túnel: alerta (é a deixa para ligar IGNORE_TUNNEL_ENTRADA)
+entrada 9102 C
+resposta aceito=true
+recebe 35=D 11=KM-E-9102-1 847=1031 20864=-
+envia @ER 11=KM-E-9102-1 37=dsa.9102.E 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="Order price 130020 out of tunnel limits (lim: 130000)"
+alerta TUNNEL_RECUSA_ENTRADA
+evento TUNNEL operacao_id=9102 papel=ENTRADA tipo=recusa
+metrica kalman_ordens_tunel_total papel=ENTRADA tipo=recusa >= 1
+metrica kalman_ordens_tunel_total papel=PROTECAO tipo=ignorado >= 1

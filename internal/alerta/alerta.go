@@ -29,6 +29,7 @@ var Catalogo = map[string]bool{
 	"SAIDA_BLOQUEADA_PRECO_ANTIGO": true, "FIM_DIA_POSICAO": true, "RESUMO_DIA": false,
 	"VIRADA_COM_OPERACAO": true, "ERRO_INTERNO": true, "RESOLVIDO": false,
 	"PNT_BOLSA_INDISPONIVEL": true,
+	"BANCO_QUARENTENA":       true, "PROTECAO_RESERVA_REPLACES": false, "TUNNEL_RECUSA_ENTRADA": false,
 }
 
 // Notificador entrega o alerta para fora (Telegram). Não pode bloquear.

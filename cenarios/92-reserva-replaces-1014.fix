@@ -1,0 +1,51 @@
+cenario 92 Reserva de replaces da 1014 (MaxReplaces): ajustes param na reserva, a contagem sobrevive ao restart, a saída por replace cabe
+hora 2026-10-19 13:10:00
+# v1.13 (RoE §4.3.7: 20771 MaxReplaces, padrão 100). O PnT não informa a contagem: o serviço conta os
+# 35=G enviados a cada 1014 (no restart, recontados do kalmanordemevento). Com REPLACES_1014_MAX −
+# REPLACES_1014_RESERVA (aqui 6 − 2 = 4), evento PROTECAO_RESERVA_REPLACES e o ajuste do gestor passa a
+# ser recusado com PROTECAO_LIMITE_REPLACES (o trailing segue pelo TRSP do gestor); a saída por replace
+# continua cabendo.
+config REPLACES_1014_MAX=6
+config REPLACES_1014_RESERVA=2
+config SAIDA_POR_REPLACE=1
+
+executa INICIO
+executa COMPRADO OP=9201
+stop 9201 preco=129600
+resposta aceito=true situacao=ENVIADO
+recebe 35=G 11=KM-P-9201-2 41=KM-P-9201-1 20828=129600
+envia @ER 11=KM-P-9201-2 41=KM-P-9201-1 37=dsa.9201.P 150=5 39=5 54=2 38=1 44=129500 847=1014 14=0 151=1 6=0 20828=129600 20829=129500
+stop 9201 preco=129650
+recebe 35=G 11=KM-P-9201-3 41=KM-P-9201-2 20828=129650
+envia @ER 11=KM-P-9201-3 41=KM-P-9201-2 37=dsa.9201.P 150=5 39=5 54=2 38=1 44=129550 847=1014 14=0 151=1 6=0 20828=129650 20829=129550
+stop 9201 preco=129700
+recebe 35=G 11=KM-P-9201-4 41=KM-P-9201-3 20828=129700
+envia @ER 11=KM-P-9201-4 41=KM-P-9201-3 37=dsa.9201.P 150=5 39=5 54=2 38=1 44=129600 847=1014 14=0 151=1 6=0 20828=129700 20829=129600
+sem_evento PROTECAO_RESERVA_REPLACES
+stop 9201 preco=129750
+recebe 35=G 11=KM-P-9201-5 41=KM-P-9201-4 20828=129750
+evento PROTECAO_RESERVA_REPLACES operacao_id=9201 replaces=4 max=6
+alerta PROTECAO_RESERVA_REPLACES
+envia @ER 11=KM-P-9201-5 41=KM-P-9201-4 37=dsa.9201.P 150=5 39=5 54=2 38=1 44=129650 847=1014 14=0 151=1 6=0 20828=129750 20829=129650
+stop 9201 preco=129800
+resposta aceito=false codigo=PROTECAO_LIMITE_REPLACES
+nada
+
+# restart: a contagem vem do banco (4 replaces enviados à 1014 viva)
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345 584=>MS
+envia @ER 11=KM-P-9201-5 37=dsa.9201.P 150=I 39=0 584=$MS 54=2 38=1 44=129650 847=1014 14=0 151=1 6=0 20828=129750 20829=129650
+avanca 3s
+alerta CONCILIACAO
+stop 9201 preco=129800
+resposta aceito=false codigo=PROTECAO_LIMITE_REPLACES
+nada
+
+# a saída por replace cabe na reserva (o 5º replace)
+saida 9201 V TRSP
+recebe 35=G 11=KM-P-9201-6 41=KM-P-9201-5 20828=130100 20829=129950
+envia @ER 11=KM-P-9201-6 41=KM-P-9201-5 37=dsa.9201.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20828=130100 20829=129950
+envia @ER 11=KM-P-9201-6 37=dsa.9201.P 150=F 39=2 54=2 38=1 44=129950 847=1014 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=9201 motivo=TRSP origem=GESTOR
+nada

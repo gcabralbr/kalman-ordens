@@ -22,6 +22,9 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `SAIDA_EM_ERRO` | saída em estado de erro (39=7) sem reativação: cancelada, a saída segue com o próximo repreço; leva o texto 58 | sim |
 | `PNT_BOLSA_INDISPONIVEL` | disjuntor de bolsa indisponível (SPEC v1.10 §9): rejeição do PnT com texto de `DISJUNTOR_TEXTOS` ("Exchange is offline"), ou `DISJUNTOR_REJEICOES` rejeições iguais em `DISJUNTOR_JANELA_S`; entradas recusadas, saídas e 1014 em sonda a cada `DISJUNTOR_SONDA_S`; resolve no primeiro aceite ou execução limpos | sim |
 | `ENTRADA_EM_ERRO` | entrada em estado de erro (39=7) sem reativação: cancelada; leva o texto 58 | não |
+| `BANCO_QUARENTENA` | (v1.13) linha do lote recusada pelo banco por erro de dado (1406, 1366, 1264, 1292, 1048, 1452): foi para a `kalmanordemquarentena` e o resto do lote gravou; o serviço segue. Na subida com linha pendente: PARADA (BLOQUEAR, origem QUARENTENA). Resolve no `POST /retomar` depois de `kalman-ordens quarentena resolver` | sim |
+| `PROTECAO_RESERVA_REPLACES` | (v1.13) a 1014 chegou a `REPLACES_1014_MAX − REPLACES_1014_RESERVA` replaces (MaxReplaces 20771 do PnT, padrão 100): ajustes do stop recusados daqui em diante (`PROTECAO_LIMITE_REPLACES`); o trailing segue pelo TRSP do gestor (saída por replace, na reserva) | não |
+| `TUNNEL_RECUSA_ENTRADA` | (v1.13) entrada recusada pelo PnT com "tunnel" no 58: na primeira recusa falsa, ligar `IGNORE_TUNNEL_ENTRADA` | não |
 | `CONCILIACAO` | resultado da conciliação do logon (ordens KM, ignoradas, divergências, posição); o mass status vazio (35=j 380=101 "No orders found.") é só registrado (v1.3 E2) | não |
 | `MASS_STATUS_REJEITADO` | mass status rejeitado por motivo diferente de 380=4; entradas bloqueadas | sim |
 | `DESCONHECIDA` | ordem viva na tabela e ausente no mass status | não |
@@ -117,6 +120,7 @@ Nenhum conta para a parada automática; nenhum gera alerta.
 | `SEM_POSICAO` | operação inexistente (no módulo), encerrada ou com posição zero |
 | `SEM_PROTECAO` | operação em saída, ou sem 1014 viva |
 | `PROTECAO_DISPARADA` | a 1014 já disparou no PnT (39=B com 20807>0): quem decide são os fills |
+| `PROTECAO_LIMITE_REPLACES` | (v1.13) a 1014 já teve `REPLACES_1014_MAX − REPLACES_1014_RESERVA` replaces (95 de 100): a reserva fica para a saída por replace; o trailing segue pelo TRSP do gestor |
 | `SEM_PRECO` | sem bid/ask do símbolo da posição com até `PRECO_IDADE_MAX_S` para validar |
 | `STOP_ALEM_DO_PRECO` | comprado com stop >= bid, ou vendido com stop <= ask (depois do arredondamento ao tick): a 1014 dispararia na hora; quem sai é o gestor |
 | `RESULTADO_DESCONHECIDO` | (HTTP 503) motor não respondeu a tempo; o pedido segue; reenviar o mesmo é inofensivo |
@@ -157,6 +161,7 @@ parada automática; nenhum gera alerta.
 | `SIMBOLO_DIVERGENTE` | encerrar com a posição num contrato que não é mais o vigente e sem preço recente dele |
 | `SEM_ENTRADA_PENDENTE` | cancelar-entrada sem entrada viva |
 | `COM_POSICAO` | cancelar-entrada com a entrada já executada em parte (usar encerrar) |
+| `QUARENTENA_PENDENTE` | (v1.13, `POST /retomar`) há linha na quarentena do banco sem resolução: `kalman-ordens quarentena listar/resolver` antes |
 | `RESULTADO_DESCONHECIDO` | (HTTP 503) motor não respondeu a tempo |
 
 Respostas aceitas (`"aceito": true`, com `codigo` e `motivo`, SPEC v1.7 A4):

@@ -45,8 +45,10 @@ const colunasOp = `id, data, modulo, operacao_id, uid, conta, destino, simbolo, 
 
 func linhaOp(o dominio.Operacao, agora time.Time) []any {
 	cn, _ := json.Marshal(o.ContadorN)
-	return []any{o.ID, o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(o.Conta), o.Destino, nulo(o.Simbolo), o.Lado.Letra(), o.QtdPedida,
-		o.StopPts, nuloInt(o.StopAjustado), string(o.Estado), nulo(o.MotivoEntrada), nulo(o.TsDecisao), nulo(o.MotivoSaida), nulo(o.OrigemSaida),
+	// v1.13: textos cortados ao tamanho da coluna (o 1406 não trava mais o lote; HML 19/10 10:41)
+	return []any{o.ID, o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(cortar(o.Conta, 20)), o.Destino, nulo(cortar(o.Simbolo, 20)), o.Lado.Letra(), o.QtdPedida,
+		o.StopPts, nuloInt(o.StopAjustado), string(o.Estado), nulo(cortar(o.MotivoEntrada, 20)), nulo(cortar(o.TsDecisao, 40)), nulo(cortar(o.MotivoSaida, 60)),
+		nulo(cortar(o.OrigemSaida, 30)),
 		utc(o.SaidaPedidaEm), o.Divergente, o.PnL.String(), o.EncerrouEntrada, string(cn), nulo(o.PedidoEntrada), nulo(o.RespostaEntrada),
 		nulo(o.PedidoSaida), nulo(o.RespostaSaida), rajadaSQL(o.SinalEntrada), rajadaSQL(o.SinalSaida), utc(o.CriadaEm), agora}
 }
@@ -55,9 +57,10 @@ const colunasOrdem = `id, data, modulo, uid, operacao_id, papel, conta, simbolo,
 	estrategia, lado, qtd, preco, preco_stop, preco_stop_lim, estado, qtd_exec, preco_medio, motivo_gestor, motivo_rejeicao, criado_em, atualizado_em`
 
 func linhaOrdem(o dominio.Ordem, agora time.Time) []any {
-	return []any{o.ID, o.Data, modulo(o.Modulo), o.UID, o.OperacaoID, o.Papel.String(), nulo(o.Conta), nulo(o.Simbolo), o.ClOrdBase, o.ClOrdAtual,
-		nulo(o.OrderID), nulo(o.SecID), o.Estrategia, o.Lado.Letra(), o.Qtd, o.Preco, o.Stop, o.StopLim, string(o.Estado), o.QtdExec,
-		o.PrecoMedio.String(), nulo(o.MotivoGestor), nulo(cortar(o.MotivoRejeicao, 500)), utc(o.CriadaEm), agora}
+	return []any{o.ID, o.Data, modulo(o.Modulo), o.UID, o.OperacaoID, o.Papel.String(), nulo(cortar(o.Conta, 20)), nulo(cortar(o.Simbolo, 20)),
+		cortar(o.ClOrdBase, 40), cortar(o.ClOrdAtual, 40), nulo(cortar(o.OrderID, 40)), nulo(cortar(o.SecID, 40)), o.Estrategia, o.Lado.Letra(), o.Qtd,
+		o.Preco, o.Stop, o.StopLim, string(o.Estado), o.QtdExec, o.PrecoMedio.String(), nulo(cortar(o.MotivoGestor, 60)),
+		nulo(cortar(o.MotivoRejeicao, 500)), utc(o.CriadaEm), agora}
 }
 
 // GravarLote: uma transação, um INSERT de várias linhas por tabela (v1.10 B).
@@ -126,8 +129,8 @@ func (r *MariaDB) GravarLote(l *Lote) error {
 		if e.OrdemID != 0 {
 			ordem = e.OrdemID
 		}
-		ev = append(ev, []any{ordem, modulo(e.Modulo), e.Direcao, e.MsgType, nulo(e.ExecType), nulo(e.OrdStatus), nulo(cortar(e.ClOrdID, 60)),
-			nulo(e.OrderID), nulo(e.ExecID), lq, lp, cq, ap, nulo(cortar(e.Texto, 1000)), nulo(cortar(e.Codigo, 20)), nulo(e.Bruta), utc(e.Em)})
+		ev = append(ev, []any{ordem, modulo(e.Modulo), e.Direcao, cortar(e.MsgType, 4), nulo(cortar(e.ExecType, 1)), nulo(cortar(e.OrdStatus, 1)),
+			nulo(cortar(e.ClOrdID, 60)), nulo(cortar(e.OrderID, 40)), nulo(cortar(e.ExecID, 80)), lq, lp, cq, ap, nulo(cortar(e.Texto, 1000)), nulo(cortar(e.Codigo, 20)), nulo(e.Bruta), utc(e.Em)})
 	}
 	// INSERT IGNORE: o fill repetido (37, 17) já foi descartado pelo motor; a chave única fica de rede
 	if err := inserir(tx, `INSERT IGNORE INTO kalmanordemevento (ordem_id, modulo, direcao, msgtype, exectype, ordstatus, clordid, orderid37,
@@ -141,14 +144,14 @@ func (r *MariaDB) GravarLote(l *Lote) error {
 		if p.OperacaoID != 0 {
 			op = p.OperacaoID
 		}
-		pubs = append(pubs, []any{p.Tipo, modulo(p.Modulo), op, string(p.Dados), utc(p.Em)})
+		pubs = append(pubs, []any{cortar(p.Tipo, 40), modulo(p.Modulo), op, string(p.Dados), utc(p.Em)})
 	}
 	if err := inserir(tx, "INSERT INTO kalmanordempub (tipo, modulo, operacao_id, dados, em)", 5, pubs, ""); err != nil {
 		return err
 	}
 	var est [][]any
 	for _, e := range l.Estados {
-		est = append(est, []any{e.Chave, e.Valor, e.Em.UTC()})
+		est = append(est, []any{cortar(e.Chave, 64), e.Valor, e.Em.UTC()})
 	}
 	if err := inserir(tx, "INSERT INTO kalmanordemestado (chave, valor, atualizado_em)", 3, est,
 		"ON DUPLICATE KEY UPDATE valor=VALUES(valor), atualizado_em=VALUES(atualizado_em)"); err != nil {
@@ -156,7 +159,7 @@ func (r *MariaDB) GravarLote(l *Lote) error {
 	}
 	var ses [][]any
 	for _, e := range l.Sessao {
-		ses = append(ses, []any{e.Tipo, cortar(e.Texto, 1000), utc(e.Em)})
+		ses = append(ses, []any{cortar(e.Tipo, 16), cortar(e.Texto, 1000), utc(e.Em)})
 	}
 	if err := inserir(tx, "INSERT INTO kalmanordemsessao (tipo, texto, em)", 3, ses, ""); err != nil {
 		return err
@@ -170,7 +173,7 @@ func (r *MariaDB) GravarLote(l *Lote) error {
 		if p.UID != 0 {
 			uid = p.UID
 		}
-		ped = append(ped, []any{p.Data, modulo(cortar(p.Modulo, 8)), op, uid, p.Rota, nulo(cortar(p.Papel, 8)), p.HTTPStatus, p.Aceito,
+		ped = append(ped, []any{p.Data, modulo(cortar(p.Modulo, 8)), op, uid, cortar(p.Rota, 16), nulo(cortar(p.Papel, 8)), p.HTTPStatus, p.Aceito,
 			nulo(cortar(p.Codigo, 40)), strings.ToValidUTF8(cortar(p.Corpo, 65000), ""), strings.ToValidUTF8(cortar(p.Resposta, 65000), ""), utc(p.Em)})
 	}
 	if err := inserir(tx, `INSERT INTO kalmanordempedido (data, modulo, operacao_id, uid, rota, papel, http_status, aceito, codigo, corpo,

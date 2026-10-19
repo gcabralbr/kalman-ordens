@@ -33,6 +33,7 @@ var (
 		"Da decisão do motor ao envio ao PnT (commit do lote e, na entrada, o limitador de taxa), por prioridade.", "prioridade")
 	EntradasExpiradasFila = NovoContador("entradas_expiradas_fila_total", "Entradas descartadas por passar de ENTRADA_TTL_FILA_S esperando a taxa.")
 	// v1.10 §6: POST /sinais
+	Tunel          = NovoContador("tunel_total", "Mensagens do PnT com \"tunnel\" no 58 (v1.13), por papel e tipo (ignorado, recusa).", "papel", "tipo")
 	Disjuntor      = NovoContador("disjuntor_bolsa_total", "Disjuntor de bolsa indisponível: abriu, fechou, sonda.", "evento")
 	SinaisPartes   = NovoContador("sinais_partes_total", "Partes de POST /sinais tratadas pelo motor, por código (LOTE_ACEITO, repetida, recusas do lote).", "codigo")
 	SinaisItens    = NovoContador("sinais_itens_total", "Itens de POST /sinais, por papel e resultado (aceito, recusado, repetido).", "papel", "resultado")

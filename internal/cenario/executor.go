@@ -63,6 +63,7 @@ type Executor struct {
 	rel         *relogio.Controlado
 	preco       *preco.Falsa
 	repo        repo.Repositorio
+	falha       *repoComFalha // v1.13: erro de dado injetado (banco_erro_dado)
 	backend     Backend
 	notif       *notificador
 	pnt         *falso.Falso
@@ -149,7 +150,8 @@ func (e *Executor) preparar() error {
 	if err != nil {
 		return err
 	}
-	e.repo = r
+	e.falha = &repoComFalha{Repositorio: r}
+	e.repo = e.falha
 	e.notif = &notificador{}
 	f, err := falso.Novo(falso.Config{Contraparte: "KALMAN", Dir: filepath.Join(e.dir, "pnt"), Verboso: os.Getenv("FALSO_VERBOSO") != ""})
 	if err != nil {
@@ -181,7 +183,7 @@ func (e *Executor) usuario(p roteiro.Passo) error {
 	}
 	switch p.Verbo {
 	case "usuario":
-		u, ok := e.repo.(repo.UsuariosDeTeste)
+		u, ok := e.falha.Repositorio.(repo.UsuariosDeTeste)
 		if !ok {
 			return fmt.Errorf("o backend não aceita usuários de teste")
 		}
@@ -253,7 +255,7 @@ func (e *Executor) encerrar() {
 	if e.pnt != nil {
 		e.pnt.Parar()
 	}
-	if m, ok := e.repo.(*repo.MariaDB); ok {
+	if m, ok := e.falha.Repositorio.(*repo.MariaDB); ok {
 		m.Fechar()
 	}
 }
@@ -356,14 +358,59 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		// o que o serviço enviou numa sessão que caiu sem o PnT falso processar não chega mais
 		e.svc.baseRec = e.pnt.RecebidasApp() - e.svc.sessao.Enviadas()
 		return nil
+	case "banco_erro_dado":
+		// banco_erro_dado operacao=N : a gravação da linha da operação N falha com erro de dado
+		for _, a := range p.Args {
+			if v, ok := strings.CutPrefix(a, "operacao="); ok {
+				n, err := strconv.ParseInt(v, 10, 64)
+				if err != nil {
+					return err
+				}
+				e.falha.definir(n)
+				return nil
+			}
+		}
+		return fmt.Errorf("banco_erro_dado operacao=N")
+	case "quarentena_resolver":
+		// quarentena_resolver id=N : como a CLI (kalman-ordens quarentena resolver)
+		for _, a := range p.Args {
+			if v, ok := strings.CutPrefix(a, "id="); ok {
+				if v == "todas" {
+					qs, err := e.repo.QuarentenaPendente()
+					if err != nil {
+						return err
+					}
+					if len(qs) == 0 {
+						return fmt.Errorf("nenhuma linha pendente na quarentena")
+					}
+					for _, q := range qs {
+						if _, err := e.repo.ResolverQuarentena(q.ID, "cli:1450", "roteiro", e.rel.Agora()); err != nil {
+							return err
+						}
+					}
+					return nil
+				}
+				n, _ := strconv.ParseInt(v, 10, 64)
+				ok, err := e.repo.ResolverQuarentena(n, "cli:1450", "roteiro", e.rel.Agora())
+				if err != nil {
+					return err
+				}
+				if !ok {
+					return fmt.Errorf("quarentena %d não existe ou já resolvida", n)
+				}
+				return nil
+			}
+		}
+		return fmt.Errorf("quarentena_resolver id=N")
 	case "reinicia_servico":
 		e.descer()
 		_ = e.pnt.EsperarQueda(5 * time.Second)
-		r, err := e.backend.Reabrir(e.repo)
+		r, err := e.backend.Reabrir(e.falha.Repositorio)
 		if err != nil {
 			return err
 		}
-		e.repo = r
+		e.falha = &repoComFalha{Repositorio: r} // a falha injetada não sobrevive ao restart
+		e.repo = e.falha
 		return e.subir()
 	case "recebe":
 		return e.recebe(p.Campos)
@@ -585,6 +632,13 @@ func (e *Executor) casa(cs []roteiro.Campo, r falso.Recebida, capturar bool) err
 				return fmt.Errorf("tag %d ausente (captura %s)", c.Tag, c.Captura)
 			}
 			novas[c.Captura] = v
+			continue
+		}
+		if c.Valor == "-" {
+			// tag=- : a tag não pode estar na mensagem (v1.13: 20864 só fora da entrada)
+			if ok {
+				return fmt.Errorf("tag %d = %s, esperava ausente", c.Tag, v)
+			}
 			continue
 		}
 		esperado, err := e.substituir(c.Valor)
@@ -1102,4 +1156,28 @@ func corromperUltimaDoStore(dir string) error {
 func Dir(base, nome string) (string, error) {
 	d := filepath.Join(base, strings.TrimSuffix(nome, ".fix"))
 	return d, os.MkdirAll(d, 0o755)
+}
+
+// repoComFalha (v1.13): a gravação de uma linha de operação falha com erro de dado (como o 1406 de
+// 19/10), nos dois backends, para os roteiros da quarentena do lote.
+type repoComFalha struct {
+	repo.Repositorio
+	mu sync.Mutex
+	op int64
+}
+
+func (r *repoComFalha) definir(op int64) { r.mu.Lock(); r.op = op; r.mu.Unlock() }
+
+func (r *repoComFalha) GravarLote(l *repo.Lote) error {
+	r.mu.Lock()
+	op := r.op
+	r.mu.Unlock()
+	if op != 0 {
+		for _, o := range append(append([]dominio.Operacao{}, l.NovasOperacoes...), l.Operacoes...) {
+			if o.OperacaoID == op {
+				return fmt.Errorf("kalmanordemoperacao: %w (injetado)", repo.ErrDadoInvalido)
+			}
+		}
+	}
+	return r.Repositorio.GravarLote(l)
 }

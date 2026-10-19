@@ -1,4 +1,4 @@
-# SPEC kalman-ordens v1.13 — rascunho para combinar (19/10/2026)
+# SPEC kalman-ordens v1.13 — aprovada em 19/10/2026 (com três ajustes)
 
 Base: v1.12 instalada (`cb88b96`). Referência do PnT: Fast Trader DSA FIX Specification 1.1.0
 (`docs/referencia/PnT-DSA-Fix-RoE-English.docx`, fora do git), citada como RoE §.
@@ -19,9 +19,9 @@ PnT **não** ecoa a 20771 nem informa quantos replaces já houve (ecoa só 20807
   RESERVA` (95), o ajuste do gestor é recusado e a saída por replace continua cabendo (até
   `MAX_REPRECO_SAIDA + 1` = 4 replaces). O replace de quantidade (proteção da posição) não para.
   Com `replaces ≥ MAX`, a saída vai pelo cancel + 1031.
-- **Recusa do ajuste: código a combinar com o Kalman** (contrato): ou um código novo
-  `PROTECAO_LIMITE_REPLACES` (o Kalman teria de incluí-lo em `AJUSTE_RECUSAS_ESPERADAS`), ou o
-  `SEM_PROTECAO` existente com motivo próprio (sem mudança no Kalman). Proposta: o código novo.
+- **Recusa do ajuste: código novo `PROTECAO_LIMITE_REPLACES`** (decidido; não reaproveita
+  `SEM_PROTECAO`), combinado com o lado do Kalman para entrar em `AJUSTE_RECUSAS_ESPERADAS`. Depois da
+  reserva, **o trailing segue pelo TRSP do gestor** (a saída por replace, que cabe na reserva).
 - **Evento/alerta:** `PROTECAO_RESERVA_REPLACES` (operacao_id, replaces, max) na primeira vez que a
   reserva é atingida; alerta não crítico. Métrica do número de replaces por 1014 no fechamento.
 - Se o PnT confirmar que a 20771 pode ser enviada maior (pergunta 3, seção 4), a 1014 passa a mandar
@@ -31,9 +31,10 @@ PnT **não** ecoa a 20771 nem informa quantos replaces já houve (ecoa só 20807
 
 RoE §4.2: `20864 IgnoreTunnel`, aceito em toda criação (D, AB) e no replace (G), Repl=Y, "Defaults to
 False". Decisão (19/10): **`20864=Y` no 35=D da 1014 e em todo 35=G dela** (ajuste, quantidade, saída
-por replace). Motivo: o túnel do PnT tem um defeito conhecido (limite desatualizado depois da
-entrada, ex. limite 210.000 com o preço em 209.990), visto no PTF há anos. Entradas (1031) e saídas
-(1031) ficam no padrão.
+por replace) **e na 1031 de saída** (35=D do caminho cancel + nova, e o repreço dela). Motivo: o túnel
+do PnT tem um defeito conhecido (limite desatualizado depois da entrada, ex. limite 210.000 com o
+preço em 209.990), visto no PTF há anos. **Só as entradas ficam no padrão** (`IGNORE_TUNNEL_ENTRADA`,
+desligada), com a contagem e o alerta.
 
 **Contagem de túnel:** toda mensagem do PnT (35=8, 35=9, 35=3, 35=j) com "tunnel" no 58 conta na
 métrica `kalman_ordens_tunnel_total{papel, tipo}` (`ignorado` = "ignored tunnel lim: X"; `recusa` =
@@ -51,8 +52,12 @@ qualquer outro texto com tunnel) e vira evento `TUNNEL` (operacao_id, papel, tex
    regravado linha a linha (cada linha na sua transação, na ordem de criação); a linha que falha vai
    para `kalmanordemquarentena` (tabela, linha em JSON, erro, em — migração 0010) com alerta crítico
    `BANCO_QUARENTENA`; o resto grava e o `BANCO_LOTE` resolve. Erro que não é de dado (conexão,
-   deadlock) continua como hoje (volta ao lote seguinte). Textos cortados ao tamanho da coluna na
-   gravação (como o `motivo_rejeicao`), como rede abaixo da validação da API da v1.12.
+   deadlock) continua como hoje (volta ao lote seguinte). **Os textos são cortados ao tamanho da
+   coluna antes da gravação** (em caracteres, sem UTF-8 inválido): o 1406 não ocorre mais. **Com linha
+   não resolvida na quarentena, o `servir` sobe em PARADA (BLOQUEAR, origem QUARENTENA) com alerta
+   crítico**, até ação explícita: `kalman-ordens quarentena listar` / `resolver -id N -por UID -motivo X`
+   e o `POST /retomar`, que recusa com `QUARENTENA_PENDENTE` enquanto houver linha pendente. A 0010
+   também amplia `kalmanordempub.tipo` para `VARCHAR(40)` (`PROTECAO_RESERVA_REPLACES` tem 25).
 2. **O `servir` registra no journal as migrações aplicadas** (`MigrarRelatando` já devolve a lista):
    `migrações aplicadas: 0009_motivo_60.sql` ou `banco na versão N, nenhuma pendente`.
 3. **Convenção de fuso das tabelas:** levantar, coluna por coluna, o que é gravado em UTC
@@ -67,3 +72,12 @@ qualquer outro texto com tunnel) e vira evento `TUNNEL` (operacao_id, papel, tex
 3. O `MaxReplaces` (20771) da 1014 pode ser maior que 100 se enviado no 35=D? Há máximo?
 4. (de 19/10, seção 15 do ESTADO) A 1014 com `40=1` envia a ordem disparada a mercado? O exemplo da
    §4.3.7 manda 40=1 e recebe 40=2 com 44.
+
+## 5. Testes (roteiros)
+
+- 91: 20864=Y na 1014, no replace dela e na 1031 de saída; ausente na entrada; TUNNEL ignorado e
+  recusa de entrada (alerta e métrica).
+- 92: reserva de replaces (MAX 6, reserva 2): evento no 4º, recusa no 5º, a contagem sobrevive ao
+  restart, a saída por replace cabe.
+- 93: quarentena da linha da operação (erro de dado injetado), o serviço segue, o banco fica atrás;
+  restart em PARADA; `/retomar` recusado até a resolução.

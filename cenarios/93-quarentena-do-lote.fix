@@ -1,0 +1,47 @@
+cenario 93 Quarentena do lote: a linha de estado da operação recusada por erro de dado não trava o gravador; o restart sobe em PARADA até a resolução
+hora 2026-10-19 13:20:00
+# v1.13 (HML 19/10 10:41: um motivo longo no motivo_saida travou o gravador por 5,5 min com o 1406).
+# Erro de dado (injetado aqui na linha da operação 9301): o lote é regravado linha a linha; a linha da
+# operação vai para a kalmanordemquarentena (alerta crítico BANCO_QUARENTENA) e o resto grava — ordens,
+# mensagens FIX, eventos. O serviço segue (a saída executa, o ZERADA sai). O banco fica com a operação
+# atrasada (PROTEGIDA): por isso o restart com linha pendente sobe em PARADA (BLOQUEAR, origem
+# QUARENTENA); o /retomar só passa depois da resolução (kalman-ordens quarentena resolver).
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+
+executa INICIO
+executa COMPRADO OP=9301
+banco_erro_dado operacao=9301
+saida 9301 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-9301-2 41=KM-P-9301-1
+alerta BANCO_QUARENTENA
+envia @ER 11=KM-P-9301-2 41=KM-P-9301-1 37=dsa.9301.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-9301-1 54=2 847=1031
+envia @ER 11=KM-S-9301-1 37=dsa.9301.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=129995 14=1 151=0 6=129995
+evento ZERADA operacao_id=9301 motivo=SINAL_OPOSTO
+saude posicao=0
+sem_alerta ERRO_INTERNO
+# o banco: as ordens e os eventos gravaram; a linha da operação ficou na quarentena (PROTEGIDA)
+http GET /operacoes/9301/historico
+resposta operacao.estado=PROTEGIDA
+http GET /eventos?desde=0&limite=1000&modulo=KALMAN
+resposta _lista.#=*
+
+# restart com a linha pendente: PARADA
+reinicia_servico
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+alerta BANCO_QUARENTENA
+saude parada.modo=BLOQUEAR parada.origem=QUARENTENA
+entrada 9302 C
+resposta aceito=false codigo=PARADA
+http POST /retomar {"origem":"ADMIN","motivo":"conferido","por":1450}
+resposta aceito=false codigo=QUARENTENA_PENDENTE
+saude parada.modo=BLOQUEAR
+quarentena_resolver id=todas
+http POST /retomar {"origem":"ADMIN","motivo":"quarentena revisada","por":1450}
+resposta aceito=true codigo=RETOMADO
+saude parada=null

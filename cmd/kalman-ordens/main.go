@@ -50,6 +50,8 @@ const ajuda = `uso: kalman-ordens <comando> [opções]
   historico operacao -id N [-modulo M] [-cru]   linha do tempo da operação (JSON, direto no banco)
   historico dia [-dia D] [-uid N] [-modulo M]   operações do dia
   historico sessao [-dia D]                     logon, logout, queda, reenvios, conciliações, alertas gerais
+  quarentena listar                             linhas que o banco recusou por erro de dado (v1.13), pendentes
+  quarentena resolver -id N -por UID -motivo X  marca a linha como revisada; sem pendentes, retomar libera
   expurgar [-meses N] [-simular]                apaga o que passou da retenção (timer mensal; EXPURGO_DB_DSN)
   parar   -motivo X               parada BLOQUEAR (HTTP local)
   zerar   -motivo X               parada ZERAR (HTTP local)
@@ -88,6 +90,8 @@ func executar(args []string, saida, erros io.Writer) int {
 		err = cliUsuario(config.DoAmbiente(), args, saida)
 	case "historico":
 		err = cliHistorico(config.DoAmbiente(), args, saida)
+	case "quarentena":
+		err = cliQuarentena(config.DoAmbiente(), args, saida)
 	case "expurgar":
 		err = cliExpurgar(config.DoAmbiente(), args, saida, time.Now())
 	case "versao":
@@ -149,8 +153,16 @@ func servir(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	defer r.Fechar()
-	if err := r.Migrar(); err != nil {
+	// v1.13: o que foi aplicado vai ao journal (19/10: a 0009 entrou no servir sem deixar rastro)
+	aplicadas, err := r.MigrarRelatando()
+	for _, n := range aplicadas {
+		slog.Info("migração aplicada", "migracao", n)
+	}
+	if err != nil {
 		return fmt.Errorf("migração: %w", err)
+	}
+	if len(aplicadas) == 0 {
+		slog.Info("migrações: nenhuma pendente")
 	}
 	if t := cfg.Texto("ACUSUARIO_TABELA", ""); t != "" { // só em teste
 		if err := r.UsarTabelaUsuario(t); err != nil {

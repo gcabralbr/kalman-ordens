@@ -121,6 +121,10 @@ type Ordem struct {
 	Estrategia int   // 847
 	Stop       int64 // 20828 (só 1014)
 	StopLim    int64 // 20829 (só 1014)
+	// IgnorarTunel: 20864=Y (IgnoreTunnel, RoE §4.2: D, AB e G; padrão False). v1.13: na 1014 e na
+	// saída (o túnel do PnT fica desatualizado depois da entrada); nas entradas, só com
+	// IGNORE_TUNNEL_ENTRADA.
+	IgnorarTunel bool
 }
 
 // NovaOrdem monta o NewOrderSingle (35=D). Para 1014, o 44 é igual ao 20829 (exemplo do RoE).
@@ -223,6 +227,9 @@ func corpoOrdem(m *quickfix.Message, id Identificacao, o Ordem, agora time.Time)
 		m.Body.SetString(quickfix.Tag(207), id.Bolsa)
 	}
 	m.Body.SetInt(quickfix.Tag(847), o.Estrategia)
+	if o.IgnorarTunel {
+		m.Body.SetString(quickfix.Tag(20864), "Y")
+	}
 	if o.Estrategia == EstrategiaStop {
 		// [PnT-6] sempre 40=2 com folga
 		m.Body.SetString(quickfix.Tag(20828), strconv.FormatInt(o.Stop, 10))
