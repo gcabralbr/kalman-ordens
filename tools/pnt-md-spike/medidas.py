@@ -14,6 +14,7 @@ serviço). Só leitura; não toca em nada.
 import argparse
 import bisect
 import csv
+import gzip
 import datetime as dt
 import json
 import os
@@ -37,10 +38,17 @@ def seg_do_dia(t):
     return d.hour * 3600 + d.minute * 60 + d.second + d.microsecond / 1e6
 
 
+def abrir(arq):
+    """Texto de .jsonl, .csv ou do mesmo comprimido (.gz)."""
+    if arq.endswith(".gz"):
+        return gzip.open(arq, "rt")
+    return open(arq)
+
+
 def ler_gravacao(arq):
     """Séries de (chegada, valor): negócios, book (bid, ask), status; e os eventos de conexão."""
     neg, book, sts, con = [], [], [], []
-    for l in open(arq):
+    for l in abrir(arq):
         r = json.loads(l)
         t = r["chegada_ms"] / 1000
         ev = r["evento"]
@@ -132,7 +140,7 @@ def journal(desde, ate, arq=None):
 def ler_fita(arq):
     """(segundo do dia, preco, bid, ask) do tick file."""
     out = []
-    with open(arq) as f:
+    with abrir(arq) as f:
         for r in csv.DictReader(f):
             try:
                 t = float(r["ts"])
