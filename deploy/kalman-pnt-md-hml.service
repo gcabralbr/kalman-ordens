@@ -21,7 +21,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
 # o token é renovado e regravado aqui
-ReadWritePaths=/home/gammaquant/.config/pnt-md-spike
+ReadWritePaths=/home/gammaquant/.config/pnt-md-spike /home/gammaquant/kalman-ordens/var
 PrivateTmp=yes
 
 [Install]

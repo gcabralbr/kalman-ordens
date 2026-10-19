@@ -15,6 +15,11 @@ Seguro por padrão: sem conexão, feed indisponível (OnFeederUnavailable), toke
 de hoje → corpo "{}" (o kalman-ordens recusa a entrada com SEM_PRECO). Cada queda e volta vai ao log.
 Renova o token sozinho (refresh token; ver tools/pnt-md-spike/md_spike.py login-auto).
 
+Grava as mensagens brutas recebidas (cada LastTrade, AggrBook, SecurityStatus, e as quedas e voltas)
+num JSONL diário no formato do md_spike, em append: <--gravar-dir>/pnt-md-hml-<ativo>-AAAAMMDD.jsonl
+(o WB_MD aceita uma conexão por usuário: quem precisar do feed bruto lê daqui). A escrita é numa
+thread à parte (fila); erro de escrita vai ao log e não derruba o serviço. --gravar-dir "" desliga.
+
   pnt_md_hml.py [--ativo WINZ26] [--porta 9096] [--token ~/.config/pnt-md-spike/token.json]
   pnt_md_hml.py --simular var/pnt-md-WINZ26-20261016.jsonl [--velocidade 1]   # fonte gravada (teste)
 """
@@ -24,6 +29,8 @@ import datetime as dt
 import json
 import logging
 import os
+import queue
+import threading
 import time
 import uuid
 
@@ -132,7 +139,7 @@ def status84(payload):
     return 1
 
 
-def aplicativo(estado):
+def aplicativo(estado, grav=None):
     async def atual(req):
         if req.query.get("ativo", CONCEITO) != CONCEITO:  # sem ativo: WINFUT (o pedido do Kalman)
             return web.Response(status=400, text="ativo desconhecido")
@@ -141,12 +148,71 @@ def aplicativo(estado):
     async def saude(req):
         return web.json_response({"disponivel": estado.disponivel(), "conectado": estado.conectado,
                                   "feed_ok": estado.feed_ok, "token_ok": estado.token_ok, "motivo": estado.motivo,
-                                  "status84": estado.status84})
+                                  "status84": estado.status84,
+                                  "gravadas": getattr(grav, "gravadas", 0), "descartadas": getattr(grav, "descartadas", 0)})
 
     app = web.Application()
     app.router.add_get("/precos/atual", atual)
     app.router.add_get("/saude", saude)
     return app
+
+
+# ------------------------------------------------------------------ gravação bruta
+
+class Gravador:
+    """JSONL diário (pelo dia da chegada), em append, escrito por uma thread: o laço de leitura só
+    enfileira. Fila cheia (escrita travada) → descarta e conta; erro de escrita → log, segue."""
+
+    def __init__(self, pasta, ativo, maximo=200_000):
+        self.pasta, self.ativo = pasta, ativo
+        self.fila = queue.Queue(maxsize=maximo)
+        self.descartadas = self.gravadas = 0
+        self.arq = self.dia = None
+        self.falhou = False
+        threading.Thread(target=self._escrever, name="gravador", daemon=True).start()
+
+    def gravar(self, evento, dados, chegada=None):
+        t = chegada if chegada is not None else time.time()
+        try:
+            self.fila.put_nowait((t, evento, dados))
+        except queue.Full:
+            self.descartadas += 1
+            if self.descartadas in (1, 100, 10_000) or self.descartadas % 100_000 == 0:
+                log.error("gravação: fila cheia, %d mensagem(ns) descartada(s)", self.descartadas)
+
+    def caminho(self, t):
+        d = dt.datetime.fromtimestamp(t, FUSO).strftime("%Y%m%d")
+        return d, os.path.join(self.pasta, f"pnt-md-hml-{self.ativo}-{d}.jsonl")
+
+    def _escrever(self):
+        while True:
+            t, evento, dados = self.fila.get()
+            try:
+                dia, caminho = self.caminho(t)
+                if dia != self.dia:
+                    if self.arq:
+                        self.arq.close()
+                    self.arq, self.dia = open(caminho, "a", buffering=1), dia
+                    log.info("gravação: %s", caminho)
+                chegada = dt.datetime.fromtimestamp(t, FUSO).isoformat(timespec="milliseconds")
+                self.arq.write(json.dumps({"chegada": chegada, "chegada_ms": int(t * 1000), "evento": evento, "args": dados},
+                                          ensure_ascii=False, default=str) + "\n")
+                self.gravadas += 1
+                if self.falhou:
+                    log.warning("gravação: de volta")
+                    self.falhou = False
+            except Exception as e:
+                if not self.falhou:
+                    log.error("gravação: falhou (%r); o serviço continua, as mensagens se perdem até voltar", e)
+                    self.falhou = True
+                self.arq, self.dia = None, None
+
+
+class SemGravador:
+    gravadas = descartadas = 0
+
+    def gravar(self, *a, **k):
+        pass
 
 
 # ------------------------------------------------------------------ token
@@ -193,7 +259,7 @@ class Tokens:
 
 # ------------------------------------------------------------------ fontes
 
-async def fonte_ao_vivo(estado, args):
+async def fonte_ao_vivo(estado, args, grav):
     from pysignalr.client import SignalRClient
 
     tokens = Tokens(args.token)
@@ -212,16 +278,21 @@ async def fonte_ao_vivo(estado, args):
         cliente = SignalRClient(args.hub, headers=cab, access_token_factory=tokens.atual, max_size=args.max_mb << 20)
 
         async def md(dados):
+            chegada = time.time()
+            grav.gravar("OnUpdateMarketData", dados, chegada)
             if len(dados) >= 3 and dados[0] == args.ativo:
-                estado.update(dados[1], dados[2])
+                estado.update(dados[1], dados[2], chegada)
 
         async def indisponivel(dados):
+            grav.gravar("OnFeederUnavailable", dados)
             estado.marcar(feed_ok=False, motivo=f"OnFeederUnavailable {dados}")
 
         async def recuperado(dados):
+            grav.gravar("OnFeederRecovered", dados)
             estado.marcar(feed_ok=True, motivo=f"OnFeederRecovered {dados}")
 
         async def erro_sub(dados):
+            grav.gravar("OnSubscribeMarketDataError", dados)
             log.error("erro na assinatura/autorização: %s", dados)
 
         cliente.on("OnUpdateMarketData", md)
@@ -231,14 +302,17 @@ async def fonte_ao_vivo(estado, args):
         cliente.on("OnAuthorizationError", erro_sub)
 
         async def aberto():
+            grav.gravar("_conectado", [])
             estado.marcar(conectado=True, feed_ok=True, motivo="conectado")
             for t in TOPICOS:  # sem reassinatura automática: a cada (re)conexão
                 await cliente.send("SubscribeMarketData", [str(uuid.uuid4()), args.ativo, t])
 
         async def fechado():
+            grav.gravar("_desconectado", [])
             estado.marcar(conectado=False, motivo="conexão fechada")
 
         async def erro(m):
+            grav.gravar("_erro", [str(m)])
             log.error("erro no hub: %s", m)
 
         cliente.on_open(aberto)
@@ -292,12 +366,13 @@ async def fonte_gravada(estado, args):
 
 async def principal(args):
     estado = Estado(args.ativo)
-    runner = web.AppRunner(aplicativo(estado), access_log=None)  # o kalman-ordens consulta a cada 200 ms
+    grav = Gravador(args.gravar_dir, args.ativo) if args.gravar_dir and not args.simular else SemGravador()
+    runner = web.AppRunner(aplicativo(estado, grav), access_log=None)  # o kalman-ordens consulta a cada 200 ms
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", args.porta).start()
     log.info("pnt-md-hml: %s → http://127.0.0.1:%d/precos/atual?ativo=%s (%s)", args.ativo, args.porta, CONCEITO,
              "gravação " + args.simular if args.simular else "WB_MD " + args.hub)
-    await (fonte_gravada(estado, args) if args.simular else fonte_ao_vivo(estado, args))
+    await (fonte_gravada(estado, args) if args.simular else fonte_ao_vivo(estado, args, grav))
     if args.simular and args.ficar:
         await asyncio.Event().wait()
 
@@ -310,6 +385,8 @@ def main():
     ap.add_argument("--token", default=os.environ.get("PNT_MD_TOKEN", os.path.expanduser("~/.config/pnt-md-spike/token.json")))
     ap.add_argument("--max-mb", type=int, default=int(os.environ.get("PNT_MD_MAX_MB", "64")),
                     help="tamanho máximo de uma mensagem do WB_MD (MB)")
+    ap.add_argument("--gravar-dir", default=os.environ.get("PNT_MD_GRAVAR_DIR", os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "var")), help='JSONL diário das mensagens brutas ("" desliga)')
     ap.add_argument("--simular", help="JSONL gravado pelo md_spike (fonte simulada, para teste)")
     ap.add_argument("--velocidade", type=float, default=1.0)
     ap.add_argument("--ficar", action="store_true", help="com --simular, continua servindo depois da gravação")

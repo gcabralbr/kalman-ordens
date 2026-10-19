@@ -128,6 +128,120 @@ class TestToken(unittest.TestCase):
         self.assertEqual(t.atual(), "NOVO")
 
 
+class TestGravador(unittest.TestCase):
+    """O JSONL bruto: formato do md_spike, append, um arquivo por dia; erro de escrita não derruba."""
+
+    def esperar(self, g, n):
+        fim = time.time() + 5
+        while g.gravadas < n and time.time() < fim:
+            time.sleep(0.01)
+        self.assertEqual(g.gravadas, n)
+
+    def test_formato_append_e_dia(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            g = m.Gravador(d, "WINZ26")
+            lt = {"Price": 209500.0, "Time": "2026-10-16T12:00:00.123", "TradeID": "1"}
+            t1 = 1792411300.5  # 19/10 09:01:40,5 (-03)
+            g.gravar("_conectado", [], t1)
+            g.gravar("OnUpdateMarketData", ["WINZ26", "LastTrade", lt], t1 + 0.1)
+            g.gravar("OnUpdateMarketData", ["WINZ26", "SecurityStatus", "Trading"], t1 + 0.2)
+            g.gravar("OnUpdateMarketData", ["WINZ26", "LastTrade", lt], t1 + 86400)  # dia seguinte
+            self.esperar(g, 4)
+            g2 = m.Gravador(d, "WINZ26")  # outro processo (restart): append no mesmo arquivo
+            g2.gravar("_conectado", [], t1 + 60)
+            self.esperar(g2, 1)
+            regs = [json.loads(l) for l in open(os.path.join(d, "pnt-md-hml-WINZ26-20261019.jsonl"))]
+            self.assertEqual([r["evento"] for r in regs], ["_conectado", "OnUpdateMarketData", "OnUpdateMarketData", "_conectado"])
+            self.assertEqual(regs[1]["args"][2], lt)
+            self.assertEqual(regs[1]["chegada_ms"], int((t1 + 0.1) * 1000))
+            self.assertTrue(regs[0]["chegada"].startswith("2026-10-19T09:01:40.500-03:00"))
+            self.assertTrue(os.path.exists(os.path.join(d, "pnt-md-hml-WINZ26-20261020.jsonl")))
+
+    def test_erro_de_escrita_nao_derruba(self):
+        g = m.Gravador("/nao/existe", "WINZ26")
+        g.gravar("_conectado", [])
+        fim = time.time() + 5
+        while not g.falhou and time.time() < fim:
+            time.sleep(0.01)
+        self.assertTrue(g.falhou)
+        self.assertEqual(g.gravadas, 0)
+
+    def test_fila_cheia_descarta(self):
+        import queue
+        g = m.Gravador.__new__(m.Gravador)  # sem a thread de escrita: a fila não esvazia
+        g.fila, g.descartadas = queue.Queue(maxsize=2), 0
+        for _ in range(5):
+            g.gravar("_conectado", [])
+        self.assertEqual(g.descartadas, 3)
+
+
+class TestAoVivoGrava(unittest.TestCase):
+    """O laço ao vivo com um cliente SignalR falso: o que chega vai para o Estado e para o JSONL."""
+
+    def test_laco(self):
+        import tempfile
+        import types
+        lt = {"Price": 209500.0, "Time": "2026-10-16T12:00:00.123", "TradeID": "77"}
+        livro = {"ListBids": [{"Price": 209495.0}], "ListOffers": [{"Price": 209500.0}]}
+
+        class Falso:
+            def __init__(self, *a, **k):
+                self.h = {}
+
+            def on(self, ev, f):
+                self.h[ev] = f
+
+            def on_open(self, f):
+                self.aberto = f
+
+            def on_close(self, f):
+                self.fechado = f
+
+            def on_error(self, f):
+                self.erro = f
+
+            async def send(self, *a):
+                pass
+
+            async def run(self):
+                await self.aberto()
+                await self.h["OnUpdateMarketData"](["WINZ26", "LastTrade", lt])
+                await self.h["OnUpdateMarketData"](["WINZ26", "AggrBook", livro])
+                await self.h["OnUpdateMarketData"](["WINZ26", "SecurityStatus", "Trading"])
+                await self.h["OnFeederUnavailable"](["x"])
+                await self.fechado()
+                raise asyncio.CancelledError  # termina o laço do teste
+
+        mod = types.ModuleType("pysignalr.client")
+        mod.SignalRClient = Falso
+        antigo = sys.modules.get("pysignalr.client")
+        sys.modules["pysignalr.client"] = mod
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                arq = os.path.join(d, "token.json")
+                json.dump({"access_token": "A", "refresh_token": "R", "expires_in": 3600, "obtido_em": time.time()}, open(arq, "w"))
+                args = types.SimpleNamespace(token=arq, hub="x", ativo="WINZ26", max_mb=64)
+                e = m.Estado("WINZ26")
+                g = m.Gravador(d, "WINZ26")
+                with self.assertRaises(asyncio.CancelledError):
+                    asyncio.run(m.fonte_ao_vivo(e, args, g))
+                fim = time.time() + 5
+                while g.gravadas < 6 and time.time() < fim:
+                    time.sleep(0.01)
+                (nome,) = [n for n in os.listdir(d) if n.startswith("pnt-md-hml-WINZ26-")]
+                regs = [json.loads(l) for l in open(os.path.join(d, nome))]
+                self.assertEqual([r["evento"] for r in regs], ["_conectado", "OnUpdateMarketData", "OnUpdateMarketData",
+                                                               "OnUpdateMarketData", "OnFeederUnavailable", "_desconectado"])
+                self.assertEqual(regs[1]["args"], ["WINZ26", "LastTrade", lt])
+                self.assertEqual(e.status84, 0)
+        finally:
+            if antigo is not None:
+                sys.modules["pysignalr.client"] = antigo
+            else:
+                del sys.modules["pysignalr.client"]
+
+
 class TestAtivo(unittest.TestCase):
     """?ativo= opcional (WINFUT quando ausente, o pedido do Kalman); outro ativo continua 400."""
 

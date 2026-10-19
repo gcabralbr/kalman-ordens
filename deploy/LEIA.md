@@ -333,7 +333,17 @@ kalman-ordens` (e o Kalman, se um dia a fonte dele for trocada). O `PRECOS_HML_A
 precos-hml — e a instalada na .53 é a `bca4f5b`, anterior ao parâmetro (instalar o binário novo do
 `scripts/build.sh` para usar).
 Opcional em `/etc/kalman-ordens/pnt-md-hml.env`: `PNT_MD_ATIVO` (WINZ26), `PNT_MD_PORTA` (9096),
-`PNT_MD_TOKEN`. Testes: `tools/pnt-md-hml/.venv/bin/python -m unittest tools/pnt-md-hml/test_pnt_md_hml.py`
+`PNT_MD_TOKEN`.
+
+**Gravação bruta (19/10):** o serviço grava cada mensagem recebida do WB_MD (LastTrade com Time e
+TradeID, AggrBook, SecurityStatus, quedas e voltas) em `var/pnt-md-hml-<ATIVO>-AAAAMMDD.jsonl`
+(append, um por dia, formato do md_spike: o `tools/pnt-md-spike/medidas.py` lê). Escrita numa thread
+com fila; erro de escrita vai ao journal e o serviço segue; `/saude` mostra `gravadas` e
+`descartadas`. `PNT_MD_GRAVAR_DIR=` (vazio) desliga. A unidade precisa de `ReadWritePaths=... /home/gammaquant/kalman-ordens/var`
+(reinstalar a unidade + `daemon-reload`). **O WB_MD aceita uma conexão por usuário** (409 "Já
+existe uma conexão ativa para este usuário"): não rodar o md_spike junto com o serviço.
+
+Testes: `tools/pnt-md-hml/.venv/bin/python -m unittest tools/pnt-md-hml/test_pnt_md_hml.py`
 (unidade e a gravação de 16/10 como fonte) e `go test ./internal/preco -run PntMdHml` (o contrato pelo
 parser do serviço).
 
