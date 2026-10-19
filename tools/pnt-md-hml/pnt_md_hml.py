@@ -4,7 +4,8 @@ ferramenta de teste (como a precos-hml, que serve o tick file; esta serve o que 
 
 Conecta no /mdhub (SignalR, JSON), assina um ativo (LastTrade, AggrBook, SecurityStatus) e serve
 GET /precos/atual?ativo=WINFUT em 127.0.0.1:9096 no MESMO contrato do marketdata
-(docs/referencia/precos-atual.md):
+(docs/referencia/precos-atual.md). Sem ?ativo= vale WINFUT (o Kalman pede /precos/atual sem ativo);
+outro ativo dá 400:
 
   preco = último LastTrade; bid/ask = topo do AggrBook; status84 = 0 com o papel em negociação
   ("Trading" / SecurityTradingStatus 17), senão o código (ou 1); ts/idade_seg = a chegada do campo
@@ -133,7 +134,7 @@ def status84(payload):
 
 def aplicativo(estado):
     async def atual(req):
-        if req.query.get("ativo") != CONCEITO:
+        if req.query.get("ativo", CONCEITO) != CONCEITO:  # sem ativo: WINFUT (o pedido do Kalman)
             return web.Response(status=400, text="ativo desconhecido")
         return web.json_response(estado.resposta())
 

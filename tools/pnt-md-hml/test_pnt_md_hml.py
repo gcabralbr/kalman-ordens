@@ -2,6 +2,7 @@
 
   tools/pnt-md-hml/.venv/bin/python -m unittest -v tools/pnt-md-hml/test_pnt_md_hml.py
 """
+import asyncio
 import json
 import os
 import subprocess
@@ -125,6 +126,48 @@ class TestToken(unittest.TestCase):
         json.dump(novo, open(arq, "w"))
         t.renovar = lambda: self.fail("não devia renovar: o arquivo já tem um token válido")
         self.assertEqual(t.atual(), "NOVO")
+
+
+class TestAtivo(unittest.TestCase):
+    """?ativo= opcional (WINFUT quando ausente, o pedido do Kalman); outro ativo continua 400."""
+
+    def test_ativo(self):
+        from aiohttp import web
+
+        agora = time.time()
+        e = m.Estado("WINZ26", agora=lambda: agora)
+        e.marcar(conectado=True)
+        e.update("LastTrade", {"Price": 209500.0}, chegada=agora - 1)
+        e.update("AggrBook", {"ListBids": [{"Price": 209495.0}], "ListOffers": [{"Price": 209500.0}]}, chegada=agora - 1)
+        e.update("SecurityStatus", "Trading")
+
+        async def rodar():
+            runner = web.AppRunner(m.aplicativo(e))
+            await runner.setup()
+            site = web.TCPSite(runner, "127.0.0.1", 0)
+            await site.start()
+            porta = site._server.sockets[0].getsockname()[1]
+            base = f"http://127.0.0.1:{porta}/precos/atual"
+            loop = asyncio.get_running_loop()
+
+            def get(url):
+                try:
+                    with urllib.request.urlopen(url, timeout=2) as r:
+                        return r.status, json.loads(r.read())
+                except urllib.error.HTTPError as err:
+                    return err.code, None
+
+            try:
+                return [await loop.run_in_executor(None, get, base + q) for q in ("", "?ativo=WINFUT", "?ativo=WDOFUT", "?ativo=")]
+            finally:
+                await runner.cleanup()
+
+        sem, com, outro, vazio = asyncio.run(rodar())
+        self.assertEqual(sem, com)
+        self.assertEqual(sem[0], 200)
+        self.assertEqual(sem[1]["WINFUT"]["preco"], 209500.0)
+        self.assertEqual(outro[0], 400)
+        self.assertEqual(vazio[0], 400)
 
 
 @unittest.skipUnless(os.path.exists(GRAVACAO), "sem a gravação de 16/10")
