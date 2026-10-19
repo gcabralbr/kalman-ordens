@@ -1,0 +1,28 @@
+cenario 88 Saída por replace interrompida por restart: volta ao caminho de antes (cancel da 1014 + 1031)
+hora 2026-10-19 11:30:00
+# v1.11: a marca da saída por replace fica só em memória. Depois do restart, a operação está em
+# SAINDO com a 1014 viva (gatilho além do preço, aceito) e sem 1031: tickSaida cancela a 1014 e manda
+# a 1031, como numa 1014 recriada durante a saída.
+config SAIDA_POR_REPLACE=1
+
+executa INICIO
+executa COMPRADO OP=8801
+saida 8801 V SINAL_OPOSTO
+recebe 35=G 11=KM-P-8801-2 41=KM-P-8801-1 37=dsa.8801.P 44=129950 20828=130100 20829=129950
+envia @ER 11=KM-P-8801-2 41=KM-P-8801-1 37=dsa.8801.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20828=130100 20829=129950
+
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345 584=>MS
+envia @ER 11=KM-P-8801-2 37=dsa.8801.P 150=I 39=0 584=$MS 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20828=130100 20829=129950
+avanca 3s
+alerta CONCILIACAO
+http GET /ordens/8801
+resposta estado=CANCELANDO_PROTECAO posicao=1
+recebe 35=F 11=KM-P-8801-3 41=KM-P-8801-2
+envia @ER 11=KM-P-8801-3 41=KM-P-8801-2 37=dsa.8801.P 150=4 39=4 54=2 38=1 44=129950 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-8801-1 54=2 847=1031
+envia @ER 11=KM-S-8801-1 37=dsa.8801.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=129995 14=1 151=0 6=129995
+evento ZERADA operacao_id=8801 motivo=SINAL_OPOSTO origem=GESTOR
+saude posicao=0
+nada

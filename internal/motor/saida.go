@@ -107,6 +107,9 @@ func (m *Motor) iniciarSaida(op *operacao, motivo, origem string) {
 // prosseguirSaida: passo 2 em diante — cancela a 1014 (se houver) ou vai direto à saída.
 func (m *Motor) prosseguirSaida(op *operacao) {
 	if p := op.viva(dominio.Protecao); p != nil {
+		if m.iniciarSaidaPorReplace(op, p) {
+			return // v1.11: o replace da 1014 é a saída
+		}
 		m.mudar(op, dominio.CancelandoProtecao)
 		op.cancelProtEm = m.agora()
 		m.cancelar(p)
@@ -257,6 +260,10 @@ func (m *Motor) tickSaida(op *operacao) {
 		return
 	}
 	if op.congelada {
+		return
+	}
+	if op.saidaRep != nil {
+		m.tickSaidaReplace(op)
 		return
 	}
 	agora := m.agora()

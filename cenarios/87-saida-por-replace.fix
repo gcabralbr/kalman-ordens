@@ -1,0 +1,129 @@
+cenario 87 Saída por replace da 1014 (SAIDA_POR_REPLACE): gatilho além do preço, degraus, recusa, corrida, disparo sem fill
+hora 2026-10-19 11:00:00
+# v1.11 (HML 19/10: cancel da 1014 em 3,69 s, replace em 468 ms). A saída que não é por stop troca o
+# gatilho da 1014 para além do preço: venda = max(bid, último) + SAIDA_REPLACE_ALEM_PTS (100), limite
+# = bid − COLAR_SAIDA × k. Contrato com o Kalman: estado SAINDO; o fill sai com a origem e o motivo do
+# pedido; sem PROTEGIDA, PROTECAO_AJUSTADA nem PROTECAO_DISPARADA; eventos novos SAIDA_POR_REPLACE e
+# SAIDA_REPLACE_FALHOU.
+config SAIDA_POR_REPLACE=1
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config LIMITE_ENTRADAS_DIA=100
+config LIMITE_RECUSAS_PARADA=50
+
+executa INICIO
+
+# --- a) replace aceito → disparo → fill: origem GESTOR, motivo do pedido
+executa COMPRADO OP=8701
+saida 8701 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=G 11=KM-P-8701-2 41=KM-P-8701-1 37=dsa.8701.P 38=1 44=129950 54=2 847=1014 20828=130100 20829=129950
+evento SAIDA_POR_REPLACE operacao_id=8701 preco_stop=130100 preco_limite=129950 degrau=1 motivo=SINAL_OPOSTO
+http GET /ordens/8701
+resposta estado=SAINDO
+envia @ER 11=KM-P-8701-2 41=KM-P-8701-1 37=dsa.8701.P 150=E 39=E 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+envia @ER 11=KM-P-8701-2 41=KM-P-8701-1 37=dsa.8701.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20828=130100 20829=129950
+envia @ER 11=KM-P-8701-2 37=dsa.8701.P 150=I 39=B 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20807=1 20806=129950 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1."
+envia @ER 11=KM-P-8701-2 37=dsa.8701.P 150=F 39=2 54=2 38=1 44=129950 847=1014 32=1 31=130000 14=1 151=0 6=130000
+evento SAIDA_EXECUTADA operacao_id=8701 qtd=1 preco=130000 origem=GESTOR
+evento ZERADA operacao_id=8701 motivo=SINAL_OPOSTO origem=GESTOR pnl_pts=-10
+sem_evento PROTECAO_DISPARADA
+sem_evento PROTECAO_AJUSTADA
+saude posicao=0
+nada
+
+# --- b) replace recusado por outro motivo (o robô não aceita o gatilho): cancel + 1031 na hora
+executa COMPRADO OP=8702
+saida 8702 V TRSP
+recebe 35=G 11=KM-P-8702-2 41=KM-P-8702-1 37=dsa.8702.P 20828=130100 20829=129950
+envia 35=9 11=KM-P-8702-2 41=KM-P-8702-1 37=dsa.8702.P 39=0 434=2 102=0 58="Stop price must be lower than market price"
+evento SAIDA_REPLACE_FALHOU operacao_id=8702 seguinte=CANCEL_E_NOVA
+recebe 35=F 11=KM-P-8702-3 41=KM-P-8702-1
+envia @ER 11=KM-P-8702-3 41=KM-P-8702-1 37=dsa.8702.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-8702-1 54=2 847=1031 44=129950
+envia @ER 11=KM-S-8702-1 37=dsa.8702.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=129995 14=1 151=0 6=129995
+evento ZERADA operacao_id=8702 motivo=TRSP origem=GESTOR
+saude posicao=0
+nada
+
+# --- c) a corrida: o stop disparou antes do replace (35=9 "in time"): espera os fills, sem 1031
+executa COMPRADO OP=8703
+saida 8703 V TRSP
+recebe 35=G 11=KM-P-8703-2 41=KM-P-8703-1 37=dsa.8703.P
+envia @ER 11=KM-P-8703-1 37=dsa.8703.P 150=I 39=B 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 20807=1 20806=129410 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1."
+envia 35=9 11=KM-P-8703-2 41=KM-P-8703-1 37=dsa.8703.P 39=C 434=2 102=0 58="Order could not be replaced in time."
+evento SAIDA_REPLACE_FALHOU operacao_id=8703 seguinte=AGUARDANDO_STOP
+envia 35=9 11=KM-P-8703-2 41=KM-P-8703-1 37=dsa.8703.P 39=C 434=2 102=0 58="Order could not be replaced in time."
+envia 35=9 11=KM-P-8703-2 41=KM-P-8703-1 37=dsa.8703.P 39=C 434=2 102=0 58="Order could not be replaced in time."
+envia 35=9 11=KM-P-8703-2 41=KM-P-8703-1 37=dsa.8703.P 39=C 434=2 102=0 58="Order could not be replaced in time."
+envia 35=9 11=KM-P-8703-2 41=KM-P-8703-1 37=dsa.8703.P 39=C 434=2 102=0 58="Order could not be replaced in time."
+sem_alerta PNT_BOLSA_INDISPONIVEL
+avanca 1s
+nada
+envia @ER 11=KM-P-8703-1 37=dsa.8703.P 150=F 39=2 54=2 38=1 44=129410 847=1014 32=1 31=129500 14=1 151=0 6=129500
+evento ZERADA operacao_id=8703 motivo=TRSP origem=STOP_SERVIDOR
+saude posicao=0
+nada
+
+# --- d) aceito sem disparo: degraus a cada SAIDA_REPLACE_TIMEOUT_S (2 s); passado o último, cancel + 1031
+executa COMPRADO OP=8704
+saida 8704 V MANUAL
+recebe 35=G 11=KM-P-8704-2 41=KM-P-8704-1 37=dsa.8704.P 44=129950 20828=130100 20829=129950
+envia @ER 11=KM-P-8704-2 41=KM-P-8704-1 37=dsa.8704.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0
+avanca 1900ms
+nada
+preco bid=130050 ask=130055 preco=130055
+avanca 100ms
+recebe 35=G 11=KM-P-8704-3 41=KM-P-8704-2 37=dsa.8704.P 44=129950 20828=130155 20829=129950
+evento SAIDA_POR_REPLACE operacao_id=8704 degrau=2 preco_stop=130155 preco_limite=129950
+envia @ER 11=KM-P-8704-3 41=KM-P-8704-2 37=dsa.8704.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0
+avanca 2s
+recebe 35=G 11=KM-P-8704-4 41=KM-P-8704-3 37=dsa.8704.P 44=129900 20828=130155 20829=129900
+envia @ER 11=KM-P-8704-4 41=KM-P-8704-3 37=dsa.8704.P 150=5 39=5 54=2 38=1 44=129900 847=1014 14=0 151=1 6=0
+avanca 2s
+recebe 35=G 11=KM-P-8704-5 41=KM-P-8704-4 37=dsa.8704.P 44=129850 20828=130155 20829=129850
+envia @ER 11=KM-P-8704-5 41=KM-P-8704-4 37=dsa.8704.P 150=5 39=5 54=2 38=1 44=129850 847=1014 14=0 151=1 6=0
+avanca 2s
+evento SAIDA_REPLACE_FALHOU operacao_id=8704 seguinte=CANCEL_E_NOVA
+recebe 35=F 11=KM-P-8704-6 41=KM-P-8704-5
+envia @ER 11=KM-P-8704-6 41=KM-P-8704-5 37=dsa.8704.P 150=4 39=4 54=2 38=1 44=129850 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-8704-1 54=2 847=1031
+envia @ER 11=KM-S-8704-1 37=dsa.8704.S 150=F 39=2 54=2 38=1 44=130000 847=1031 32=1 31=130050 14=1 151=0 6=130050
+evento ZERADA operacao_id=8704 motivo=MANUAL origem=GESTOR
+nada
+
+# --- e) disparou e não executou em ESPERA_STOP_S (5 s): o caminho do stop furado
+preco bid=130000 ask=130005 preco=130000
+executa COMPRADO OP=8705
+saida 8705 V SINAL_OPOSTO
+recebe 35=G 11=KM-P-8705-2 41=KM-P-8705-1 37=dsa.8705.P
+envia @ER 11=KM-P-8705-2 41=KM-P-8705-1 37=dsa.8705.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0
+envia @ER 11=KM-P-8705-2 37=dsa.8705.P 150=I 39=B 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20807=1 20806=129950 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1."
+avanca 4900ms
+nada
+avanca 100ms
+alerta STOP_FURADO
+evento SAIDA_REPLACE_FALHOU operacao_id=8705 seguinte=STOP_FURADO
+recebe 35=F 11=KM-P-8705-3 41=KM-P-8705-2
+envia 35=9 11=KM-P-8705-3 41=KM-P-8705-2 37=dsa.8705.P 39=B 434=1 102=0 58="Order could not be cancelled in time."
+recebe 35=D 11=KM-S-8705-1 54=2 847=1031
+envia @ER 11=KM-S-8705-1 37=dsa.8705.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=129990 14=1 151=0 6=129990
+evento ZERADA operacao_id=8705 motivo=SINAL_OPOSTO
+# zerada: a 1014 disparada que não executou é cancelada (como no stop furado de hoje)
+recebe 35=F 11=KM-P-8705-4 41=KM-P-8705-2
+envia @ER 11=KM-P-8705-4 41=KM-P-8705-2 37=dsa.8705.P 150=4 39=4 54=2 38=1 44=129950 847=1014 14=0 151=0 6=0
+sem_alerta PNT_BOLSA_INDISPONIVEL
+nada
+
+# --- f) ajuste do stop pedido durante a saída por replace: recusado (SEM_PROTECAO, como hoje)
+executa COMPRADO OP=8706
+saida 8706 V TRSP
+recebe 35=G 11=KM-P-8706-2 41=KM-P-8706-1 37=dsa.8706.P
+stop 8706 preco=129800
+resposta aceito=false codigo=SEM_PROTECAO
+nada
+envia @ER 11=KM-P-8706-2 41=KM-P-8706-1 37=dsa.8706.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0
+envia @ER 11=KM-P-8706-2 37=dsa.8706.P 150=F 39=2 54=2 38=1 44=129950 847=1014 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=8706 motivo=TRSP origem=GESTOR
+nada

@@ -318,13 +318,36 @@ def cmd_saidas(a):
     neg_s, book_s = Serie(neg), Serie(book)
     dia = dt.datetime.fromtimestamp(neg[0][0], FUSO).date().isoformat()
     ops = api(f"{a.base}/operacoes?dia={dia}&modulo={a.modulo}")
-    custos = []
+    custos, custos_rep = [], []
     for o in ops:
         if not o.get("origem_saida") or o.get("origem_saida") == "STOP_SERVIDOR":
             continue
         op = o["operacao_id"]
         h = api(f"{a.base}/operacoes/{op}/historico?modulo={a.modulo}&cru=1")
         ms = [(dt.datetime.fromisoformat(m["em"]).timestamp(), m["direcao"], tags(m.get("fix_raw"))) for m in h["mensagens"]]
+        ped = next((dt.datetime.fromisoformat(p["em"]).timestamp() for p in h["pedidos"]
+                    if p.get("papel") in ("SAIDA", "ENCERRAR")), None)
+        g = next((x for x in ms if ped and x[0] >= ped - 0.001 and x[1] == "ENV" and x[2].get("35") == "G"
+                  and "-P-" in x[2].get("11", "")), None)
+        if g and o.get("origem_saida") != "STOP_SERVIDOR":
+            # v1.11: saída por replace da 1014 (o fill é da própria 1014)
+            fills = [x for x in ms if x[0] > g[0] and x[1] == "REC" and x[2].get("35") == "8" and "-P-" in x[2].get("11", "")
+                     and x[2].get("150") in ("F", "1")]
+            print(f"\nop {op} ({o['lado']} {o.get('qtd')}, saída {o.get('motivo_saida')}/{o.get('origem_saida')}, {o.get('pnl_pts')} pts) — POR REPLACE")
+            print(f"  {hora(g[0])} → 35=G da 1014 gatilho {g[2].get('20828')} limite {g[2].get('44')} (pedido {hora(ped)}, +{(g[0] - ped) * 1000:.0f} ms)")
+            for x in ms:
+                if g[0] < x[0] <= (fills[-1][0] if fills else x[0] + 1) and x[1] == "REC" and "-P-" in (x[2].get("11", "") + x[2].get("41", "")):
+                    print(f"  {hora(x[0])} ← 35={x[2].get('35')} 150={x[2].get('150', '-')} 39={x[2].get('39', '-')} (52 {x[2].get('52', '')[9:]}) "
+                          f"+{(x[0] - g[0]) * 1000:.0f} ms  {x[2].get('58', '')[:60]}")
+            if fills:
+                px = float(fills[-1][2].get("6") or fills[-1][2].get("31"))
+                vende = o["lado"] == "C"
+                b0 = ultimo(book_s, ped)
+                ref0 = b0[1] if vende else b0[2]
+                custo = (ref0 - px) if vende else (px - ref0)
+                print(f"  fill {px:.0f} +{(fills[-1][0] - ped) * 1000:.0f} ms do pedido; topo no pedido {ref0:.0f} → custo {custo:+.0f} pts")
+                custos_rep.append((op, custo))
+            continue
         f = next((x for x in ms if x[1] == "ENV" and x[2].get("35") == "F" and "-P-" in x[2].get("41", "")), None)
         d = next((x for x in ms if x[1] == "ENV" and x[2].get("35") == "D" and "-S-" in x[2].get("11", "")), None)
         fills = [x for x in ms if x[1] == "REC" and x[2].get("35") == "8" and "-S-" in x[2].get("11", "") and x[2].get("150") in ("F", "1")]
@@ -357,8 +380,10 @@ def cmd_saidas(a):
         print(f"  custo da espera: {'bid' if vende else 'ask'} na decisão − no envio = {c0:+.0f} pts; "
               f"fill hipotético (topo na decisão + {lag:.2f} s) − fill real = {c1:+.0f} pts")
         custos.append((op, c0, c1))
+    if custos_rep:
+        print(f"\n{len(custos_rep)} saída(s) por replace: custo contra o topo no pedido {sum(c[1] for c in custos_rep):+.0f} pts")
     if custos:
-        print(f"\n{len(custos)} saída(s): custo pelo topo na decisão {sum(c[1] for c in custos):+.0f} pts; "
+        print(f"\n{len(custos)} saída(s) por cancel + 1031: custo pelo topo na decisão {sum(c[1] for c in custos):+.0f} pts; "
               f"pelo fill hipotético {sum(c[2] for c in custos):+.0f} pts")
 
 

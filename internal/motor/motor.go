@@ -128,6 +128,7 @@ type operacao struct {
 	retentativaProtEm     time.Time
 	furoDesde             time.Time
 	furado                bool
+	saidaRep              *saidaReplace // saída por replace da 1014 em curso (v1.11; só em memória)
 	saidaAposEntrada      bool
 	encerramentoEm        time.Time
 	motivoEncerramento    string

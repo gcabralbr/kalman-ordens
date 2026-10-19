@@ -137,6 +137,10 @@ type Parametros struct {
 	EntradasPorMinutoUID       int
 	IntervaloUID, JanelaVirada time.Duration
 	ReprecoEsgotado            time.Duration // repreço da saída depois de SAIDA_ESGOTOU
+	// v1.11: saída por replace da 1014 (gatilho além do preço) em vez de cancel + nova ordem
+	SaidaPorReplace     bool
+	SaidaReplaceAlemPts int64
+	SaidaReplaceTimeout time.Duration
 	// v1.10 §9: disjuntor de bolsa indisponível
 	DisjuntorTextos                                   []string
 	DisjuntorRejeicoes                                int
@@ -176,6 +180,9 @@ func (c Config) Parametros() Parametros {
 		IdadeMaxPreco:           c.Segundos("PRECO_IDADE_MAX_S", 3),
 		IdadeMaxPrecoDivergente: c.Segundos("IDADE_MAX_PRECO_DIVERGENTE_S", 60),
 		MaxRepreco:              c.Inteiro("MAX_REPRECO_SAIDA", 3),
+		SaidaPorReplace:         c.Bool("SAIDA_POR_REPLACE", false),
+		SaidaReplaceAlemPts:     c.Pontos("SAIDA_REPLACE_ALEM_PTS", 100),
+		SaidaReplaceTimeout:     c.Segundos("SAIDA_REPLACE_TIMEOUT_S", 2),
 		ConsultaPnTEspera:       c.Segundos("CONSULTA_PNT_ESPERA_S", 5),
 		ConsultaPnTIntervalo:    c.Segundos("CONSULTA_PNT_INTERVALO_S", 10),
 		TaxaMsgS:                float64(c.Segundos("FIX_TAXA_MSG_S", 100)) / float64(time.Second),

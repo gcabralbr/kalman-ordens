@@ -174,7 +174,7 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 		if !o.Estado.Final() {
 			o.Estado = ativaOuParcial(o)
 		}
-		if o.Papel == dominio.Protecao && !op.Estado.Final() {
+		if o.Papel == dominio.Protecao && !op.Estado.Final() && op.saidaRep == nil {
 			m.protecaoAceita(op, o)
 		}
 	case "5":
@@ -277,6 +277,9 @@ func (m *Motor) observarDisparo(op *operacao, o *ordem, st string, msg pnt.Mensa
 	o.disparadaEm, o.qtdNoDisparo = m.agora(), o.QtdExec
 	px, _ := msg.Decimal(20806)
 	slog.Info("1014 disparada no PnT", "op", op.OperacaoID, "clordid", o.ClOrdAtual, "qtd_enviada", q, "preco_enviado", px, "58", msg.Texto(58))
+	if op.saidaRep != nil {
+		return // v1.11: o disparo é a saída por replace, não o stop (o Kalman não vê PROTECAO_DISPARADA)
+	}
 	m.publicar("PROTECAO_DISPARADA", op, map[string]any{"qtd_enviada": q, "preco_enviado": px, "preco_stop": o.Stop, "preco_limite": o.StopLim})
 }
 
@@ -383,7 +386,9 @@ func (m *Motor) aplicarFill(op *operacao, o *ordem, cum int, avg decimal.Decimal
 	}
 
 	origem := op.OrigemSaida
-	if o.Papel == dominio.Protecao {
+	if o.Papel == dominio.Protecao && op.saidaRep != nil && !op.saidaRep.aceitoEm.IsZero() {
+		// v1.11: a 1014 com o gatilho além do preço é a saída pedida: origem e motivo do pedido
+	} else if o.Papel == dominio.Protecao {
 		origem = "STOP_SERVIDOR"
 		op.OrigemSaida = "STOP_SERVIDOR"
 		if op.MotivoSaida == "" {
@@ -470,7 +475,10 @@ func (m *Motor) replaceConfirmado(op *operacao, o *ordem, clNovo string) {
 	cancelarDepois := o.cancelarApos
 	o.cancelarApos = false
 	limparPendencia(o)
-	if o.Papel == dominio.Protecao {
+	if o.Papel == dominio.Protecao && op.saidaRep != nil {
+		// v1.11: o replace de saída (gatilho além do preço) não é ajuste nem proteção nova
+		m.replaceDeSaidaConfirmado(op)
+	} else if o.Papel == dominio.Protecao {
 		op.rejeicoesProtecao = 0
 		ajustada := op.StopAjustado != 0 && o.Stop != stopAntes
 		if o.Qtd != qtdAntes || !ajustada {
@@ -609,6 +617,13 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 			m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("cancel rejeitado (%s): %s", texto, o.ClOrdAtual), op.OperacaoID)
 		}
 	} else {
+		if o.Papel == dominio.Protecao && op.saidaRep != nil {
+			m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("replace de saída da 1014 rejeitado (%s): %s", texto, o.ClOrdAtual), op.OperacaoID)
+			m.replaceDeSaidaRecusado(op, o, msg, texto)
+			m.salvarOrdem(o)
+			m.salvarOp(op)
+			return
+		}
 		st := msg.Texto(39)
 		if o.Papel == dominio.Saida && o.viva() && (st == "2" || st == "4" || st == "8") {
 			// v1.3 I1: a ordem já está terminal no PnT (HML 14/10: [IS-72], o fill veio 100 ms
