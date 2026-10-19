@@ -326,7 +326,7 @@ def cmd_saidas(a):
         h = api(f"{a.base}/operacoes/{op}/historico?modulo={a.modulo}&cru=1")
         ms = [(dt.datetime.fromisoformat(m["em"]).timestamp(), m["direcao"], tags(m.get("fix_raw"))) for m in h["mensagens"]]
         ped = next((dt.datetime.fromisoformat(p["em"]).timestamp() for p in h["pedidos"]
-                    if p.get("papel") in ("SAIDA", "ENCERRAR")), None)
+                    if p.get("papel") == "SAIDA" or p.get("rota") == "ENCERRAR"), None)
         g = next((x for x in ms if ped and x[0] >= ped - 0.001 and x[1] == "ENV" and x[2].get("35") == "G"
                   and "-P-" in x[2].get("11", "")), None)
         if g and o.get("origem_saida") != "STOP_SERVIDOR":
