@@ -83,6 +83,11 @@ func (m *Motor) observarBolsa(msg pnt.Mensagem) {
 	d := &m.bolsa
 	agora := m.agora()
 	rej, gat, texto := m.classificarRejeicao(msg)
+	if rej && !gat && m.corridaDaProtecao(msg, texto) {
+		// o cancel/replace da 1014 perdeu a corrida para o disparo: é a 1014 executando, não a
+		// bolsa (HML 19/10 09:49:54: 6 × 35=9 "Order could not be cancelled in time." em 2,5 s)
+		return
+	}
 	if rej {
 		d.ultimaRej = agora
 		if gat {
@@ -114,6 +119,20 @@ func (m *Motor) observarBolsa(msg pnt.Mensagem) {
 			}
 		}
 	}
+}
+
+// corridaDaProtecao: 35=9 de cancel/replace de uma 1014 com "in time" no texto, ou com a 1014 já
+// disparada (39=B visto, ou 39=B no próprio 35=9) ou em estado final. O primeiro 35=9 da corrida chega antes do 150=I/39=B
+// (19/10: 54.367 contra 54.372), daí o texto. Não conta para a regra genérica do disjuntor.
+func (m *Motor) corridaDaProtecao(msg pnt.Mensagem, texto string) bool {
+	if msg.Tipo != "9" {
+		return false
+	}
+	o := m.localizar(msg.Texto(37), msg.Texto(11), msg.Texto(41))
+	if o == nil || o.Papel != dominio.Protecao {
+		return false
+	}
+	return strings.Contains(strings.ToLower(texto), "in time") || msg.Texto(39) == "B" || !o.disparadaEm.IsZero() || o.Estado.Final()
 }
 
 // ehEntrada: a rejeição é de uma ordem de entrada (pelo ClOrdID 11 ou 41).

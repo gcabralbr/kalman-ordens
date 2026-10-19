@@ -1,0 +1,51 @@
+cenario 86 Cancel da 1014 que perde a corrida para o disparo não conta para o disjuntor (HML 19/10 09:49:54)
+hora 2026-10-19 09:49:50
+# Op 900000007: a saída (TRSP) pede o cancel da 1014 no mesmo instante em que o stop dispara; o PnT
+# responde 39=6 e depois 6 × 35=9 "Order could not be cancelled in time." em 2,5 s (o primeiro ANTES
+# do 150=I/39=B), e a 1014 executa. Com a regra genérica (DISJUNTOR_REJEICOES iguais em
+# DISJUNTOR_JANELA_S) os 35=9 abririam o disjuntor e a virada seria recusada. Não contam: o texto tem
+# "in time", ou a 1014 já disparou ou está em estado final. Rejeições iguais de saída continuam
+# contando (roteiro 81).
+config LIMITE_POSICAO_MAX=10
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config DISJUNTOR_REJEICOES=3
+config DISJUNTOR_JANELA_S=30
+
+executa INICIO
+executa COMPRADO OP=8601
+saida 8601 V TRSP
+resposta aceito=true
+recebe 35=F 11=KM-P-8601-2 41=KM-P-8601-1
+envia @ER 11=KM-P-8601-2 41=KM-P-8601-1 37=dsa.8601.P 150=6 39=6 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 58="DSA Order cancellation requested by DSA Client, forwarding it to Robot;"
+# 4 rejeições "in time" antes do disparo (o primeiro 35=9 chega antes do 150=I)
+envia 35=9 11=KM-P-8601-2 41=KM-P-8601-1 37=dsa.8601.P 39=C 434=1 102=0 58="Order could not be cancelled in time."
+envia 35=9 11=KM-P-8601-2 41=KM-P-8601-1 37=dsa.8601.P 39=C 434=1 102=0 58="Order could not be cancelled in time."
+envia @ER 11=KM-P-8601-1 37=dsa.8601.P 150=I 39=B 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 58="Delaying final state 'Finished' for 3.00 s, timer started."
+envia @ER 11=KM-P-8601-1 37=dsa.8601.P 150=I 39=B 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 20807=1 20806=129410 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1."
+evento PROTECAO_DISPARADA operacao_id=8601
+envia 35=9 11=KM-P-8601-2 41=KM-P-8601-1 37=dsa.8601.P 39=C 434=1 102=0 58="Order could not be cancelled in time."
+envia 35=9 11=KM-P-8601-2 41=KM-P-8601-1 37=dsa.8601.P 39=C 434=1 102=0 58="Order could not be cancelled in time."
+sem_alerta PNT_BOLSA_INDISPONIVEL
+# a 1014 disparada: mesmo um 35=9 sem "in time" não conta
+envia 35=9 11=KM-P-8601-2 41=KM-P-8601-1 37=dsa.8601.P 39=B 434=1 102=0 58="Order is being executed by the robot"
+envia 35=9 11=KM-P-8601-2 41=KM-P-8601-1 37=dsa.8601.P 39=B 434=1 102=0 58="Order is being executed by the robot"
+envia 35=9 11=KM-P-8601-2 41=KM-P-8601-1 37=dsa.8601.P 39=B 434=1 102=0 58="Order is being executed by the robot"
+sem_alerta PNT_BOLSA_INDISPONIVEL
+# nenhuma saída extra: espera o fill da 1014
+nada
+envia @ER 11=KM-P-8601-1 37=dsa.8601.P 150=F 39=2 54=2 38=1 44=129410 847=1014 32=1 31=129505 14=1 151=0 6=129505
+evento ZERADA operacao_id=8601 motivo=TRSP origem=STOP_SERVIDOR
+saude posicao=0
+# depois do estado final, mais 35=9 atrasados: não contam
+envia 35=9 11=KM-P-8601-2 41=KM-P-8601-1 37=dsa.8601.P 39=2 434=1 102=0 58="Order could not be cancelled."
+envia 35=9 11=KM-P-8601-2 41=KM-P-8601-1 37=dsa.8601.P 39=2 434=1 102=0 58="Order could not be cancelled."
+envia 35=9 11=KM-P-8601-2 41=KM-P-8601-1 37=dsa.8601.P 39=2 434=1 102=0 58="Order could not be cancelled."
+sem_alerta PNT_BOLSA_INDISPONIVEL
+# a virada passa
+entrada 8602 V
+resposta aceito=true
+recebe 35=D 11=KM-E-8602-1
+envia @ER 11=KM-E-8602-1 37=dsa.8602.E 150=0 39=0 54=2 38=1 44=129985 847=1031 14=0 151=1 6=0
+
