@@ -221,7 +221,7 @@ class TestAoVivoGrava(unittest.TestCase):
             with tempfile.TemporaryDirectory() as d:
                 arq = os.path.join(d, "token.json")
                 json.dump({"access_token": "A", "refresh_token": "R", "expires_in": 3600, "obtido_em": time.time()}, open(arq, "w"))
-                args = types.SimpleNamespace(token=arq, hub="x", ativo="WINZ26", max_mb=64)
+                args = types.SimpleNamespace(token=arq, hub="x", ativo="WINZ26", max_mb=64, gravar_niveis=5, niveis_max=50)
                 e = m.Estado("WINZ26")
                 g = m.Gravador(d, "WINZ26")
                 with self.assertRaises(asyncio.CancelledError):
@@ -324,6 +324,188 @@ class TestComGravacao(unittest.TestCase):
         finally:
             p.terminate()
             p.wait(5)
+
+
+AGORA = time.time()
+AMOSTRA_20 = "/var/tmp/pnt-md-hml-amostra-20261020.jsonl.gz"
+GRAVACAO_19 = os.path.join(RAIZ, "var", "pnt-md-hml-WINZ26-20261019.jsonl.gz")
+
+
+def nivel(px, q=1):
+    return {"Price": px, "Quantity": q, "NumOrders": 1, "OrderID": "", "Sender": ""}
+
+
+def livro(bids, offers, **k):
+    return dict({"Aggregated": True, "MarketDepth": 10, "ListBids": [nivel(x) for x in bids], "ListOffers": [nivel(x) for x in offers]}, **k)
+
+
+class TestBook(unittest.TestCase):
+    """v1.3 do pnt-md-hml (20/10): topo calculado e book degenerado = fonte indisponível."""
+
+    def test_topo_calculado_fora_de_ordem(self):
+        motivo, bid, ask, _ = m.avaliar_book(livro([209490, 209495, 209480], [209510, 209500]), 50, True)
+        self.assertEqual((motivo, bid, ask), ("", 209495, 209500))
+
+    def test_degenerados(self):
+        casos = [
+            (livro([1], [2], Aggregated=False), "Aggregated=false"),
+            (livro([1], [2], MarketDepth=0), "MarketDepth=0"),
+            (livro(list(range(100, 151)), [200]), "níveis"),
+            (livro([209495, 209495], [209500]), "repetido"),
+            (livro([209500], [209495]), "cruzado"),
+        ]
+        for p, esperado in casos:
+            motivo, bid, ask, _ = m.avaliar_book(p, 50, True)
+            self.assertIn(esperado, motivo)
+            self.assertIsNone(bid)
+
+    def test_cruzado_no_leilao_nao_conta(self):
+        motivo, bid, ask, _ = m.avaliar_book(livro([229330], [187640]), 50, False)
+        self.assertEqual((motivo, bid, ask), ("", 229330, 187640))
+
+    def test_estado_indisponivel_e_volta(self):
+        e = m.Estado("WINZ26", agora=lambda: AGORA)
+        e.marcar(conectado=True)
+        e.update("SecurityStatus", "Trading", AGORA)
+        e.update("LastTrade", {"Price": 209500.0}, AGORA)
+        e.update("AggrBook", livro([209495], [209500], Aggregated=False), AGORA)
+        self.assertEqual(e.resposta(), {})
+        self.assertFalse(e.book_ok)
+        e.update("AggrBook", livro([209495], [209500]), AGORA)
+        self.assertEqual(e.resposta()["WINFUT"]["bid"], 209495)
+
+
+class TestAtraso(unittest.TestCase):
+    """Atraso relativo à base (mínimo móvel de chegada − envio do servidor): o relógio do PnT pode estar
+    ±2 s fora; só o excesso sobre a base conta."""
+
+    def test_base_e_excesso(self):
+        e = m.Estado("WINZ26", agora=lambda: AGORA)
+        e.marcar(conectado=True)
+        # o relógio do PnT 1,9 s adiantado: chegada − envio = −1.900 ms, estável
+        for i in range(10):
+            e.update("LastTrade", {"Price": 1.0}, AGORA + i, (AGORA + i) * 1000 + 1900)
+        self.assertTrue(e.disponivel())
+        self.assertAlmostEqual(e.atraso_base_ms, -1900, places=0)
+        # o cliente atrasa 3 s: indisponível
+        e.update("LastTrade", {"Price": 1.0}, AGORA + 20, (AGORA + 17) * 1000 + 1900)
+        self.assertFalse(e.disponivel())
+        self.assertIn("atrás da base", e.motivo)
+        # volta ao normal
+        e.update("LastTrade", {"Price": 1.0}, AGORA + 21, (AGORA + 21) * 1000 + 1900 - 300)
+        self.assertTrue(e.disponivel())
+
+    def test_janela_esquece_a_base_antiga(self):
+        e = m.Estado("WINZ26", agora=lambda: AGORA, janela_base_s=60)
+        e.marcar(conectado=True)
+        e.update("LastTrade", {"Price": 1.0}, AGORA, AGORA * 1000 - 500)  # base 500
+        e.update("LastTrade", {"Price": 1.0}, AGORA + 120, (AGORA + 120) * 1000 - 800)  # a de 500 saiu da janela
+        self.assertAlmostEqual(e.atraso_base_ms, 800, places=0)
+
+
+class TestGravadorV13(unittest.TestCase):
+    def test_guarda_de_disco(self):
+        import tempfile
+        livre = [10 * 2**30]
+        with tempfile.TemporaryDirectory() as d:
+            g = m.Gravador(d, "WINZ26", disco_min_gb=3, livre=lambda: livre[0], iniciar=False)
+            g._uma(time.time(), "_conectado", [])
+            self.assertEqual(g.gravadas, 1)
+            livre[0] = 2 * 2**30
+            g.disco_visto_em = 0
+            g._uma(time.time(), "_conectado", [])
+            self.assertTrue(g.pausado)
+            self.assertEqual((g.gravadas, g.descartadas), (1, 1))
+            livre[0] = 3.5 * 2**30  # acima do mínimo, mas não 1 GB acima: continua pausada
+            g.disco_visto_em = 0
+            g._uma(time.time(), "_conectado", [])
+            self.assertTrue(g.pausado)
+            livre[0] = 5 * 2**30
+            g.disco_visto_em = 0
+            g._uma(time.time(), "_conectado", [])
+            self.assertFalse(g.pausado)
+            self.assertEqual(g.gravadas, 2)
+
+    def test_erro_de_escrita_espera_10s(self):
+        g = m.Gravador("/nao/existe", "WINZ26", iniciar=False)
+        g._uma(time.time(), "_conectado", [])
+        self.assertTrue(g.falhou)
+        self.assertGreater(g.tentar_em, time.time() + 9)
+        g._uma(time.time(), "_conectado", [])  # dentro dos 10 s: nem tenta
+        self.assertEqual(g.descartadas, 2)
+
+    def test_topo_book_reduz_e_ordena(self):
+        t = m.topo_book(livro([3, 5, 4, 1, 2, 6], [9, 7, 8]), 2)
+        self.assertEqual([x["Price"] for x in t["ListBids"]], [6, 5])
+        self.assertEqual([x["Price"] for x in t["ListOffers"]], [7, 8])
+        self.assertEqual(t["Niveis"], [6, 3])
+        r = m.topo_book(livro(list(range(100)), [200]), 5, 50)
+        self.assertEqual(r, {"Aggregated": True, "MarketDepth": 10, "Niveis": [100, 1], "Degenerado": True})
+
+
+def reproduzir(arq, limite=None):
+    """Passa uma gravação pelo Estado com os horários gravados; devolve (estado, respostas)."""
+    import gzip
+    import itertools
+    agora = [0.0]
+    e = m.Estado("WINZ26", agora=lambda: agora[0])
+    respostas = []
+    for l in itertools.islice(gzip.open(arq, "rt"), limite):
+        try:
+            r = json.loads(l)
+        except ValueError:
+            continue  # a última linha da amostra está cortada
+        agora[0] = r["chegada_ms"] / 1000
+        if r["evento"] == "_conectado":
+            e.marcar(conectado=True, feed_ok=True, motivo="conectado")
+        elif r["evento"] == "OnUpdateMarketData":
+            a = r["args"]
+            e.update(a[1], a[2], agora[0], a[3] if len(a) >= 4 else None)
+            respostas.append((r["chegada"][11:23], e.resposta(), e.em_dia, e.book_ok))
+    return e, respostas
+
+
+@unittest.skipUnless(os.path.exists(AMOSTRA_20), "sem a amostra de 20/10")
+class TestAmostra20(unittest.TestCase):
+    """A amostra de 20/10 (08:39–09:01:24): book degenerado desde 08:55 e o atraso de 3–11 s depois da
+    abertura — o /precos/atual não serve preço, em vez de servir o book cruzado e velho."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.e, cls.r = reproduzir(AMOSTRA_20)
+
+    def test_book_degenerado(self):
+        depois = [x for x in self.r if x[0] >= "08:55:01"]
+        self.assertTrue(depois)
+        self.assertFalse(any(x[3] for x in depois), "algum AggrBook de 20/10 foi aceito")
+        self.assertTrue(all(x[1] == {} for x in depois))
+
+    def test_nunca_serve_book_cruzado(self):
+        for _, resp, _, _ in self.r:
+            p = resp.get("WINFUT", {})
+            if "bid" in p and "ask" in p and p.get("status84") == 0:
+                self.assertLess(p["bid"], p["ask"])
+
+    def test_atraso_detectado(self):
+        self.assertTrue(any(not x[2] for x in self.r if x[0] >= "09:01:00"), "o atraso de 3–11 s não foi visto")
+        self.assertFalse(any(not x[2] for x in self.r if x[0] < "09:00:50"))
+
+
+@unittest.skipUnless(os.path.exists(GRAVACAO_19), "sem a gravação de 19/10")
+class TestGravacao19(unittest.TestCase):
+    """19/10 (book agregado, 10 níveis, sem atraso): a fonte fica disponível e o topo nunca cruza."""
+
+    def test_disponivel(self):
+        e, r = reproduzir(GRAVACAO_19, 60000)
+        com_preco = [x for x in r if x[1]]
+        self.assertGreater(len(com_preco), 0.99 * len(r))
+        self.assertTrue(all(x[2] for x in r), "atraso acusado em 19/10")
+        # 19/10 09:13:08.988: um book travado (209.010 / 209.010) numa mensagem — indisponível só ali
+        self.assertLessEqual(sum(1 for x in r if not x[3]), len(r) // 1000)
+        for _, resp, _, _ in com_preco:
+            p = resp["WINFUT"]
+            if "bid" in p and "ask" in p:
+                self.assertLess(p["bid"], p["ask"])
 
 
 if __name__ == "__main__":
