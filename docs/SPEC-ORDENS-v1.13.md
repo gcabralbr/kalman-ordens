@@ -75,6 +75,9 @@ qualquer outro texto com tunnel) e vira evento `TUNNEL` (operacao_id, papel, tex
 5. (20/10) A `20864 IgnoreTunnel=Y` enviada no 35=D (e no 35=G) da 1014 é respeitada mesmo sem ser
    devolvida nas respostas? Na 1014 da op 900000037 (20/10 10:54:06.943, `KM-KHML-P-900000037-1`) ela foi
    enviada e o 150=A/150=0 não a trazem.
+6. (20/10) Duas sessões FIX na mesma conta (99999: kalman-ordens e PTF): cada sessão só vê as próprias
+   ordens e posição no 35=AF. Há limite de risco por conta (posição máxima, perda, ordens abertas) que
+   as duas sessões dividem? A 1014 de uma sessão olha a posição da conta inteira ou só a da sessão?
 
 ## 5. Testes (roteiros)
 
