@@ -72,6 +72,9 @@ qualquer outro texto com tunnel) e vira evento `TUNNEL` (operacao_id, papel, tex
 3. O `MaxReplaces` (20771) da 1014 pode ser maior que 100 se enviado no 35=D? Há máximo?
 4. (de 19/10, seção 15 do ESTADO) A 1014 com `40=1` envia a ordem disparada a mercado? O exemplo da
    §4.3.7 manda 40=1 e recebe 40=2 com 44.
+5. (20/10) A `20864 IgnoreTunnel=Y` enviada no 35=D (e no 35=G) da 1014 é respeitada mesmo sem ser
+   devolvida nas respostas? Na 1014 da op 900000037 (20/10 10:54:06.943, `KM-KHML-P-900000037-1`) ela foi
+   enviada e o 150=A/150=0 não a trazem.
 
 ## 5. Testes (roteiros)
 
