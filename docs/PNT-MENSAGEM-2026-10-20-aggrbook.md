@@ -36,3 +36,25 @@ Perguntas:
 3. As ofertas do pré-abertura que permanecem no book (222.420 / 191.345) são esperadas na HML?
 
 Temos as mensagens gravadas (08:39–09:01) se quiserem a amostra.
+
+---
+
+**Atualização de 21/10/2026 — o mesmo assinante, a mesma assinatura: depende de quando a conexão abre.**
+
+| Conexão | Primeiro AggrBook | `Aggregated` | `MarketDepth` | níveis por lado |
+|---|---|---|---|---|
+| 20/10 08:39:38 (antes do pré-abertura) | 08:55:00.485 | `false` | 0 | 5 → 12.112 (09:01:24) → ~30 mil |
+| 20/10 10:45:41 (pregão aberto) | 10:45:41.374 | `true` | 10 | 10 |
+| 21/10 08:53:06 (antes do pré-abertura) | 08:54:57.070 | `false` | 0 | 1 → ~60 (08:59) → 8,3 mil (09:00) → 20 mil (09:01:59) → 23,6 mil (09:02:26) |
+| 21/10 09:02:27 (pregão aberto, reconexão nossa) | 09:02:27.140 | `true` | 10 | 10 |
+
+Em 21/10 o book da conexão das 08:53 voltou a crescer sem limite desde o pré-abertura (08:54:57), com
+o nosso atraso de recepção chegando a 1,1 s; ao reconectar às 09:02:27 — mesma chamada
+`SubscribeMarketData(requestId, "WINZ26", "AggrBook")` — o AggrBook veio agregado, 10 níveis, atraso de
+~10 ms. Nos dois dias: **conexão aberta antes/durante o pré-abertura → book não agregado e sem limite o
+dia todo; conexão nova depois da abertura → book normal.**
+
+Pergunta 4: o AggrBook de uma assinatura feita antes do pré-abertura (ou que atravessa o leilão de
+abertura) muda de modo — deixa de agregar e de limitar à `MaxAggrBookDepth` — e não volta depois da
+abertura? É esperado na HML? Na produção acontece o mesmo? Até que se corrija, estamos reconectando
+depois das 09:00.
