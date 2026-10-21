@@ -32,8 +32,14 @@ fresco):
     que passa da base em mais de --atraso-max-s deixa a fonte indisponível até voltar. O relógio do
     PnT não é confiável (FIX: +1,65 a +1,96 s em 19/10, −0,45 s em 16/10): por isso a base, não um
     limite absoluto. A base vai no /saude.
+  - reconexão automática (21/10: a conexão aberta antes do pré-abertura recebe o book degenerado o dia
+    todo; uma nova depois da abertura vem normal): book degenerado em negociação por mais de
+    --reconectar-s → close frame, espera o close do servidor, cliente novo (negotiate novo); no máximo
+    uma a cada --reconectar-intervalo-s; CRITICAL no journal depois de --reconectar-alerta-apos
+    seguidas sem book normal. Toda queda abre um cliente novo (a reconexão interna do pysignalr
+    reusaria o ?id= antigo). POST /reconectar: o mesmo caminho, manual. SIGTERM fecha com close frame.
 
-  pnt_md_hml.py [--ativo WINZ26] [--porta 9096] [--token ~/.config/pnt-md-spike/token.json]
+  pnt_md_hml.py [--ativo WINZ26] [--porta 9096] [--token /var/lib/kalman-pnt-md-hml/token.json]
   pnt_md_hml.py --simular var/pnt-md-WINZ26-20261016.jsonl [--velocidade 1]   # fonte gravada (teste)
 """
 import argparse
@@ -44,6 +50,7 @@ import logging
 import os
 import queue
 import shutil
+import signal
 import threading
 from collections import deque
 import time
@@ -56,6 +63,8 @@ ISSUER = "https://auth-hml.pnt.api.br/PnTAuthorizationServerProvider"
 HUB = "https://webbrokerMDhml.pnt.api.br/mdhub"
 CLIENT_ID = "pnt_external_gammaq"
 CONCEITO = "WINFUT"
+# fora do /home (20/10: /home cheio) e com escrita atômica; o md_spike (login) grava no mesmo arquivo
+TOKEN = "/var/lib/kalman-pnt-md-hml/token.json"
 FUSO = dt.timezone(dt.timedelta(hours=-3))
 TOPICOS = ("LastTrade", "AggrBook", "SecurityStatus")
 
@@ -80,6 +89,7 @@ class Estado:
         self.em_dia = True  # atraso dentro da base
         self.motivo = "sem conexão"
         self.book_motivo = ""
+        self.book_degenerado = False  # o último AggrBook DESTA conexão veio degenerado (reconexão automática)
         self.niveis = (0, 0)
         # atraso relativo: (chegada, chegada − envio do servidor em ms), mínimo móvel na janela
         self.atrasos = deque()
@@ -111,6 +121,7 @@ class Estado:
             # reconexão: o book e o preço da conexão anterior não valem até chegarem de novo; a base
             # do atraso recomeça (outra conexão, talvez outro servidor)
             self.preco = self.bid = self.ask = None
+            self.book_degenerado = False
             self.atrasos.clear()
             self.atraso_base_ms = self.atraso_ultimo_ms = None
             self.em_dia = True
@@ -140,6 +151,7 @@ class Estado:
             self.preco, self.preco_em = float(payload["Price"]), chegada
         elif topico == "AggrBook" and isinstance(payload, dict):
             motivo, bid, ask, self.niveis = avaliar_book(payload, self.niveis_max, self.status84 == 0)
+            self.book_degenerado = bool(motivo)
             if motivo:
                 self.bid = self.ask = None
                 if self.book_ok or motivo != self.book_motivo:
@@ -235,14 +247,63 @@ def status84(payload):
     return 1
 
 
-def aplicativo(estado, grav=None):
+class Reconexao:
+    """Reconexão automática com o book degenerado (21/10: a conexão aberta antes do pré-abertura recebe
+    o AggrBook não agregado e sem limite o dia todo; uma conexão nova depois da abertura vem normal).
+    Pede reconexão quando o book desta conexão está degenerado com o papel em negociação (status84 0)
+    por mais de limiar_s, no máximo uma a cada intervalo_s; depois de alerta_apos seguidas sem um book
+    normal, alerta crítico no journal (e `reconexao_alerta` no /saude) a cada nova tentativa."""
+
+    def __init__(self, limiar_s=10.0, intervalo_s=60.0, alerta_apos=5):
+        self.limiar_s, self.intervalo_s, self.alerta_apos = limiar_s, intervalo_s, alerta_apos
+        self.desde = None  # início da condição (degenerado e em negociação), contínua
+        self.total = self.seguidas = 0
+        self.ultima_em = None
+        self.ultima = {}  # hora, motivo e se o servidor confirmou o close
+        self.pedido = None  # POST /reconectar (manual: sem limiar nem intervalo)
+
+    def observar(self, agora, estado):
+        """O motivo da reconexão (str) quando é hora de reconectar; senão None."""
+        if self.pedido:
+            motivo, self.pedido = self.pedido, None
+            return motivo
+        if estado.book_ok and self.seguidas:
+            log.warning("reconexão: book normal depois de %d reconexão(ões) seguida(s)", self.seguidas)
+            self.seguidas = 0
+        if not (estado.conectado and estado.book_degenerado and estado.status84 == 0):
+            self.desde = None
+            return None
+        if self.desde is None:
+            self.desde = agora
+        if agora - self.desde < self.limiar_s:
+            return None
+        if self.ultima_em is not None and agora - self.ultima_em < self.intervalo_s:
+            return None
+        return f"book degenerado em negociação há {agora - self.desde:.0f} s ({estado.book_motivo})"
+
+    def registrar(self, agora, motivo):
+        self.total += 1
+        self.seguidas += 1
+        self.ultima_em, self.desde = agora, None
+        self.ultima = {"em": dt.datetime.fromtimestamp(agora, FUSO).isoformat(timespec="seconds"), "motivo": motivo}
+        if self.seguidas >= self.alerta_apos:
+            log.critical("ALERTA: %d reconexões seguidas sem book normal (%s)", self.seguidas, motivo)
+        else:
+            log.warning("reconexão %d (seguida %d): %s", self.total, self.seguidas, motivo)
+
+    def saude(self):
+        return {"reconexoes_book": self.total, "reconexoes_seguidas": self.seguidas,
+                "reconexao_alerta": self.seguidas >= self.alerta_apos, "ultima_reconexao": self.ultima or None}
+
+
+def aplicativo(estado, grav=None, rec=None):
     async def atual(req):
         if req.query.get("ativo", CONCEITO) != CONCEITO:  # sem ativo: WINFUT (o pedido do Kalman)
             return web.Response(status=400, text="ativo desconhecido")
         return web.json_response(estado.resposta())
 
     async def saude(req):
-        return web.json_response({"disponivel": estado.disponivel(), "conectado": estado.conectado,
+        return web.json_response({**(rec.saude() if rec else {}), "disponivel": estado.disponivel(), "conectado": estado.conectado,
                                   "feed_ok": estado.feed_ok, "token_ok": estado.token_ok, "motivo": estado.motivo,
                                   "status84": estado.status84,
                                   "book_ok": estado.book_ok, "book_motivo": estado.book_motivo, "niveis": list(estado.niveis),
@@ -251,9 +312,17 @@ def aplicativo(estado, grav=None):
                                   "gravadas": getattr(grav, "gravadas", 0), "descartadas": getattr(grav, "descartadas", 0),
                                   "gravacao_pausada": getattr(grav, "pausado", False)})
 
+    async def reconectar(req):
+        # manual (só em 127.0.0.1): o mesmo caminho da automática — close frame, cliente novo
+        if rec is None:
+            return web.Response(status=404)
+        rec.pedido = "pedido manual (POST /reconectar)"
+        return web.json_response({"pedido": True})
+
     app = web.Application()
     app.router.add_get("/precos/atual", atual)
     app.router.add_get("/saude", saude)
+    app.router.add_post("/reconectar", reconectar)
     return app
 
 
@@ -354,6 +423,31 @@ class SemGravador:
 
 # ------------------------------------------------------------------ token
 
+def gravar_atomico(caminho, dados):
+    """JSON em caminho.tmp (600) no mesmo diretório, fsync e rename: quem lê vê o arquivo antigo ou o
+    novo, nunca um pela metade (20/10: com o disco cheio, o O_TRUNC + json.dump deixaria o token vazio
+    e o refresh token perdido). Erro: o arquivo antigo fica intacto e a exceção sobe."""
+    tmp = f"{caminho}.{os.getpid()}.tmp"
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(dados, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, caminho)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    d = os.open(os.path.dirname(os.path.abspath(caminho)), os.O_RDONLY)
+    try:
+        os.fsync(d)
+    finally:
+        os.close(d)
+
+
 class Tokens:
     def __init__(self, arq):
         self.arq = arq
@@ -365,13 +459,27 @@ class Tokens:
             return json.load(f)
 
     def guardar(self, t):
-        t = dict(t, obtido_em=time.time())
-        fd = os.open(self.arq, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            json.dump(t, f)
-        self.t = t
+        # primeiro na memória: o refresh token antigo já foi girado pelo servidor; se o disco falhar, o
+        # novo segue valendo aqui e a gravação é tentada de novo a cada atual()
+        self.t = dict(t, obtido_em=time.time())
+        self.pendente = True
+        self.gravar_pendente()
+
+    def gravar_pendente(self):
+        try:
+            gravar_atomico(self.arq, self.t)
+        except OSError as e:
+            if not getattr(self, "falhou", False):
+                log.error("token: falha ao gravar %s (%r); o token novo segue na memória, nova tentativa a cada uso", self.arq, e)
+            self.falhou = True
+            return
+        if getattr(self, "falhou", False):
+            log.warning("token: gravado de novo em %s", self.arq)
+        self.pendente = self.falhou = False
 
     def atual(self):
+        if getattr(self, "pendente", False):
+            self.gravar_pendente()
         if time.time() > self.t["obtido_em"] + int(self.t.get("expires_in", 3600)) - 300:
             # outro processo (o md_spike) pode ter renovado e girado o refresh token: relê antes
             disco = self.ler()
@@ -396,10 +504,30 @@ class Tokens:
 
 # ------------------------------------------------------------------ fontes
 
-async def fonte_ao_vivo(estado, args, grav):
+class ConexaoEncerrada(Exception):
+    """Levantada no on_close: termina o cliente.run() em vez de deixar o pysignalr reconectar sozinho."""
+
+
+async def fechar_ws(cliente, timeout):
+    """Fecha o websocket do cliente com close frame (1000) e espera o close do servidor. Devolve o que
+    o servidor respondeu ({"code", "reason"}) ou None (sem conexão, sem resposta no prazo). O pysignalr
+    1.3.2 não tem método público para fechar: o websocket está em _transport._ws."""
+    ws = getattr(getattr(cliente, "_transport", None), "_ws", None)
+    if ws is None:
+        return None
+    try:
+        await asyncio.wait_for(ws.close(1000, "reconexao"), timeout)
+    except Exception as e:  # inclui o timeout: segue para o cliente novo
+        log.error("reconexão: falha ao fechar o websocket: %r", e)
+    rcvd = getattr(getattr(ws, "protocol", None), "close_rcvd", None)  # websockets 16: no protocol
+    return {"code": rcvd.code, "reason": rcvd.reason} if rcvd is not None else None
+
+
+async def fonte_ao_vivo(estado, args, grav, rec=None):
     from pysignalr.client import SignalRClient
 
     tokens = Tokens(args.token)
+    rec = rec or Reconexao()
     while True:
         try:
             tok = tokens.atual()
@@ -457,6 +585,9 @@ async def fonte_ao_vivo(estado, args, grav):
         async def fechado():
             grav.gravar("_desconectado", [])
             estado.marcar(conectado=False, motivo="conexão fechada")
+            # a reconexão interna do pysignalr reusa a URL com o connectionId antigo (sem negotiate): em
+            # vez dela, o laço abaixo abre um cliente novo (negotiate novo, connectionId novo)
+            raise ConexaoEncerrada()
 
         async def erro(m):
             grav.gravar("_erro", [str(m)])
@@ -477,15 +608,49 @@ async def fonte_ao_vivo(estado, args, grav):
                 except Exception as e:
                     estado.marcar(token_ok=False, motivo=f"token: {e}")
 
+        async def vigia():
+            # reconexão automática: fecha a conexão antiga (close frame) antes de abrir a nova
+            while True:
+                await asyncio.sleep(getattr(args, "vigia_s", 1.0))
+                motivo = rec.observar(time.time(), estado)
+                if motivo:
+                    fechando.set()
+                    rec.registrar(time.time(), motivo)
+                    grav.gravar("_reconexao_book", [motivo])
+                    close = await fechar_ws(cliente, args.fechar_timeout_s)
+                    rec.ultima["close_servidor"] = close
+                    log.warning("reconexão: websocket fechado; close do servidor: %s", close or "NÃO recebido")
+                    rodando.cancel()  # se o on_close já encerrou o run(), não faz nada
+                    return
+
+        fechando = asyncio.Event()
         ren = asyncio.create_task(renovador())
+        rodando = asyncio.create_task(cliente.run())
+        vig = asyncio.create_task(vigia())
         try:
-            await cliente.run()
+            await rodando
+        except ConexaoEncerrada:
+            log.warning("conexão fechada; cliente novo em %d s", args.espera_reconexao_s)
+        except asyncio.CancelledError:
+            if not fechando.is_set():
+                # fim do serviço (SIGTERM do systemctl stop/restart): close frame, para o servidor soltar a
+                # sessão antes de o próximo processo conectar
+                ren.cancel()
+                vig.cancel()
+                close = await fechar_ws(cliente, 2)
+                log.warning("encerrando: websocket fechado; close do servidor: %s", close or "NÃO recebido")
+                raise
+            log.warning("cliente encerrado pela reconexão; cliente novo em %d s", args.espera_reconexao_s)
         except Exception as e:
-            log.error("cliente terminou: %r; reconectando em 5 s", e)
+            log.error("cliente terminou: %r; cliente novo em %d s", e, args.espera_reconexao_s)
         finally:
             ren.cancel()
+            if fechando.is_set() and not vig.done():
+                # o on_close encerrou o run() antes de o close terminar: deixa a vigia registrar a resposta
+                await asyncio.wait([vig], timeout=args.fechar_timeout_s + 1)
+            vig.cancel()
         estado.marcar(conectado=False, motivo="cliente terminou")
-        await asyncio.sleep(5)
+        await asyncio.sleep(args.espera_reconexao_s)
 
 
 async def fonte_gravada(estado, args):
@@ -522,14 +687,22 @@ async def fonte_gravada(estado, args):
 async def principal(args):
     estado = Estado(args.ativo, niveis_max=args.niveis_max, atraso_max_s=args.atraso_max_s, janela_base_s=args.janela_base_s)
     grav = Gravador(args.gravar_dir, args.ativo, disco_min_gb=args.disco_min_gb) if args.gravar_dir and not args.simular else SemGravador()
-    runner = web.AppRunner(aplicativo(estado, grav), access_log=None)  # o kalman-ordens consulta a cada 200 ms
+    rec = Reconexao(args.reconectar_s, args.reconectar_intervalo_s, args.reconectar_alerta_apos)
+    runner = web.AppRunner(aplicativo(estado, grav, rec), access_log=None)  # o kalman-ordens consulta a cada 200 ms
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", args.porta).start()
     log.info("pnt-md-hml: %s → http://127.0.0.1:%d/precos/atual?ativo=%s (%s)", args.ativo, args.porta, CONCEITO,
              "gravação " + args.simular if args.simular else "WB_MD " + args.hub)
-    await (fonte_gravada(estado, args) if args.simular else fonte_ao_vivo(estado, args, grav))
-    if args.simular and args.ficar:
-        await asyncio.Event().wait()
+    # SIGTERM (systemctl stop/restart): cancela o serviço; a fonte ao vivo fecha o websocket antes de sair
+    asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
+    try:
+        await (fonte_gravada(estado, args) if args.simular else fonte_ao_vivo(estado, args, grav, rec))
+        if args.simular and args.ficar:
+            await asyncio.Event().wait()
+    except asyncio.CancelledError:
+        log.info("pnt-md-hml: encerrado (SIGTERM)")
+    finally:
+        await runner.cleanup()
 
 
 def main():
@@ -537,7 +710,7 @@ def main():
     ap.add_argument("--ativo", default=os.environ.get("PNT_MD_ATIVO", "WINZ26"))
     ap.add_argument("--porta", type=int, default=int(os.environ.get("PNT_MD_PORTA", "9096")))
     ap.add_argument("--hub", default=os.environ.get("PNT_MD_HUB", HUB))
-    ap.add_argument("--token", default=os.environ.get("PNT_MD_TOKEN", os.path.expanduser("~/.config/pnt-md-spike/token.json")))
+    ap.add_argument("--token", default=os.environ.get("PNT_MD_TOKEN", TOKEN))
     ap.add_argument("--max-mb", type=int, default=int(os.environ.get("PNT_MD_MAX_MB", "64")),
                     help="tamanho máximo de uma mensagem do WB_MD (MB)")
     ap.add_argument("--gravar-dir", default=os.environ.get("PNT_MD_GRAVAR_DIR", os.path.join(
@@ -552,6 +725,15 @@ def main():
                     help="atraso acima da base (mínimo móvel de chegada − envio do servidor) = fonte indisponível")
     ap.add_argument("--janela-base-s", type=float, default=float(os.environ.get("PNT_MD_JANELA_BASE_S", "600")),
                     help="janela do mínimo móvel do atraso")
+    ap.add_argument("--reconectar-s", type=float, default=float(os.environ.get("PNT_MD_RECONECTAR_S", "10")),
+                    help="book degenerado em negociação por mais que isto: reconecta com cliente novo")
+    ap.add_argument("--reconectar-intervalo-s", type=float, default=float(os.environ.get("PNT_MD_RECONECTAR_INTERVALO_S", "60")),
+                    help="no máximo uma reconexão automática a cada")
+    ap.add_argument("--reconectar-alerta-apos", type=int, default=int(os.environ.get("PNT_MD_RECONECTAR_ALERTA_APOS", "5")),
+                    help="reconexões seguidas sem book normal até o alerta crítico")
+    ap.add_argument("--espera-reconexao-s", type=int, default=int(os.environ.get("PNT_MD_ESPERA_RECONEXAO_S", "5")),
+                    help="espera entre fechar uma conexão e abrir a nova")
+    ap.add_argument("--fechar-timeout-s", type=float, default=5.0, help="espera pelo close do servidor")
     ap.add_argument("--simular", help="JSONL gravado pelo md_spike (fonte simulada, para teste)")
     ap.add_argument("--velocidade", type=float, default=1.0)
     ap.add_argument("--ficar", action="store_true", help="com --simular, continua servindo depois da gravação")

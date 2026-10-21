@@ -13,7 +13,9 @@ cada callback em JSONL com a hora de chegada.
                                                           # usuário e senha da HML no terminal
   .venv/bin/python md_spike.py run [--ativo WINZ26] [--segundos 300] [--saida ARQ]
 
-O refresh token fica em ~/.config/pnt-md-spike/token.json (600), fora do repositório. Nada aqui
+O refresh token fica em /var/lib/kalman-pnt-md-hml/token.json (600; PNT_MD_TOKEN muda), fora do
+repositório e do /home: o mesmo arquivo do pnt-md-hml (o refresh token gira a cada renovação; duas
+cópias invalidariam uma delas). Escrita atômica (temporário + fsync + rename). Nada aqui
 fala com o kalman-ordens nem com o Kalman.
 """
 import argparse
@@ -39,8 +41,8 @@ CLIENT_ID = "pnt_external_gammaq"
 # sem openid: o client não tem esse escopo e o authorize responde invalid_request (16/10)
 SCOPE = "robot_signalr_api feeder_subscriber offline_access"
 REDIRECT = "http://localhost:4200/callback"  # o do app de demonstração (mesmo client)
-DIR_CFG = os.path.expanduser("~/.config/pnt-md-spike")
-ARQ_TOKEN = os.path.join(DIR_CFG, "token.json")
+ARQ_TOKEN = os.environ.get("PNT_MD_TOKEN", "/var/lib/kalman-pnt-md-hml/token.json")
+DIR_CFG = os.path.dirname(ARQ_TOKEN)
 FUSO = dt.timezone(dt.timedelta(hours=-3))
 TOPICOS = ("LastTrade", "AggrBook", "SecurityStatus")
 
@@ -56,12 +58,21 @@ def descoberta():
 
 
 def guardar_token(t):
-    os.makedirs(DIR_CFG, mode=0o700, exist_ok=True)
+    if not os.path.isdir(DIR_CFG):
+        raise SystemExit(f"{DIR_CFG} não existe: sudo install -d -o gammaquant -g gammaquant -m 700 {DIR_CFG}")
     t = dict(t, obtido_em=time.time())
-    fd = os.open(ARQ_TOKEN, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(t, f)
-    os.chmod(ARQ_TOKEN, 0o600)
+    tmp = f"{ARQ_TOKEN}.{os.getpid()}.tmp"
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(t, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, ARQ_TOKEN)  # atômico: o pnt-md-hml nunca lê um token pela metade
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
 
 
 def ler_token():

@@ -11,11 +11,15 @@ import time
 import unittest
 import urllib.request
 
+from aiohttp import web
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pnt_md_hml as m  # noqa: E402
 
 RAIZ = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-GRAVACAO = os.path.join(RAIZ, "var", "pnt-md-WINZ26-20261016.jsonl")
+# as gravações ficam no var/ do checkout em uso (num worktree limpo: PNT_MD_TESTE_VAR=<repo>/var)
+VAR = os.environ.get("PNT_MD_TESTE_VAR", os.path.join(RAIZ, "var"))
+GRAVACAO = os.path.join(VAR, "pnt-md-WINZ26-20261016.jsonl")
 FIXTURE = os.path.join(RAIZ, "cenarios", "referencia", "precos-atual-pnt-md-hml.json")
 
 LT = {"Price": 209525.0, "Quantity": 1.0, "Time": "2026-10-15T18:07:12.111"}
@@ -176,6 +180,46 @@ class TestGravador(unittest.TestCase):
         self.assertEqual(g.descartadas, 3)
 
 
+class TestTokenAtomico(unittest.TestCase):
+    """20/10: com o /home cheio, o O_TRUNC + json.dump deixaria o token vazio (refresh token perdido)."""
+
+    def test_falha_no_meio_mantem_o_antigo(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            arq = os.path.join(d, "token.json")
+            m.gravar_atomico(arq, {"access_token": "A1", "refresh_token": "R1"})
+            with self.assertRaises(TypeError):
+                m.gravar_atomico(arq, {"access_token": object()})  # falha no meio do json.dump
+            self.assertEqual(json.load(open(arq))["refresh_token"], "R1")
+            self.assertEqual(os.listdir(d), ["token.json"])  # sem temporário largado
+            self.assertEqual(os.stat(arq).st_mode & 0o777, 0o600)
+
+    def test_disco_cheio_na_renovacao(self):
+        import errno
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            arq = os.path.join(d, "token.json")
+            m.gravar_atomico(arq, {"access_token": "A1", "refresh_token": "R1", "expires_in": 3600, "obtido_em": time.time()})
+            t = m.Tokens(arq)
+            original, falhas = m.gravar_atomico, [1]
+
+            def cheio(c, dados):
+                if falhas:
+                    falhas.pop()
+                    raise OSError(errno.ENOSPC, "No space left on device")
+                original(c, dados)
+            m.gravar_atomico = cheio
+            try:
+                t.guardar({"access_token": "A2", "refresh_token": "R2", "expires_in": 3600})
+                self.assertEqual(t.t["refresh_token"], "R2")  # na memória
+                self.assertEqual(json.load(open(arq))["refresh_token"], "R1")  # o arquivo antigo intacto
+                self.assertEqual(t.atual(), "A2")  # e a próxima leitura grava o pendente
+                self.assertEqual(json.load(open(arq))["refresh_token"], "R2")
+                self.assertFalse(t.pendente)
+            finally:
+                m.gravar_atomico = original
+
+
 class TestAoVivoGrava(unittest.TestCase):
     """O laço ao vivo com um cliente SignalR falso: o que chega vai para o Estado e para o JSONL."""
 
@@ -186,8 +230,11 @@ class TestAoVivoGrava(unittest.TestCase):
         livro = {"ListBids": [{"Price": 209495.0}], "ListOffers": [{"Price": 209500.0}]}
 
         class Falso:
+            n = 0
+
             def __init__(self, *a, **k):
                 self.h = {}
+                Falso.n += 1
 
             def on(self, ev, f):
                 self.h[ev] = f
@@ -205,13 +252,14 @@ class TestAoVivoGrava(unittest.TestCase):
                 pass
 
             async def run(self):
+                if Falso.n > 1:
+                    raise asyncio.CancelledError  # o cliente novo depois do fechamento: termina o teste
                 await self.aberto()
                 await self.h["OnUpdateMarketData"](["WINZ26", "LastTrade", lt])
                 await self.h["OnUpdateMarketData"](["WINZ26", "AggrBook", livro])
                 await self.h["OnUpdateMarketData"](["WINZ26", "SecurityStatus", "Trading"])
                 await self.h["OnFeederUnavailable"](["x"])
-                await self.fechado()
-                raise asyncio.CancelledError  # termina o laço do teste
+                await self.fechado()  # levanta ConexaoEncerrada: o laço abre um cliente novo
 
         mod = types.ModuleType("pysignalr.client")
         mod.SignalRClient = Falso
@@ -221,7 +269,8 @@ class TestAoVivoGrava(unittest.TestCase):
             with tempfile.TemporaryDirectory() as d:
                 arq = os.path.join(d, "token.json")
                 json.dump({"access_token": "A", "refresh_token": "R", "expires_in": 3600, "obtido_em": time.time()}, open(arq, "w"))
-                args = types.SimpleNamespace(token=arq, hub="x", ativo="WINZ26", max_mb=64, gravar_niveis=5, niveis_max=50)
+                args = types.SimpleNamespace(token=arq, hub="x", ativo="WINZ26", max_mb=64, gravar_niveis=5, niveis_max=50,
+                                             espera_reconexao_s=0, fechar_timeout_s=1)
                 e = m.Estado("WINZ26")
                 g = m.Gravador(d, "WINZ26")
                 with self.assertRaises(asyncio.CancelledError):
@@ -328,7 +377,8 @@ class TestComGravacao(unittest.TestCase):
 
 AGORA = time.time()
 AMOSTRA_20 = "/var/tmp/pnt-md-hml-amostra-20261020.jsonl.gz"
-GRAVACAO_19 = os.path.join(RAIZ, "var", "pnt-md-hml-WINZ26-20261019.jsonl.gz")
+GRAVACAO_19 = os.path.join(VAR, "pnt-md-hml-WINZ26-20261019.jsonl.gz")
+GRAVACAO_21 = os.path.join(VAR, "pnt-md-hml-WINZ26-20261021.jsonl")
 
 
 def nivel(px, q=1):
@@ -443,20 +493,31 @@ class TestGravadorV13(unittest.TestCase):
         self.assertEqual(r, {"Aggregated": True, "MarketDepth": 10, "Niveis": [100, 1], "Degenerado": True})
 
 
-def reproduzir(arq, limite=None):
-    """Passa uma gravação pelo Estado com os horários gravados; devolve (estado, respostas)."""
+def reproduzir(arq, limite=None, rec=None, ate=None):
+    """Passa uma gravação pelo Estado com os horários gravados; devolve (estado, respostas). Com rec
+    (Reconexao), a vigia é consultada a cada mensagem e as reconexões pedidas vão para rec.pedidas (a
+    gravação não reconecta: só o _conectado gravado abre uma conexão nova). ate: "HH:MM:SS" de parada."""
     import gzip
     import itertools
     agora = [0.0]
     e = m.Estado("WINZ26", agora=lambda: agora[0])
     respostas = []
-    for l in itertools.islice(gzip.open(arq, "rt"), limite):
+    abrir = gzip.open if arq.endswith(".gz") else open
+    for l in itertools.islice(abrir(arq, "rt"), limite):
         try:
             r = json.loads(l)
         except ValueError:
             continue  # a última linha da amostra está cortada
+        if ate and r["chegada"][11:19] >= ate:
+            break
         agora[0] = r["chegada_ms"] / 1000
+        if rec is not None:
+            motivo = rec.observar(agora[0], e)
+            if motivo:
+                rec.registrar(agora[0], motivo)
+                rec.pedidas.append(r["chegada"][11:19])
         if r["evento"] == "_conectado":
+            e.marcar(conectado=False, motivo="nova conexão")  # a gravação não tem o _desconectado
             e.marcar(conectado=True, feed_ok=True, motivo="conectado")
         elif r["evento"] == "OnUpdateMarketData":
             a = r["args"]
@@ -506,6 +567,223 @@ class TestGravacao19(unittest.TestCase):
             p = resp["WINFUT"]
             if "bid" in p and "ask" in p:
                 self.assertLess(p["bid"], p["ask"])
+
+
+
+def com_pedidas(**k):
+    r = m.Reconexao(**k)
+    r.pedidas = []
+    return r
+
+
+class TestReconexao(unittest.TestCase):
+    """A decisão de reconectar: book degenerado nesta conexão, em negociação, por mais de 10 s; no
+    máximo uma a cada 60 s; alerta depois de 5 seguidas sem book normal."""
+
+    def novo(self):
+        self.rel = Relogio(1792584000.0)
+        e = m.Estado("WINZ26", agora=self.rel)
+        e.marcar(conectado=True, feed_ok=True)
+        return e
+
+    def test_so_em_negociacao(self):
+        e, r = self.novo(), m.Reconexao()
+        e.update("SecurityStatus", "Pre-Open")
+        e.update("AggrBook", livro([1, 2], [3], Aggregated=False))
+        for t in range(0, 30):
+            self.assertIsNone(r.observar(1000.0 + t, e))
+        e.update("SecurityStatus", "Trading")  # a contagem começa aqui, não no primeiro book degenerado
+        self.assertIsNone(r.observar(1030.0, e))
+        self.assertIsNone(r.observar(1039.9, e))
+        self.assertIn("book degenerado em negociação", r.observar(1040.0, e))
+
+    def test_book_normal_zera_a_contagem(self):
+        e, r = self.novo(), m.Reconexao()
+        e.update("SecurityStatus", "Trading")
+        e.update("AggrBook", livro([1], [3], Aggregated=False))
+        r.observar(1000.0, e)
+        e.update("AggrBook", livro([1], [3]))  # um book normal no meio
+        self.assertIsNone(r.observar(1005.0, e))
+        e.update("AggrBook", livro([1], [3], Aggregated=False))
+        self.assertIsNone(r.observar(1006.0, e))
+        self.assertIsNone(r.observar(1015.0, e))
+        self.assertIsNotNone(r.observar(1016.0, e))
+
+    def test_intervalo_e_alerta(self):
+        e, r = self.novo(), m.Reconexao()
+        e.update("SecurityStatus", "Trading")
+        feitas = []
+        for t in range(0, 400):
+            # cada reconexão é uma conexão nova que também vem degenerada
+            if feitas and feitas[-1] == t - 6:
+                e.marcar(conectado=True, feed_ok=True)
+                e.update("AggrBook", livro([1], [3], Aggregated=False))
+            elif not feitas:
+                e.update("AggrBook", livro([1], [3], Aggregated=False))
+            motivo = r.observar(1000.0 + t, e)
+            if motivo:
+                r.registrar(1000.0 + t, motivo)
+                feitas.append(t)
+                e.marcar(conectado=False, motivo="reconexão")
+        self.assertEqual(feitas[0], 10)
+        self.assertTrue(all(b - a >= 60 for a, b in zip(feitas, feitas[1:])), feitas)
+        self.assertEqual(len(feitas), 7)
+        self.assertTrue(r.saude()["reconexao_alerta"])
+        self.assertEqual(r.saude()["reconexoes_book"], 7)
+        e.marcar(conectado=True, feed_ok=True)
+        e.update("AggrBook", livro([1], [3]))
+        r.observar(1500.0, e)
+        self.assertEqual(r.saude()["reconexoes_seguidas"], 0)
+        self.assertFalse(r.saude()["reconexao_alerta"])
+        self.assertEqual(r.saude()["reconexoes_book"], 7)
+
+    def test_pedido_manual(self):
+        e, r = self.novo(), m.Reconexao()
+        r.pedido = "manual"
+        self.assertEqual(r.observar(1000.0, e), "manual")  # sem limiar, sem book degenerado
+        self.assertIsNone(r.observar(1000.1, e))
+
+    def test_desconectado_nao_conta(self):
+        e, r = self.novo(), m.Reconexao()
+        e.update("SecurityStatus", "Trading")
+        e.update("AggrBook", livro([1], [3], Aggregated=False))
+        e.marcar(conectado=False, motivo="caiu")
+        e.marcar(conectado=True, feed_ok=True)  # conexão nova sem AggrBook ainda
+        for t in range(30):
+            self.assertIsNone(r.observar(1000.0 + t, e))
+
+
+@unittest.skipUnless(os.path.exists(AMOSTRA_20), "sem a amostra de 20/10")
+class TestReconexao20(unittest.TestCase):
+    def test_pede_depois_da_abertura(self):
+        r = com_pedidas()
+        reproduzir(AMOSTRA_20, rec=r)
+        # Trading às 09:00:51.438; a amostra vai até 09:01:24: uma reconexão ~10 s depois
+        self.assertEqual(r.pedidas, ["09:01:01"])
+
+
+@unittest.skipUnless(os.path.exists(GRAVACAO_21), "sem a gravação de 21/10")
+class TestReconexao21(unittest.TestCase):
+    def test_pede_depois_do_trading_e_para_com_a_conexao_nova(self):
+        r = com_pedidas()
+        reproduzir(GRAVACAO_21, rec=r, ate="09:06:00")
+        # Trading às 09:00:32.979; a conexão nova das 09:02:27 vem normal
+        self.assertEqual(r.pedidas[0][:7], "09:00:4")
+        self.assertTrue(all(p < "09:02:27" for p in r.pedidas), r.pedidas)
+        self.assertEqual(len(r.pedidas), 2)  # 09:00:4x e 09:01:4x
+        self.assertEqual(r.saude()["reconexoes_seguidas"], 0)
+
+
+@unittest.skipUnless(os.path.exists(GRAVACAO_19), "sem a gravação de 19/10")
+class TestReconexao19(unittest.TestCase):
+    def test_nenhuma(self):
+        r = com_pedidas()
+        reproduzir(GRAVACAO_19, 60000, rec=r)
+        self.assertEqual(r.pedidas, [])
+
+
+
+class TestReconexaoComServidor(unittest.TestCase):
+    """O pysignalr de verdade contra um /mdhub falso (aiohttp, local): a reconexão automática manda o
+    close frame (o servidor recebe o 1000), e toda conexão nova passa por um negotiate novo
+    (connectionId novo) — também quando é o servidor que fecha (sem a reconexão interna do pysignalr,
+    que reusaria o ?id= antigo)."""
+
+    def rodar(self, servidor_fecha, limiar_s=0.2):
+        import tempfile
+        import types
+        from aiohttp import WSMsgType
+        sep = "\x1e"
+        vistos = {"negotiate": 0, "ids": [], "close": []}
+
+        async def negotiate(req):
+            vistos["negotiate"] += 1
+            return web.json_response({"connectionId": f"c{vistos['negotiate']}", "negotiateVersion": 0,
+                                      "availableTransports": [{"transport": "WebSockets", "transferFormats": ["Text"]}]})
+
+        async def hub(req):
+            ws = web.WebSocketResponse()
+            await ws.prepare(req)
+            n = len(vistos["ids"])
+            vistos["ids"].append(req.query.get("id"))
+            await ws.receive()  # handshake do SignalR
+            await ws.send_str("{}" + sep)
+
+            def md(*a):
+                return json.dumps({"type": 1, "target": "OnUpdateMarketData", "arguments": list(a)}) + sep
+
+            await ws.send_str(md("WINZ26", "SecurityStatus", "Trading"))
+            degenerado = n == 0
+            book = livro([1, 2], [3], Aggregated=False) if degenerado else livro([1, 2], [3])
+
+            async def enviar():
+                for i in range(200):
+                    if ws.closed:
+                        return
+                    await ws.send_str(md("WINZ26", "AggrBook", book))
+                    await asyncio.sleep(0.05)
+                    if servidor_fecha and n == 0 and i == 5:
+                        await ws.close(code=1001)
+                        return
+            tarefa = asyncio.create_task(enviar())
+            async for msg in ws:
+                if msg.type == WSMsgType.CLOSE:
+                    break
+            if ws.close_code is not None and not (servidor_fecha and n == 0):
+                vistos["close"].append((n, ws.close_code))
+            tarefa.cancel()
+            return ws
+
+        async def cenario():
+            app = web.Application()
+            app.router.add_post("/mdhub/negotiate", negotiate)
+            app.router.add_get("/mdhub", hub)
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, "127.0.0.1", 0)
+            await site.start()
+            porta = site._server.sockets[0].getsockname()[1]
+            with tempfile.TemporaryDirectory() as d:
+                arq = os.path.join(d, "token.json")
+                json.dump({"access_token": "A", "refresh_token": "R", "expires_in": 3600, "obtido_em": time.time()}, open(arq, "w"))
+                args = types.SimpleNamespace(token=arq, hub=f"http://127.0.0.1:{porta}/mdhub", ativo="WINZ26", max_mb=64,
+                                             gravar_niveis=5, niveis_max=50, espera_reconexao_s=0, fechar_timeout_s=2,
+                                             vigia_s=0.05)
+                e = m.Estado("WINZ26")
+                rec = m.Reconexao(limiar_s=limiar_s, intervalo_s=1.0, alerta_apos=5)
+                t = asyncio.create_task(m.fonte_ao_vivo(e, args, m.SemGravador(), rec))
+                fim = time.time() + 15
+                while time.time() < fim and not (len(vistos["ids"]) >= 2 and e.book_ok and e.conectado and e.bid):
+                    await asyncio.sleep(0.05)
+                vistos["pronto_em"] = time.time()
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
+            vistos["parado_em"] = time.time()
+            await runner.cleanup()
+            return e, rec
+
+        return vistos, *asyncio.run(cenario())
+
+    def test_reconexao_automatica_fecha_com_close_frame(self):
+        vistos, e, rec = self.rodar(servidor_fecha=False)
+        self.assertEqual(vistos["ids"][:2], ["c1", "c2"])  # negotiate novo, connectionId novo
+        self.assertEqual(vistos["negotiate"], len(vistos["ids"]))
+        self.assertEqual(vistos["close"][0], (0, 1000))  # o servidor recebeu o close da conexão antiga
+        self.assertEqual(vistos["close"][1], (1, 1000))  # e o da conexão nova no fim do serviço (cancel)
+        self.assertEqual(rec.total, 1)
+        self.assertEqual(rec.ultima["close_servidor"]["code"], 1000)  # e o cliente recebeu o close de volta
+        self.assertTrue(e.book_ok)
+        rec.observar(time.time(), e)  # a vigia zera as seguidas no primeiro book normal
+        self.assertEqual(rec.seguidas, 0)
+
+    def test_servidor_fecha_cliente_novo(self):
+        vistos, e, rec = self.rodar(servidor_fecha=True, limiar_s=30)
+        self.assertEqual(vistos["ids"][:2], ["c1", "c2"])  # sem reusar o ?id=c1
+        self.assertEqual(vistos["negotiate"], len(vistos["ids"]))
+        self.assertEqual(rec.total, 0)
 
 
 if __name__ == "__main__":

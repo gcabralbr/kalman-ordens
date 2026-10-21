@@ -288,11 +288,32 @@ inválido, sem dado de hoje — responde `{}` (o kalman-ordens recusa a entrada 
 queda e volta vai ao journal. Medição de 16/10: a HML toca os negócios do pregão anterior ~0,8 s
 atrás do horário original (SPEC v1.10, seção 8.1).
 
-Token (uma vez, como `gammaquant`; a unidade renova sozinha pelo refresh token):
+Token (uma vez, como `gammaquant`; a unidade renova sozinha pelo refresh token). Fica em
+`/var/lib/kalman-pnt-md-hml/token.json` (fora do `/home`, escrita atômica; o `StateDirectory` da
+unidade cria o diretório, dono `gammaquant`, 700). O md_spike e o pnt-md-hml usam o **mesmo** arquivo
+(`PNT_MD_TOKEN` muda os dois): o refresh token gira a cada renovação.
 
 ```
+sudo install -d -o gammaquant -g gammaquant -m 700 /var/lib/kalman-pnt-md-hml   # se a unidade ainda não subiu
 cd ~/kalman-ordens && tools/pnt-md-spike/.venv/bin/python tools/pnt-md-spike/md_spike.py login-auto --usuario pnt_external_gammaq --corretora SIMULACAO
 ```
+
+Migração de um token antigo (`~/.config/pnt-md-spike/token.json`, até 21/10), com o pnt-md-hml
+parado: `install -m 600 ~/.config/pnt-md-spike/token.json /var/lib/kalman-pnt-md-hml/token.json`
+(o `install` cria o arquivo com o contexto SELinux do diretório; um `mv` levaria o do `/home`) e,
+depois de o serviço subir com `token_ok`, apagar o antigo. Se o `/etc/kalman-ordens/pnt-md-hml.env`
+tiver `PNT_MD_TOKEN`, tirar ou apontar para o arquivo novo.
+
+**Reconexão automática** (21/10): book degenerado com o papel em negociação (status84 0) por mais de
+`PNT_MD_RECONECTAR_S` (10) → fecha o websocket com close frame, espera o close do servidor e abre um
+cliente novo (negotiate e connectionId novos) depois de `PNT_MD_ESPERA_RECONEXAO_S` (5); no máximo uma
+a cada `PNT_MD_RECONECTAR_INTERVALO_S` (60); depois de `PNT_MD_RECONECTAR_ALERTA_APOS` (5) seguidas
+sem book normal, `CRITICAL` no journal a cada tentativa. No `/saude`: `reconexoes_book`,
+`reconexoes_seguidas`, `reconexao_alerta`, `ultima_reconexao` (hora, motivo, `close_servidor`). Toda
+queda (inclusive a que o servidor fecha) abre um cliente novo: a reconexão interna do pysignalr, que
+reusa o `?id=` da conexão antiga sem negotiate, não é usada. Stop/restart (SIGTERM) também fecham
+com close frame. Reconexão manual pelo mesmo caminho: `curl -s -X POST 127.0.0.1:9096/reconectar`
+(o resultado sai em `ultima_reconexao` no `/saude`).
 
 Instalar e subir (o código e o ambiente Python ficam no repositório: `tools/pnt-md-hml`):
 
@@ -304,7 +325,7 @@ sudo systemctl daemon-reload
 sudo systemctl start kalman-pnt-md-hml          # não habilitar: ferramenta de teste
 journalctl -u kalman-pnt-md-hml -f              # "fonte de volta (conectado)"
 curl -s '127.0.0.1:9096/precos/atual?ativo=WINFUT'
-curl -s '127.0.0.1:9096/saude'                  # disponivel, conectado, feed_ok, token_ok, motivo
+curl -s '127.0.0.1:9096/saude'                  # disponivel, conectado, feed_ok, token_ok, motivo, reconexoes_book
 ```
 
 No kalman-ordens em HML: `PRECOS_URL=http://127.0.0.1:9096` e restart. Ao fim do teste: de volta
