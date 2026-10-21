@@ -1,10 +1,12 @@
 cenario 94 FONTE_DEGRADADA (v1.14): fonte de preço ruim por mais de 30 s na janela → crítico; volta → RESOLVIDO; leilão com preço não conta; fora da janela não alerta
 hora 2026-10-13 11:00:00
 # Ruim = sem resposta, {}, 404/400; em negociação, sem bid/ask, book cruzado ou preço velho (> 3 s).
-# FONTE_JANELA 09:00-18:25 (padrão), FONTE_DEGRADADA_S 30 (padrão).
+# FONTE_DEGRADADA_S 30 (padrão); FONTE_JANELA encurtada para 09:00-11:10 (o padrão é 09:00-18:25)
+# para o trecho "fora da janela" não avançar o relógio por horas (a suíte com -race tem 10 min).
+config FONTE_JANELA=09:00-11:10
 
 executa INICIO
-saude fonte.degradada=false fonte.motivo= fonte.ruim_desde=null fonte.janela=09:00-18:25
+saude fonte.degradada=false fonte.motivo= fonte.ruim_desde=null fonte.janela=09:00-11:10
 
 # {} (o pnt-md-hml com book degenerado): 30 s com folga de um passo
 preco vazio
@@ -61,9 +63,10 @@ preco bid=130000 ask=130005
 avanca 1s
 alerta RESOLVIDO
 
-# fora da janela (18:25 em diante) não alerta
-avanca 7h30m
+# fora da janela (11:10 em diante) não alerta
+avanca 6m
+saude fonte.degradada=false fonte.motivo=
 preco vazio
-avanca 15m
+avanca 2m
 sem_alerta FONTE_DEGRADADA
 saude fonte.degradada=false fonte.motivo=

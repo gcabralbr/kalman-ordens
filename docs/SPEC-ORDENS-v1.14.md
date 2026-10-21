@@ -38,7 +38,7 @@ próxima execução. Os códigos `DISCO_*` não são do catálogo do serviço (n
 
 - Roteiro 94: `{}` por 30 s (29 s não alerta; 31 s alerta; repetição sem novo alerta; volta →
   RESOLVIDO); soluços de 20 s não somam; leilão com preço 61 s sem alerta; leilão sem nada, preço
-  velho e book cruzado alertam; fora da janela não alerta.
+  velho e book cruzado alertam; fora da janela (encurtada para 09:00-11:10 no roteiro) não alerta.
 - `preco.TestMotivoFonte` (o `/saude` do pnt-md-hml), `config.TestIntervalo`.
 - `scripts/teste-disco-alerta.sh`: níveis, repetição de 30 min, dois pontos, RESOLVIDO, Telegram fora
   do ar (não marca como enviado), sem Telegram, `df` real.
