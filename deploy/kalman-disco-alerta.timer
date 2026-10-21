@@ -1,0 +1,10 @@
+[Unit]
+Description=kalman — monitor de disco da .53 a cada 5 min
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

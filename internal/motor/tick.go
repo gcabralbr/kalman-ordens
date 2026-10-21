@@ -26,6 +26,7 @@ func (m *Motor) tick() {
 	m.atualizarMetricas()
 	agora := m.agora()
 	m.observarPreco()
+	m.observarFonte()
 	logado := m.fix != nil && m.fix.Logado()
 	if !logado && !m.presaDesde.IsZero() && agora.Sub(m.presaDesde) >= m.p.AlertaSessaoPresa {
 		m.al.Emitir("SESSAO_PRESA_NO_PNT", "SESSAO_PRESA_NO_PNT", fmt.Sprintf("o PnT recusa o logon há %s (%s): ainda segura a sessão anterior; posição %d, 1014 no PnT; reconectando com espera crescente",

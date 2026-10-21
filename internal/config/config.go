@@ -69,6 +69,20 @@ func (c Config) Segundos(k string, padrao float64) time.Duration {
 }
 
 // Hora HH:MM ou HH:MM:SS, como duração desde meia-noite.
+// Intervalo: "HH:MM-HH:MM" (horas do dia, início incluído, fim excluído).
+func (c Config) Intervalo(k, padrao string) (time.Duration, time.Duration) {
+	s := c.Texto(k, padrao)
+	a, b, ok := strings.Cut(s, "-")
+	if !ok {
+		panic(fmt.Sprintf("config %s=%q: intervalo HH:MM-HH:MM", k, s))
+	}
+	ini, fim := Config{}.Hora(k, strings.TrimSpace(a)), Config{}.Hora(k, strings.TrimSpace(b))
+	if fim <= ini {
+		panic(fmt.Sprintf("config %s=%q: o fim tem de ser depois do início", k, s))
+	}
+	return ini, fim
+}
+
 func (c Config) Hora(k, padrao string) time.Duration {
 	s := c.Texto(k, padrao)
 	p := strings.Split(s, ":")
@@ -152,11 +166,12 @@ type Parametros struct {
 	IntervaloEntradas                                 time.Duration
 	PerdaDiaPts, BookDescoladoPts                     int64
 	JanelaInicio, JanelaFim, HoraZeragem              time.Duration
+	FonteJanelaInicio, FonteJanelaFim, FonteDegradada time.Duration
 }
 
 // Parametros lê tudo com os padrões da SPEC (v1 + v1.1).
 func (c Config) Parametros() Parametros {
-	return Parametros{
+	p := Parametros{
 		Bolsa:            c.Texto("ORDENS_BOLSA", "BVMF"),
 		SenderLocationID: c.Texto("ORDENS_SENDER_LOCATION", ""),
 		Ambiente:         c.Texto("ORDENS_AMBIENTE", ""),
@@ -225,6 +240,9 @@ func (c Config) Parametros() Parametros {
 		JanelaFim:            c.Hora("JANELA_FIM", "14:00:00"),
 		HoraZeragem:          c.Hora("HORA_ZERAGEM", "14:30:00"),
 	}
+	p.FonteJanelaInicio, p.FonteJanelaFim = c.Intervalo("FONTE_JANELA", "09:00-18:25")
+	p.FonteDegradada = c.Segundos("FONTE_DEGRADADA_S", 30)
+	return p
 }
 
 func listaContas(s string) []string {

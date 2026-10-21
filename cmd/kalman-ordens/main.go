@@ -185,6 +185,7 @@ func servir(ctx context.Context, cfg config.Config) error {
 
 	rel := relogio.Real{}
 	pr := preco.NovaHTTP(cfg.Texto("PRECOS_URL", "http://172.16.110.51:9090"), cfg.Texto("PRECOS_ATIVO", "WINFUT"), rel)
+	pr.ComSaude(cfg.Texto("PRECOS_SAUDE_URL", "")) // HML: o /saude do pnt-md-hml (motivo do FONTE_DEGRADADA)
 	pr.Iniciar(200 * time.Millisecond)
 	defer pr.Parar()
 

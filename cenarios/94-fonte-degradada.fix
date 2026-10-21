@@ -1,0 +1,69 @@
+cenario 94 FONTE_DEGRADADA (v1.14): fonte de preço ruim por mais de 30 s na janela → crítico; volta → RESOLVIDO; leilão com preço não conta; fora da janela não alerta
+hora 2026-10-13 11:00:00
+# Ruim = sem resposta, {}, 404/400; em negociação, sem bid/ask, book cruzado ou preço velho (> 3 s).
+# FONTE_JANELA 09:00-18:25 (padrão), FONTE_DEGRADADA_S 30 (padrão).
+
+executa INICIO
+saude fonte.degradada=false fonte.motivo= fonte.ruim_desde=null fonte.janela=09:00-18:25
+
+# {} (o pnt-md-hml com book degenerado): 30 s com folga de um passo
+preco vazio
+avanca 29s
+saude fonte.degradada=false fonte.motivo="marketdata sem preco ({})" fonte.ruim_desde=*
+sem_alerta FONTE_DEGRADADA
+avanca 2s
+alerta FONTE_DEGRADADA
+saude fonte.degradada=true alertas_criticos.FONTE_DEGRADADA=FONTE_DEGRADADA
+avanca 31s
+sem_alerta FONTE_DEGRADADA
+preco normal
+avanca 1s
+alerta RESOLVIDO
+saude fonte.degradada=false fonte.motivo= fonte.ruim_desde=null
+
+# um soluço curto não alerta: a contagem recomeça quando a fonte volta
+preco http=404
+avanca 20s
+preco normal
+avanca 1s
+preco http=404
+avanca 20s
+sem_alerta FONTE_DEGRADADA
+preco normal
+avanca 1s
+
+# leilão com preço não é falha (mesmo sem bid/ask)
+preco status84=2 bid=- ask=-
+avanca 61s
+sem_alerta FONTE_DEGRADADA
+saude fonte.degradada=false fonte.motivo=
+# leilão sem nada é
+preco preco=-
+avanca 32s
+alerta FONTE_DEGRADADA
+preco status84=0 preco=130000 bid=130000 ask=130005
+avanca 1s
+alerta RESOLVIDO
+
+# em negociação: preço velho
+preco idade=4s
+avanca 32s
+alerta FONTE_DEGRADADA
+preco idade=100ms
+avanca 1s
+alerta RESOLVIDO
+
+# book cruzado
+preco bid=130010 ask=130005
+avanca 32s
+alerta FONTE_DEGRADADA
+preco bid=130000 ask=130005
+avanca 1s
+alerta RESOLVIDO
+
+# fora da janela (18:25 em diante) não alerta
+avanca 7h30m
+preco vazio
+avanca 15m
+sem_alerta FONTE_DEGRADADA
+saude fonte.degradada=false fonte.motivo=

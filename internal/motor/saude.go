@@ -58,6 +58,7 @@ func (m *Motor) saude() Resposta {
 		"idade_preco_ms":     idade,
 		"ordens_vivas":       vivas,
 		"alertas_criticos":   m.al.Ativos(),
+		"fonte":              m.saudeFonte(),
 		"limites": map[string]any{
 			"entradas_hoje":                m.entradasHoje,
 			"entradas_ultimo_minuto":       len(m.entradasRec),

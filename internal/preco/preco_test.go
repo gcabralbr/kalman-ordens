@@ -154,3 +154,33 @@ func TestContratoPntMdHml(t *testing.T) {
 		t.Fatalf("{} devia ser sem preço: %+v", v)
 	}
 }
+
+// FONTE_DEGRADADA: o motivo vem do /saude do pnt-md-hml quando ele está indisponível.
+func TestMotivoFonte(t *testing.T) {
+	var mu sync.Mutex
+	corpo := `{"disponivel": false, "motivo": "book degenerado: Aggregated=false", "book_motivo": "Aggregated=false", "reconexoes_seguidas": 2}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Write([]byte(corpo))
+	}))
+	defer srv.Close()
+	h := NovaHTTP(srv.URL, "WINFUT", relogio.Real{})
+	h.ComSaude(srv.URL + "/saude")
+	h.consultarSaude()
+	if m := h.MotivoFonte(); m != "book degenerado: Aggregated=false; 2 reconexao(oes) seguida(s)" {
+		t.Fatalf("motivo %q", m)
+	}
+	mu.Lock()
+	corpo = `{"disponivel": true, "motivo": ""}`
+	mu.Unlock()
+	h.consultarSaude()
+	if m := h.MotivoFonte(); m != "" {
+		t.Fatalf("disponível: motivo %q", m)
+	}
+	srv.Close()
+	h.consultarSaude()
+	if m := h.MotivoFonte(); m != "/saude da fonte sem resposta" {
+		t.Fatalf("sem resposta: motivo %q", m)
+	}
+}

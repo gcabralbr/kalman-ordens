@@ -414,6 +414,27 @@ time", 39=B, 1014 disparada ou terminal) não conta para a regra genérica (rote
   API, o histórico sai em −03:00 (`emBR`) e o `/eventos` em UTC com `Z`; os dois com o fuso explícito.
   Consulta direta no banco: converter com `CONVERT_TZ(em, '+00:00', '-03:00')`.
 
+### 1.14 Fonte degradada e monitor de disco (v1.14)
+
+- **`FONTE_DEGRADADA`** (alerta crítico; `fonte` no `/saude`: `degradada`, `ruim_desde`, `motivo`,
+  `janela`): a fonte de preço ruim por mais de `FONTE_DEGRADADA_S` (30) dentro de `FONTE_JANELA`
+  (`09:00-18:25`). Ruim = sem resposta, `{}`, 404/400; em negociação, sem bid/ask, book cruzado ou preço
+  mais velho que `PRECO_IDADE_MAX_S`; leilão com preço não conta. Resolve quando a fonte volta (ou a
+  janela fecha). Na .53 com o pnt-md-hml, `PRECOS_SAUDE_URL=http://127.0.0.1:9096/saude` põe no texto
+  o motivo dado pela fonte (book degenerado, atraso, reconexões seguidas). O topo da tela de admin é do
+  lado do Kalman (lê `alertas_criticos` / `fonte` do `/saude`).
+- **Monitor de disco** (independe dos serviços; `/` e `/home`, a cada 5 min): `DISCO_80` aviso,
+  `DISCO_90` crítico, repetindo no máximo a cada 30 min enquanto durar, `RESOLVIDO` na volta. Telegram
+  pelo `/etc/kalman-ordens/disco.env` (o chat da .53; vazio = só no journal):
+  ```
+  sudo install -o root -g root -m 755 deploy/disco-alerta.sh /opt/kalman-ordens/disco-alerta.sh
+  sudo install -o root -g root -m 600 deploy/disco.env.example /etc/kalman-ordens/disco.env   # editar
+  sudo install -o root -g root -m 644 deploy/kalman-disco-alerta.service deploy/kalman-disco-alerta.timer /etc/systemd/system/
+  sudo systemctl daemon-reload && sudo systemctl enable --now kalman-disco-alerta.timer
+  sudo systemctl start kalman-disco-alerta.service && journalctl -u kalman-disco-alerta -n 5   # "disco: / NN% (OK)"
+  ```
+  Teste: `scripts/teste-disco-alerta.sh`.
+
 ### 1.11 Emergência KHML (instância HML do Kalman, módulo `KHML`)
 
 A tela de admin da principal fala com o módulo `KALMAN`; para uma operação da KHML

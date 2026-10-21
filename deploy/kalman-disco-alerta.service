@@ -1,0 +1,15 @@
+[Unit]
+Description=kalman — monitor de disco da .53 (/ e /home: aviso a 80%, crítico a 90%, Telegram)
+Documentation=file:///opt/kalman-ordens/LEIA.md
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+StateDirectory=kalman-disco-alerta
+EnvironmentFile=-/etc/kalman-ordens/disco.env
+ExecStart=/opt/kalman-ordens/disco-alerta.sh
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes

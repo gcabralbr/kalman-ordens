@@ -30,6 +30,7 @@ var Catalogo = map[string]bool{
 	"VIRADA_COM_OPERACAO": true, "ERRO_INTERNO": true, "RESOLVIDO": false,
 	"PNT_BOLSA_INDISPONIVEL": true,
 	"BANCO_QUARENTENA":       true, "PROTECAO_RESERVA_REPLACES": false, "TUNNEL_RECUSA_ENTRADA": false,
+	"FONTE_DEGRADADA": true,
 }
 
 // Notificador entrega o alerta para fora (Telegram). Não pode bloquear.

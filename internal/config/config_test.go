@@ -32,3 +32,24 @@ func TestPadroesLimites(t *testing.T) {
 		t.Errorf("0 desliga os limites por uid: %d %s", q.EntradasPorMinutoUID, q.IntervaloUID)
 	}
 }
+
+func TestIntervalo(t *testing.T) {
+	i, f := Novo(nil).Intervalo("FONTE_JANELA", "09:00-18:25")
+	if i != 9*time.Hour || f != 18*time.Hour+25*time.Minute {
+		t.Fatalf("padrão: %s %s", i, f)
+	}
+	i, f = Novo(map[string]string{"FONTE_JANELA": "08:55 - 17:00"}).Intervalo("FONTE_JANELA", "09:00-18:25")
+	if i != 8*time.Hour+55*time.Minute || f != 17*time.Hour {
+		t.Fatalf("configurado: %s %s", i, f)
+	}
+	for _, ruim := range []string{"09:00", "18:00-09:00", "x-y"} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%q devia recusar", ruim)
+				}
+			}()
+			Novo(map[string]string{"FONTE_JANELA": ruim}).Intervalo("FONTE_JANELA", "09:00-18:25")
+		}()
+	}
+}

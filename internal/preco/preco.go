@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,48 @@ type HTTP struct {
 	mu       sync.Mutex
 	ultima   Leitura
 	parar    chan struct{}
+	// opcional (FONTE_DEGRADADA): o /saude da fonte (pnt-md-hml), lido a cada 5 s, dá o motivo
+	saudeURL string
+	motivo   string
+}
+
+// ComSaude liga a leitura do /saude da fonte (o do pnt-md-hml; vazio = desligado). Antes de Iniciar.
+func (h *HTTP) ComSaude(url string) { h.saudeURL = url }
+
+// MotivoFonte: o motivo que a própria fonte dá para estar indisponível ("" = disponível ou sem /saude).
+func (h *HTTP) MotivoFonte() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.motivo
+}
+
+func (h *HTTP) consultarSaude() {
+	m := ""
+	r, err := h.cliente.Get(h.saudeURL)
+	if err != nil {
+		m = "/saude da fonte sem resposta"
+	} else {
+		defer r.Body.Close()
+		var s struct {
+			Disponivel      *bool  `json:"disponivel"`
+			Motivo          string `json:"motivo"`
+			BookMotivo      string `json:"book_motivo"`
+			ReconexaoAlerta bool   `json:"reconexao_alerta"`
+			Reconexoes      int    `json:"reconexoes_seguidas"`
+		}
+		if json.NewDecoder(io.LimitReader(r.Body, 64*1024)).Decode(&s) == nil && s.Disponivel != nil && !*s.Disponivel {
+			m = s.Motivo
+			if s.BookMotivo != "" && !strings.Contains(m, s.BookMotivo) {
+				m += " (" + s.BookMotivo + ")"
+			}
+			if s.Reconexoes > 0 {
+				m += fmt.Sprintf("; %d reconexao(oes) seguida(s)", s.Reconexoes)
+			}
+		}
+	}
+	h.mu.Lock()
+	h.motivo = m
+	h.mu.Unlock()
 }
 
 // NovaHTTP: base = http://172.16.110.51:9090; conceito = WINFUT.
@@ -72,6 +115,20 @@ func NovaHTTP(base, conceito string, rel relogio.Relogio) *HTTP {
 }
 
 func (h *HTTP) Iniciar(intervalo time.Duration) {
+	if h.saudeURL != "" {
+		go func() {
+			t := time.NewTicker(5 * time.Second)
+			defer t.Stop()
+			for {
+				h.consultarSaude()
+				select {
+				case <-h.parar:
+					return
+				case <-t.C:
+				}
+			}
+		}()
+	}
 	go func() {
 		t := time.NewTicker(intervalo)
 		defer t.Stop()
