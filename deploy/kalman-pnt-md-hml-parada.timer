@@ -1,0 +1,9 @@
+[Unit]
+Description=kalman-pnt-md-hml — stop nos dias úteis às 14:35 (depois do fim da kalman-hml)
+
+[Timer]
+OnCalendar=Mon..Fri 14:35
+Persistent=false
+
+[Install]
+WantedBy=timers.target

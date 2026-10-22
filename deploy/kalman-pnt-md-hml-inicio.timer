@@ -1,0 +1,10 @@
+[Unit]
+Description=kalman-pnt-md-hml — start nos dias úteis às 08:40 (a reconexão automática troca a conexão do pré-abertura)
+
+[Timer]
+OnCalendar=Mon..Fri 08:40
+# reboot depois das 08:40 não sobe a fonte (a unidade também não fica habilitada no boot)
+Persistent=false
+
+[Install]
+WantedBy=timers.target

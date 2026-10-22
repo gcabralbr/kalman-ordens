@@ -1,0 +1,9 @@
+[Unit]
+Description=kalman-pnt-md-hml — start do dia (dias úteis 08:40; pula fim de semana e feriado da anferiado)
+Documentation=file:///opt/kalman-ordens/LEIA.md
+
+[Service]
+Type=oneshot
+# 0 = hoje tem pregão; 1 = feriado (/var/lib/kalman/feriados.json) ou fim de semana: pula sem falhar
+ExecCondition=/opt/kalman-ordens/pnt-md-hml-horario.sh pregao
+ExecStart=/usr/bin/systemctl start kalman-pnt-md-hml.service

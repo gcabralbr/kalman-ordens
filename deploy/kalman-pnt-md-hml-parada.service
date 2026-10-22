@@ -1,0 +1,16 @@
+[Unit]
+Description=kalman-pnt-md-hml — stop do dia com a conta zerada no /saude do kalman-ordens (tenta até 18:25)
+Documentation=file:///opt/kalman-ordens/LEIA.md
+
+[Service]
+Type=oneshot
+# o laço de 5 min até as 18:25 roda dentro do ExecStart
+TimeoutStartSec=infinity
+# Telegram do alerta crítico: o chat da .53 (o mesmo do monitor de disco)
+EnvironmentFile=-/etc/kalman-ordens/disco.env
+ExecStart=/opt/kalman-ordens/pnt-md-hml-horario.sh parar
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/home/gammaquant/kalman-ordens/var
+PrivateTmp=yes

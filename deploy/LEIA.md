@@ -434,6 +434,26 @@ time", 39=B, 1014 disparada ou terminal) não conta para a regra genérica (rote
   sudo systemctl start kalman-disco-alerta.service && journalctl -u kalman-disco-alerta -n 5   # "disco: / NN% (OK)"
   ```
   Teste: `scripts/teste-disco-alerta.sh`.
+- **Horário do pnt-md-hml** (só serve à kalman-hml): `kalman-pnt-md-hml-inicio.timer` (dias úteis
+  08:40; pula fim de semana e feriado do `/var/lib/kalman/feriados.json`, que o Kalman gera da
+  `anferiado`; sem o arquivo, sobe) e `kalman-pnt-md-hml-parada.timer` (dias úteis 14:35, depois da
+  kalman-hml). A parada só para com a conta zerada no `/saude` do 9092 (sessão logada, sem conciliação
+  nem divergência, `posicao` 0, `ordens_vivas` vazio ou `null`); senão `ALERTA` no journal e nova
+  tentativa a cada 5 min até as 18:25; depois, `CRITICO` (journal e Telegram do `disco.env`), desiste e
+  a unidade fica `failed` com o pnt-md-hml ligado (parar na mão). Parado, compacta as gravações
+  (`var/pnt-md-hml-*.jsonl` → `.jsonl.gz`, `gzip -t` antes de apagar o original). Os dois timers têm
+  `Persistent=false` e o `kalman-pnt-md-hml.service` continua sem `enable` (reboot não sobe a fonte).
+  Na .53, `FONTE_JANELA=09:00-14:30` no `/etc/kalman-ordens/service.env` (a fonte desligada de
+  propósito fora da janela não alerta):
+  ```
+  sudo install -o root -g root -m 755 deploy/pnt-md-hml-horario.sh /opt/kalman-ordens/pnt-md-hml-horario.sh
+  sudo install -o root -g root -m 644 deploy/kalman-pnt-md-hml-inicio.service deploy/kalman-pnt-md-hml-inicio.timer \
+       deploy/kalman-pnt-md-hml-parada.service deploy/kalman-pnt-md-hml-parada.timer /etc/systemd/system/
+  sudo systemctl daemon-reload && sudo systemctl enable --now kalman-pnt-md-hml-inicio.timer kalman-pnt-md-hml-parada.timer
+  systemctl list-timers 'kalman-pnt-md-hml-*'                     # 08:40 e 14:35 do próximo dia útil
+  journalctl -u kalman-pnt-md-hml-inicio -u kalman-pnt-md-hml-parada -n 20
+  ```
+  Teste: `scripts/teste-pnt-md-hml-horario.sh`.
 
 ### 1.11 Emergência KHML (instância HML do Kalman, módulo `KHML`)
 
