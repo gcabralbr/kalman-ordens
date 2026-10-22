@@ -22,8 +22,10 @@ itens 1 e 4 (pnt-md-hml) já na leva 1. Esta versão: itens 2 e 3.
   `alertas_criticos`. O topo da tela de admin é do lado do Kalman.
 - **Entradas** continuam recusadas pelas regras de preço de sempre (`SEM_PRECO`, `PRECO_VELHO`,
   `BOOK_INVALIDO`, `LEILAO`); o alerta só avisa.
-- **Envio para fora:** o Telegram que já existe (`TELEGRAM_TOKEN`/`TELEGRAM_CHAT`); na .53, quando o
-  chat próprio for criado. E-mail fora.
+- **Envio para fora:** o Telegram que já existe (`TELEGRAM_TOKEN`/`TELEGRAM_CHAT`) ou, com
+  `ALERTA_WEBHOOK_URL`, o bot local da máquina (GET `?msg=`, o mesmo do Kalman; 22/10: na .53,
+  `http://127.0.0.1:5077/telegram/send_alert?chat_id=689010169`). Todo texto leva a máquina e o
+  serviço: `[<ALERTA_SERVIDOR> kalman-ordens] ...` (padrão: o hostname curto). E-mail fora.
 
 ## 2. Monitor de disco da .53 (item 3)
 

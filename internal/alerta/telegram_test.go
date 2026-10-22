@@ -178,3 +178,60 @@ func TestTokenForaDoLog(t *testing.T) {
 		t.Fatalf("erro de envio não registrado: %s", buf.String())
 	}
 }
+
+// Webhook (o bot local da .53): GET ?msg=, com a máquina e o serviço no texto; entrega com "error" na
+// resposta do bot é retentada; 400 é recusa permanente.
+func TestWebhook(t *testing.T) {
+	var mu sync.Mutex
+	var msgs, chats []string
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		n++
+		m := r.URL.Query().Get("msg")
+		if r.Method != http.MethodGet || r.URL.Path != "/telegram/send_alert" {
+			t.Errorf("pedido %s %s", r.Method, r.URL.Path)
+		}
+		switch {
+		case strings.Contains(m, "ruim"):
+			w.WriteHeader(400)
+			_, _ = w.Write([]byte(`{"error":"Parâmetro msg é obrigatório"}`))
+		case n == 2:
+			_, _ = w.Write([]byte(`[{"chat_id":"689","error":"Bad Gateway"}]`))
+		default:
+			msgs = append(msgs, m)
+			chats = append(chats, r.URL.Query().Get("chat_id"))
+			_, _ = w.Write([]byte(`[{"chat_id":"689","status":"ok"}]`))
+		}
+	}))
+	defer srv.Close()
+	tg := NovoTelegram("", "")
+	tg.Webhook = srv.URL + "/telegram/send_alert?chat_id=689"
+	tg.Servidor = ".53"
+	tg.Timeout = 300 * time.Millisecond
+	tg.Esperas = []time.Duration{20 * time.Millisecond}
+	tg.Iniciar()
+	defer tg.Parar()
+	tg.Notificar("SEM_PROTECAO", "ruim")
+	tg.Notificar("FONTE_DEGRADADA", "sem preço & book")
+	esperar(t, "entregue depois do erro do bot", func() bool { return tg.Enviados() == 1 })
+	mu.Lock()
+	defer mu.Unlock()
+	if len(msgs) != 1 || msgs[0] != "[.53 kalman-ordens] CRÍTICO FONTE_DEGRADADA: sem preço & book" || chats[0] != "689" {
+		t.Fatalf("msgs = %q, chats = %q", msgs, chats)
+	}
+	if tg.Descartados() != 1 || n != 3 { // ruim (400), bom (error do bot), bom (ok)
+		t.Fatalf("descartados = %d, chamadas = %d", tg.Descartados(), n)
+	}
+}
+
+func TestPrefixoSemServidor(t *testing.T) {
+	a := &apiFalsa{}
+	tg := novo(t, a)
+	tg.Notificar("PARADA", "x")
+	esperar(t, "entregue", func() bool { return len(a.entregues()) == 1 })
+	if !strings.HasPrefix(a.entregues()[0], "[kalman-ordens] ") {
+		t.Fatalf("texto = %q", a.entregues()[0])
+	}
+}

@@ -103,6 +103,7 @@ Preencher `/etc/kalman-ordens/service.env` (`sudoedit`) para a .53 / HML:
 | `ORDENS_SENDER_LOCATION` | `177.124.234.134` (o 142 das ordens do PT no log de HML) |
 | `PRECOS_URL` | rodada 1: `http://172.16.110.53:9090` (marketdata ao vivo); rodada 2: a instância em replay (`http://172.16.110.53:9095`, 1.7). É a única chave de preço (não há `ORDENS_PRECO_URL`) |
 | `TELEGRAM_TOKEN`, `TELEGRAM_CHAT` | chat de **teste**, não o de produção |
+| `ALERTA_WEBHOOK_URL`, `ALERTA_SERVIDOR` | (v1.14) `http://127.0.0.1:5077/telegram/send_alert?chat_id=689010169` (o bot local da .53, GET `?msg=`; vence o `TELEGRAM_*`) e `.53`: o texto sai `[.53 kalman-ordens] ...` (vazio = o hostname curto) |
 | `HTTP_ENDERECO` | `127.0.0.1:9092` (o Kalman da .53 está no 9091, o marketdata no 9090) |
 
 Histórico (SPEC v1.5): `kalman-ordens historico operacao -id N [-cru]`, `historico dia [-dia D]
@@ -424,8 +425,9 @@ time", 39=B, 1014 disparada ou terminal) não conta para a regra genérica (rote
   o motivo dado pela fonte (book degenerado, atraso, reconexões seguidas). O topo da tela de admin é do
   lado do Kalman (lê `alertas_criticos` / `fonte` do `/saude`).
 - **Monitor de disco** (independe dos serviços; `/` e `/home`, a cada 5 min): `DISCO_80` aviso,
-  `DISCO_90` crítico, repetindo no máximo a cada 30 min enquanto durar, `RESOLVIDO` na volta. Telegram
-  pelo `/etc/kalman-ordens/disco.env` (o chat da .53; vazio = só no journal):
+  `DISCO_90` crítico, repetindo no máximo a cada 30 min enquanto durar, `RESOLVIDO` na volta. Envio
+  pelo `/etc/kalman-ordens/disco.env`: `ALERTA_WEBHOOK_URL` (o bot local da .53; senão
+  `TELEGRAM_TOKEN`/`TELEGRAM_CHAT`; nenhum = só no journal), texto `[.53 kalman-disco-alerta] ...`:
   ```
   sudo install -o root -g root -m 755 deploy/disco-alerta.sh /opt/kalman-ordens/disco-alerta.sh
   sudo install -o root -g root -m 600 deploy/disco.env.example /etc/kalman-ordens/disco.env   # editar
@@ -439,7 +441,7 @@ time", 39=B, 1014 disparada ou terminal) não conta para a regra genérica (rote
   `anferiado`; sem o arquivo, sobe) e `kalman-pnt-md-hml-parada.timer` (dias úteis 14:35, depois da
   kalman-hml). A parada só para com a conta zerada no `/saude` do 9092 (sessão logada, sem conciliação
   nem divergência, `posicao` 0, `ordens_vivas` vazio ou `null`); senão `ALERTA` no journal e nova
-  tentativa a cada 5 min até as 18:25; depois, `CRITICO` (journal e Telegram do `disco.env`), desiste e
+  tentativa a cada 5 min até as 18:25; depois, `CRITICO` (journal e o envio do `disco.env`, `[.53 kalman-pnt-md-hml] ...`), desiste e
   a unidade fica `failed` com o pnt-md-hml ligado (parar na mão). Parado, compacta as gravações
   (`var/pnt-md-hml-*.jsonl` → `.jsonl.gz`, `gzip -t` antes de apagar o original). Os dois timers têm
   `Persistent=false` e o `kalman-pnt-md-hml.service` continua sem `enable` (reboot não sobe a fonte).

@@ -10,8 +10,9 @@
 #           (300) até PARADA_ATE (18:25); passou disso, alerta crítico e desiste (o pnt-md-hml continua
 #           ligado; sai com 1). Parado, compacta as gravações (var/pnt-md-hml-*.jsonl → .jsonl.gz).
 #
-# Alertas: no journal com a prioridade (prefixo <N>); o crítico também no Telegram do
-# /etc/kalman-ordens/disco.env (o chat da .53; vazio = só no journal). Textos em ASCII.
+# Alertas: no journal com a prioridade (prefixo <N>); o crítico também para fora, com o destino do
+# /etc/kalman-ordens/disco.env (ALERTA_WEBHOOK_URL, o bot local; senão TELEGRAM_TOKEN/TELEGRAM_CHAT;
+# nenhum = só no journal), como "[<ALERTA_SERVIDOR> kalman-pnt-md-hml] ...". Textos em ASCII.
 # Testes: scripts/teste-pnt-md-hml-horario.sh (PARADA_SYSTEMCTL, PARADA_AGORA_HHMM, HOJE e os
 # caminhos abaixo trocam o mundo de verdade).
 set -euo pipefail
@@ -23,12 +24,19 @@ ATE="${PARADA_ATE:-18:25}"
 VAR="${PARADA_VAR:-/home/gammaquant/kalman-ordens/var}"
 FERIADOS="${PARADA_FERIADOS:-/var/lib/kalman/feriados.json}"
 SYSTEMCTL="${PARADA_SYSTEMCTL:-systemctl}"
-ROTULO="${DISCO_ROTULO:-$(hostname -s)}"
+ROTULO="${ALERTA_SERVIDOR:-$(hostname -s)} kalman-pnt-md-hml"
 URL="${TELEGRAM_URL:-https://api.telegram.org}"
 
 log() { echo "<$1>$2"; }  # prioridade do syslog (2 crítico, 4 aviso, 6 info): o journald lê o prefixo
 
 telegram() {
+  if [ -n "${ALERTA_WEBHOOK_URL:-}" ]; then
+    local r
+    if ! r=$(curl -fsS -m 10 -G "$ALERTA_WEBHOOK_URL" --data-urlencode "msg=$1" 2>/dev/null) || grep -q '"error"' <<<"$r"; then
+      log 4 "webhook: falha de envio"
+    fi
+    return 0
+  fi
   if [ -z "${TELEGRAM_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT:-}" ]; then
     log 4 "telegram sem token/chat; alerta so no log"
     return 0

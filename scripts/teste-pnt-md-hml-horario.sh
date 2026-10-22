@@ -13,6 +13,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 resp, tele = sys.argv[1], sys.argv[2]
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith("/telegram/send_alert"):  # o webhook (bot local): GET ?msg=
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            with open(tele, "a") as f:
+                f.write("webhook " + q["chat_id"][0] + " " + q["msg"][0] + "\n")
+            self.send_response(200); self.end_headers(); self.wfile.write(b'[{"status":"ok"}]'); return
         linhas = open(resp).read().splitlines()
         corpo = linhas.pop(0) if len(linhas) > 1 else linhas[0]
         open(resp, "w").write("\n".join(linhas) + "\n")
@@ -64,7 +69,7 @@ parar() {  # agora; respostas do /saude ... → saída em $T/saida, código em $
   rm -f "$T/chamadas"; : > "$T/telegram"
   RC=0
   PARADA_SAUDE_URL="http://127.0.0.1:$P/saude" PARADA_SYSTEMCTL="$T/systemctl" PARADA_INTERVALO_S=0 \
-    PARADA_AGORA_HHMM="$agora" PARADA_VAR="$T/var" DISCO_ROTULO=teste \
+    PARADA_AGORA_HHMM="$agora" PARADA_VAR="$T/var" ALERTA_SERVIDOR=teste \
     TELEGRAM_TOKEN=x TELEGRAM_CHAT=1 TELEGRAM_URL="http://127.0.0.1:$P" \
     deploy/pnt-md-hml-horario.sh parar > "$T/saida" 2>&1 || RC=$?
 }
@@ -108,11 +113,17 @@ touch "$T/ativo"; parar 14:35 "$POS" "$POS" "$POS" "$Z"
 
 touch "$T/ativo"; parar 18:25 "$POS"
 if [ $RC = 1 ] && nao_parou && grep -q "<2>CRITICO pnt-md-hml: nao zerado ate 18:25 (posicao 1); desisti" "$T/saida" \
-   && grep -q "^\[teste\] CRITICO pnt-md-hml: nao zerado ate 18:25 (posicao 1)" "$T/telegram"; then
+   && grep -q "^\[teste kalman-pnt-md-hml\] CRITICO pnt-md-hml: nao zerado ate 18:25 (posicao 1)" "$T/telegram"; then
   ok "18:25 sem zerar: crítico (journal e Telegram), desiste, não para, sai com 1"
 else
   falha "18:25" "$(cat "$T/saida" "$T/telegram")"
 fi
+printf '%s\n' "$POS" > "$T/respostas"; : > "$T/telegram"; touch "$T/ativo"
+PARADA_SAUDE_URL="http://127.0.0.1:$P/saude" PARADA_SYSTEMCTL="$T/systemctl" PARADA_AGORA_HHMM=18:30 PARADA_VAR="$T/var" \
+  ALERTA_SERVIDOR=.53 TELEGRAM_TOKEN=x TELEGRAM_CHAT=1 ALERTA_WEBHOOK_URL="http://127.0.0.1:$P/telegram/send_alert?chat_id=689" \
+  deploy/pnt-md-hml-horario.sh parar > "$T/saida" 2>&1 || true
+[ "$(cat "$T/telegram")" = "webhook 689 [.53 kalman-pnt-md-hml] CRITICO pnt-md-hml: nao zerado ate 18:25 (posicao 1); continua ligado, parar na mao" ] \
+  && ok "crítico pelo webhook (vence o Telegram direto), com servidor e serviço" || falha "webhook" "$(cat "$T/saida" "$T/telegram")"
 touch "$T/ativo"; parar 18:25 "$Z"
 [ $RC = 0 ] && parou && ok "18:25 zerado: para (o limite só vale sem zerar)" || falha "18:25 zerado" "$(cat "$T/saida")"
 

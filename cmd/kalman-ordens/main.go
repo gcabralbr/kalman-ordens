@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -180,6 +181,8 @@ func servir(ctx context.Context, cfg config.Config) error {
 	}
 
 	tg := alerta.NovoTelegram(cfg.Texto("TELEGRAM_TOKEN", ""), cfg.Texto("TELEGRAM_CHAT", ""))
+	tg.Webhook = cfg.Texto("ALERTA_WEBHOOK_URL", "")      // .53: o bot local (GET ?msg=); vence o TELEGRAM_*
+	tg.Servidor = cfg.Texto("ALERTA_SERVIDOR", maquina()) // a máquina no texto: "[.53 kalman-ordens] ..."
 	tg.Iniciar()
 	defer tg.Parar()
 
@@ -270,6 +273,15 @@ func servir(ctx context.Context, cfg config.Config) error {
 var pronto = func(string) {}
 
 // soLoopback: o HTTP só pode escutar em 127.0.0.1/::1 (Parte 1).
+// maquina: o nome curto do host (o padrão do ALERTA_SERVIDOR).
+func maquina() string {
+	h, _ := os.Hostname()
+	if i := strings.IndexByte(h, '.'); i > 0 {
+		h = h[:i]
+	}
+	return h
+}
+
 func soLoopback(endereco string) error {
 	host, _, err := net.SplitHostPort(endereco)
 	if err != nil {

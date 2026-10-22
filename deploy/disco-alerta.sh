@@ -5,8 +5,9 @@
 # enquanto durar, no máximo a cada DISCO_REPETIR_MIN (30) minutos; a volta abaixo do aviso manda
 # RESOLVIDO. Independe dos serviços (timer do systemd, kalman-disco-alerta.timer, a cada 5 min).
 #
-# Configuração em /etc/kalman-ordens/disco.env (deploy/disco.env.example). Sem TELEGRAM_TOKEN ou
-# TELEGRAM_CHAT, só no journal. Textos em ASCII (como os alertas do kalman-ordens).
+# Configuração em /etc/kalman-ordens/disco.env (deploy/disco.env.example). Envio pelo ALERTA_WEBHOOK_URL
+# (o bot local, GET ?msg=) ou, sem ele, pelo TELEGRAM_TOKEN/TELEGRAM_CHAT; sem nenhum, só no journal.
+# Texto: "[<ALERTA_SERVIDOR> kalman-disco-alerta] ...", em ASCII (como os alertas do kalman-ordens).
 # Testes: DISCO_USO_ARQ = arquivo com "ponto uso%" por linha no lugar do df (scripts/teste-disco-alerta.sh).
 set -euo pipefail
 
@@ -15,7 +16,7 @@ AVISO="${DISCO_AVISO:-80}"
 CRITICO="${DISCO_CRITICO:-90}"
 REPETIR_S=$(( ${DISCO_REPETIR_MIN:-30} * 60 ))
 ESTADO="${DISCO_ESTADO_DIR:-${STATE_DIRECTORY:-/var/lib/kalman-disco-alerta}}"
-ROTULO="${DISCO_ROTULO:-$(hostname -s)}"
+ROTULO="${ALERTA_SERVIDOR:-$(hostname -s)} kalman-disco-alerta"
 URL="${TELEGRAM_URL:-https://api.telegram.org}"
 AGORA="${DISCO_AGORA:-$(date +%s)}"
 
@@ -33,8 +34,16 @@ livre() {
   if [ -n "${DISCO_USO_ARQ:-}" ]; then echo "?"; else df -h --output=avail "$1" | tail -1 | tr -d ' '; fi
 }
 
-enviar() {  # texto; 0 = enviado (ou sem Telegram configurado)
+enviar() {  # texto; 0 = enviado (ou sem destino configurado)
   echo "$1"
+  if [ -n "${ALERTA_WEBHOOK_URL:-}" ]; then
+    local r
+    if ! r=$(curl -fsS -m 10 -G "$ALERTA_WEBHOOK_URL" --data-urlencode "msg=$1" 2>/dev/null) || grep -q '"error"' <<<"$r"; then
+      echo "webhook: falha de envio; nova tentativa na proxima execucao" >&2
+      return 1
+    fi
+    return 0
+  fi
   if [ -z "${TELEGRAM_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT:-}" ]; then
     echo "telegram sem token/chat; alerta so no log"
     return 0

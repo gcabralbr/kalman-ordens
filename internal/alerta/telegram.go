@@ -7,12 +7,15 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 )
 
-// Telegram envia os alertas direto para a API do Telegram (sem serviço intermediário).
+// Telegram envia os alertas direto para a API do Telegram (sem serviço intermediário) ou, com Webhook,
+// pelo GET ?msg= do bot local da máquina (o mesmo KALMAN_ALERT_WEBHOOK_URL do Kalman; na .53,
+// ALERTA_WEBHOOK_URL). O texto leva a máquina e o serviço: "[<Servidor> kalman-ordens] ...".
 //
 // Notificar só enfileira: nunca bloqueia o motor. Uma goroutine envia com timeout curto; falha vai
 // para o log e é retentada com espera crescente. Alerta crítico nunca é descartado; não crítico
@@ -21,6 +24,8 @@ import (
 type Telegram struct {
 	URLBase              string // https://api.telegram.org
 	Token, Chat          string
+	Webhook              string          // vazio = API do Telegram (Token/Chat)
+	Servidor             string          // a máquina no prefixo do texto (vazio = só o serviço)
 	Timeout              time.Duration   // por envio
 	Esperas              []time.Duration // entre tentativas; a última se repete
 	TentativasNaoCritico int
@@ -78,7 +83,11 @@ func (t *Telegram) Notificar(codigo, texto string) {
 	if cr {
 		prefixo = "CRÍTICO "
 	}
-	e := &envio{texto: fmt.Sprintf("[kalman-ordens] %s%s: %s", prefixo, codigo, texto), critico: cr}
+	rotulo := "kalman-ordens"
+	if t.Servidor != "" {
+		rotulo = t.Servidor + " " + rotulo
+	}
+	e := &envio{texto: fmt.Sprintf("[%s] %s%s: %s", rotulo, prefixo, codigo, texto), critico: cr}
 	t.mu.Lock()
 	t.fila = append(t.fila, e)
 	if n := t.naoCriticos(); n > t.MaxFila {
@@ -199,6 +208,9 @@ func (t *Telegram) remover(e *envio) {
 
 // enviar: ok; permanente (4xx que não vai passar); retry (429 retry_after).
 func (t *Telegram) enviar(texto string) (ok, permanente bool, retry time.Duration) {
+	if t.Webhook != "" {
+		return t.enviarWebhook(texto)
+	}
 	if t.Token == "" || t.Chat == "" {
 		slog.Warn("telegram sem token/chat; alerta só no log", "texto", texto)
 		return true, false, 0
@@ -229,6 +241,41 @@ func (t *Telegram) enviar(texto string) (ok, permanente bool, retry time.Duratio
 		return false, true, 0
 	default:
 		slog.Warn("telegram: erro do servidor, vai retentar", "status", resp.StatusCode)
+		return false, false, 0
+	}
+}
+
+// enviarWebhook: GET <Webhook>&msg=<texto>. O bot responde 200 com a lista de entregas por chat; uma
+// entrega com "error" (o Telegram recusou ou não respondeu) é retentada como falha passageira.
+func (t *Telegram) enviarWebhook(texto string) (ok, permanente bool, retry time.Duration) {
+	sep := "?"
+	if strings.Contains(t.Webhook, "?") {
+		sep = "&"
+	}
+	resp, err := t.cliente.Get(t.Webhook + sep + url.Values{"msg": {texto}}.Encode())
+	if err != nil {
+		slog.Warn("webhook: falha de envio, vai retentar", "erro", err.Error())
+		return false, false, 0
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	switch {
+	case resp.StatusCode == http.StatusOK:
+		var r []map[string]any
+		if json.Unmarshal(b, &r) == nil {
+			for _, x := range r {
+				if _, erro := x["error"]; erro {
+					slog.Warn("webhook: o bot não entregou, vai retentar", "corpo", string(b))
+					return false, false, 0
+				}
+			}
+		}
+		return true, false, 0
+	case resp.StatusCode >= 400 && resp.StatusCode < 500:
+		slog.Error("webhook: recusa", "status", resp.StatusCode, "corpo", string(b))
+		return false, true, 0
+	default:
+		slog.Warn("webhook: erro do servidor, vai retentar", "status", resp.StatusCode)
 		return false, false, 0
 	}
 }
