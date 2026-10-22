@@ -34,8 +34,9 @@ fresco):
     limite absoluto. A base vai no /saude.
   - reconexão automática (21/10: a conexão aberta antes do pré-abertura recebe o book degenerado o dia
     todo; uma nova depois da abertura vem normal): book degenerado em negociação por mais de
-    --reconectar-s → close frame, espera o close do servidor, cliente novo (negotiate novo); no máximo
-    uma a cada --reconectar-intervalo-s; CRITICAL no journal depois de --reconectar-alerta-apos
+    --reconectar-s → close frame, espera o close do servidor, cliente novo (negotiate novo); a 1ª só
+    --reconectar-primeira-s (45) depois da entrada em negociação (22/10: a conexão de +16 s também
+    degenerou), as seguintes no máximo uma a cada --reconectar-intervalo-s (30); CRITICAL no journal depois de --reconectar-alerta-apos
     seguidas sem book normal. Toda queda abre um cliente novo (a reconexão interna do pysignalr
     reusaria o ?id= antigo). POST /reconectar: o mesmo caminho, manual. SIGTERM fecha com close frame.
 
@@ -47,6 +48,7 @@ import asyncio
 import datetime as dt
 import json
 import logging
+import math
 import os
 import queue
 import shutil
@@ -252,11 +254,17 @@ class Reconexao:
     o AggrBook não agregado e sem limite o dia todo; uma conexão nova depois da abertura vem normal).
     Pede reconexão quando o book desta conexão está degenerado com o papel em negociação (status84 0)
     por mais de limiar_s, no máximo uma a cada intervalo_s; depois de alerta_apos seguidas sem um book
-    normal, alerta crítico no journal (e `reconexao_alerta` no /saude) a cada nova tentativa."""
+    normal, alerta crítico no journal (e `reconexao_alerta` no /saude) a cada nova tentativa.
+    22/10: uma conexão aberta 16 s depois da entrada em negociação também degenerou (a de 76 s veio
+    normal); por isso a 1ª de uma sequência só sai primeira_s depois da entrada em negociação (a
+    passagem de status84 ≠ 0 para 0 vista aqui; o Trading já no 1º status, serviço subido com o pregão
+    aberto, não espera)."""
 
-    def __init__(self, limiar_s=10.0, intervalo_s=60.0, alerta_apos=5):
-        self.limiar_s, self.intervalo_s, self.alerta_apos = limiar_s, intervalo_s, alerta_apos
+    def __init__(self, limiar_s=10.0, intervalo_s=30.0, alerta_apos=5, primeira_s=45.0):
+        self.limiar_s, self.intervalo_s, self.alerta_apos, self.primeira_s = limiar_s, intervalo_s, alerta_apos, primeira_s
         self.desde = None  # início da condição (degenerado e em negociação), contínua
+        self.negociacao_desde = None  # entrada em negociação; -inf = já negociando no 1º status visto
+        self.fora = False  # o último status visto foi ≠ 0 (pré-abertura, leilão)
         self.total = self.seguidas = 0
         self.ultima_em = None
         self.ultima = {}  # hora, motivo e se o servidor confirmou o close
@@ -267,6 +275,11 @@ class Reconexao:
         if self.pedido:
             motivo, self.pedido = self.pedido, None
             return motivo
+        # o status84 do Estado atravessa as reconexões: o relógio da negociação não zera com elas
+        if estado.status84 not in (None, 0):
+            self.negociacao_desde, self.fora = None, True
+        elif estado.status84 == 0 and self.negociacao_desde is None:
+            self.negociacao_desde = agora if self.fora else -math.inf
         if estado.book_ok and self.seguidas:
             log.warning("reconexão: book normal depois de %d reconexão(ões) seguida(s)", self.seguidas)
             self.seguidas = 0
@@ -277,9 +290,12 @@ class Reconexao:
             self.desde = agora
         if agora - self.desde < self.limiar_s:
             return None
+        if self.seguidas == 0 and agora - self.negociacao_desde < self.primeira_s:
+            return None
         if self.ultima_em is not None and agora - self.ultima_em < self.intervalo_s:
             return None
-        return f"book degenerado em negociação há {agora - self.desde:.0f} s ({estado.book_motivo})"
+        neg = "" if self.negociacao_desde == -math.inf else f", {agora - self.negociacao_desde:.0f} s da entrada em negociação"
+        return f"book degenerado em negociação há {agora - self.desde:.0f} s{neg} ({estado.book_motivo})"
 
     def registrar(self, agora, motivo):
         self.total += 1
@@ -687,7 +703,7 @@ async def fonte_gravada(estado, args):
 async def principal(args):
     estado = Estado(args.ativo, niveis_max=args.niveis_max, atraso_max_s=args.atraso_max_s, janela_base_s=args.janela_base_s)
     grav = Gravador(args.gravar_dir, args.ativo, disco_min_gb=args.disco_min_gb) if args.gravar_dir and not args.simular else SemGravador()
-    rec = Reconexao(args.reconectar_s, args.reconectar_intervalo_s, args.reconectar_alerta_apos)
+    rec = Reconexao(args.reconectar_s, args.reconectar_intervalo_s, args.reconectar_alerta_apos, args.reconectar_primeira_s)
     runner = web.AppRunner(aplicativo(estado, grav, rec), access_log=None)  # o kalman-ordens consulta a cada 200 ms
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", args.porta).start()
@@ -727,8 +743,10 @@ def main():
                     help="janela do mínimo móvel do atraso")
     ap.add_argument("--reconectar-s", type=float, default=float(os.environ.get("PNT_MD_RECONECTAR_S", "10")),
                     help="book degenerado em negociação por mais que isto: reconecta com cliente novo")
-    ap.add_argument("--reconectar-intervalo-s", type=float, default=float(os.environ.get("PNT_MD_RECONECTAR_INTERVALO_S", "60")),
+    ap.add_argument("--reconectar-intervalo-s", type=float, default=float(os.environ.get("PNT_MD_RECONECTAR_INTERVALO_S", "30")),
                     help="no máximo uma reconexão automática a cada")
+    ap.add_argument("--reconectar-primeira-s", type=float, default=float(os.environ.get("PNT_MD_RECONECTAR_PRIMEIRA_S", "45")),
+                    help="a 1ª reconexão de uma sequência só depois disto desde a entrada em negociação (22/10: +16 s degenerou)")
     ap.add_argument("--reconectar-alerta-apos", type=int, default=int(os.environ.get("PNT_MD_RECONECTAR_ALERTA_APOS", "5")),
                     help="reconexões seguidas sem book normal até o alerta crítico")
     ap.add_argument("--espera-reconexao-s", type=int, default=int(os.environ.get("PNT_MD_ESPERA_RECONEXAO_S", "5")),

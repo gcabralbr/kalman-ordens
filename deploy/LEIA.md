@@ -307,8 +307,11 @@ tiver `PNT_MD_TOKEN`, tirar ou apontar para o arquivo novo.
 
 **Reconexão automática** (21/10): book degenerado com o papel em negociação (status84 0) por mais de
 `PNT_MD_RECONECTAR_S` (10) → fecha o websocket com close frame, espera o close do servidor e abre um
-cliente novo (negotiate e connectionId novos) depois de `PNT_MD_ESPERA_RECONEXAO_S` (5); no máximo uma
-a cada `PNT_MD_RECONECTAR_INTERVALO_S` (60); depois de `PNT_MD_RECONECTAR_ALERTA_APOS` (5) seguidas
+cliente novo (negotiate e connectionId novos) depois de `PNT_MD_ESPERA_RECONEXAO_S` (5). A 1ª de uma
+sequência só `PNT_MD_RECONECTAR_PRIMEIRA_S` (45) depois da entrada em negociação (22/10: a conexão
+aberta 16 s depois do Trading também degenerou; a de 76 s veio normal) — o Trading já no 1º status
+(serviço subido com o pregão aberto) não espera, e um leilão no meio do dia reinicia a espera; as
+seguintes no máximo uma a cada `PNT_MD_RECONECTAR_INTERVALO_S` (30); depois de `PNT_MD_RECONECTAR_ALERTA_APOS` (5) seguidas
 sem book normal, `CRITICAL` no journal a cada tentativa. No `/saude`: `reconexoes_book`,
 `reconexoes_seguidas`, `reconexao_alerta`, `ultima_reconexao` (hora, motivo, `close_servidor`). Toda
 queda (inclusive a que o servidor fecha) abre um cliente novo: a reconexão interna do pysignalr, que
