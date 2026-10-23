@@ -547,9 +547,11 @@ func (s *Sessao) FromAdmin(m *quickfix.Message, _ quickfix.SessionID) quickfix.M
 }
 
 func (s *Sessao) FromApp(m *quickfix.Message, _ quickfix.SessionID) quickfix.MessageRejectError {
-	s.recebida.Add(1)
 	msg := Ler(m.String())
 	s.entregar(func() { s.ouvinte.Recebeu(msg) })
+	// conta depois de entregar: quem espera pelo contador (o executor dos roteiros, com o motor
+	// travado) sabe que a chegada já foi carimbada no motor (marcarChegada)
+	s.recebida.Add(1)
 	return nil
 }
 

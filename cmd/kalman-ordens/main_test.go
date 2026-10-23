@@ -58,7 +58,7 @@ func TestServirDePontaAPonta(t *testing.T) {
 	if err := cliUsuario(cfgCLI, []string{"habilitar", "-uid", "7", "-motivo", "fumaça"}, &saidaCLI); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(saidaCLI.String(), "destino=85 conta=12345") {
+	if !strings.Contains(saidaCLI.String(), "destino=85 conector=PNT conta=12345") {
 		t.Fatalf("usuario habilitar: %s", saidaCLI.String())
 	}
 

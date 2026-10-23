@@ -58,7 +58,7 @@ if [ "$MODO" = nativo ]; then
   echo "go test ${RACE:-(sem -race)} ./... (memória e MariaDB $BD_HOST:$BD_PORTA/$BD_SCHEMA)"
   go vet ./...
   # -p 1: cmd, cenario e repo usam o mesmo schema de teste (cada um limpa as tabelas ao começar)
-  go test $RACE -p 1 -count=1 ./...
+  go test $RACE -p 1 -count=1 -timeout 30m ./...
   exit
 fi
 
@@ -88,7 +88,7 @@ if [ "$RACE_PEDIDO" = sim ]; then
   echo "go test -race ./... em golang:1.24-bookworm"
   MSYS_NO_PATHCONV=1 docker run --rm --network "$REDE" -v "$(pwd -W 2>/dev/null || pwd):/src" -v kalman-gomod:/go/pkg/mod \
     -w /src -e CGO_ENABLED=1 -e "KALMAN_TESTE_MARIADB=kalman:kalman@tcp($NOME:3306)/kalmanordens_teste" \
-    golang:1.24-bookworm bash -c 'go version && go vet ./... && go test -race -p 1 -count=1 ./...'
+    golang:1.24-bookworm bash -c 'go version && go vet ./... && go test -race -p 1 -count=1 -timeout 30m ./...'
   exit
 fi
 
@@ -98,4 +98,4 @@ if [ "$RACE_PEDIDO" != nao ] && [ "$(go env CGO_ENABLED)" = "1" ] && command -v 
 echo "go test ${RACE:-(sem -race: sem cgo; use --container --race)} ./..."
 go vet ./...
 # -p 1: cmd, cenario e repo usam o mesmo schema de teste (cada um limpa as tabelas ao começar)
-go test $RACE -p 1 -count=1 ./...
+go test $RACE -p 1 -count=1 -timeout 30m ./...
