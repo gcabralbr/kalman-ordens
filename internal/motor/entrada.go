@@ -222,17 +222,13 @@ func (m *Motor) contaDoUsuario(uid int) (usuario.Resolvido, *usuario.Falha) {
 	if m.p.Ambiente == usuario.Producao {
 		texto = prd
 	}
-	// SPEC-FLEXSCAN-v1 §14: o conector vem da habilitação (um só); a corretora (CORSeqId) não decide
+	// SPEC-FLEXSCAN-v1 §14.3: o GQ escolhe o conector (Robo.Conector) entre os da habilitação; a
+	// corretora (CORSeqId) não decide
 	h, _, err := m.habilitacaoDo(uid)
 	if err != nil {
 		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONFIG_USUARIO_INDISPONIVEL", Motivo: "habilitação ilegível: " + err.Error(), Alerta: "USUARIO_CONFIG"}
 	}
-	con, ok := h.ConectorUnico()
-	if !ok {
-		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONECTOR_AMBIGUO",
-			Motivo: fmt.Sprintf("uid %d habilitado em mais de um conector (%s): um conector por uid ate haver regra (kalman-ordens usuario habilitar -conectores pnt|flexscan)", uid, h.ConectoresTexto())}
-	}
-	return usuario.ResolverCom(usuario.Regras{Ambiente: m.p.Ambiente, ContasHML: m.p.ContasHML, ContasHMLFlx: m.p.ContasHMLFlx, Flexscan: m.p.Flexscan}, texto, con)
+	return usuario.ResolverCom(usuario.Regras{Ambiente: m.p.Ambiente, ContasHML: m.p.ContasHML, ContasHMLFlx: m.p.ContasHMLFlx, Flexscan: m.p.Flexscan}, texto, h.Conectores)
 }
 
 // contaParaEntrada: contaDoUsuario com os alertas da entrada. A trava cruzada (CONTA_AMBIENTE) é

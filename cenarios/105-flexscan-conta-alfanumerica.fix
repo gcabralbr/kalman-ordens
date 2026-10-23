@@ -24,10 +24,10 @@ resposta aceito=false codigo=CONTA_INVALIDA
 flx_nada
 nada
 
-# o GQ diz FLEXSCAN e a habilitação PNT
+# o GQ diz FLEXSCAN e a habilitação só PNT
 entrada 2999 C uid=12
-resposta aceito=false codigo=CONECTOR_DIVERGENTE
-alerta USUARIO_CONFIG
+resposta aceito=false codigo=CONECTOR_NAO_HABILITADO
+flx_nada
 nada
 
 # BTG pelo PnT (uid 7, conta 12345)

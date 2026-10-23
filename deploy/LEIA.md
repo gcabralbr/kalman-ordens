@@ -470,8 +470,9 @@ O resto do serviço (limites, travas, alertas, contrato com o Kalman) é o mesmo
 - **Migração 0011** (aplicada pelo `servir`): `conectores` na habilitação e `conector` na operação; as
   linhas existentes ficam `PNT` (nada muda para quem já estava habilitado).
 - **Habilitação:** `kalman-ordens usuario habilitar -uid N -conectores flexscan -motivo "teste Flex"`
-  (um conector por uid; dois são recusados pela CLI, e uma linha com dois recusa as entradas com
-  `CONECTOR_AMBIGUO`). `usuario conferir -uid N` mostra as duas colunas do GQ e `conector=FLEXSCAN
+  (`pnt,flexscan` permite os dois: o GQ escolhe pelo `Robo.Conector`, que tem de estar na lista —
+  senão `CONECTOR_NAO_HABILITADO`; sem `Robo.Conector` no GQ, só com um conector habilitado — senão
+  `CONECTOR_INDEFINIDO`). `usuario conferir -uid N` mostra as duas colunas do GQ e `conector=FLEXSCAN
   corretora=85 conta=S-1117150`. A conta segue o conector: PnT só dígitos; Flexscan até 20 letras,
   dígitos e hífen, na HML em `FLEXSCAN_CONTAS_HML`.
 - **`/saude`:** `flexscan` (`logado`, `token_expira`, `webhooks_recebidos`, `ultimo_webhook`,

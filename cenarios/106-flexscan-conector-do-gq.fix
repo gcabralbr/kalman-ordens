@@ -1,0 +1,37 @@
+cenario 106 Com pnt,flexscan na habilitação o GQ escolhe o conector (Robo.Conector): FLEXSCAN sai pela Flexscan, PNT pelo PnT, cada um com a regra de conta dele
+hora 2026-10-23 12:30:00
+# SPEC-FLEXSCAN-v1 §14.3. O conector é gravado na operação na entrada (a mudança no GQ depois não
+# muda a operação aberta).
+config FLEXSCAN_URL=falso
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_POSICAO_MAX=3
+usuario 13 hml {"Robo":{"CORSeqId":85,"CCONroConta":"S-1117150","Conector":"FLEXSCAN"},"Futuros":{"CCONroContaFut":"S-1117150"}}
+habilita 13 conectores=pnt,flexscan
+
+executa INICIO
+
+entrada 3101 C uid=13
+resposta aceito=true
+flx_recebe POST name=KM-E-3101-1 account=S-1117150 ordType=2 price=130020
+nada
+http GET /ordens/3101
+resposta conector=FLEXSCAN conta=S-1117150 destino=85
+
+# o GQ passa a dizer PNT (com a conta do PnT): a próxima entrada vai pelo PnT
+usuario 13 hml {"Robo":{"CORSeqId":85,"CCONroConta":"12345","Conector":"PNT"},"Futuros":{"CCONroContaFut":"12345"}}
+entrada 3102 C uid=13
+resposta aceito=true
+recebe 35=D 11=KM-E-3102-1 1=12345 55=WINZ26 847=1031
+flx_nada
+http GET /ordens/3102
+resposta conector=PNT conta=12345
+http GET /ordens/3101
+resposta conector=FLEXSCAN conta=S-1117150
+
+# PNT no GQ com a conta da Flexscan: a regra de conta do PnT
+usuario 13 hml {"Robo":{"CORSeqId":85,"CCONroConta":"S-1117150","Conector":"PNT"},"Futuros":{"CCONroContaFut":"S-1117150"}}
+entrada 3103 C uid=13
+resposta aceito=false codigo=CONTA_INVALIDA
+nada
+flx_nada

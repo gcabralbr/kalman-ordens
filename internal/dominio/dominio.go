@@ -206,9 +206,8 @@ type Habilitacao struct {
 	Habilitado  bool
 	PosicaoMax  int
 	QtdMaxOrdem int
-	// Conector de execução do uid (SPEC-FLEXSCAN-v1 §14): decide o caminho das ordens; a corretora
-	// (Robo.CORSeqId) não decide. Vazio = PnT (o de antes). Mais de um: entrada recusada
-	// (CONECTOR_AMBIGUO) até haver regra.
+	// Conectores de execução permitidos ao uid (SPEC-FLEXSCAN-v1 §14.3); a corretora (Robo.CORSeqId)
+	// não decide. Com mais de um, o GQ escolhe (Robo.Conector). Vazio = PnT (o de antes).
 	Conectores []string
 	Por        string // quem alterou (usuário do sistema que rodou a CLI)
 	Motivo     string
@@ -252,17 +251,6 @@ func ConectorDe(c string) string {
 		return ConectorPnT
 	}
 	return c
-}
-
-// ConectorUnico: o conector da habilitação — o único da lista (vazia = PnT). ok=false com mais de um.
-func (h Habilitacao) ConectorUnico() (string, bool) {
-	switch len(h.Conectores) {
-	case 0:
-		return ConectorPnT, true
-	case 1:
-		return h.Conectores[0], true
-	}
-	return "", false
 }
 
 // ConectoresPadrao: a habilitação sem a coluna (ou vazia) vale só para o PnT.

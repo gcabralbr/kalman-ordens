@@ -63,37 +63,37 @@ func TestResolverFlexscan(t *testing.T) {
 	hml := Regras{Ambiente: HML, ContasHML: []string{"99999"}, ContasHMLFlx: []string{"S-1117150"}, Flexscan: true}
 	// o 5725 (23/10): BTG no GQ, pela Flexscan
 	btg := `{"Robo":{"CORSeqId":85,"CCONroConta":"S-1117150"}}`
-	r, f := ResolverCom(hml, btg, "FLEXSCAN")
+	r, f := ResolverCom(hml, btg, []string{"FLEXSCAN"})
 	if f != nil || r.Conta != "S-1117150" || r.Destino != 85 || r.Conector != "FLEXSCAN" {
 		t.Fatalf("BTG pela Flexscan: %+v %v", r, f)
 	}
 	// a mesma conta pelo PnT: regra do PnT
-	if _, f := ResolverCom(hml, btg, "PNT"); f == nil || f.Codigo != "CONTA_INVALIDA" || !strings.Contains(f.Motivo, "conector PNT") {
+	if _, f := ResolverCom(hml, btg, []string{"PNT"}); f == nil || f.Codigo != "CONTA_INVALIDA" || !strings.Contains(f.Motivo, "conector PNT") {
 		t.Fatalf("conta da Flexscan pelo PnT: %v", f)
 	}
 	// BTG pelo PnT, como sempre
-	if r, f := ResolverCom(hml, `{"Robo":{"CORSeqId":85,"CCONroConta":"99999"}}`, "PNT"); f != nil || r.Conector != "PNT" || r.Destino != 85 {
+	if r, f := ResolverCom(hml, `{"Robo":{"CORSeqId":85,"CCONroConta":"99999"}}`, []string{"PNT"}); f != nil || r.Conector != "PNT" || r.Destino != 85 {
 		t.Fatalf("BTG pelo PnT: %+v %v", r, f)
 	}
 	// Capital pela Flexscan em produção: conta numérica
-	if r, f := ResolverCom(Regras{Ambiente: Producao, Flexscan: true}, `{"Robo":{"CORSeqId":88,"CCONroConta":"715124"}}`, "FLEXSCAN"); f != nil || r.Conta != "715124" || r.Destino != 88 {
+	if r, f := ResolverCom(Regras{Ambiente: Producao, Flexscan: true}, `{"Robo":{"CORSeqId":88,"CCONroConta":"715124"}}`, []string{"FLEXSCAN"}); f != nil || r.Conta != "715124" || r.Destino != 88 {
 		t.Fatalf("Capital em produção: %+v %v", r, f)
 	}
-	if _, f := ResolverCom(Regras{Ambiente: HML, ContasHML: []string{"99999"}}, btg, "FLEXSCAN"); f == nil || f.Codigo != "CONECTOR_NAO_CONFIGURADO" {
+	if _, f := ResolverCom(Regras{Ambiente: HML, ContasHML: []string{"99999"}}, btg, []string{"FLEXSCAN"}); f == nil || f.Codigo != "CONECTOR_NAO_CONFIGURADO" {
 		t.Fatalf("Flexscan sem FLEXSCAN_URL: %v", f)
 	}
-	if _, f := ResolverCom(Regras{Ambiente: HML, ContasHML: []string{"S-1117150"}, Flexscan: true}, btg, "FLEXSCAN"); f == nil || f.Codigo != "CONTA_AMBIENTE" {
+	if _, f := ResolverCom(Regras{Ambiente: HML, ContasHML: []string{"S-1117150"}, Flexscan: true}, btg, []string{"FLEXSCAN"}); f == nil || f.Codigo != "CONTA_AMBIENTE" {
 		t.Fatalf("conta na lista do PnT e fora da da Flexscan: %v", f)
 	}
-	if _, f := ResolverCom(Regras{Ambiente: Producao, ContasHMLFlx: []string{"S-1117150"}, Flexscan: true}, btg, "FLEXSCAN"); f == nil || f.Codigo != "CONTA_AMBIENTE" {
+	if _, f := ResolverCom(Regras{Ambiente: Producao, ContasHMLFlx: []string{"S-1117150"}, Flexscan: true}, btg, []string{"FLEXSCAN"}); f == nil || f.Codigo != "CONTA_AMBIENTE" {
 		t.Fatalf("conta de HML da Flexscan em PRODUCAO: %v", f)
 	}
 	for _, conta := range []string{"S 11/7", "S-123456789012345678901", ""} {
-		if _, f := ResolverCom(hml, `{"Robo":{"CORSeqId":85,"CCONroConta":"`+conta+`"}}`, "FLEXSCAN"); f == nil || f.Codigo != "CONTA_INVALIDA" {
+		if _, f := ResolverCom(hml, `{"Robo":{"CORSeqId":85,"CCONroConta":"`+conta+`"}}`, []string{"FLEXSCAN"}); f == nil || f.Codigo != "CONTA_INVALIDA" {
 			t.Fatalf("conta Flexscan %q: %v", conta, f)
 		}
 	}
-	if _, f := ResolverCom(hml, `{"Robo":{"CORSeqId":9999,"CCONroConta":"S-1117150"}}`, "FLEXSCAN"); f == nil || f.Codigo != "DESTINO_INVALIDO" {
+	if _, f := ResolverCom(hml, `{"Robo":{"CORSeqId":9999,"CCONroConta":"S-1117150"}}`, []string{"FLEXSCAN"}); f == nil || f.Codigo != "DESTINO_INVALIDO" {
 		t.Fatalf("simulador do GQ pela Flexscan: %v", f)
 	}
 	if got := Lido(btg); got != `CORSeqId=85 Conector=- CCONroConta="S-1117150"` {
@@ -108,36 +108,75 @@ const real5725 = `{"Robo":{"CiaCodCIa":1,"UsuCodUsuario":"5725","CORSeqId":85,"C
 
 func TestContaDeFuturosEConectorDoGQ(t *testing.T) {
 	hml := Regras{Ambiente: HML, ContasHML: []string{"99999"}, ContasHMLFlx: []string{"S-1117150", "S-2"}, Flexscan: true}
-	r, f := ResolverCom(hml, real5725, "FLEXSCAN")
+	r, f := ResolverCom(hml, real5725, []string{"FLEXSCAN"})
 	if f != nil || r.Conta != "S-1117150" || r.OrigemConta != "Futuros.CCONroContaFut" || r.Conector != "FLEXSCAN" {
 		t.Fatalf("5725: %+v %v", r, f)
 	}
 	// as duas contas diferentes: vale a de futuros
 	dif := `{"Robo":{"CORSeqId":85,"CCONroConta":"S-1","Conector":"FLEXSCAN"},"Futuros":{"CCONroContaFut":"S-2"}}`
-	if r, f := ResolverCom(hml, dif, "FLEXSCAN"); f != nil || r.Conta != "S-2" {
+	if r, f := ResolverCom(hml, dif, []string{"FLEXSCAN"}); f != nil || r.Conta != "S-2" {
 		t.Fatalf("contas diferentes: %+v %v", r, f)
 	}
 	// sem o grupo Futuros (ou vazia): a do Robo, como antes
 	for _, j := range []string{`{"Robo":{"CORSeqId":85,"CCONroConta":"99999"}}`, `{"Robo":{"CORSeqId":85,"CCONroConta":"99999"},"Futuros":{"CCONroContaFut":""}}`} {
-		if r, f := ResolverCom(hml, j, "PNT"); f != nil || r.Conta != "99999" || r.OrigemConta != "Robo.CCONroConta" {
+		if r, f := ResolverCom(hml, j, []string{"PNT"}); f != nil || r.Conta != "99999" || r.OrigemConta != "Robo.CCONroConta" {
 			t.Fatalf("sem futuros %s: %+v %v", j, r, f)
 		}
 	}
-	// o conector do GQ diferente do da habilitação
-	if _, f := ResolverCom(hml, real5725, "PNT"); f == nil || f.Codigo != "CONECTOR_DIVERGENTE" {
-		t.Fatalf("conector divergente: %v", f)
+	// o conector do GQ fora da habilitação
+	if _, f := ResolverCom(hml, real5725, []string{"PNT"}); f == nil || f.Codigo != "CONECTOR_NAO_HABILITADO" {
+		t.Fatalf("conector do GQ fora da habilitação: %v", f)
 	}
 	// credenciais fora de toda recusa e do Lido
 	casos := []string{real5725, strings.Replace(real5725, `"CORSeqId":85`, `"CORSeqId":9999`, 1),
 		strings.Replace(real5725, `"CCONroContaFut":"S-1117150"`, `"CCONroContaFut":"S 1"`, 1), real5725[:len(real5725)-5]}
 	for _, j := range casos {
 		for _, con := range []string{"PNT", "FLEXSCAN"} {
-			_, f := ResolverCom(hml, j, con)
+			_, f := ResolverCom(hml, j, []string{con})
 			for _, txt := range []string{Lido(j), fmt.Sprint(f)} {
 				if strings.Contains(txt, "secret") {
 					t.Fatalf("credencial no texto: %s", txt)
 				}
 			}
+		}
+	}
+}
+
+// SPEC-FLEXSCAN-v1 §14.3: com mais de um conector na habilitação, o GQ escolhe (Robo.Conector),
+// desde que esteja na lista; sem Robo.Conector, só com um conector habilitado.
+func TestConectorEscolhidoPeloGQ(t *testing.T) {
+	hml := Regras{Ambiente: HML, ContasHML: []string{"99999"}, ContasHMLFlx: []string{"99999"}, Flexscan: true}
+	j := func(con string) string {
+		if con == "" {
+			return `{"Robo":{"CORSeqId":85,"CCONroConta":"99999"}}`
+		}
+		return `{"Robo":{"CORSeqId":85,"CCONroConta":"99999","Conector":"` + con + `"}}`
+	}
+	dois := []string{"PNT", "FLEXSCAN"}
+	casos := []struct {
+		gq          string
+		habilitados []string
+		conector    string
+		codigo      string
+	}{
+		{"FLEXSCAN", dois, "FLEXSCAN", ""},
+		{"flexscan", dois, "FLEXSCAN", ""},
+		{"PNT", dois, "PNT", ""},
+		{"", dois, "", "CONECTOR_INDEFINIDO"},
+		{"", []string{"FLEXSCAN"}, "FLEXSCAN", ""},
+		{"", nil, "PNT", ""},
+		{"FLEXSCAN", nil, "", "CONECTOR_NAO_HABILITADO"},
+		{"FLEXSCAN", []string{"PNT"}, "", "CONECTOR_NAO_HABILITADO"},
+		{"PNT", []string{"FLEXSCAN"}, "", "CONECTOR_NAO_HABILITADO"},
+		{"XP", dois, "", "CONECTOR_NAO_HABILITADO"},
+	}
+	for _, c := range casos {
+		r, f := ResolverCom(hml, j(c.gq), c.habilitados)
+		switch {
+		case c.codigo == "" && (f != nil || r.Conector != c.conector):
+			t.Errorf("GQ %q, habilitados %v: %+v %v", c.gq, c.habilitados, r, f)
+		case c.codigo != "" && (f == nil || f.Codigo != c.codigo):
+			t.Errorf("GQ %q, habilitados %v: esperava %s, veio %v", c.gq, c.habilitados, c.codigo, f)
 		}
 	}
 }

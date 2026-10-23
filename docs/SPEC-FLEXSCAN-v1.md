@@ -512,3 +512,13 @@ O GX passou a gerar `Robo.Conector` e o usutxtconfig traz duas contas (`Robo.CCO
   (`CORSeqId`, `Conector`, `CCONroConta`, `Futuros.CCONroContaFut`); o JSON fica só no cache em
   memória, nunca em log, recusa, evento ou banco; erro de JSON sai só com a posição. Teste:
   `usuario.TestContaDeFuturosEConectorDoGQ`.
+
+### 14.3 Quem escolhe o conector (23/10, substitui o "um conector por uid" da §14.1 e a trava da §14.2)
+
+- A habilitação lista os conectores **permitidos** (`-conectores pnt`, `flexscan` ou `pnt,flexscan`).
+- O GQ com `Robo.Conector` → ele tem de estar na lista (senão `CONECTOR_NAO_HABILITADO`); é o usado.
+- O GQ sem `Robo.Conector` → o da habilitação, se for um só (vazia = PnT); senão `CONECTOR_INDEFINIDO`.
+- O `CONECTOR_DIVERGENTE` e o `CONECTOR_AMBIGUO` saíram (cobertos pelas duas regras). A conta
+  (Futuros, com a do Robo na falta) e as credenciais ficam como na §14.2.
+- Roteiros: 104 (`CONECTOR_INDEFINIDO`), 105 (`CONECTOR_NAO_HABILITADO`), 106 (o GQ escolhe entre os
+  dois habilitados).

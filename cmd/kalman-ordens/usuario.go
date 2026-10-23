@@ -33,7 +33,7 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 	motivo := fs.String("motivo", "", "motivo (obrigatório em habilitar e desabilitar)")
 	posMax := fs.Int("posicao-max", 0, "limite de posição do uid (0 = só o global; sem a flag, mantém o atual)")
 	qtdMax := fs.Int("qtd-max", 0, "limite de quantidade por ordem do uid (0 = só o global; sem a flag, mantém o atual)")
-	conectores := fs.String("conectores", "", "conector de execução do uid: pnt ou flexscan (um só; sem a flag, mantém o atual; linha nova: pnt)")
+	conectores := fs.String("conectores", "", "conectores permitidos ao uid: pnt, flexscan ou pnt,flexscan (com mais de um, o GQ escolhe pelo Robo.Conector; sem a flag, mantém o atual; linha nova: pnt)")
 	arqEnv := fs.String("env", "/etc/kalman-ordens/service.env", "service.env, se DB_DSN não estiver no ambiente")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -95,10 +95,6 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 		})
 		if errCs != nil {
 			return fmt.Errorf("-conectores: %w", errCs)
-		}
-		if len(cs) > 1 {
-			// SPEC-FLEXSCAN-v1 §14: um conector ativo por uid até haver regra para escolher
-			return fmt.Errorf("-conectores %s: um conector por uid (pnt ou flexscan)", strings.ToLower(strings.Join(cs, ",")))
 		}
 		h := dominio.Habilitacao{UID: *uid, Habilitado: acao == "habilitar", PosicaoMax: pm, QtdMaxOrdem: qm, Conectores: cs,
 			Por: quem(), Motivo: *motivo, Em: time.Now()}
@@ -184,15 +180,10 @@ func conferirUsuario(r *repo.MariaDB, cfg config.Config, uid int, saida io.Write
 	}
 	// o que está no GQ, nas duas colunas (a do ambiente decide)
 	fmt.Fprintf(saida, "acusuario: usutxtconfig %s; usutxtconfigprd %s (vale %s)\n", usuario.Lido(hml), usuario.Lido(prd), usuario.Campo(ambiente))
-	con, unico := h.ConectorUnico()
-	if !unico {
-		fmt.Fprintf(saida, "conectores %s: entradas recusadas (CONECTOR_AMBIGUO): um conector por uid\n", h.ConectoresTexto())
-		return nil
-	}
 	res, f := usuario.ResolverCom(usuario.Regras{Ambiente: ambiente, ContasHML: usuario.Lista(cfg.Texto("ORDENS_CONTAS_HML", "")),
-		ContasHMLFlx: usuario.Lista(cfg.Texto("FLEXSCAN_CONTAS_HML", "")), Flexscan: cfg.Texto("FLEXSCAN_URL", "") != ""}, texto, con)
+		ContasHMLFlx: usuario.Lista(cfg.Texto("FLEXSCAN_CONTAS_HML", "")), Flexscan: cfg.Texto("FLEXSCAN_URL", "") != ""}, texto, h.Conectores)
 	if f != nil {
-		fmt.Fprintf(saida, "%s, conector %s: entradas recusadas (%s): %s\n", usuario.Campo(ambiente), con, f.Codigo, f.Motivo)
+		fmt.Fprintf(saida, "%s, conectores habilitados %s: entradas recusadas (%s): %s\n", usuario.Campo(ambiente), strings.ToLower(h.ConectoresTexto()), f.Codigo, f.Motivo)
 		return nil
 	}
 	fmt.Fprintf(saida, "%s: conector=%s corretora=%d conta=%s (%s)\n", usuario.Campo(ambiente), res.Conector, res.Destino, res.Conta, res.OrigemConta)

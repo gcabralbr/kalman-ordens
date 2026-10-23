@@ -1,7 +1,7 @@
-cenario 104 Flexscan e PnT juntos: limites globais somados; PnT sem sessão não recusa a Flexscan; habilitação com dois conectores → CONECTOR_AMBIGUO
+cenario 104 Flexscan e PnT juntos: limites globais somados; PnT sem sessão não recusa a Flexscan; dois conectores habilitados sem Robo.Conector no GQ → CONECTOR_INDEFINIDO
 hora 2026-10-23 11:50:00
-# SPEC-FLEXSCAN-v1 §14. O conector vem da habilitação: o uid 7 vai pelo PnT, o 8 pela Flexscan; o 9
-# está habilitado nos dois (sem regra para escolher: recusado).
+# SPEC-FLEXSCAN-v1 §14.3. O uid 7 vai pelo PnT, o 8 pela Flexscan; o 9 está habilitado nos dois e o
+# GQ não diz qual (sem Robo.Conector): recusado.
 config FLEXSCAN_URL=falso
 config LIMITE_INTERVALO_ENTRADAS_S=0
 config LIMITE_ENTRADAS_MIN=10
@@ -12,9 +12,9 @@ habilita 9 conectores=pnt,flexscan
 
 executa INICIO
 
-# dois conectores na habilitação
+# dois conectores na habilitação, nenhum no GQ
 entrada 2901 C uid=9
-resposta aceito=false codigo=CONECTOR_AMBIGUO
+resposta aceito=false codigo=CONECTOR_INDEFINIDO
 flx_nada
 
 # posição 1 pela Flexscan; o limite global (LIMITE_POSICAO_MAX=1) vale para o PnT também

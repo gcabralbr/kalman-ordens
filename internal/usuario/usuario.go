@@ -78,14 +78,16 @@ func Campo(ambiente string) string {
 
 // Resolver: pelo PnT (as regras de antes).
 func Resolver(ambiente, texto string, contasHML []string) (Resolvido, *Falha) {
-	return ResolverCom(Regras{Ambiente: ambiente, ContasHML: contasHML}, texto, dominio.ConectorPnT)
+	return ResolverCom(Regras{Ambiente: ambiente, ContasHML: contasHML}, texto, []string{dominio.ConectorPnT})
 }
 
-// ResolverCom interpreta o JSON do ambiente para o conector do uid (o da habilitação) e aplica as
-// travas: corretora conhecida (85 BTG, 88 Capital; 9999 é o simulador do GQ); a Flexscan só com
+// ResolverCom interpreta o JSON do ambiente, escolhe o conector e aplica as travas. Conector
+// (SPEC-FLEXSCAN-v1 §14.3): o GQ com Robo.Conector → tem de estar entre os da habilitação
+// (CONECTOR_NAO_HABILITADO); sem → o da habilitação, se for um só (vazia = PnT), senão
+// CONECTOR_INDEFINIDO. Travas: corretora conhecida (85 BTG, 88 Capital; 9999 é o simulador do GQ); a Flexscan só com
 // FLEXSCAN_URL; conta pelo conector — PnT só dígitos, Flexscan até 20 letras, dígitos e hífen;
 // trava cruzada — em HML a conta tem de estar na lista do conector, em PRODUCAO não pode estar.
-func ResolverCom(rg Regras, texto, conector string) (Resolvido, *Falha) {
+func ResolverCom(rg Regras, texto string, habilitados []string) (Resolvido, *Falha) {
 	ambiente := rg.Ambiente
 	campo := Campo(ambiente)
 	if strings.TrimSpace(texto) == "" {
@@ -110,15 +112,33 @@ func ResolverCom(rg Regras, texto, conector string) (Resolvido, *Falha) {
 	case corretoras[destino] == "":
 		return Resolvido{}, &Falha{"DESTINO_INVALIDO", fmt.Sprintf("%s: Robo.CORSeqId %d não é uma corretora conhecida (85 BTG, 88 Capital)", campo, destino), "USUARIO_CONFIG"}
 	}
-	// Robo.Conector (o GX gera desde 23/10): conferência — a habilitação decide, e os dois têm de bater
+	// o conector: o GQ escolhe (Robo.Conector, gerado pelo GX desde 23/10) entre os da habilitação
+	if len(habilitados) == 0 {
+		habilitados = []string{dominio.ConectorPnT}
+	}
+	lista := strings.ToLower(strings.Join(habilitados, ","))
+	var gq string
 	if len(cfg.Robo.Conector) > 0 && string(cfg.Robo.Conector) != "null" {
-		var gq string
 		if err := json.Unmarshal(cfg.Robo.Conector, &gq); err != nil {
 			return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + ": Robo.Conector não é texto", "USUARIO_CONFIG"}
 		}
-		if gq = strings.ToUpper(strings.TrimSpace(gq)); gq != "" && gq != conector {
-			return Resolvido{}, &Falha{"CONECTOR_DIVERGENTE", fmt.Sprintf("%s: Robo.Conector %s no GQ e conector %s na habilitação", campo, gq, conector), "USUARIO_CONFIG"}
+		gq = strings.ToUpper(strings.TrimSpace(gq))
+	}
+	var conector string
+	switch {
+	case gq != "":
+		for _, h := range habilitados {
+			if h == gq {
+				conector = gq
+			}
 		}
+		if conector == "" {
+			return Resolvido{}, &Falha{"CONECTOR_NAO_HABILITADO", fmt.Sprintf("%s: Robo.Conector %s fora da habilitação do uid (%s)", campo, gq, lista), ""}
+		}
+	case len(habilitados) == 1:
+		conector = habilitados[0]
+	default:
+		return Resolvido{}, &Falha{"CONECTOR_INDEFINIDO", fmt.Sprintf("%s: sem Robo.Conector no GQ e a habilitação tem mais de um conector (%s)", campo, lista), ""}
 	}
 	contasHML, listaHML := rg.ContasHML, "ORDENS_CONTAS_HML"
 	switch conector {
