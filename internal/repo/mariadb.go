@@ -90,6 +90,41 @@ func (r *MariaDB) MigrarRelatando() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return r.aplicar(pend)
+}
+
+// MigrarCom aplica um conjunto de migrações dado (testes de atualização: o banco que a versão
+// instalada deixou), pulando as já registradas.
+func (r *MariaDB) MigrarCom(ms []migracoes.Migracao) ([]string, error) {
+	if _, err := r.db.Exec(`CREATE TABLE IF NOT EXISTS kalmanordem_migracao (
+		versao INT NOT NULL PRIMARY KEY, nome VARCHAR(100) NOT NULL, aplicada_em DATETIME(3) NOT NULL
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`); err != nil {
+		return nil, err
+	}
+	feitas := map[int]bool{}
+	rows, err := r.db.Query("SELECT versao FROM kalmanordem_migracao")
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var v int
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		feitas[v] = true
+	}
+	rows.Close()
+	var pend []migracoes.Migracao
+	for _, m := range ms {
+		if !feitas[m.Versao] {
+			pend = append(pend, m)
+		}
+	}
+	return r.aplicar(pend)
+}
+
+func (r *MariaDB) aplicar(pend []migracoes.Migracao) ([]string, error) {
 	var aplicadas []string
 	for _, m := range pend {
 		for _, inst := range m.Instrucoes {
@@ -134,6 +169,20 @@ func (r *MariaDB) MigracoesPendentes() ([]migracoes.Migracao, error) {
 }
 
 // LimparTeste apaga as tabelas do serviço — só num schema cujo nome termina em _teste.
+// Executar: SQL livre, só no schema *_teste (testes de atualização montam o banco da versão
+// instalada com os dados no formato antigo).
+func (r *MariaDB) Executar(q string, args ...any) error {
+	var schema string
+	if err := r.db.QueryRow("SELECT DATABASE()").Scan(&schema); err != nil {
+		return err
+	}
+	if !strings.HasSuffix(schema, "_teste") {
+		return fmt.Errorf("repo: Executar recusado no schema %q (só *_teste)", schema)
+	}
+	_, err := r.db.Exec(q, args...)
+	return err
+}
+
 func (r *MariaDB) LimparTeste() error {
 	var schema string
 	if err := r.db.QueryRow("SELECT DATABASE()").Scan(&schema); err != nil {

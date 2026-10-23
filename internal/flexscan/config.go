@@ -25,5 +25,8 @@ func ConfigDe(c config.Config) Config {
 		RenovarAntes:  time.Duration(c.Inteiro("FLEXSCAN_RENOVAR_ANTES_MIN", 30)) * time.Minute,
 		VidaToken:     time.Duration(c.Inteiro("FLEXSCAN_TOKEN_VIDA_H", 9)) * time.Hour,
 		EsperaLogin:   c.Segundos("FLEXSCAN_ESPERA_LOGIN_S", 30),
+		EstadoLogin:   c.Texto("FLEXSCAN_ESTADO_LOGIN", "/var/lib/kalman-ordens/flexscan-login.json"),
+		LoginMax:      c.Inteiro("FLEXSCAN_LOGIN_MAX", 5),
+		LoginJanela:   time.Duration(c.Inteiro("FLEXSCAN_LOGIN_JANELA_MIN", 10)) * time.Minute,
 	}
 }

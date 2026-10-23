@@ -20,7 +20,10 @@ type Migracao struct {
 }
 
 // Todas devolve as migrações em ordem de versão.
-func Todas() ([]Migracao, error) {
+func Todas() ([]Migracao, error) { return De(arquivos) }
+
+// De lê as migrações NNNN_nome.sql de um diretório (testes: o retrato da versão instalada).
+func De(arquivos fs.FS) ([]Migracao, error) {
 	nomes, err := fs.Glob(arquivos, "*.sql")
 	if err != nil {
 		return nil, err
@@ -32,7 +35,7 @@ func Todas() ([]Migracao, error) {
 		if err != nil {
 			continue
 		}
-		b, err := arquivos.ReadFile(n)
+		b, err := fs.ReadFile(arquivos, n)
 		if err != nil {
 			return nil, err
 		}

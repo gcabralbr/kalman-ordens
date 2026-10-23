@@ -527,3 +527,26 @@ Migração: a coluna `kalmanordemoperacao.conector` saiu da 0011 para a **0012**
 EXISTS`). A .53 instalou em 23/10 o binário `77550906a194` (anterior à §14.1), que aplicou a 0011 sem a
 coluna; as migrações são controladas pelo número, e um binário com a coluna dentro da 0011 a pularia.
 Teste: `repo.TestMigracao0012NoBancoDa53`.
+
+### 14.4 Partida segura (23/10, depois da instalação do `eb65ec2`)
+
+Fatos (journal da .53): o `eb65ec2` parou 37 vezes em `Error 1054 ... Unknown column 'conector'`
+(o `CarregarDia`, dentro de `m.Iniciar()`), sempre antes do `ponte.Iniciar()`: **nenhum login na
+Flexscan**. No dia, o serviço fez um login só (13:57:35, `77550906a194`); o bloqueio da senha veio
+antes das 17:09:28 por outro uso do `flx_gammaquant`.
+
+- **Migração** com número livre e idempotente: a coluna `kalmanordemoperacao.conector` na 0012
+  (`ADD COLUMN IF NOT EXISTS`); a 0011 volta a ser a que a .53 aplicou.
+- **Suíte com atualização:** `TestServirAtualizaDoInstalado` sobe o binário novo em cima do banco da
+  versão instalada (`cmd/kalman-ordens/testdata/instalado`, gerado do git por
+  `scripts/instalado-migracoes.sh` a partir do `versao` do `/opt`), com dados no formato antigo;
+  com a 0011 do `eb65ec2` ele falha com o mesmo erro da .53.
+- **Login só depois da partida inteira:** o `ponte.Iniciar()` roda depois de banco, motor, HTTP e FIX;
+  o teste confirma: 3 partidas que falham = 0 logins.
+- **Limite de logins entre restarts:** `FLEXSCAN_LOGIN_MAX` (5) em `FLEXSCAN_LOGIN_JANELA_MIN` (10),
+  em `FLEXSCAN_ESTADO_LOGIN`; erro definitivo trava a credencial (impressão salgada, nunca a senha)
+  até `FLEXSCAN_SENHA` mudar; sem gravar o estado, não tenta. Todo login vai ao log com o motivo
+  (partida, reconexão, renovação, 401, sem token).
+- **Unidade:** `StartLimitIntervalSec=300`, `StartLimitBurst=5`, `RestartSec=10`,
+  `OnFailure=kalman-ordens-falhou@%n.service` (alerta crítico com o último erro, pelo `disco.env`).
+- **LEIA 1.16:** conferir o journal nos primeiros segundos depois do restart e voltar ao anterior.

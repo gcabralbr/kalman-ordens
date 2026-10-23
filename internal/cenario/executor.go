@@ -183,7 +183,8 @@ func (e *Executor) preparar() error {
 		v["FLEXSCAN_URL"] = e.flx.URL()
 		v["FLEXSCAN_USUARIO"], v["FLEXSCAN_SENHA"] = "flx_roteiro", SenhaFlexscanRoteiro
 		for k, x := range map[string]string{"FLEXSCAN_WEBHOOK_ENDERECO": "roteiro", "FLEXSCAN_WEBHOOK_SEGREDO": SegredoWebhookRoteiro,
-			"FLEXSCAN_TIMEOUT_MS": "300", "FLEXSCAN_REQ_POR_S": "0", "FLEXSCAN_CONTAS_HML": "S-1117150"} {
+			"FLEXSCAN_TIMEOUT_MS": "300", "FLEXSCAN_REQ_POR_S": "0", "FLEXSCAN_CONTAS_HML": "S-1117150",
+			"FLEXSCAN_ESTADO_LOGIN": filepath.Join(e.dir, "flexscan-login.json"), "FLEXSCAN_LOGIN_MAX": "50"} {
 			if v[k] == "" {
 				v[k] = x
 			}

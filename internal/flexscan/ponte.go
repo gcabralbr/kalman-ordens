@@ -50,6 +50,11 @@ type Config struct {
 	RenovarAntes        time.Duration // FLEXSCAN_RENOVAR_ANTES_MIN
 	VidaToken           time.Duration // FLEXSCAN_TOKEN_VIDA_H (token sem exp)
 	EsperaLogin         time.Duration // entre logins que falharam (30 s)
+	// limite de logins entre restarts (FLEXSCAN_ESTADO_LOGIN, FLEXSCAN_LOGIN_MAX em
+	// FLEXSCAN_LOGIN_JANELA_MIN); arquivo vazio = só em memória
+	EstadoLogin string
+	LoginMax    int
+	LoginJanela time.Duration
 }
 
 func (c *Config) padroes() {
@@ -177,7 +182,8 @@ type Ponte struct {
 func Nova(cfg Config, ouv Ouvinte, rel relogio.Relogio) *Ponte {
 	cfg.padroes()
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Ponte{cfg: cfg, cli: novoCliente(cfg.URL, cfg.Usuario, cfg.Senha, cfg.Timeout, cfg.ReqPorS, cfg.Rajada), ouv: ouv, rel: rel,
+	guarda := novaGuarda(cfg.EstadoLogin, cfg.LoginMax, cfg.LoginJanela, cfg.Usuario, cfg.Senha)
+	return &Ponte{cfg: cfg, cli: novoCliente(cfg.URL, cfg.Usuario, cfg.Senha, cfg.Timeout, cfg.ReqPorS, cfg.Rajada, guarda), ouv: ouv, rel: rel,
 		ordens: map[string]*ordemP{}, porNome: map[string]*ordemP{}, porCl: map[string]*ordemP{}, ocupadas: map[string]bool{},
 		sinal: make(chan struct{}, 1), ctx: ctx, cancelar: cancel}
 }
@@ -244,9 +250,14 @@ func (p *Ponte) tentarLogin() {
 		return
 	}
 	p.logando = true
+	motivo := "partida"
+	if p.jaLogou {
+		motivo = "reconexao"
+	}
+	p.jaLogou = true
 	p.mu.Unlock()
 	go func() {
-		err := p.cli.login(p.ctx)
+		err := p.cli.login(p.ctx, motivo)
 		p.mu.Lock()
 		p.logando = false
 		if err != nil {
@@ -267,7 +278,6 @@ func (p *Ponte) tentarLogin() {
 		}
 		p.ultimoErro = ""
 		p.mu.Unlock()
-		slog.Info("flexscan: login", "usuario", p.cfg.Usuario)
 		p.ouv.Resolver("FLEXSCAN_LOGIN")
 		if !p.logado.Swap(true) {
 			p.ouv.Logou()
@@ -301,7 +311,7 @@ func (p *Ponte) Tick() {
 			p.mu.Unlock()
 			if renovar {
 				go func() {
-					err := p.cli.login(p.ctx)
+					err := p.cli.login(p.ctx, "renovacao")
 					p.mu.Lock()
 					p.renovando = false
 					p.mu.Unlock()

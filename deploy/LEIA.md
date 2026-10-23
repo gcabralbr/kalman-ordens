@@ -460,6 +460,53 @@ time", 39=B, 1014 disparada ou terminal) não conta para a regra genérica (rote
   ```
   Teste: `scripts/teste-pnt-md-hml-horario.sh`.
 
+### 1.16 Instalação segura de qualquer pacote (depois de 23/10)
+
+23/10: o `eb65ec2` não subiu na .53 (o banco dela já tinha a 0011 sem a coluna nova) e reiniciou 37
+vezes em 3 min sem aviso. Desde então: a suíte sobe o binário novo em cima do banco da versão
+instalada (`TestServirAtualizaDoInstalado`, com `cmd/kalman-ordens/testdata/instalado`), a unidade
+para depois de 5 partidas em 5 min e alerta, o login na Flexscan só acontece depois de a partida
+inteira dar certo e tem limite que vale entre restarts (`/var/lib/kalman-ordens/flexscan-login.json`).
+
+Todo pacote:
+
+```
+V=$(/opt/kalman-ordens/kalman-ordens versao)                      # a instalada (para voltar)
+sudo cp /opt/kalman-ordens/kalman-ordens /opt/kalman-ordens/kalman-ordens.$V
+sudo install -o root -g root -m 755 <worktree>/dist/kalman-ordens /opt/kalman-ordens/kalman-ordens
+sudo systemctl restart kalman-ordens
+sleep 8; journalctl -u kalman-ordens -n 30 --no-pager             # NOS PRIMEIROS SEGUNDOS
+#   bom: "subindo" versao=<nova>, "migrações: ..." (as novas aplicadas), "kalman-ordens no ar",
+#        "flexscan: login motivo=partida" (uma vez)
+#   ruim: "kalman-ordens: <erro>" e "Scheduled restart job" → voltar já:
+systemctl is-active kalman-ordens                                  # active; "activating" de novo = ruim
+# voltar ao anterior:
+#   sudo install -o root -g root -m 755 /opt/kalman-ordens/kalman-ordens.$V /opt/kalman-ordens/kalman-ordens
+#   sudo systemctl reset-failed kalman-ordens; sudo systemctl restart kalman-ordens
+#   (migração já aplicada pelo novo continua no banco: as migrações só acrescentam, o anterior sobe)
+```
+
+Depois de instalar, no repositório: `scripts/instalado-migracoes.sh` e commit (o retrato da versão
+instalada para o teste de atualização do próximo pacote).
+
+Unidade com limite e alerta (uma vez):
+
+```
+sudo install -o root -g root -m 755 deploy/servico-falhou.sh /opt/kalman-ordens/servico-falhou.sh
+sudo install -o root -g root -m 644 deploy/kalman-ordens.service 'deploy/kalman-ordens-falhou@.service' /etc/systemd/system/
+sudo systemctl daemon-reload
+systemctl show kalman-ordens -p StartLimitBurst -p StartLimitIntervalUSec -p OnFailure   # 5, 5min, kalman-ordens-falhou@kalman-ordens.service.service
+```
+
+O alerta (`[.53 kalman-ordens] CRITICO: a unidade desistiu de subir (...); ultimo erro: ...`) sai pelo
+`/etc/kalman-ordens/disco.env`, como o do disco. Teste: `scripts/teste-servico-falhou.sh`. Com a unidade
+em `failed`, o `restart` exige antes `sudo systemctl reset-failed kalman-ordens`.
+
+Login na Flexscan travado pela guarda (`FLEXSCAN_LOGIN`, "login bloqueado desde ..." ou "limite de 5
+logins em 10m"): com a senha bloqueada na Flexscan, trocar a senha no app e o `FLEXSCAN_SENHA` (a
+credencial nova libera sozinha); limite de tentativas: esperar a janela, ou apagar
+`/var/lib/kalman-ordens/flexscan-login.json` se tiver certeza.
+
 ### 1.15 Conector Flexscan (mínimo útil, SPEC-FLEXSCAN-v1)
 
 O conector de cada uid (PnT ou Flexscan) vem da **habilitação**; o `Robo.CORSeqId` do GQ é só a

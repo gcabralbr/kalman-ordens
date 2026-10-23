@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -77,12 +78,13 @@ type cliente struct {
 	logando  chan struct{} // login em curso (nil: nenhum)
 	errLogin error
 
-	taxa *balde
+	taxa   *balde
+	guarda *guardaLogin
 }
 
-func novoCliente(url, usuario, senha string, timeout time.Duration, reqPorS float64, rajada int) *cliente {
+func novoCliente(url, usuario, senha string, timeout time.Duration, reqPorS float64, rajada int, guarda *guardaLogin) *cliente {
 	return &cliente{url: strings.TrimRight(url, "/"), usuario: usuario, senha: senha,
-		http: &http.Client{Timeout: timeout}, taxa: novoBalde(reqPorS, rajada)}
+		http: &http.Client{Timeout: timeout}, taxa: novoBalde(reqPorS, rajada), guarda: guarda}
 }
 
 // ErroLogin: o login falhou; Definitivo = não adianta tentar de novo sem intervenção (senha
@@ -99,8 +101,9 @@ func (e *ErroLogin) Error() string { return e.Motivo }
 // portal, 3433 vários usuários, 3434 acesso suspeito.
 var loginDefinitivo = map[int]bool{3400: true, 3401: true, 3402: true, 3403: true, 3404: true, 3405: true, 3421: true, 3433: true, 3434: true}
 
-// login: um por vez; quem chega durante um login espera o resultado dele.
-func (c *cliente) login(ctx context.Context) error {
+// login: um por vez; quem chega durante um login espera o resultado dele. Cada ida à rede passa pela
+// guarda (limite entre restarts) e vai para o log com o motivo (partida, renovação, 401...).
+func (c *cliente) login(ctx context.Context, motivo string) error {
 	c.mu.Lock()
 	if ch := c.logando; ch != nil {
 		c.mu.Unlock()
@@ -117,7 +120,21 @@ func (c *cliente) login(ctx context.Context) error {
 	c.logando = ch
 	c.mu.Unlock()
 
-	tok, exp, err := c.fazerLogin(ctx)
+	var tok string
+	var exp time.Time
+	var err error
+	if e := c.guarda.pode(time.Now()); e != nil {
+		err = e
+		slog.Warn("flexscan: login não tentado", "motivo", motivo, "porque", e.Motivo)
+	} else {
+		tok, exp, err = c.fazerLogin(ctx)
+		c.guarda.resultado(err, time.Now())
+		if err != nil {
+			slog.Warn("flexscan: login recusado", "motivo", motivo, "usuario", c.usuario, "erro", err)
+		} else {
+			slog.Info("flexscan: login", "motivo", motivo, "usuario", c.usuario, "expira", exp)
+		}
+	}
 
 	c.mu.Lock()
 	if err == nil {
@@ -234,7 +251,7 @@ func (c *cliente) pedir(ctx context.Context, metodo, caminho string, corpo any) 
 		c.taxa.esperar()
 		tok := c.tokenAtual()
 		if tok == "" {
-			if err := c.login(ctx); err != nil {
+			if err := c.login(ctx, "sem token"); err != nil {
 				return Resposta{Status: http.StatusUnauthorized, Erro: err}
 			}
 			tok = c.tokenAtual()
@@ -244,7 +261,7 @@ func (c *cliente) pedir(ctx context.Context, metodo, caminho string, corpo any) 
 			return r
 		}
 		c.esquecerToken(tok)
-		if err := c.login(ctx); err != nil {
+		if err := c.login(ctx, "401"); err != nil {
 			return Resposta{Status: http.StatusUnauthorized, Erro: err}
 		}
 	}

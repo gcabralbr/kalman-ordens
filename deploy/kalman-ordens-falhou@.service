@@ -1,0 +1,16 @@
+[Unit]
+Description=kalman — alerta: %i desistiu de subir (StartLimitBurst ou erro sem reinício)
+Documentation=file:///opt/kalman-ordens/LEIA.md
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+# lê o journal da unidade que falhou
+SupplementaryGroups=systemd-journal
+EnvironmentFile=-/etc/kalman-ordens/disco.env
+ExecStart=/opt/kalman-ordens/servico-falhou.sh %i
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
