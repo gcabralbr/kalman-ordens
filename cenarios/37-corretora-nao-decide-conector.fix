@@ -1,0 +1,29 @@
+cenario 37 A corretora (Robo.CORSeqId) não decide o conector: Capital (88) pelo PnT é aceita; o simulador do GQ (9999) é recusado; FLEXSCAN na habilitação sem FLEXSCAN_URL → CONECTOR_NAO_CONFIGURADO
+hora 2026-10-13 10:00:00
+# SPEC-FLEXSCAN-v1 §14 (23/10, substitui a v1.2 U2): o conector de cada uid vem da habilitação (um
+# só); o CORSeqId vai junto como a corretora (registro e conferência). A mesma corretora pode sair
+# pelo PnT ou pela Flexscan. 9999 é o simulador do GQ: nunca ordem real.
+
+executa INICIO
+
+usuario 7 hml {"Robo":{"CORSeqId":9999,"CCONroConta":"12345"}}
+entrada 3700 C
+resposta aceito=false codigo=DESTINO_INVALIDO
+alerta USUARIO_CONFIG
+nada
+
+# conector FLEXSCAN numa instância sem FLEXSCAN_URL
+usuario 7 hml {"Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+habilita 7 conectores=flexscan
+entrada 3701 C
+resposta aceito=false codigo=CONECTOR_NAO_CONFIGURADO
+nada
+
+# Capital (88) pelo PnT (habilitação PNT): aceita, com a corretora gravada na operação
+usuario 7 hml {"Robo":{"CORSeqId":88,"CCONroConta":"12345"}}
+habilita 7
+entrada 3702 C
+resposta aceito=true
+recebe 35=D 11=KM-E-3702-1 1=12345 116=12345 55=WINZ26 847=1031
+http GET /ordens/3702
+resposta destino=88 conector=PNT conta=12345

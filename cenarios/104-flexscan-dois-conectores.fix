@@ -1,20 +1,20 @@
-cenario 104 Flexscan e PnT juntos: limites globais somados; PnT sem sessão não recusa a Flexscan; conector fora da habilitação → DESTINO_NAO_HABILITADO
+cenario 104 Flexscan e PnT juntos: limites globais somados; PnT sem sessão não recusa a Flexscan; habilitação com dois conectores → CONECTOR_AMBIGUO
 hora 2026-10-23 11:50:00
-# SPEC-FLEXSCAN-v1 §2 item 1 e §3.2. O uid 7 vai pelo PnT (85), o 8 pela Flexscan (88); o 9 escolheu
-# a Flexscan no GQ mas a habilitação dele é só do PnT.
+# SPEC-FLEXSCAN-v1 §14. O conector vem da habilitação: o uid 7 vai pelo PnT, o 8 pela Flexscan; o 9
+# está habilitado nos dois (sem regra para escolher: recusado).
 config FLEXSCAN_URL=falso
 config LIMITE_INTERVALO_ENTRADAS_S=0
 config LIMITE_ENTRADAS_MIN=10
 usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
 habilita 8 conectores=flexscan
 usuario 9 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
-habilita 9
+habilita 9 conectores=pnt,flexscan
 
 executa INICIO
 
-# conector fora da habilitação
+# dois conectores na habilitação
 entrada 2901 C uid=9
-resposta aceito=false codigo=DESTINO_NAO_HABILITADO
+resposta aceito=false codigo=CONECTOR_AMBIGUO
 flx_nada
 
 # posição 1 pela Flexscan; o limite global (LIMITE_POSICAO_MAX=1) vale para o PnT também

@@ -178,12 +178,12 @@ func (r *MariaDB) SalvarOperacao(o *dominio.Operacao) error {
 	pnl := o.PnL.String()
 	if o.ID == 0 {
 		o.Modulo = modulo(o.Modulo) // o padrão da coluna
-		res, err := r.db.Exec(`INSERT INTO kalmanordemoperacao (data, modulo, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida,
+		res, err := r.db.Exec(`INSERT INTO kalmanordemoperacao (data, modulo, operacao_id, uid, conta, destino, conector, simbolo, lado, qtd_pedida,
 			stop_pts, stop_ajustado, estado, motivo_entrada, ts_decisao, motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts,
 			encerrou_entrada, contador_n, pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, sinal_entrada, sinal_saida,
 			criado_em, atualizado_em)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(o.Conta), o.Destino, nulo(o.Simbolo), o.Lado.Letra(), o.QtdPedida, o.StopPts, nuloInt(o.StopAjustado), string(o.Estado),
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(o.Conta), o.Destino, dominio.ConectorDe(o.Conector), nulo(o.Simbolo), o.Lado.Letra(), o.QtdPedida, o.StopPts, nuloInt(o.StopAjustado), string(o.Estado),
 			nulo(o.MotivoEntrada), nulo(o.TsDecisao), nulo(o.MotivoSaida), nulo(o.OrigemSaida), utc(o.SaidaPedidaEm),
 			o.Divergente, pnl, o.EncerrouEntrada, string(cn), nulo(o.PedidoEntrada), nulo(o.RespostaEntrada),
 			nulo(o.PedidoSaida), nulo(o.RespostaSaida), rajadaSQL(o.SinalEntrada), rajadaSQL(o.SinalSaida), utc(o.CriadaEm), agora)
@@ -323,7 +323,7 @@ func (r *MariaDB) GravarEstado(k, v string, em time.Time) error {
 }
 
 func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem, error) {
-	rows, err := r.db.Query(`SELECT id, data, modulo, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida, stop_pts, stop_ajustado, estado, motivo_entrada, ts_decisao,
+	rows, err := r.db.Query(`SELECT id, data, modulo, operacao_id, uid, conta, destino, conector, simbolo, lado, qtd_pedida, stop_pts, stop_ajustado, estado, motivo_entrada, ts_decisao,
 		motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts, encerrou_entrada, contador_n, pedido_entrada,
 		resposta_entrada, pedido_saida, resposta_saida, sinal_entrada, sinal_saida, criado_em FROM kalmanordemoperacao WHERE data=? ORDER BY id`, data)
 	if err != nil {
@@ -333,18 +333,18 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 	for rows.Next() {
 		var o dominio.Operacao
 		var d time.Time
-		var lado, estado, cn string
+		var lado, estado, cn, conector string
 		var me, ts, ms, os, pe, re, ps, rs, pnl, conta, simb, se, ss sql.NullString
 		var dest sql.NullInt64
 		var sp sql.NullTime
 		var sa sql.NullInt64
-		if err := rows.Scan(&o.ID, &d, &o.Modulo, &o.OperacaoID, &o.UID, &conta, &dest, &simb, &lado, &o.QtdPedida, &o.StopPts, &sa, &estado, &me, &ts, &ms, &os,
+		if err := rows.Scan(&o.ID, &d, &o.Modulo, &o.OperacaoID, &o.UID, &conta, &dest, &conector, &simb, &lado, &o.QtdPedida, &o.StopPts, &sa, &estado, &me, &ts, &ms, &os,
 			&sp, &o.Divergente, &pnl, &o.EncerrouEntrada, &cn, &pe, &re, &ps, &rs, &se, &ss, &o.CriadaEm); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
 		o.Data = d.Format("2006-01-02")
-		o.Conta, o.Destino, o.Simbolo = conta.String, int(dest.Int64), simb.String
+		o.Conta, o.Destino, o.Simbolo, o.Conector = conta.String, int(dest.Int64), simb.String, conector
 		o.StopAjustado = sa.Int64
 		o.Lado, _ = dominio.LadoDaLetra(lado)
 		o.Estado = dominio.EstadoOperacao(estado)

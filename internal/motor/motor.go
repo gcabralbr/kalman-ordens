@@ -169,7 +169,7 @@ func (m *Motor) divergenteOp(op *operacao) bool {
 }
 
 // conector da operação (SPEC-FLEXSCAN-v1): o do destino congelado na entrada.
-func (op *operacao) conector() string { return dominio.ConectorDoDestino(op.Destino) }
+func (op *operacao) conector() string { return dominio.ConectorDe(op.Conector) }
 
 // envioDo: a sessão do conector (nil = não configurada).
 func (m *Motor) envioDo(con string) Envio {

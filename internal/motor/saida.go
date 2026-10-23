@@ -440,15 +440,15 @@ func (m *Motor) conferirConta(op *operacao) {
 		return
 	}
 	chave := chaveOp("CONTA_ALTERADA", op)
-	if f == nil && r.Conta == op.Conta && r.Destino == op.Destino {
+	if f == nil && r.Conta == op.Conta && r.Destino == op.Destino && r.Conector == op.conector() {
 		m.al.Resolver(chave)
 		return
 	}
-	agora := r.Conta
+	agora := fmt.Sprintf("%s (destino %d, conector %s)", r.Conta, r.Destino, r.Conector)
 	if f != nil {
 		agora = f.Codigo + " (" + f.Motivo + ")"
 	}
 	m.al.Emitir("CONTA_ALTERADA_COM_POSICAO", chave,
-		fmt.Sprintf("a configuração do uid %d no GQ mudou com posição %d aberta (operação %d): agora %s; a posição segue pela conta %s (destino %d)",
-			op.UID, op.posicao(), op.OperacaoID, agora, op.Conta, op.Destino), op.OperacaoID)
+		fmt.Sprintf("a configuração do uid %d no GQ mudou com posição %d aberta (operação %d): agora %s; a posição segue pela conta %s (destino %d, conector %s)",
+			op.UID, op.posicao(), op.OperacaoID, agora, op.Conta, op.Destino, op.conector()), op.OperacaoID)
 }

@@ -256,7 +256,7 @@ func TestResultadoDoDiaAgregado(t *testing.T) {
 		t.Fatalf("sem preço: %s", got)
 	}
 	// SPEC-FLEXSCAN-v1: a operação da Flexscan (destino 88) é avaliada pelo preço dela
-	m.ops[1].Destino = dominio.DestinoFlexscan
+	m.ops[1].Conector = dominio.ConectorFlexscan
 	m.versaoFills++
 	pnt, flx := decimal.RequireFromString("130500"), decimal.RequireFromString("131500")
 	// = tudo a 130500 + (131500 − 130500) × a posição da operação da Flexscan

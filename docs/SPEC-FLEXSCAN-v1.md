@@ -474,3 +474,25 @@ gatilho mexido), 98 (corrida stop × DELETE), 99 (POST "não sei"), 100 (401, lo
 desconhecida), 104 (dois conectores, limites somados, `DESTINO_NAO_HABILITADO`). Unidade:
 `internal/flexscan` (leitores sobre os arquivos reais da sondagem, máscara do segredo/senha/token,
 nada de `/algos/commands`, `DELETE /webhooks` ou `remove_previous`).
+
+### 14.1 Corretora × conector (23/10, substitui a U-1 e a §2 item 1)
+
+Na conferência do uid 5725 (BTG no GQ, `CORSeqId` 85, conta `S-1117150`) a premissa "88 = Flexscan"
+se mostrou errada: corretora e conector são independentes (a mesma corretora sai pelo PnT na HML D-1
+ou pela Flexscan no simulador D0; em produção as duas plataformas atendem várias corretoras).
+
+- **O conector de cada uid vem da habilitação** (`-conectores pnt|flexscan`), **um só**; a CLI recusa
+  dois, e uma linha com dois recusa as entradas (`CONECTOR_AMBIGUO`) até haver regra.
+- **O `CORSeqId` é a corretora:** gravado na operação (`destino`) para registro e conferência; aceitas
+  as conhecidas (85 BTG, 88 Capital); 9999 (simulador do GQ) e outras → `DESTINO_INVALIDO`.
+- **A conta segue o conector:** PnT só dígitos; Flexscan até 20 letras, dígitos e hífen (simulador
+  `S-1117150`, Capital em produção `715124`), na HML em `FLEXSCAN_CONTAS_HML`.
+- **A operação grava o conector** (`kalmanordemoperacao.conector`, migração 0011), congelado na
+  entrada como a conta; restart, mass status e saída usam o gravado. Mudança de conector na
+  habilitação com posição aberta entra no `CONTA_ALTERADA_COM_POSICAO`.
+- Sem `FLEXSCAN_URL`, um uid habilitado na Flexscan → `CONECTOR_NAO_CONFIGURADO`. Saíram
+  `DESTINO_NAO_SUPORTADO` e `DESTINO_NAO_HABILITADO`.
+- A conta não é tratada como número em lugar nenhum (texto no FIX, na REST, no banco — `VARCHAR(20)` —,
+  no mass status e nos logs; o lado do Kalman também não converte).
+- Roteiros: 37 (Capital pelo PnT; 9999; Flexscan sem URL), 104 (`CONECTOR_AMBIGUO`), 105 (BTG pelo PnT
+  e BTG pela Flexscan — o 5725 — no caminho completo, com restart).

@@ -149,7 +149,8 @@ type Operacao struct {
 	UID        int
 	// Congelados na entrada (v1.2 U4, S1): proteção e saída usam estes, nunca releem.
 	Conta     string // Robo.CCONroConta do ambiente
-	Destino   int    // Robo.CORSeqId (85)
+	Destino   int    // Robo.CORSeqId: a corretora (85 BTG, 88 Capital...), só registro e conferência
+	Conector  string // PNT ou FLEXSCAN, da habilitação na entrada (vazio = PNT, das operações antigas)
 	Simbolo   string // contrato vigente na entrada
 	Lado      Lado   // da entrada
 	QtdPedida int
@@ -205,8 +206,9 @@ type Habilitacao struct {
 	Habilitado  bool
 	PosicaoMax  int
 	QtdMaxOrdem int
-	// Conectores de execução permitidos ao uid (SPEC-FLEXSCAN-v1 §2 item 1): o destino vem do GQ
-	// (Robo.CORSeqId), mas só vale se o conector dele estiver aqui. Vazio = só o PnT (o de antes).
+	// Conector de execução do uid (SPEC-FLEXSCAN-v1 §14): decide o caminho das ordens; a corretora
+	// (Robo.CORSeqId) não decide. Vazio = PnT (o de antes). Mais de um: entrada recusada
+	// (CONECTOR_AMBIGUO) até haver regra.
 	Conectores []string
 	Por        string // quem alterou (usuário do sistema que rodou a CLI)
 	Motivo     string
@@ -238,37 +240,33 @@ const (
 	ConectorFlexscan = "FLEXSCAN"
 )
 
-// Destinos do GQ (Robo.CORSeqId) com conector.
+// Destinos do GQ (Robo.CORSeqId) conhecidos: a corretora, não o caminho.
 const (
-	DestinoPnT      = 85 // BTG → PnT
-	DestinoFlexscan = 88 // Capital → Flexscan
+	DestinoBTG     = 85
+	DestinoCapital = 88
 )
 
-// ConectorDoDestino: o conector de um destino do GQ. Destino desconhecido (ou 0, das operações
-// anteriores à v1.2) = PnT, o único que existia.
-func ConectorDoDestino(destino int) string {
-	if destino == DestinoFlexscan {
-		return ConectorFlexscan
+// ConectorDe: o conector gravado (vazio, das operações anteriores ao conector, = PnT).
+func ConectorDe(c string) string {
+	if c == "" {
+		return ConectorPnT
 	}
-	return ConectorPnT
+	return c
+}
+
+// ConectorUnico: o conector da habilitação — o único da lista (vazia = PnT). ok=false com mais de um.
+func (h Habilitacao) ConectorUnico() (string, bool) {
+	switch len(h.Conectores) {
+	case 0:
+		return ConectorPnT, true
+	case 1:
+		return h.Conectores[0], true
+	}
+	return "", false
 }
 
 // ConectoresPadrao: a habilitação sem a coluna (ou vazia) vale só para o PnT.
 var ConectoresPadrao = []string{ConectorPnT}
-
-// PermiteConector: o conector está na habilitação (vazia = só o PnT).
-func (h Habilitacao) PermiteConector(c string) bool {
-	cs := h.Conectores
-	if len(cs) == 0 {
-		cs = ConectoresPadrao
-	}
-	for _, x := range cs {
-		if x == c {
-			return true
-		}
-	}
-	return false
-}
 
 // ConectoresTexto: a lista gravada no banco ("PNT", "PNT,FLEXSCAN").
 func (h Habilitacao) ConectoresTexto() string {

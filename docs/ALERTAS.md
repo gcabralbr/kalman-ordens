@@ -58,7 +58,7 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `CONTRATO_VIGENTE` | o ticker do marketdata (contrato vigente) mudou: entradas novas vão no novo (v1.2 S1) | não |
 | `SIMBOLO_DIVERGENTE_COM_POSICAO` | posição aberta num contrato que deixou de ser o vigente (por operação); a 1014 continua, a saída usa o símbolo da posição; resolve ao zerar ou se o ticker voltar | sim |
 | `SIMBOLO_INVALIDO` | o ticker do marketdata não é um contrato de WIN: entrada recusada | não |
-| `USUARIO_CONFIG` | configuração do usuário no GQ inutilizável na entrada: JSON inválido, sem `Robo`, uid sem linha em `acusuario`, destino ≠ 85 e ≠ 88, conta não numérica, `acusuario` ou habilitação ilegíveis | não |
+| `USUARIO_CONFIG` | configuração do usuário no GQ inutilizável na entrada: JSON inválido, sem `Robo`, uid sem linha em `acusuario`, corretora desconhecida ou o simulador do GQ, conta fora da regra do conector, `acusuario` ou habilitação ilegíveis | não |
 | `CONTA_AMBIENTE` | trava cruzada: conta fora de `ORDENS_CONTAS_HML` numa instância HML, ou conta da lista numa instância PRODUCAO; por uid, resolvido na próxima entrada válida dele | sim |
 | `CONTA_ALTERADA_COM_POSICAO` | a conta/destino do usuário no GQ mudou com posição aberta; a posição segue pela conta gravada na entrada; resolve ao zerar ou se voltar | sim |
 | `SAIDA_DIVERGENTE_NAO_EXECUTOU` | saída com ticker divergente não executou no timeout: não repete, decisão humana | sim |
@@ -84,18 +84,18 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `UID_NAO_HABILITADO` | ENTRADA de uid sem habilitação ativa em `kalmanordemusuario` (só a CLI altera) | não | — |
 | `CONFIG_USUARIO_INDISPONIVEL` | `acusuario` ou a habilitação ilegíveis (banco) | não | `USUARIO_CONFIG` |
 | `CONFIG_USUARIO_INVALIDA` | JSON do ambiente inválido, sem `Robo.CORSeqId`, ou uid sem linha em `acusuario` | não | `USUARIO_CONFIG` |
-| `DESTINO_NAO_SUPORTADO` | `Robo.CORSeqId` = 88 (Capital → Flexscan) numa instância sem `FLEXSCAN_URL` | não | — |
-| `DESTINO_NAO_HABILITADO` | (SPEC-FLEXSCAN-v1) o conector do destino do GQ (85 → PNT, 88 → FLEXSCAN) fora dos `conectores` da habilitação do uid | não | — |
-| `DESTINO_INVALIDO` | `Robo.CORSeqId` = 9999 (simulador do GQ) ou outro ≠ 85 e ≠ 88 | não | `USUARIO_CONFIG` |
-| `CONTA_INVALIDA` | `Robo.CCONroConta` ausente; no PnT, não só dígitos (o simulador usa `QUANT`); na Flexscan, fora de letras, dígitos e hífen | não | `USUARIO_CONFIG` |
-| `CONTA_AMBIENTE` | trava cruzada (`ORDENS_AMBIENTE` × `ORDENS_CONTAS_HML`, ou `FLEXSCAN_CONTAS_HML` no destino 88) | não | `CONTA_AMBIENTE` (crítico) |
+| `CONECTOR_AMBIGUO` | (SPEC-FLEXSCAN-v1 §14) a habilitação do uid lista mais de um conector: um por uid até haver regra | não | — |
+| `CONECTOR_NAO_CONFIGURADO` | (SPEC-FLEXSCAN-v1 §14) o conector da habilitação é FLEXSCAN e a instância não tem `FLEXSCAN_URL` | não | — |
+| `DESTINO_INVALIDO` | `Robo.CORSeqId` (a corretora) = 9999 (simulador do GQ) ou fora das conhecidas (85 BTG, 88 Capital); a corretora não decide o conector | não | `USUARIO_CONFIG` |
+| `CONTA_INVALIDA` | `Robo.CCONroConta` ausente; pela regra do conector da habilitação: PnT só dígitos (o simulador usa `QUANT`); Flexscan até 20 letras, dígitos e hífen | não | `USUARIO_CONFIG` |
+| `CONTA_AMBIENTE` | trava cruzada (`ORDENS_AMBIENTE` × `ORDENS_CONTAS_HML`; pela Flexscan, `FLEXSCAN_CONTAS_HML`) | não | `CONTA_AMBIENTE` (crítico) |
 | `SIMBOLO_INVALIDO` | ticker do marketdata não é contrato de WIN | não | `SIMBOLO_INVALIDO` |
 | `CAMPO_INVALIDO` | campo ausente ou inválido; SAIDA com uid diferente do da operação | não | — |
 | `SEM_STOP` | ENTRADA sem `stop_pts` | não | — |
 | `DUPLICADA` | `operacao_id` (e papel) já recebido | não | `DUPLICADA_DIFERENTE` se o conteúdo difere |
 | `PARADA` | serviço em parada | não | — |
 | `DIVERGENTE` | estado divergente | não | — |
-| `SEM_SESSAO` | sessão FIX não logada; no destino 88, conector Flexscan sem token | não | — |
+| `SEM_SESSAO` | sessão FIX não logada; pela Flexscan, conector sem token | não | — |
 | `PNT_BOLSA_INDISPONIVEL` | disjuntor de bolsa indisponível aberto, ou a bolsa voltou há menos de `DISJUNTOR_ESTAVEL_S` sem rejeição (v1.10 §9) | não | — |
 | `CONCILIANDO` | conciliação do logon em andamento | não | — |
 | `SEM_CONFIRMACAO` | há ordem sem confirmação do PnT | não | — |

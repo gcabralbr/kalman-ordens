@@ -1,0 +1,73 @@
+cenario 105 A mesma corretora pelos dois conectores: BTG pelo PnT (uid 7) e BTG pela Flexscan (uid 5725, conta S-1117150) no caminho completo — entrada, proteção, TRSP, restart (mass status da conta), saída
+hora 2026-10-23 12:00:00
+# SPEC-FLEXSCAN-v1 §14 (23/10). O conector vem da habilitação; o Robo.CORSeqId (85, BTG) é só a
+# corretora. A conta segue o conector: pela Flexscan, letras, dígitos e hífen (apisim S-1117150), na
+# HML presente em FLEXSCAN_CONTAS_HML; pelo PnT, só dígitos.
+config FLEXSCAN_URL=falso
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_POSICAO_MAX=2
+usuario 5725 hml {"Robo":{"CORSeqId":85,"CCONroConta":"S-1117150"}}
+habilita 5725 conectores=flexscan
+usuario 11 hml {"Robo":{"CORSeqId":85,"CCONroConta":"S-1117150"}}
+habilita 11
+
+executa INICIO
+
+# a conta da Flexscan com o conector PnT: regra do PnT
+entrada 3000 C uid=11
+resposta aceito=false codigo=CONTA_INVALIDA
+flx_nada
+nada
+
+# BTG pelo PnT (uid 7, conta 12345)
+entrada 3001 C
+resposta aceito=true
+recebe 35=D 11=KM-E-3001-1 1=12345 55=WINZ26 847=1031
+http GET /ordens/3001
+resposta destino=85 conector=PNT conta=12345
+# (o PnT recusa: o resto do roteiro é só a Flexscan)
+envia @ER 11=KM-E-3001-1 37=dsa.3001 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="Insufficient margin"
+evento ENTRADA_ENCERRADA operacao_id=3001 qtd_final=0
+flx_nada
+
+# BTG pela Flexscan (uid 5725, conta S-1117150)
+entrada 3002 C uid=5725
+resposta aceito=true
+flx_recebe POST name=KM-E-3002-1 qtty=1 ordType=2 price=130020 account=S-1117150 exchange=XBMF id=>E
+nada
+flx_executa $E preco=130010
+flx_webhook $E
+evento ENTRADA_EXECUTADA operacao_id=3002 qtd=1 preco=130010 uid=5725
+flx_recebe POST name=KM-P-3002-1 qtty=1 ordType=4 stopPrice=129510 price=129410 account=S-1117150 id=>P
+evento PROTEGIDA operacao_id=3002 preco_stop=129510 preco_limite=129410 qtd=1
+http GET /ordens/3002
+resposta destino=85 conector=FLEXSCAN conta=S-1117150 estado=PROTEGIDA uid=5725
+
+# TRSP
+stop 3002 preco=129800 uid=5725
+resposta aceito=true situacao=ENVIADO
+flx_recebe PUT id=$P stopPrice=129800 price=129700
+evento PROTECAO_AJUSTADA operacao_id=3002 preco_stop=129800
+
+# restart: o conector gravado na operação; o mass status pergunta a S-1117150 pela Flexscan
+reinicia_servico
+aguarda_logon
+avanca 3s
+saude conciliando=false divergente=false posicao_por_conector.FLEXSCAN=1
+http GET /ordens/3002
+resposta conector=FLEXSCAN conta=S-1117150 estado=PROTEGIDA
+flx_nada
+
+# saída: DELETE + limite na mesma conta
+preco bid=130100 ask=130105 preco=130100
+saida 3002 V SINAL_OPOSTO uid=5725
+resposta aceito=true
+flx_recebe DELETE id=$P
+flx_recebe POST name=KM-S-3002-1 side=2 ordType=2 price=130050 account=S-1117150 exchange=XBMF id=>S
+flx_executa $S preco=130100
+flx_webhook $S
+evento ZERADA operacao_id=3002 preco_medio_saida=130100 pnl_pts=90 origem=GESTOR
+http GET /ordens/3002
+resposta conta=S-1117150 conector=FLEXSCAN estado=ZERADA
+flx_nada

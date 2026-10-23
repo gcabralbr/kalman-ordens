@@ -68,11 +68,8 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if r != nil {
 		return nil, r
 	}
-	// SPEC-FLEXSCAN-v1: o conector do destino tem de estar na habilitação do uid, ter sessão e (PnT)
-	// o disjuntor de bolsa fechado
-	if !hab.PermiteConector(conta.Conector) {
-		return nil, simples("DESTINO_NAO_HABILITADO", fmt.Sprintf("uid %d: conector %s fora da habilitação (%s)", *p.UID, conta.Conector, hab.ConectoresTexto()))
-	}
+	// SPEC-FLEXSCAN-v1 §14: o conector (da habilitação) tem de ter sessão e, no PnT, o disjuntor de
+	// bolsa fechado
 	if conta.Conector == dominio.ConectorPnT {
 		if r := m.bolsaRecusaEntrada(); r != nil {
 			return nil, r
@@ -100,7 +97,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 
 	agora := m.agora()
 	op := &operacao{Operacao: dominio.Operacao{
-		ID: m.novoIDOperacao(), Data: m.dia, Modulo: p.modulo(), OperacaoID: *p.OperacaoID, UID: *p.UID, Conta: conta.Conta, Destino: conta.Destino, Simbolo: l.Ticker,
+		ID: m.novoIDOperacao(), Data: m.dia, Modulo: p.modulo(), OperacaoID: *p.OperacaoID, UID: *p.UID, Conta: conta.Conta, Destino: conta.Destino, Conector: conta.Conector, Simbolo: l.Ticker,
 		Lado: lado, QtdPedida: *p.Qtd, StopPts: *p.StopPts,
 		Estado: dominio.Entrando, MotivoEntrada: p.Motivo, TsDecisao: p.TsDecisao, CriadaEm: agora,
 		ContadorN: map[string]int{},
@@ -225,7 +222,17 @@ func (m *Motor) contaDoUsuario(uid int) (usuario.Resolvido, *usuario.Falha) {
 	if m.p.Ambiente == usuario.Producao {
 		texto = prd
 	}
-	return usuario.ResolverCom(usuario.Regras{Ambiente: m.p.Ambiente, ContasHML: m.p.ContasHML, ContasHMLFlx: m.p.ContasHMLFlx, Flexscan: m.p.Flexscan}, texto)
+	// SPEC-FLEXSCAN-v1 §14: o conector vem da habilitação (um só); a corretora (CORSeqId) não decide
+	h, _, err := m.habilitacaoDo(uid)
+	if err != nil {
+		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONFIG_USUARIO_INDISPONIVEL", Motivo: "habilitação ilegível: " + err.Error(), Alerta: "USUARIO_CONFIG"}
+	}
+	con, ok := h.ConectorUnico()
+	if !ok {
+		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONECTOR_AMBIGUO",
+			Motivo: fmt.Sprintf("uid %d habilitado em mais de um conector (%s): um conector por uid ate haver regra (kalman-ordens usuario habilitar -conectores pnt|flexscan)", uid, h.ConectoresTexto())}
+	}
+	return usuario.ResolverCom(usuario.Regras{Ambiente: m.p.Ambiente, ContasHML: m.p.ContasHML, ContasHMLFlx: m.p.ContasHMLFlx, Flexscan: m.p.Flexscan}, texto, con)
 }
 
 // contaParaEntrada: contaDoUsuario com os alertas da entrada. A trava cruzada (CONTA_AMBIENTE) é

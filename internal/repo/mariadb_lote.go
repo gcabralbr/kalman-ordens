@@ -39,14 +39,14 @@ func inserir(tx *sql.Tx, cabeca string, ncol int, linhas [][]any, sufixo string)
 	return nil
 }
 
-const colunasOp = `id, data, modulo, operacao_id, uid, conta, destino, simbolo, lado, qtd_pedida, stop_pts, stop_ajustado, estado,
+const colunasOp = `id, data, modulo, operacao_id, uid, conta, destino, conector, simbolo, lado, qtd_pedida, stop_pts, stop_ajustado, estado,
 	motivo_entrada, ts_decisao, motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts, encerrou_entrada, contador_n,
 	pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, sinal_entrada, sinal_saida, criado_em, atualizado_em`
 
 func linhaOp(o dominio.Operacao, agora time.Time) []any {
 	cn, _ := json.Marshal(o.ContadorN)
 	// v1.13: textos cortados ao tamanho da coluna (o 1406 não trava mais o lote; HML 19/10 10:41)
-	return []any{o.ID, o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(cortar(o.Conta, 20)), o.Destino, nulo(cortar(o.Simbolo, 20)), o.Lado.Letra(), o.QtdPedida,
+	return []any{o.ID, o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(cortar(o.Conta, 20)), o.Destino, dominio.ConectorDe(o.Conector), nulo(cortar(o.Simbolo, 20)), o.Lado.Letra(), o.QtdPedida,
 		o.StopPts, nuloInt(o.StopAjustado), string(o.Estado), nulo(cortar(o.MotivoEntrada, 20)), nulo(cortar(o.TsDecisao, 40)), nulo(cortar(o.MotivoSaida, 60)),
 		nulo(cortar(o.OrigemSaida, 30)),
 		utc(o.SaidaPedidaEm), o.Divergente, o.PnL.String(), o.EncerrouEntrada, string(cn), nulo(o.PedidoEntrada), nulo(o.RespostaEntrada),

@@ -462,15 +462,18 @@ time", 39=B, 1014 disparada ou terminal) não conta para a regra genérica (rote
 
 ### 1.15 Conector Flexscan (mínimo útil, SPEC-FLEXSCAN-v1)
 
-O destino 88 (`Robo.CORSeqId`, Capital → Flexscan) passa a ser executado pela ponte REST; o resto do
-serviço (limites, travas, alertas, contrato com o Kalman) é o mesmo. Quem decide no teste é a
+O conector de cada uid (PnT ou Flexscan) vem da **habilitação**; o `Robo.CORSeqId` do GQ é só a
+corretora (85 BTG, 88 Capital), gravada na operação. A mesma corretora pode sair pelos dois conectores.
+O resto do serviço (limites, travas, alertas, contrato com o Kalman) é o mesmo. Quem decide no teste é a
 **principal** (mercado de hoje; o simulador da Flexscan roda com o mercado de hoje), não a kalman-hml.
 
-- **Migração 0011** (aplicada pelo `servir`): `conectores` na habilitação; as linhas existentes ficam
-  `PNT` (nada muda para quem já estava habilitado).
+- **Migração 0011** (aplicada pelo `servir`): `conectores` na habilitação e `conector` na operação; as
+  linhas existentes ficam `PNT` (nada muda para quem já estava habilitado).
 - **Habilitação:** `kalman-ordens usuario habilitar -uid N -conectores flexscan -motivo "teste Flex"`
-  (`pnt,flexscan` para os dois); `usuario conferir -uid N` mostra `destino=88 conector=FLEXSCAN
-  conta=S-1117150`. Destino do GQ fora da lista → `DESTINO_NAO_HABILITADO`.
+  (um conector por uid; dois são recusados pela CLI, e uma linha com dois recusa as entradas com
+  `CONECTOR_AMBIGUO`). `usuario conferir -uid N` mostra as duas colunas do GQ e `conector=FLEXSCAN
+  corretora=85 conta=S-1117150`. A conta segue o conector: PnT só dígitos; Flexscan até 20 letras,
+  dígitos e hífen, na HML em `FLEXSCAN_CONTAS_HML`.
 - **`/saude`:** `flexscan` (`logado`, `token_expira`, `webhooks_recebidos`, `ultimo_webhook`,
   `ordens_vivas`, `ultimo_erro`, e com fonte própria `simbolo`/`fonte`), `posicao_por_conector`, e
   `conector` em cada ordem viva. `sessao_logada` continua sendo a do PnT; o desligamento do
@@ -507,8 +510,9 @@ Firewall: a 9098 em `172.16.110.53` só para o nginx que repassa o webhook. O ng
 200 a não-POST (o cadastro do webhook na Flexscan exige) e repassando só POST; o caminho chega sem o
 prefixo `/kalman-ordens`.
 
-Desligar a Flexscan sem tirar o binário: apagar `FLEXSCAN_URL` do `service.env` e reiniciar (o
-destino 88 volta a `DESTINO_NAO_SUPORTADO`; as ordens que estiverem na Flexscan ficam lá — zerar antes).
+Desligar a Flexscan sem tirar o binário: apagar `FLEXSCAN_URL` do `service.env` e reiniciar (os uids
+habilitados na Flexscan passam a `CONECTOR_NAO_CONFIGURADO`; as ordens que estiverem na Flexscan ficam
+lá — zerar antes).
 
 ### 1.11 Emergência KHML (instância HML do Kalman, módulo `KHML`)
 

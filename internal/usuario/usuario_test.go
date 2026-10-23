@@ -1,6 +1,9 @@
 package usuario
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Exemplo real (HML, usuário 1450), com o resto do JSON que o serviço ignora.
 const real1450 = `{"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"99999","Outro":"x"},"Tela":{"a":1}}`
@@ -15,7 +18,7 @@ func TestResolver(t *testing.T) {
 		{"conta de HML em PRODUCAO", Producao, real1450, "", "CONTA_AMBIENTE"},
 		{"conta real em PRODUCAO", Producao, `{"Robo":{"CORSeqId":85,"CCONroConta":"1234567"}}`, "1234567", ""},
 		{"conta real em HML", HML, `{"Robo":{"CORSeqId":85,"CCONroConta":"1234567"}}`, "", "CONTA_AMBIENTE"},
-		{"Capital → Flexscan", HML, `{"Robo":{"CORSeqId":88,"CCONroConta":"99999"}}`, "", "DESTINO_NAO_SUPORTADO"},
+		{"Capital pelo PnT (a corretora não decide o caminho)", HML, `{"Robo":{"CORSeqId":88,"CCONroConta":"99999"}}`, "99999", ""},
 		{"simulador do GQ", HML, `{"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}`, "", "DESTINO_INVALIDO"},
 		{"destino desconhecido", HML, `{"Robo":{"CORSeqId":7,"CCONroConta":"99999"}}`, "", "DESTINO_INVALIDO"},
 		{"conta não numérica", HML, `{"Robo":{"CORSeqId":85,"CCONroConta":"QUANT"}}`, "", "CONTA_INVALIDA"},
@@ -34,12 +37,9 @@ func TestResolver(t *testing.T) {
 			t.Errorf("%s: falha inesperada %v", c.nome, f)
 		case c.codigo != "" && (f == nil || f.Codigo != c.codigo):
 			t.Errorf("%s: esperava %s, veio %v %+v", c.nome, c.codigo, f, r)
-		case c.codigo == "" && (r.Conta != c.conta || r.Destino != DestinoPnT):
+		case c.codigo == "" && (r.Conta != c.conta || r.Conector != "PNT"):
 			t.Errorf("%s: %+v", c.nome, r)
 		}
-	}
-	if _, f := Resolver(HML, `{"Robo":{"CORSeqId":88,"CCONroConta":"99999"}}`, hml); f.Alerta != "" {
-		t.Error("destino 88: só recusa, sem alerta")
 	}
 	if _, f := Resolver(Producao, real1450, hml); f.Alerta != "CONTA_AMBIENTE" {
 		t.Error("trava cruzada: alerta crítico CONTA_AMBIENTE")
@@ -55,32 +55,47 @@ func TestLista(t *testing.T) {
 	}
 }
 
-// SPEC-FLEXSCAN-v1: destino 88 só com a Flexscan configurada; conta com letra e hífen; trava
-// cruzada pela lista do conector.
+// SPEC-FLEXSCAN-v1 §14: o conector vem da habilitação; a corretora (CORSeqId) só é registrada. A
+// conta segue o conector: PnT só dígitos; Flexscan letras, dígitos e hífen (até 20), na HML presente
+// em FLEXSCAN_CONTAS_HML.
 func TestResolverFlexscan(t *testing.T) {
-	cfg := `{"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}`
 	hml := Regras{Ambiente: HML, ContasHML: []string{"99999"}, ContasHMLFlx: []string{"S-1117150"}, Flexscan: true}
-	r, f := ResolverCom(hml, cfg)
-	if f != nil || r.Conta != "S-1117150" || r.Destino != 88 || r.Conector != "FLEXSCAN" {
-		t.Fatalf("88 em HML: %+v %v", r, f)
+	// o 5725 (23/10): BTG no GQ, pela Flexscan
+	btg := `{"Robo":{"CORSeqId":85,"CCONroConta":"S-1117150"}}`
+	r, f := ResolverCom(hml, btg, "FLEXSCAN")
+	if f != nil || r.Conta != "S-1117150" || r.Destino != 85 || r.Conector != "FLEXSCAN" {
+		t.Fatalf("BTG pela Flexscan: %+v %v", r, f)
 	}
-	if _, f := ResolverCom(Regras{Ambiente: HML, ContasHML: []string{"99999"}}, cfg); f == nil || f.Codigo != "DESTINO_NAO_SUPORTADO" {
-		t.Fatalf("88 sem FLEXSCAN_URL: %v", f)
+	// a mesma conta pelo PnT: regra do PnT
+	if _, f := ResolverCom(hml, btg, "PNT"); f == nil || f.Codigo != "CONTA_INVALIDA" || !strings.Contains(f.Motivo, "conector PNT") {
+		t.Fatalf("conta da Flexscan pelo PnT: %v", f)
 	}
-	if _, f := ResolverCom(Regras{Ambiente: HML, ContasHML: []string{"S-1117150"}, Flexscan: true}, cfg); f == nil || f.Codigo != "CONTA_AMBIENTE" {
-		t.Fatalf("conta Flexscan na lista do PnT, fora da dela: %v", f)
+	// BTG pelo PnT, como sempre
+	if r, f := ResolverCom(hml, `{"Robo":{"CORSeqId":85,"CCONroConta":"99999"}}`, "PNT"); f != nil || r.Conector != "PNT" || r.Destino != 85 {
+		t.Fatalf("BTG pelo PnT: %+v %v", r, f)
 	}
-	if _, f := ResolverCom(Regras{Ambiente: Producao, ContasHMLFlx: []string{"S-1117150"}, Flexscan: true}, cfg); f == nil || f.Codigo != "CONTA_AMBIENTE" {
+	// Capital pela Flexscan em produção: conta numérica
+	if r, f := ResolverCom(Regras{Ambiente: Producao, Flexscan: true}, `{"Robo":{"CORSeqId":88,"CCONroConta":"715124"}}`, "FLEXSCAN"); f != nil || r.Conta != "715124" || r.Destino != 88 {
+		t.Fatalf("Capital em produção: %+v %v", r, f)
+	}
+	if _, f := ResolverCom(Regras{Ambiente: HML, ContasHML: []string{"99999"}}, btg, "FLEXSCAN"); f == nil || f.Codigo != "CONECTOR_NAO_CONFIGURADO" {
+		t.Fatalf("Flexscan sem FLEXSCAN_URL: %v", f)
+	}
+	if _, f := ResolverCom(Regras{Ambiente: HML, ContasHML: []string{"S-1117150"}, Flexscan: true}, btg, "FLEXSCAN"); f == nil || f.Codigo != "CONTA_AMBIENTE" {
+		t.Fatalf("conta na lista do PnT e fora da da Flexscan: %v", f)
+	}
+	if _, f := ResolverCom(Regras{Ambiente: Producao, ContasHMLFlx: []string{"S-1117150"}, Flexscan: true}, btg, "FLEXSCAN"); f == nil || f.Codigo != "CONTA_AMBIENTE" {
 		t.Fatalf("conta de HML da Flexscan em PRODUCAO: %v", f)
 	}
-	if _, f := ResolverCom(hml, `{"Robo":{"CORSeqId":88,"CCONroConta":"S 11/7"}}`); f == nil || f.Codigo != "CONTA_INVALIDA" {
-		t.Fatalf("conta Flexscan inválida: %v", f)
+	for _, conta := range []string{"S 11/7", "S-123456789012345678901", ""} {
+		if _, f := ResolverCom(hml, `{"Robo":{"CORSeqId":85,"CCONroConta":"`+conta+`"}}`, "FLEXSCAN"); f == nil || f.Codigo != "CONTA_INVALIDA" {
+			t.Fatalf("conta Flexscan %q: %v", conta, f)
+		}
 	}
-	if _, f := ResolverCom(hml, `{"Robo":{"CORSeqId":85,"CCONroConta":"S-1117150"}}`); f == nil || f.Codigo != "CONTA_INVALIDA" {
-		t.Fatalf("conta com letra no PnT: %v", f)
+	if _, f := ResolverCom(hml, `{"Robo":{"CORSeqId":9999,"CCONroConta":"S-1117150"}}`, "FLEXSCAN"); f == nil || f.Codigo != "DESTINO_INVALIDO" {
+		t.Fatalf("simulador do GQ pela Flexscan: %v", f)
 	}
-	r, f = ResolverCom(hml, `{"Robo":{"CORSeqId":85,"CCONroConta":"99999"}}`)
-	if f != nil || r.Conector != "PNT" {
-		t.Fatalf("85 com a Flexscan configurada: %+v %v", r, f)
+	if got := Lido(btg); got != `CORSeqId=85 CCONroConta="S-1117150"` {
+		t.Fatalf("Lido: %s", got)
 	}
 }
