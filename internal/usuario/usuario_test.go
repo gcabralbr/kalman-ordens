@@ -1,6 +1,7 @@
 package usuario
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -95,7 +96,48 @@ func TestResolverFlexscan(t *testing.T) {
 	if _, f := ResolverCom(hml, `{"Robo":{"CORSeqId":9999,"CCONroConta":"S-1117150"}}`, "FLEXSCAN"); f == nil || f.Codigo != "DESTINO_INVALIDO" {
 		t.Fatalf("simulador do GQ pela Flexscan: %v", f)
 	}
-	if got := Lido(btg); got != `CORSeqId=85 CCONroConta="S-1117150"` {
+	if got := Lido(btg); got != `CORSeqId=85 Conector=- CCONroConta="S-1117150"` {
 		t.Fatalf("Lido: %s", got)
+	}
+}
+
+// 23/10: o JSON real do 5725 (o GX gera Robo.Conector; a conta de futuros no grupo Futuros, que vale
+// para WIN), com as credenciais do Robo, que nunca aparecem em recusa nem no Lido.
+const real5725 = `{"Robo":{"CiaCodCIa":1,"UsuCodUsuario":"5725","CORSeqId":85,"CCONroConta":"S-1117150","Conector":"FLEXSCAN",` +
+	`"CCOTxtUser":"usuario-secreto-x","StrSenhaRobo":"senha-secreta-y"},"Futuros":{"CCONroContaFut":"S-1117150"}}`
+
+func TestContaDeFuturosEConectorDoGQ(t *testing.T) {
+	hml := Regras{Ambiente: HML, ContasHML: []string{"99999"}, ContasHMLFlx: []string{"S-1117150", "S-2"}, Flexscan: true}
+	r, f := ResolverCom(hml, real5725, "FLEXSCAN")
+	if f != nil || r.Conta != "S-1117150" || r.OrigemConta != "Futuros.CCONroContaFut" || r.Conector != "FLEXSCAN" {
+		t.Fatalf("5725: %+v %v", r, f)
+	}
+	// as duas contas diferentes: vale a de futuros
+	dif := `{"Robo":{"CORSeqId":85,"CCONroConta":"S-1","Conector":"FLEXSCAN"},"Futuros":{"CCONroContaFut":"S-2"}}`
+	if r, f := ResolverCom(hml, dif, "FLEXSCAN"); f != nil || r.Conta != "S-2" {
+		t.Fatalf("contas diferentes: %+v %v", r, f)
+	}
+	// sem o grupo Futuros (ou vazia): a do Robo, como antes
+	for _, j := range []string{`{"Robo":{"CORSeqId":85,"CCONroConta":"99999"}}`, `{"Robo":{"CORSeqId":85,"CCONroConta":"99999"},"Futuros":{"CCONroContaFut":""}}`} {
+		if r, f := ResolverCom(hml, j, "PNT"); f != nil || r.Conta != "99999" || r.OrigemConta != "Robo.CCONroConta" {
+			t.Fatalf("sem futuros %s: %+v %v", j, r, f)
+		}
+	}
+	// o conector do GQ diferente do da habilitação
+	if _, f := ResolverCom(hml, real5725, "PNT"); f == nil || f.Codigo != "CONECTOR_DIVERGENTE" {
+		t.Fatalf("conector divergente: %v", f)
+	}
+	// credenciais fora de toda recusa e do Lido
+	casos := []string{real5725, strings.Replace(real5725, `"CORSeqId":85`, `"CORSeqId":9999`, 1),
+		strings.Replace(real5725, `"CCONroContaFut":"S-1117150"`, `"CCONroContaFut":"S 1"`, 1), real5725[:len(real5725)-5]}
+	for _, j := range casos {
+		for _, con := range []string{"PNT", "FLEXSCAN"} {
+			_, f := ResolverCom(hml, j, con)
+			for _, txt := range []string{Lido(j), fmt.Sprint(f)} {
+				if strings.Contains(txt, "secret") {
+					t.Fatalf("credencial no texto: %s", txt)
+				}
+			}
+		}
 	}
 }

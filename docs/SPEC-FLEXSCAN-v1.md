@@ -496,3 +496,19 @@ ou pela Flexscan no simulador D0; em produção as duas plataformas atendem vár
   no mass status e nos logs; o lado do Kalman também não converte).
 - Roteiros: 37 (Capital pelo PnT; 9999; Flexscan sem URL), 104 (`CONECTOR_AMBIGUO`), 105 (BTG pelo PnT
   e BTG pela Flexscan — o 5725 — no caminho completo, com restart).
+
+### 14.2 Robo.Conector e a conta de futuros (23/10)
+
+O GX passou a gerar `Robo.Conector` e o usutxtconfig traz duas contas (`Robo.CCONroConta` e
+`Futuros.CCONroContaFut`).
+
+- **Conta de WIN = `Futuros.CCONroContaFut`** (decisão do usuário: ativo de futuros usa a conta de
+  futuros); diferentes, vale a de futuros. Sem o grupo `Futuros` (ou com ela vazia), a
+  `Robo.CCONroConta`, como antes (os JSONs atuais da HML do PnT). O `usuario conferir` mostra as duas
+  e de onde veio a usada.
+- **`Robo.Conector` é conferência:** a habilitação decide; se o GQ trouxer outro conector, a entrada é
+  recusada (`CONECTOR_DIVERGENTE`, alerta `USUARIO_CONFIG`). Ausente, nada muda.
+- **Credenciais do Robo (`StrSenhaRobo`, `CCOTxtUser`):** o serviço só decodifica os campos que usa
+  (`CORSeqId`, `Conector`, `CCONroConta`, `Futuros.CCONroContaFut`); o JSON fica só no cache em
+  memória, nunca em log, recusa, evento ou banco; erro de JSON sai só com a posição. Teste:
+  `usuario.TestContaDeFuturosEConectorDoGQ`.

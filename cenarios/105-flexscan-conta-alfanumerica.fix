@@ -7,8 +7,12 @@ config FLEXSCAN_URL=falso
 config LIMITE_INTERVALO_ENTRADAS_S=0
 config LIMITE_ENTRADAS_MIN=10
 config LIMITE_POSICAO_MAX=2
-usuario 5725 hml {"Robo":{"CORSeqId":85,"CCONroConta":"S-1117150"}}
+# o JSON como o GX gera (23/10): Robo.Conector e a conta de futuros (a que vale para WIN); credenciais
+# fictícias no Robo (nunca lidas nem gravadas)
+usuario 5725 hml {"Robo":{"CiaCodCIa":1,"UsuCodUsuario":"5725","CORSeqId":85,"CCONroConta":"S-1117150","Conector":"FLEXSCAN","CCOTxtUser":"","StrSenhaRobo":"x"},"Futuros":{"CCONroContaFut":"S-1117150"}}
 habilita 5725 conectores=flexscan
+usuario 12 hml {"Robo":{"CORSeqId":85,"CCONroConta":"12345","Conector":"FLEXSCAN"},"Futuros":{"CCONroContaFut":"12345"}}
+habilita 12
 usuario 11 hml {"Robo":{"CORSeqId":85,"CCONroConta":"S-1117150"}}
 habilita 11
 
@@ -18,6 +22,12 @@ executa INICIO
 entrada 3000 C uid=11
 resposta aceito=false codigo=CONTA_INVALIDA
 flx_nada
+nada
+
+# o GQ diz FLEXSCAN e a habilitação PNT
+entrada 2999 C uid=12
+resposta aceito=false codigo=CONECTOR_DIVERGENTE
+alerta USUARIO_CONFIG
 nada
 
 # BTG pelo PnT (uid 7, conta 12345)

@@ -195,7 +195,7 @@ func conferirUsuario(r *repo.MariaDB, cfg config.Config, uid int, saida io.Write
 		fmt.Fprintf(saida, "%s, conector %s: entradas recusadas (%s): %s\n", usuario.Campo(ambiente), con, f.Codigo, f.Motivo)
 		return nil
 	}
-	fmt.Fprintf(saida, "%s: conector=%s corretora=%d conta=%s\n", usuario.Campo(ambiente), res.Conector, res.Destino, res.Conta)
+	fmt.Fprintf(saida, "%s: conector=%s corretora=%d conta=%s (%s)\n", usuario.Campo(ambiente), res.Conector, res.Destino, res.Conta, res.OrigemConta)
 	return nil
 }
 
