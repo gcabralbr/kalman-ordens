@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"time"
 
-
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/preco"

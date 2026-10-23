@@ -366,9 +366,9 @@ type Motor struct {
 	vigenteFlx        string
 	fonteFlxRuimDesde time.Time
 	fonteFlxMotivo    string
-	al             *alerta.Alertas
-	p0, p1, p2     chan func() // entrada por prioridade (volta.go)
-	fim            chan struct{}
+	al                *alerta.Alertas
+	p0, p1, p2        chan func() // entrada por prioridade (volta.go)
+	fim               chan struct{}
 
 	v              *estadoVolta    // o que a volta acumula até o commit
 	esperandoTaxa  []envioPendente // esperando o limitador de taxa (entradas) ou a próxima volta (maxEnviosPorVolta)
