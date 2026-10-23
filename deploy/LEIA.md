@@ -467,8 +467,9 @@ corretora (85 BTG, 88 Capital), gravada na operação. A mesma corretora pode sa
 O resto do serviço (limites, travas, alertas, contrato com o Kalman) é o mesmo. Quem decide no teste é a
 **principal** (mercado de hoje; o simulador da Flexscan roda com o mercado de hoje), não a kalman-hml.
 
-- **Migração 0011** (aplicada pelo `servir`): `conectores` na habilitação e `conector` na operação; as
-  linhas existentes ficam `PNT` (nada muda para quem já estava habilitado).
+- **Migrações 0011 e 0012** (aplicadas pelo `servir`): `conectores` na habilitação (0011) e
+  `conector` na operação (0012, `IF NOT EXISTS`: a .53 já tinha a 0011 do `77550906a194`, sem a
+  coluna); as linhas existentes ficam `PNT` (nada muda para quem já estava habilitado).
 - **Habilitação:** `kalman-ordens usuario habilitar -uid N -conectores flexscan -motivo "teste Flex"`
   (`pnt,flexscan` permite os dois: o GQ escolhe pelo `Robo.Conector`, que tem de estar na lista —
   senão `CONECTOR_NAO_HABILITADO`; sem `Robo.Conector` no GQ, só com um conector habilitado — senão

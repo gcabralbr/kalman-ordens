@@ -522,3 +522,8 @@ O GX passou a gerar `Robo.Conector` e o usutxtconfig traz duas contas (`Robo.CCO
   (Futuros, com a do Robo na falta) e as credenciais ficam como na §14.2.
 - Roteiros: 104 (`CONECTOR_INDEFINIDO`), 105 (`CONECTOR_NAO_HABILITADO`), 106 (o GQ escolhe entre os
   dois habilitados).
+
+Migração: a coluna `kalmanordemoperacao.conector` saiu da 0011 para a **0012** (`ADD COLUMN IF NOT
+EXISTS`). A .53 instalou em 23/10 o binário `77550906a194` (anterior à §14.1), que aplicou a 0011 sem a
+coluna; as migrações são controladas pelo número, e um binário com a coluna dentro da 0011 a pularia.
+Teste: `repo.TestMigracao0012NoBancoDa53`.
