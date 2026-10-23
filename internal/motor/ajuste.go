@@ -90,7 +90,7 @@ func (m *Motor) ajustarStop(id int64, a AjusteStop) (Resposta, *recusa) {
 	} else {
 		stop = m.gatilhoPorPontos(op, lado, *a.StopPts)
 	}
-	l := m.precos.Ler()
+	l := m.precosDo(op.conector()).Ler()
 	if l.Situacao != preco.OK || l.Ticker != op.Simbolo || l.Bid == nil || l.Ask == nil || l.Idade(m.agora()) > m.p.IdadeMaxPreco {
 		return nil, simples("SEM_PRECO", "sem bid/ask recente de "+op.Simbolo+" para validar o stop")
 	}

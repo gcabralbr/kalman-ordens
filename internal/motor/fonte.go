@@ -45,42 +45,60 @@ func (m *Motor) motivoFonteRuim(l preco.Leitura, agora time.Time) string {
 type detalheFonte interface{ MotivoFonte() string }
 
 func (m *Motor) observarFonte() {
+	m.observarFonteDe(m.precos, "FONTE_DEGRADADA", "", &m.fonteRuimDesde, &m.fonteMotivo)
+	if m.precosFlx != nil {
+		// SPEC-FLEXSCAN-v1: a fonte própria do conector Flexscan (PRECOS_URL_FLEXSCAN), alerta à parte
+		m.observarFonteDe(m.precosFlx, "FONTE_DEGRADADA:FLEXSCAN", "[flexscan] ", &m.fonteFlxRuimDesde, &m.fonteFlxMotivo)
+	}
+}
+
+// observarFonteDe: uma fonte de preço; chave do alerta FONTE_DEGRADADA e prefixo do texto por fonte.
+func (m *Motor) observarFonteDe(f preco.Fonte, chave, prefixo string, ruimDesde *time.Time, motivoFonte *string) {
 	agora := m.agora()
 	h := m.horaDoDia()
 	motivo := ""
 	if h >= m.p.FonteJanelaInicio && h < m.p.FonteJanelaFim {
-		motivo = m.motivoFonteRuim(m.precos.Ler(), agora)
+		motivo = m.motivoFonteRuim(f.Ler(), agora)
 	}
 	if motivo == "" {
-		m.fonteRuimDesde, m.fonteMotivo = time.Time{}, ""
-		m.al.Resolver("FONTE_DEGRADADA")
+		*ruimDesde, *motivoFonte = time.Time{}, ""
+		m.al.Resolver(chave)
 		return
 	}
-	if m.fonteRuimDesde.IsZero() {
-		m.fonteRuimDesde = agora
+	if ruimDesde.IsZero() {
+		*ruimDesde = agora
 	}
-	m.fonteMotivo = motivo
-	if d, ok := m.precos.(detalheFonte); ok {
+	*motivoFonte = motivo
+	if d, ok := f.(detalheFonte); ok {
 		if x := d.MotivoFonte(); x != "" {
-			m.fonteMotivo = motivo + "; fonte: " + x
+			*motivoFonte = motivo + "; fonte: " + x
 		}
 	}
-	if dur := agora.Sub(m.fonteRuimDesde); dur >= m.p.FonteDegradada && !m.al.Ativo("FONTE_DEGRADADA") {
-		m.al.Emitir("FONTE_DEGRADADA", "FONTE_DEGRADADA", fmt.Sprintf("fonte de preco degradada ha %s: %s; entradas recusadas",
-			dur.Truncate(time.Second), m.fonteMotivo), 0)
+	if dur := agora.Sub(*ruimDesde); dur >= m.p.FonteDegradada && !m.al.Ativo(chave) {
+		m.al.Emitir("FONTE_DEGRADADA", chave, fmt.Sprintf("%sfonte de preco degradada ha %s: %s; entradas recusadas", prefixo,
+			dur.Truncate(time.Second), *motivoFonte), 0)
 	}
 }
 
 // saudeFonte: o bloco "fonte" do /saude.
 func (m *Motor) saudeFonte() map[string]any {
+	return m.saudeFonteDe("FONTE_DEGRADADA", m.fonteRuimDesde, m.fonteMotivo)
+}
+
+// saudeFonteFlx: o mesmo bloco para a fonte própria da Flexscan.
+func (m *Motor) saudeFonteFlx() map[string]any {
+	return m.saudeFonteDe("FONTE_DEGRADADA:FLEXSCAN", m.fonteFlxRuimDesde, m.fonteFlxMotivo)
+}
+
+func (m *Motor) saudeFonteDe(chave string, ruimDesde time.Time, motivo string) map[string]any {
 	var desde any
-	if !m.fonteRuimDesde.IsZero() {
-		desde = m.fonteRuimDesde.Format(time.RFC3339)
+	if !ruimDesde.IsZero() {
+		desde = ruimDesde.Format(time.RFC3339)
 	}
 	return map[string]any{
-		"degradada":  m.al.Ativo("FONTE_DEGRADADA"),
+		"degradada":  m.al.Ativo(chave),
 		"ruim_desde": desde,
-		"motivo":     m.fonteMotivo,
+		"motivo":     motivo,
 		"janela":     fmt.Sprintf("%s-%s", hhmm(m.p.FonteJanelaInicio), hhmm(m.p.FonteJanelaFim)),
 	}
 }

@@ -118,6 +118,9 @@ type Parametros struct {
 	Ambiente     string
 	ContasHML    []string
 	ConfereConta time.Duration
+	// SPEC-FLEXSCAN-v1: o conector Flexscan existe (FLEXSCAN_URL) e as contas de HML dele
+	Flexscan     bool
+	ContasHMLFlx []string
 
 	ColarEntrada, FolgaStop, ColarSaida, Tick int64
 	AjusteDegrauMin                           int64
@@ -177,6 +180,8 @@ func (c Config) Parametros() Parametros {
 		Ambiente:         c.Texto("ORDENS_AMBIENTE", ""),
 		ContasHML:        listaContas(c.Texto("ORDENS_CONTAS_HML", "")),
 		ConfereConta:     c.Segundos("CONFERE_CONTA_S", 60),
+		Flexscan:         c.Texto("FLEXSCAN_URL", "") != "",
+		ContasHMLFlx:     listaContas(c.Texto("FLEXSCAN_CONTAS_HML", "")),
 
 		ColarEntrada:            c.Pontos("COLAR_ENTRADA_PTS", 15),
 		FolgaStop:               c.Pontos("FOLGA_STOP_PTS", 100),

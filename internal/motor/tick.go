@@ -27,8 +27,11 @@ func (m *Motor) tick() {
 	agora := m.agora()
 	m.observarPreco()
 	m.observarFonte()
-	logado := m.fix != nil && m.fix.Logado()
-	if !logado && !m.presaDesde.IsZero() && agora.Sub(m.presaDesde) >= m.p.AlertaSessaoPresa {
+	logadoPnT := m.logado(dominio.ConectorPnT)
+	// SPEC-FLEXSCAN-v1: a conciliação e as ações de tempo andam com qualquer conector com sessão;
+	// cada operação só age com o conector dela logado
+	logado := m.algumLogado()
+	if !logadoPnT && !m.presaDesde.IsZero() && agora.Sub(m.presaDesde) >= m.p.AlertaSessaoPresa {
 		m.al.Emitir("SESSAO_PRESA_NO_PNT", "SESSAO_PRESA_NO_PNT", fmt.Sprintf("o PnT recusa o logon há %s (%s): ainda segura a sessão anterior; posição %d, 1014 no PnT; reconectando com espera crescente",
 			agora.Sub(m.presaDesde).Truncate(time.Second), m.presaTexto, m.posicaoTotal()), 0)
 	}
@@ -67,7 +70,7 @@ func (m *Motor) tick() {
 			return
 		}
 		for _, op := range m.ops {
-			if !op.Estado.Final() {
+			if !op.Estado.Final() && m.logado(op.conector()) {
 				m.acoesDeTempo(op, agora)
 			}
 		}
@@ -90,6 +93,7 @@ func (m *Motor) tick() {
 // guarda o último preco de cada ticker; posição num contrato que deixou de ser o vigente →
 // alerta crítico (B5.b), a 1014 continua.
 func (m *Motor) observarPreco() {
+	m.observarPrecoFlexscan()
 	l := m.precos.Ler()
 	if l.Situacao != preco.OK || l.Ticker == "" {
 		return
@@ -113,7 +117,7 @@ func (m *Motor) observarPreco() {
 		}
 		if m.divergenteOp(op) {
 			m.al.Emitir("SIMBOLO_DIVERGENTE_COM_POSICAO", chaveOp("SIMBOLO", op),
-				fmt.Sprintf("marketdata em %s, posição %d da operação %d em %s: a 1014 continua; a saída usa %s", m.vigente, op.posicao(), op.OperacaoID, op.Simbolo, op.Simbolo), op.OperacaoID)
+				fmt.Sprintf("marketdata em %s, posição %d da operação %d em %s: a 1014 continua; a saída usa %s", m.vigenteDo(op.conector()), op.posicao(), op.OperacaoID, op.Simbolo, op.Simbolo), op.OperacaoID)
 		} else {
 			m.al.Resolver(chaveOp("SIMBOLO", op))
 		}
@@ -255,7 +259,7 @@ func (m *Motor) verificarFuro(op *operacao, agora time.Time) {
 			p.ClOrdAtual, agora.Sub(p.disparadaEm).Truncate(100*time.Millisecond), op.posicao(), op.OperacaoID))
 		return
 	}
-	px := m.precoConfiavel(m.precos.Ler(), op.Simbolo)
+	px := m.precoConfiavel(m.precosDo(op.conector()).Ler(), op.Simbolo)
 	if m.divergenteOp(op) || p == nil || px == nil || p.StopLim == 0 || op.posicao() == 0 {
 		op.furoDesde = timeZero
 		return
@@ -301,6 +305,31 @@ func (m *Motor) verificarZeragem() {
 	if algo {
 		m.al.Emitir("ZERAGEM", "", fmt.Sprintf("HORA_ZERAGEM com posição %d: zerando (anomalia)", m.posicaoTotal()), 0)
 		m.ativarParadaCom("ZERAR", "auto", "hora de zeragem", "ZERAGEM")
+	}
+}
+
+// observarPrecoFlexscan: com fonte própria (PRECOS_URL_FLEXSCAN), o último preço por ticker e o
+// contrato vigente dela (as entradas da Flexscan vão no ticker dela).
+func (m *Motor) observarPrecoFlexscan() {
+	if m.precosFlx == nil {
+		return
+	}
+	l := m.precosFlx.Ler()
+	if l.Situacao != preco.OK || l.Ticker == "" {
+		return
+	}
+	if l.Preco != nil {
+		em := l.TS
+		if em.IsZero() {
+			em = m.agora().Add(-l.Idade(m.agora()))
+		}
+		m.ultimos[m.chaveUltimo(dominio.ConectorFlexscan, l.Ticker)] = ultimoPreco{px: *l.Preco, em: em}
+	}
+	if l.Ticker != m.vigenteFlx {
+		if m.vigenteFlx != "" {
+			m.al.Emitir("CONTRATO_VIGENTE", "", fmt.Sprintf("[flexscan] contrato vigente no marketdata: %s → %s (entradas novas vão em %s)", m.vigenteFlx, l.Ticker, l.Ticker), 0)
+		}
+		m.vigenteFlx = l.Ticker
 	}
 }
 

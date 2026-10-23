@@ -212,8 +212,8 @@ func (m *Motor) bolsaRecusaEntrada() *recusa {
 
 // reter: no estado, a mensagem (não entrada, não mass status) não sai; fica para a sonda ou a volta.
 func (m *Motor) reter(e envioPendente) bool {
-	if m.bolsa.desde.IsZero() || e.o == nil || e.prio == prioEntrada {
-		return false
+	if m.bolsa.desde.IsZero() || e.o == nil || e.prio == prioEntrada || m.conectorDo(e) != dominio.ConectorPnT {
+		return false // o disjuntor é do PnT: a Flexscan não fica retida (SPEC-FLEXSCAN-v1)
 	}
 	e.o.retida = true
 	m.bolsa.retidos = append(m.bolsa.retidos, e)

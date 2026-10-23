@@ -175,7 +175,7 @@ func (m *Motor) consultarPnT(ch chan Resposta) {
 		id := fmt.Sprintf("KM-AD-%d-%d", agora.UnixMilli(), contadorMass)
 		c.contaDoID[id] = conta
 		conta := conta
-		m.enfileirarEnvio(envioPendente{msg: pnt.MassStatus(conta, id), clordid: id, prio: prioSaida, aoFalhar: func() {
+		m.enfileirarEnvio(envioPendente{msg: pnt.MassStatus(conta, id), clordid: id, prio: prioSaida, con: dominio.ConectorPnT, aoFalhar: func() {
 			c.feitas[conta] = true // não saiu: nada a esperar desta conta
 			m.fecharConsultaSePronta(false)
 		}})
@@ -473,10 +473,14 @@ func HabilitacaoDoUsuario(r interface {
 	}
 	if !ok {
 		return Resposta{"uid": uid, "existe": false, "habilitado": false, "posicao_max": nil, "qtd_max_ordem": nil,
-			"por": nil, "motivo": nil, "em": nil}, nil
+			"conectores": nil, "por": nil, "motivo": nil, "em": nil}, nil
+	}
+	cs := h.Conectores
+	if len(cs) == 0 {
+		cs = dominio.ConectoresPadrao
 	}
 	return Resposta{"uid": uid, "existe": true, "habilitado": h.Habilitado, "posicao_max": h.PosicaoMax, "qtd_max_ordem": h.QtdMaxOrdem,
-		"por": h.Por, "motivo": h.Motivo, "em": emBROuNulo(h.Em)}, nil
+		"conectores": cs, "por": h.Por, "motivo": h.Motivo, "em": emBROuNulo(h.Em)}, nil
 }
 
 // AlterarHabilitacaoAssincrono: POST /usuarios/{uid}/habilitacao, na fila do motor.

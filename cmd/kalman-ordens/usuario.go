@@ -21,7 +21,7 @@ import (
 //
 //	kalman-ordens usuario listar
 //	kalman-ordens usuario conferir    -uid N
-//	kalman-ordens usuario habilitar   -uid N -motivo X [-posicao-max N] [-qtd-max N]
+//	kalman-ordens usuario habilitar   -uid N -motivo X [-posicao-max N] [-qtd-max N] [-conectores pnt,flexscan]
 //	kalman-ordens usuario desabilitar -uid N -motivo X
 func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 	if len(args) == 0 {
@@ -33,6 +33,7 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 	motivo := fs.String("motivo", "", "motivo (obrigatório em habilitar e desabilitar)")
 	posMax := fs.Int("posicao-max", 0, "limite de posição do uid (0 = só o global; sem a flag, mantém o atual)")
 	qtdMax := fs.Int("qtd-max", 0, "limite de quantidade por ordem do uid (0 = só o global; sem a flag, mantém o atual)")
+	conectores := fs.String("conectores", "", "conectores permitidos: pnt, flexscan ou pnt,flexscan (sem a flag, mantém o atual; linha nova: pnt)")
 	arqEnv := fs.String("env", "/etc/kalman-ordens/service.env", "service.env, se DB_DSN não estiver no ambiente")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -59,8 +60,8 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 			return err
 		}
 		for _, h := range hs {
-			fmt.Fprintf(saida, "uid=%d habilitado=%v posicao_max=%d qtd_max=%d por=%s em=%s motivo=%q\n",
-				h.UID, h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, h.Por, h.Em.Format(time.RFC3339), h.Motivo)
+			fmt.Fprintf(saida, "uid=%d habilitado=%v posicao_max=%d qtd_max=%d conectores=%s por=%s em=%s motivo=%q\n",
+				h.UID, h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, h.ConectoresTexto(), h.Por, h.Em.Format(time.RFC3339), h.Motivo)
 		}
 		return nil
 	case "conferir":
@@ -80,21 +81,27 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 		if err != nil {
 			return err
 		}
-		pm, qm := atual.PosicaoMax, atual.QtdMaxOrdem
+		pm, qm, cs := atual.PosicaoMax, atual.QtdMaxOrdem, atual.Conectores
+		var errCs error
 		fs.Visit(func(f *flag.Flag) {
 			switch f.Name {
 			case "posicao-max":
 				pm = *posMax
 			case "qtd-max":
 				qm = *qtdMax
+			case "conectores":
+				cs, errCs = dominio.LerConectores(*conectores)
 			}
 		})
-		h := dominio.Habilitacao{UID: *uid, Habilitado: acao == "habilitar", PosicaoMax: pm, QtdMaxOrdem: qm,
+		if errCs != nil {
+			return fmt.Errorf("-conectores: %w", errCs)
+		}
+		h := dominio.Habilitacao{UID: *uid, Habilitado: acao == "habilitar", PosicaoMax: pm, QtdMaxOrdem: qm, Conectores: cs,
 			Por: quem(), Motivo: *motivo, Em: time.Now()}
 		if err := r.GravarHabilitacao(h); err != nil {
 			return err
 		}
-		fmt.Fprintf(saida, "uid=%d habilitado=%v por=%s\n", h.UID, h.Habilitado, h.Por)
+		fmt.Fprintf(saida, "uid=%d habilitado=%v conectores=%s por=%s\n", h.UID, h.Habilitado, h.ConectoresTexto(), h.Por)
 		if h.Habilitado {
 			return conferirUsuario(r, cfg, *uid, saida)
 		}
@@ -158,7 +165,7 @@ func conferirUsuario(r *repo.MariaDB, cfg config.Config, uid int, saida io.Write
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(saida, "uid=%d ambiente=%s habilitado=%v\n", uid, ambiente, ok && h.Habilitado)
+	fmt.Fprintf(saida, "uid=%d ambiente=%s habilitado=%v conectores=%s\n", uid, ambiente, ok && h.Habilitado, h.ConectoresTexto())
 	hml, prd, achou, err := r.ConfigUsuario(uid)
 	if err != nil {
 		return err
@@ -171,12 +178,16 @@ func conferirUsuario(r *repo.MariaDB, cfg config.Config, uid int, saida io.Write
 	if ambiente == usuario.Producao {
 		texto = prd
 	}
-	res, f := usuario.Resolver(ambiente, texto, usuario.Lista(cfg.Texto("ORDENS_CONTAS_HML", "")))
+	res, f := usuario.ResolverCom(usuario.Regras{Ambiente: ambiente, ContasHML: usuario.Lista(cfg.Texto("ORDENS_CONTAS_HML", "")),
+		ContasHMLFlx: usuario.Lista(cfg.Texto("FLEXSCAN_CONTAS_HML", "")), Flexscan: cfg.Texto("FLEXSCAN_URL", "") != ""}, texto)
 	if f != nil {
 		fmt.Fprintf(saida, "%s: entradas recusadas (%s): %s\n", usuario.Campo(ambiente), f.Codigo, f.Motivo)
 		return nil
 	}
-	fmt.Fprintf(saida, "%s: destino=%d conta=%s (vai no 1 e no 116)\n", usuario.Campo(ambiente), res.Destino, res.Conta)
+	fmt.Fprintf(saida, "%s: destino=%d conector=%s conta=%s\n", usuario.Campo(ambiente), res.Destino, res.Conector, res.Conta)
+	if ok && !h.PermiteConector(res.Conector) {
+		fmt.Fprintf(saida, "conector %s fora da habilitação (%s): entradas recusadas (DESTINO_NAO_HABILITADO)\n", res.Conector, h.ConectoresTexto())
+	}
 	return nil
 }
 

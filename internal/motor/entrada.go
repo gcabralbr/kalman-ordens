@@ -54,10 +54,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if m.divergente {
 		return nil, simples("DIVERGENTE", "estado divergente; requer retomada manual")
 	}
-	if r := m.bolsaRecusaEntrada(); r != nil {
-		return nil, r
-	}
-	if m.fix == nil || !m.fix.Logado() {
+	if !m.algumLogado() {
 		return nil, simples("SEM_SESSAO", "sessão FIX não logada")
 	}
 	if m.haSemConfirmacao() {
@@ -71,9 +68,25 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if r != nil {
 		return nil, r
 	}
-	// símbolo: o contrato vigente (ticker do /precos/atual), congelado na operação (v1.2 S1); num
-	// sinal (v1.10 §6), uma leitura para o sinal inteiro
-	l := m.lerPreco()
+	// SPEC-FLEXSCAN-v1: o conector do destino tem de estar na habilitação do uid, ter sessão e (PnT)
+	// o disjuntor de bolsa fechado
+	if !hab.PermiteConector(conta.Conector) {
+		return nil, simples("DESTINO_NAO_HABILITADO", fmt.Sprintf("uid %d: conector %s fora da habilitação (%s)", *p.UID, conta.Conector, hab.ConectoresTexto()))
+	}
+	if conta.Conector == dominio.ConectorPnT {
+		if r := m.bolsaRecusaEntrada(); r != nil {
+			return nil, r
+		}
+	}
+	if !m.logado(conta.Conector) {
+		if conta.Conector == dominio.ConectorFlexscan {
+			return nil, simples("SEM_SESSAO", "conector Flexscan sem sessão (sem token)")
+		}
+		return nil, simples("SEM_SESSAO", "sessão FIX não logada")
+	}
+	// símbolo: o contrato vigente (ticker do /precos/atual da fonte do conector), congelado na
+	// operação (v1.2 S1); num sinal (v1.10 §6), uma leitura para o sinal inteiro
+	l := m.lerPrecoDe(conta.Conector)
 	if l.Situacao == preco.OK && !reWIN.MatchString(l.Ticker) {
 		m.al.Emitir("SIMBOLO_INVALIDO", "", fmt.Sprintf("ticker do marketdata %q não é um contrato de WIN: entrada recusada", l.Ticker), 0)
 		return nil, simples("SIMBOLO_INVALIDO", fmt.Sprintf("ticker do marketdata %q não é um contrato de WIN", l.Ticker))
@@ -159,16 +172,22 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "clordid": o.ClOrdAtual, "preco": o.Preco}, nil
 }
 
-// lerPreco: a leitura do marketdata; dentro de um sinal, a primeira do sinal (v1.10 §6).
-func (m *Motor) lerPreco() preco.Leitura {
+// lerPrecoDe: a leitura da fonte do conector; dentro de um sinal, a primeira do sinal (v1.10 §6),
+// uma por fonte.
+func (m *Motor) lerPrecoDe(con string) preco.Leitura {
+	f := m.precosDo(con)
 	if s := m.sinalAtual; s != nil {
-		if s.leitura == nil {
-			l := m.precos.Ler()
-			s.leitura = &l
+		i := 0
+		if m.fonteFlxPropria(con) {
+			i = 1
 		}
-		return *s.leitura
+		if s.leitura[i] == nil {
+			l := f.Ler()
+			s.leitura[i] = &l
+		}
+		return *s.leitura[i]
 	}
-	return m.precos.Ler()
+	return f.Ler()
 }
 
 // reWIN: contrato de WIN (mês FGHJKMNQUVXZ, ano com 2 dígitos). O ticker do /precos/atual vem da
@@ -206,7 +225,7 @@ func (m *Motor) contaDoUsuario(uid int) (usuario.Resolvido, *usuario.Falha) {
 	if m.p.Ambiente == usuario.Producao {
 		texto = prd
 	}
-	return usuario.Resolver(m.p.Ambiente, texto, m.p.ContasHML)
+	return usuario.ResolverCom(usuario.Regras{Ambiente: m.p.Ambiente, ContasHML: m.p.ContasHML, ContasHMLFlx: m.p.ContasHMLFlx, Flexscan: m.p.Flexscan}, texto)
 }
 
 // contaParaEntrada: contaDoUsuario com os alertas da entrada. A trava cruzada (CONTA_AMBIENTE) é
@@ -272,7 +291,8 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitac
 		m.al.Emitir("LIMITE", "", fmt.Sprintf("limite de entradas por dia (%d)", m.entradasHoje), 0)
 		return limite("ENTRADAS_POR_DIA", "limite de entradas por dia")
 	}
-	if ultimo, ok := m.precoDoDiaFatia(l); ok {
+	// o resultado do dia usa a fonte de cada conector; l (a da entrada) pode ser a da Flexscan
+	if ultimo, ok := m.precoDoDiaFatia(m.lerPrecoDe(dominio.ConectorPnT)); ok {
 		r := m.resultadoDoDia(ultimo)
 		if r.LessThanOrEqual(decimal.NewFromInt(-m.p.PerdaDiaPts)) {
 			m.ativarParada("BLOQUEAR", "auto", "perda do dia "+r.String()+" pts")
@@ -372,7 +392,7 @@ func (m *Motor) operacaoJaExistiu(modulo string, id int64) bool {
 }
 
 // precoDoDiaFatia: precoDoDia, uma vez por fatia de sinal (a posição não muda dentro dela).
-func (m *Motor) precoDoDiaFatia(l preco.Leitura) (*decimal.Decimal, bool) {
+func (m *Motor) precoDoDiaFatia(l preco.Leitura) (precoDia, bool) {
 	c := m.cache
 	if c == nil {
 		return m.precoDoDia(l)

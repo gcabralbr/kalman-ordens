@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/shopspring/decimal"
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/metricas"
@@ -95,7 +94,7 @@ type sinal struct {
 	primeira  time.Time // relógio do motor
 	fechado   bool
 	fechadoEm time.Time
-	leitura   *preco.Leitura // uma leitura de preço para o sinal
+	leitura   [2]*preco.Leitura // uma leitura de preço para o sinal, por fonte (PnT, Flexscan própria)
 	entradas  []*itemAdiado
 	saidas    []*itemAdiado
 	k         int64
@@ -400,7 +399,7 @@ type cacheFatia struct {
 	semConfirmacao bool
 	comprometido   int
 	porUID         map[int]int // calculado na primeira entrada com limite do uid
-	preco          *decimal.Decimal
+	preco          precoDia
 	precoOK        bool
 	precoLido      bool
 }

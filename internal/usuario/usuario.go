@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"gammaquant.com.br/kalman-ordens/internal/dominio"
 )
 
 // Ambientes da instância.
@@ -19,17 +21,28 @@ const (
 	Producao = "PRODUCAO"
 )
 
-// Destinos (Robo.CORSeqId). Só o PnT é suportado.
+// Destinos (Robo.CORSeqId): 85 (PnT) sempre; 88 (Flexscan) só com o conector configurado
+// (SPEC-FLEXSCAN-v1).
 const (
-	DestinoPnT      = 85   // BTG → PnT
-	DestinoFlexscan = 88   // Capital → Flexscan
-	DestinoGQ       = 9999 // simulador do GQ
+	DestinoPnT      = dominio.DestinoPnT      // BTG → PnT
+	DestinoFlexscan = dominio.DestinoFlexscan // Capital → Flexscan
+	DestinoGQ       = 9999                    // simulador do GQ
 )
 
-// Resolvido: conta e destino de uma entrada.
+// Resolvido: conta, destino e conector de uma entrada.
 type Resolvido struct {
-	Conta   string
-	Destino int
+	Conta    string
+	Destino  int
+	Conector string
+}
+
+// Regras da instância para resolver um usuário: o ambiente, as contas de HML de cada conector
+// (trava cruzada) e se o conector Flexscan está configurado.
+type Regras struct {
+	Ambiente     string
+	ContasHML    []string // PnT (ORDENS_CONTAS_HML)
+	ContasHMLFlx []string // Flexscan (FLEXSCAN_CONTAS_HML)
+	Flexscan     bool     // FLEXSCAN_URL preenchida
 }
 
 // Falha: por que não dá para mandar ordem real. Codigo é a recusa devolvida ao gestor; Alerta
@@ -44,6 +57,9 @@ func (f *Falha) Error() string { return f.Codigo + ": " + f.Motivo }
 
 var soDigitos = regexp.MustCompile(`^[0-9]+$`)
 
+// contaFlexscan: a conta da Flexscan tem letra e hífen (apisim: S-1117150).
+var contaFlexscan = regexp.MustCompile(`^[A-Za-z0-9-]{1,20}$`)
+
 // Campo devolve o nome da coluna lida no ambiente.
 func Campo(ambiente string) string {
 	if ambiente == Producao {
@@ -52,9 +68,16 @@ func Campo(ambiente string) string {
 	return "usutxtconfig"
 }
 
-// Resolver interpreta o JSON do ambiente e aplica as travas: destino só 85; conta só dígitos;
-// trava cruzada — em HML a conta tem de estar em contasHML, em PRODUCAO não pode estar.
+// Resolver: as regras de antes (só o PnT).
 func Resolver(ambiente, texto string, contasHML []string) (Resolvido, *Falha) {
+	return ResolverCom(Regras{Ambiente: ambiente, ContasHML: contasHML}, texto)
+}
+
+// ResolverCom interpreta o JSON do ambiente e aplica as travas: destino 85, ou 88 com a Flexscan
+// configurada; conta só dígitos (PnT) ou letras, dígitos e hífen (Flexscan); trava cruzada — em
+// HML a conta tem de estar na lista do conector, em PRODUCAO não pode estar.
+func ResolverCom(rg Regras, texto string) (Resolvido, *Falha) {
+	ambiente := rg.Ambiente
 	campo := Campo(ambiente)
 	if strings.TrimSpace(texto) == "" {
 		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + " vazio", "USUARIO_CONFIG"}
@@ -75,10 +98,14 @@ func Resolver(ambiente, texto string, contasHML []string) (Resolvido, *Falha) {
 	if err := json.Unmarshal(cfg.Robo.CORSeqId, &destino); err != nil {
 		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + ": Robo.CORSeqId não é inteiro: " + string(cfg.Robo.CORSeqId), "USUARIO_CONFIG"}
 	}
+	contasHML, listaHML := rg.ContasHML, "ORDENS_CONTAS_HML"
 	switch destino {
 	case DestinoPnT:
 	case DestinoFlexscan:
-		return Resolvido{}, &Falha{"DESTINO_NAO_SUPORTADO", fmt.Sprintf("%s: destino %d (Capital → Flexscan) não é suportado; só 85 (BTG → PnT)", campo, destino), ""}
+		if !rg.Flexscan {
+			return Resolvido{}, &Falha{"DESTINO_NAO_SUPORTADO", fmt.Sprintf("%s: destino %d (Capital → Flexscan) não é suportado nesta instância (FLEXSCAN_URL vazio)", campo, destino), ""}
+		}
+		contasHML, listaHML = rg.ContasHMLFlx, "FLEXSCAN_CONTAS_HML"
 	case DestinoGQ:
 		return Resolvido{}, &Falha{"DESTINO_INVALIDO", fmt.Sprintf("%s: destino %d é o simulador do GQ; ordem real só com 85 (BTG → PnT)", campo, destino), "USUARIO_CONFIG"}
 	default:
@@ -89,7 +116,10 @@ func Resolver(ambiente, texto string, contasHML []string) (Resolvido, *Falha) {
 		return Resolvido{}, &Falha{"CONTA_INVALIDA", campo + ": Robo.CCONroConta ausente ou não é texto", "USUARIO_CONFIG"}
 	}
 	conta = strings.TrimSpace(conta)
-	if !soDigitos.MatchString(conta) {
+	switch {
+	case destino == DestinoFlexscan && !contaFlexscan.MatchString(conta):
+		return Resolvido{}, &Falha{"CONTA_INVALIDA", fmt.Sprintf("%s: conta Flexscan %q inválida (letras, dígitos e hífen)", campo, conta), "USUARIO_CONFIG"}
+	case destino != DestinoFlexscan && !soDigitos.MatchString(conta):
 		return Resolvido{}, &Falha{"CONTA_INVALIDA", fmt.Sprintf("%s: conta %q não é só dígitos", campo, conta), "USUARIO_CONFIG"}
 	}
 	naLista := false
@@ -100,13 +130,13 @@ func Resolver(ambiente, texto string, contasHML []string) (Resolvido, *Falha) {
 	}
 	switch {
 	case ambiente == HML && !naLista:
-		return Resolvido{}, &Falha{"CONTA_AMBIENTE", fmt.Sprintf("conta %s fora de ORDENS_CONTAS_HML numa instância HML", conta), "CONTA_AMBIENTE"}
+		return Resolvido{}, &Falha{"CONTA_AMBIENTE", fmt.Sprintf("conta %s fora de %s numa instância HML", conta, listaHML), "CONTA_AMBIENTE"}
 	case ambiente == Producao && naLista:
 		return Resolvido{}, &Falha{"CONTA_AMBIENTE", fmt.Sprintf("conta de HML %s numa instância PRODUCAO", conta), "CONTA_AMBIENTE"}
 	case ambiente != HML && ambiente != Producao:
 		return Resolvido{}, &Falha{"CONTA_AMBIENTE", fmt.Sprintf("ORDENS_AMBIENTE %q inválido (HML ou PRODUCAO)", ambiente), "CONTA_AMBIENTE"}
 	}
-	return Resolvido{Conta: conta, Destino: destino}, nil
+	return Resolvido{Conta: conta, Destino: destino, Conector: dominio.ConectorDoDestino(destino)}, nil
 }
 
 // Lista lê ORDENS_CONTAS_HML ("99999" ou "99999,88888").

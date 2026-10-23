@@ -235,7 +235,7 @@ func TestResultadoDoDiaAgregado(t *testing.T) {
 	}
 	for _, u := range []string{"130000", "131234.5", "128000"} {
 		ultimo := decimal.RequireFromString(u)
-		if got, want := m.resultadoDoDia(&ultimo), dir(ultimo); !got.Equal(want) {
+		if got, want := m.resultadoDoDia(precoDia{&ultimo, &ultimo}), dir(ultimo); !got.Equal(want) {
 			t.Fatalf("último %s: agregado %s, direto %s", u, got, want)
 		}
 	}
@@ -244,16 +244,25 @@ func TestResultadoDoDiaAgregado(t *testing.T) {
 	m.ops[1].ordens[0].QtdExec = 3
 	m.somarContribuicao(m.ops[1], 1)
 	ultimo := decimal.RequireFromString("130500")
-	if got, want := m.resultadoDoDia(&ultimo), dir(ultimo); !got.Equal(want) {
+	if got, want := m.resultadoDoDia(precoDia{&ultimo, &ultimo}), dir(ultimo); !got.Equal(want) {
 		t.Fatalf("depois do fill: agregado %s, direto %s", got, want)
 	}
 	// e bate com o recálculo inteiro
 	m.versaoFills++
-	if got, want := m.resultadoDoDia(&ultimo), dir(ultimo); !got.Equal(want) {
+	if got, want := m.resultadoDoDia(precoDia{&ultimo, &ultimo}), dir(ultimo); !got.Equal(want) {
 		t.Fatalf("recalculado: %s, direto %s", got, want)
 	}
-	if got := m.resultadoDoDia(nil); !got.Equal(m.ops[0].pnlRealizado().Add(m.ops[2].pnlRealizado())) {
+	if got := m.resultadoDoDia(precoDia{}); !got.Equal(m.ops[0].pnlRealizado().Add(m.ops[2].pnlRealizado())) {
 		t.Fatalf("sem preço: %s", got)
+	}
+	// SPEC-FLEXSCAN-v1: a operação da Flexscan (destino 88) é avaliada pelo preço dela
+	m.ops[1].Destino = dominio.DestinoFlexscan
+	m.versaoFills++
+	pnt, flx := decimal.RequireFromString("130500"), decimal.RequireFromString("131500")
+	// = tudo a 130500 + (131500 − 130500) × a posição da operação da Flexscan
+	want := dir(pnt).Add(flx.Sub(pnt).Mul(decimal.NewFromInt(int64(m.ops[1].posicao()))))
+	if got := m.resultadoDoDia(precoDia{&pnt, &flx}); !got.Equal(want) {
+		t.Fatalf("por conector: %s, esperado %s", got, want)
 	}
 }
 

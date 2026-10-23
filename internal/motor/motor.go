@@ -161,9 +161,64 @@ func (m *Motor) idDe(op *operacao) pnt.Identificacao {
 	return pnt.Identificacao{Conta: op.Conta, Bolsa: m.p.Bolsa, OnBehalfOfSubID: op.Conta, SenderLocationID: m.p.SenderLocationID}
 }
 
-// divergenteOp (v1.2 S2): a posição está num contrato que deixou de ser o vigente.
+// divergenteOp (v1.2 S2): a posição está num contrato que deixou de ser o vigente (o da fonte de
+// preço do conector da operação).
 func (m *Motor) divergenteOp(op *operacao) bool {
-	return m.vigente != "" && op.Simbolo != "" && op.Simbolo != m.vigente
+	v := m.vigenteDo(op.conector())
+	return v != "" && op.Simbolo != "" && op.Simbolo != v
+}
+
+// conector da operação (SPEC-FLEXSCAN-v1): o do destino congelado na entrada.
+func (op *operacao) conector() string { return dominio.ConectorDoDestino(op.Destino) }
+
+// envioDo: a sessão do conector (nil = não configurada).
+func (m *Motor) envioDo(con string) Envio {
+	if con == dominio.ConectorFlexscan {
+		return m.flx
+	}
+	return m.fix
+}
+
+// logado: o conector tem sessão (FIX logada; Flexscan com token válido).
+func (m *Motor) logado(con string) bool {
+	e := m.envioDo(con)
+	return e != nil && e.Logado()
+}
+
+// algumLogado: ao menos um conector com sessão (conciliação e ações de tempo andam).
+func (m *Motor) algumLogado() bool {
+	return m.logado(dominio.ConectorPnT) || m.logado(dominio.ConectorFlexscan)
+}
+
+// fonteFlxPropria: a Flexscan tem fonte de preço própria (PRECOS_URL_FLEXSCAN diferente).
+func (m *Motor) fonteFlxPropria(con string) bool {
+	return con == dominio.ConectorFlexscan && m.precosFlx != nil
+}
+
+// precosDo: a fonte de preço do conector (SPEC-FLEXSCAN-v1: PnT da HML → 9096, D-1; Flexscan no
+// simulador → 9090, D0; em produção, a mesma).
+func (m *Motor) precosDo(con string) preco.Fonte {
+	if m.fonteFlxPropria(con) {
+		return m.precosFlx
+	}
+	return m.precos
+}
+
+// vigenteDo: o contrato vigente na fonte do conector.
+func (m *Motor) vigenteDo(con string) string {
+	if m.fonteFlxPropria(con) {
+		return m.vigenteFlx
+	}
+	return m.vigente
+}
+
+// chaveUltimo: m.ultimos é por ticker e por fonte (a do PnT e a da Flexscan podem ser de dias
+// diferentes na HML).
+func (m *Motor) chaveUltimo(con, ticker string) string {
+	if m.fonteFlxPropria(con) {
+		return "FLEXSCAN|" + ticker
+	}
+	return ticker
 }
 
 func (op *operacao) posicao() int {
@@ -302,6 +357,15 @@ type Motor struct {
 	fonteRuimDesde time.Time
 	fonteMotivo    string
 	fix            Envio
+	// SPEC-FLEXSCAN-v1: o conector Flexscan (a ponte REST, com a mesma interface da sessão FIX) e a
+	// fonte de preço dele (PRECOS_URL_FLEXSCAN; nil = a mesma do PnT), com o contrato vigente e o
+	// FONTE_DEGRADADA dela
+	flx               Envio
+	flxJaLogou        bool
+	precosFlx         preco.Fonte
+	vigenteFlx        string
+	fonteFlxRuimDesde time.Time
+	fonteFlxMotivo    string
 	al             *alerta.Alertas
 	p0, p1, p2     chan func() // entrada por prioridade (volta.go)
 	fim            chan struct{}
@@ -361,6 +425,7 @@ type Motor struct {
 	massCorte        int64                 // ordens com seq até aqui existiam quando o mass status foi pedido
 	massEstado       map[string]*massConta // por 584 (v1.10 C6)
 	massCom911       bool                  // alguma resposta trouxe 911/912: fecha pela contagem
+	massSemSessao    map[string]bool       // conectores sem sessão no pedido: as ordens deles não são julgadas
 
 	// POST /sinais (v1.10 §6): os sinais em memória, o contador k por módulo e o sinal da parte em
 	// tratamento (pedirEntrada / pedirSaida adiam o envio)
@@ -435,6 +500,12 @@ func (m *Motor) ConsultarAoVivo(desde int64, limite int) map[string]any {
 
 // Usar liga a sessão FIX.
 func (m *Motor) Usar(e Envio) { m.fix = e }
+
+// UsarFlexscan liga o conector Flexscan (a ponte REST).
+func (m *Motor) UsarFlexscan(e Envio) { m.flx = e }
+
+// UsarPrecosFlexscan: a fonte de preço própria do conector Flexscan (PRECOS_URL_FLEXSCAN).
+func (m *Motor) UsarPrecosFlexscan(f preco.Fonte) { m.precosFlx = f }
 
 // Iniciar carrega o estado do dia (Parte 7.3) e o cache de usuários, e sobe a goroutine do motor.
 func (m *Motor) Iniciar() error {
@@ -1029,36 +1100,74 @@ func (m *Motor) posicaoTotal() int {
 	return s
 }
 
-// precoDoDia: o preco para o resultado do dia (Parte 5) — o do vigente, fresco, e só se nenhuma
-// posição aberta estiver em outro contrato (pendência 2 da v1.1: suspenso durante a divergência).
-func (m *Motor) precoDoDia(l preco.Leitura) (*decimal.Decimal, bool) {
+// precoDia: o preco do resultado do dia por conector (índice idxConector): cada conector com a
+// sua fonte (SPEC-FLEXSCAN-v1).
+type precoDia [2]*decimal.Decimal
+
+func idxConector(con string) int {
+	if con == dominio.ConectorFlexscan {
+		return 1
+	}
+	return 0
+}
+
+var conectores = [2]string{dominio.ConectorPnT, dominio.ConectorFlexscan}
+
+// precoDoDia: o preco para o resultado do dia (Parte 5) — o do vigente, fresco, de cada conector, e
+// só se nenhuma posição aberta estiver em outro contrato (pendência 2 da v1.1: suspenso durante a
+// divergência). l é a leitura da fonte do PnT (a de sempre); a da Flexscan, se própria, é lida aqui.
+// ok=false: falta o preço do PnT (como antes) ou o de um conector com posição aberta.
+func (m *Motor) precoDoDia(l preco.Leitura) (precoDia, bool) {
+	var px precoDia
 	for _, op := range m.ops {
 		if !op.Estado.Final() && op.posicao() != 0 && m.divergenteOp(op) {
-			return nil, false
+			return px, false
 		}
 	}
-	px := m.precoConfiavel(l, m.vigente)
-	return px, px != nil
+	px[0] = m.precoConfiavel(l, m.vigente)
+	if m.precosFlx != nil {
+		px[1] = m.precoConfiavel(m.precosFlx.Ler(), m.vigenteFlx)
+	} else {
+		px[1] = px[0]
+	}
+	if px[0] == nil {
+		return px, false
+	}
+	a := m.agregadoAtual()
+	for i := range px {
+		if px[i] == nil && a.somaPos[i] != 0 {
+			return px, false
+		}
+	}
+	return px, true
 }
 
 // resultadoDoDia: realizado + aberto de todas as operações. O aberto é Σ (último − médio) × posição
 // = último × Σposição − Σ(médio × posição): os agregados só são recalculados quando um fill muda
 // algo (versaoFills), e a conta por entrada fica O(1) — antes, O(operações do dia) em decimal a cada
 // entrada (v1.10: 40% da CPU do motor numa rajada de 1.000).
-func (m *Motor) resultadoDoDia(ultimo *decimal.Decimal) decimal.Decimal {
+func (m *Motor) resultadoDoDia(ultimo precoDia) decimal.Decimal {
+	a := m.agregadoAtual()
+	r := a.realizado
+	for i := range ultimo {
+		if ultimo[i] != nil {
+			r = r.Add(ultimo[i].Mul(decimal.NewFromInt(a.somaPos[i])).Sub(a.somaMedioPos[i]))
+		}
+	}
+	return r
+}
+
+// agregadoAtual: os agregados do dia, recalculados só se um fill mudou algo.
+func (m *Motor) agregadoAtual() *agregadoDia {
 	a := &m.agregado
 	if !a.valido || a.versao != m.versaoFills {
-		a.realizado, a.somaPos, a.somaMedioPos = decimal.Zero, 0, decimal.Zero
+		a.realizado, a.somaPos, a.somaMedioPos = decimal.Zero, [2]int64{}, [2]decimal.Decimal{decimal.Zero, decimal.Zero}
 		for _, op := range m.ops {
 			m.somarContribuicao(op, 1)
 		}
 		a.versao, a.valido = m.versaoFills, true
 	}
-	r := a.realizado
-	if ultimo != nil {
-		r = r.Add(ultimo.Mul(decimal.NewFromInt(a.somaPos)).Sub(a.somaMedioPos))
-	}
-	return r
+	return a
 }
 
 // somarContribuicao: soma (sinal 1) ou tira (sinal -1) a parte da operação nos agregados; o fill
@@ -1069,18 +1178,20 @@ func (m *Motor) somarContribuicao(op *operacao, sinal int64) {
 	a.realizado = a.realizado.Add(op.pnlRealizado().Mul(s))
 	pos := op.posicao()
 	if pe, ok := op.medio(true); pos != 0 && ok {
-		a.somaPos += sinal * int64(pos)
-		a.somaMedioPos = a.somaMedioPos.Add(pe.Mul(decimal.NewFromInt(sinal * int64(pos))))
+		i := idxConector(op.conector())
+		a.somaPos[i] += sinal * int64(pos)
+		a.somaMedioPos[i] = a.somaMedioPos[i].Add(pe.Mul(decimal.NewFromInt(sinal * int64(pos))))
 	}
 }
 
-// agregadoDia: os agregados de resultadoDoDia.
+// agregadoDia: os agregados de resultadoDoDia; a parte aberta, por conector (cada um com o seu
+// preço).
 type agregadoDia struct {
 	valido       bool
 	versao       int64
 	realizado    decimal.Decimal
-	somaPos      int64
-	somaMedioPos decimal.Decimal
+	somaPos      [2]int64
+	somaMedioPos [2]decimal.Decimal
 }
 
 // arredondamento ao tick

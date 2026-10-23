@@ -65,6 +65,20 @@ type envioPendente struct {
 	aoExpirar    func() // entrada que passou de ENTRADA_TTL_FILA_S esperando a taxa: descartada
 	nova         bool   // NewOrderSingle da ordem (não cancel/replace): retirarDaFila só casa esta
 	daRetencao   bool   // solta pelo disjuntor na volta da bolsa
+	con          string // conector (SPEC-FLEXSCAN-v1); "" = o da operação da ordem (mass status: obrigatório)
+}
+
+// conectorDo: o conector por onde o envio sai — o dele, o da operação da ordem, ou o PnT.
+func (m *Motor) conectorDo(e envioPendente) string {
+	if e.con != "" {
+		return e.con
+	}
+	if e.o != nil {
+		if op := m.donoDa[e.o]; op != nil {
+			return op.conector()
+		}
+	}
+	return dominio.ConectorPnT
 }
 
 // estadoVolta: o que a volta acumula até o commit.
@@ -481,11 +495,14 @@ func (m *Motor) agendarVolta() {
 func (m *Motor) despacharUm(e envioPendente) {
 	tipo, _ := e.msg.Header.GetString(quickfix.Tag(35))
 	ok := false
-	if m.fix != nil {
-		seq, err := m.fix.Enviar(e.msg)
+	con := m.conectorDo(e)
+	if env := m.envioDo(con); env != nil {
+		seq, err := env.Enviar(e.msg)
 		if err == nil {
 			ok = true
-			m.clordPorSeq[seq] = e.clordid
+			if con == dominio.ConectorPnT {
+				m.clordPorSeq[seq] = e.clordid // o 35=3 do PnT aponta a mensagem pelo 45
+			}
 			m.enviosRec = append(m.enviosRec, m.agora())
 			metricas.FixMensagens.Inc("enviada", tipo)
 			metricas.EsperaEnvio.Observar(time.Since(e.decididoEm).Seconds(), nomePrio(e.prio))

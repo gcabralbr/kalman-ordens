@@ -2,7 +2,9 @@
 package dominio
 
 import (
+	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -203,9 +205,12 @@ type Habilitacao struct {
 	Habilitado  bool
 	PosicaoMax  int
 	QtdMaxOrdem int
-	Por         string // quem alterou (usuário do sistema que rodou a CLI)
-	Motivo      string
-	Em          time.Time
+	// Conectores de execução permitidos ao uid (SPEC-FLEXSCAN-v1 §2 item 1): o destino vem do GQ
+	// (Robo.CORSeqId), mas só vale se o conector dele estiver aqui. Vazio = só o PnT (o de antes).
+	Conectores []string
+	Por        string // quem alterou (usuário do sistema que rodou a CLI)
+	Motivo     string
+	Em         time.Time
 }
 
 // ModuloPadrao: o módulo de quem não diz qual é (o Kalman, o primeiro cliente do serviço).
@@ -225,3 +230,73 @@ const (
 	MaxMotivoSaida   = 60  // kalmanordemoperacao.motivo_saida, kalmanordem.motivo_gestor (0009)
 	MaxMotivoAdmin   = 200 // habilitação (motivo VARCHAR(200)) e parada (texto da sessão)
 )
+
+// Conectores de execução (SPEC-FLEXSCAN-v1). O conector é o caminho da ordem, não a corretora: a
+// mesma corretora pode ser testada pelos dois.
+const (
+	ConectorPnT      = "PNT"
+	ConectorFlexscan = "FLEXSCAN"
+)
+
+// Destinos do GQ (Robo.CORSeqId) com conector.
+const (
+	DestinoPnT      = 85 // BTG → PnT
+	DestinoFlexscan = 88 // Capital → Flexscan
+)
+
+// ConectorDoDestino: o conector de um destino do GQ. Destino desconhecido (ou 0, das operações
+// anteriores à v1.2) = PnT, o único que existia.
+func ConectorDoDestino(destino int) string {
+	if destino == DestinoFlexscan {
+		return ConectorFlexscan
+	}
+	return ConectorPnT
+}
+
+// ConectoresPadrao: a habilitação sem a coluna (ou vazia) vale só para o PnT.
+var ConectoresPadrao = []string{ConectorPnT}
+
+// PermiteConector: o conector está na habilitação (vazia = só o PnT).
+func (h Habilitacao) PermiteConector(c string) bool {
+	cs := h.Conectores
+	if len(cs) == 0 {
+		cs = ConectoresPadrao
+	}
+	for _, x := range cs {
+		if x == c {
+			return true
+		}
+	}
+	return false
+}
+
+// ConectoresTexto: a lista gravada no banco ("PNT", "PNT,FLEXSCAN").
+func (h Habilitacao) ConectoresTexto() string {
+	if len(h.Conectores) == 0 {
+		return ConectorPnT
+	}
+	return strings.Join(h.Conectores, ",")
+}
+
+// LerConectores interpreta "pnt,flexscan" (maiúsculas ou minúsculas, sem repetidos, na ordem
+// PNT, FLEXSCAN); vazio ou nome desconhecido = erro.
+func LerConectores(s string) ([]string, error) {
+	vistos := map[string]bool{}
+	for _, x := range strings.FieldsFunc(s, func(c rune) bool { return c == ',' || c == ' ' || c == ';' }) {
+		x = strings.ToUpper(strings.TrimSpace(x))
+		if x != ConectorPnT && x != ConectorFlexscan {
+			return nil, fmt.Errorf("conector %q desconhecido (pnt, flexscan)", x)
+		}
+		vistos[x] = true
+	}
+	var r []string
+	for _, c := range []string{ConectorPnT, ConectorFlexscan} {
+		if vistos[c] {
+			r = append(r, c)
+		}
+	}
+	if len(r) == 0 {
+		return nil, fmt.Errorf("nenhum conector (pnt, flexscan)")
+	}
+	return r, nil
+}

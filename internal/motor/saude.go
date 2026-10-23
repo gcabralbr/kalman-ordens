@@ -33,7 +33,7 @@ func (m *Motor) saude() Resposta {
 		for _, o := range op.ordens {
 			if !o.Estado.Final() {
 				vivas = append(vivas, map[string]any{"clordid": o.ClOrdAtual, "orderid37": o.OrderID, "papel": o.Papel.String(),
-					"estado": o.Estado, "qtd": o.Qtd, "qtd_exec": o.QtdExec})
+					"estado": o.Estado, "qtd": o.Qtd, "qtd_exec": o.QtdExec, "conector": op.conector()})
 			}
 		}
 	}
@@ -45,7 +45,7 @@ func (m *Motor) saude() Resposta {
 	if !m.ultimaEntrada.IsZero() {
 		ult = m.ultimaEntrada.Format(time.RFC3339)
 	}
-	return Resposta{
+	r := Resposta{
 		"versao":             Versao,
 		"sessao_logada":      m.fix != nil && m.fix.Logado(),
 		"conciliando":        m.conciliando,
@@ -68,6 +68,22 @@ func (m *Motor) saude() Resposta {
 			"resultado_dia_pts":            m.resultadoDoDia(precoDia),
 		},
 	}
+	// SPEC-FLEXSCAN-v1: o conector Flexscan (sessao_logada continua sendo a do PnT: o desligamento do
+	// pnt-md-hml lê esse campo)
+	if m.flx != nil {
+		f := map[string]any{"logado": m.flx.Logado()}
+		if s, ok := m.flx.(interface{ Saude() map[string]any }); ok {
+			for k, v := range s.Saude() {
+				f[k] = v
+			}
+		}
+		if m.precosFlx != nil {
+			f["simbolo"] = m.vigenteFlx
+			f["fonte"] = m.saudeFonteFlx()
+		}
+		r["flexscan"] = f
+	}
+	return r
 }
 
 func (m *Motor) descrever(op *operacao) Resposta {
@@ -79,7 +95,7 @@ func (m *Motor) descrever(op *operacao) Resposta {
 	pe, _ := op.medio(true)
 	ps, _ := op.medio(false)
 	return Resposta{"existe": true, "modulo": op.Modulo, "operacao_id": op.OperacaoID, "estado": op.Estado, "divergente": op.Divergente, "posicao": op.posicao(),
-		"uid": op.UID, "conta": op.Conta, "destino": op.Destino, "simbolo": op.Simbolo,
+		"uid": op.UID, "conta": op.Conta, "destino": op.Destino, "conector": op.conector(), "simbolo": op.Simbolo,
 		"preco_medio_entrada": pe, "preco_medio_saida": ps, "motivo_saida": op.MotivoSaida, "origem_saida": op.OrigemSaida,
 		"pnl_pts": op.PnL, "preco_stop_ajustado": op.StopAjustado, "ordens": os, "sinal": sinalDe(op)}
 }

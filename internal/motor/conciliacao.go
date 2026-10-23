@@ -35,29 +35,44 @@ func (m *Motor) pedirMassStatus() {
 	m.massCorte = m.seqOrdens
 	m.massUltima = m.agora()
 	m.massProxima = timeZero
-	contas := m.contasMassStatus()
+	// SPEC-FLEXSCAN-v1: cada conta pelo conector dela; o conector sem sessão não é perguntado e as
+	// ordens dele não são julgadas nesta conciliação (contam como não verificadas)
+	m.massSemSessao = map[string]bool{}
+	var contas []contaConector
+	for _, c := range m.contasMassStatus() {
+		if !m.logado(c.con) {
+			m.massSemSessao[c.con] = true
+			continue
+		}
+		contas = append(contas, c)
+	}
 	if len(contas) == 0 {
 		slog.Info("mass status: nenhuma conta (sem operação no dia nem usuário habilitado)")
 	}
-	for _, c := range contas {
+	for _, cc := range contas {
+		c := cc.conta
 		contadorMass++
 		id := fmt.Sprintf("KM-MS-%d-%d", m.agora().UnixMilli(), contadorMass)
 		m.massReqIDs[id] = true
 		m.massEstado[id] = &massConta{conta: c}
-		m.enfileirarEnvio(envioPendente{msg: pnt.MassStatus(c, id), clordid: id, prio: prioSaida,
+		m.enfileirarEnvio(envioPendente{msg: pnt.MassStatus(c, id), clordid: id, prio: prioSaida, con: cc.con,
 			// o silêncio conta do envio real do último AF, não da decisão (v1.10 P3)
 			aoEnviar: func() { m.massUltima = m.agora() },
 			aoFalhar: func() { m.massProxima = m.agora().Add(m.p.RetentativaProtecao) }})
 	}
 }
 
-func (m *Motor) contasMassStatus() []string {
+// contaConector: uma conta e o conector por onde ela é perguntada.
+type contaConector struct{ conta, con string }
+
+func (m *Motor) contasMassStatus() []contaConector {
 	// v1.10 C5: só as contas com ordem viva ou posição (pelo banco, carregado no motor) — não todos
 	// os habilitados; sem nenhuma, nada é pedido e a conciliação fecha no silêncio
-	vistas := map[string]bool{}
-	var r []string
+	vistas := map[contaConector]bool{}
+	var r []contaConector
 	for _, op := range m.ops {
-		if op.Conta == "" || vistas[op.Conta] {
+		cc := contaConector{op.Conta, op.conector()}
+		if op.Conta == "" || vistas[cc] {
 			continue
 		}
 		viva := op.posicao() != 0
@@ -67,8 +82,8 @@ func (m *Motor) contasMassStatus() []string {
 			}
 		}
 		if viva {
-			vistas[op.Conta] = true
-			r = append(r, op.Conta)
+			vistas[cc] = true
+			r = append(r, cc)
 		}
 	}
 	return r
@@ -86,7 +101,9 @@ func (m *Motor) contasAdmin() []string {
 		}
 	}
 	for _, op := range m.ops {
-		add(op.Conta)
+		if op.conector() == dominio.ConectorPnT { // a consulta é do PnT (GET /pnt/ordens)
+			add(op.Conta)
+		}
 	}
 	var uids []int
 	for uid, h := range m.usuarios.hab {
@@ -97,7 +114,9 @@ func (m *Motor) contasAdmin() []string {
 	sort.Ints(uids)
 	for _, uid := range uids {
 		if res, f := m.contaDoUsuario(uid); f == nil {
-			add(res.Conta)
+			if res.Conector == dominio.ConectorPnT {
+				add(res.Conta)
+			}
 		} else {
 			slog.Warn("consulta do admin: conta do uid habilitado não resolvida", "uid", uid, "codigo", f.Codigo, "motivo", f.Motivo)
 		}
@@ -198,7 +217,7 @@ func (m *Motor) conciliar() {
 			if !o.viva() || vistas[o] || o.seq > m.massCorte || o.saidaNoMass {
 				continue // a saída com recusa terminal é decidida abaixo (v1.3 I1)
 			}
-			if semResposta[o.Conta] {
+			if semResposta[o.Conta] || m.massSemSessao[op.conector()] {
 				naoJulgadas++
 				continue
 			}

@@ -703,7 +703,7 @@ func (m *Motor) cancelProtecaoEmErroRejeitado(op *operacao, o *ordem, msg pnt.Me
 	}
 	m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("cancel da 1014 em erro rejeitado %s: %s; mass status para decidir", texto, o.ClOrdAtual), op.OperacaoID)
 	o.decidirNoMass = true
-	if !m.conciliando && m.fix != nil && m.fix.Logado() {
+	if !m.conciliando && m.algumLogado() {
 		m.conciliando = true
 		m.massTentativas = 0
 		m.pedirMassStatus()
@@ -833,7 +833,7 @@ func (m *Motor) rejeicaoEnviada(msg pnt.Mensagem) {
 	m.v.eventos = append(m.v.eventos, repo.EventoFIX{Direcao: "ENV", MsgType: "3", Texto: msg.Texto(58), Codigo: msg.Texto(373), Bruta: msg.Bruta, Em: m.agora()})
 	m.al.Emitir("SESSAO_REJEITOU_MENSAGEM", "SESSAO_REJEITOU_MENSAGEM",
 		fmt.Sprintf("a sessão rejeitou (35=3) a mensagem %s do PnT: %s", msg.Texto(45), msg.Texto(58)), 0)
-	if !m.conciliando && m.fix != nil && m.fix.Logado() {
+	if !m.conciliando && m.algumLogado() {
 		m.conciliando = true
 		m.massTentativas = 0
 		m.pedirMassStatus()
@@ -865,7 +865,7 @@ func (m *Motor) storeIlegivel(texto string) {
 func (m *Motor) mensagemIlegivel(texto string) {
 	m.v.eventos = append(m.v.eventos, repo.EventoFIX{Direcao: "REC", MsgType: "?", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
 	m.al.Emitir("MENSAGEM_ILEGIVEL", "MENSAGEM_ILEGIVEL", "a sessão descartou uma mensagem ilegível do PnT: "+cortarTexto(texto, 300), 0)
-	if !m.conciliando && m.fix != nil && m.fix.Logado() {
+	if !m.conciliando && m.algumLogado() {
 		m.conciliando = true
 		m.massTentativas = 0
 		m.pedirMassStatus()

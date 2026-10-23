@@ -181,14 +181,14 @@ func (m *Motor) precoSaida(op *operacao, lado dominio.Lado, k int) (px int64, di
 		if !m.ultimoCertoValido(op) {
 			return 0, true, false, false
 		}
-		ultimo := m.ultimos[op.Simbolo].px
+		ultimo := m.ultimos[m.chaveUltimo(op.conector(), op.Simbolo)].px
 		colar := decimal.NewFromInt(m.p.ColarSaida * int64(m.p.MaxRepreco+1))
 		if lado == dominio.Venda {
 			return m.abaixo(ultimo.Sub(colar)), true, false, true
 		}
 		return m.acima(ultimo.Add(colar)), true, false, true
 	}
-	l := m.precos.Ler()
+	l := m.precosDo(op.conector()).Ler()
 	if l.Situacao != preco.OK {
 		return 0, false, false, false
 	}
@@ -214,7 +214,7 @@ func (m *Motor) precoSaida(op *operacao, lado dominio.Lado, k int) (px int64, di
 
 // ultimoCertoValido: há último preco do símbolo da posição com até IDADE_MAX_PRECO_DIVERGENTE_S.
 func (m *Motor) ultimoCertoValido(op *operacao) bool {
-	u, ok := m.ultimos[op.Simbolo]
+	u, ok := m.ultimos[m.chaveUltimo(op.conector(), op.Simbolo)]
 	return ok && m.agora().Sub(u.em) <= m.p.IdadeMaxPrecoDivergente
 }
 

@@ -196,6 +196,14 @@ func (e *Executor) usuario(p roteiro.Passo) error {
 		h := dominio.Habilitacao{UID: uid, Habilitado: p.Verbo == "habilita", Por: "roteiro", Motivo: p.Origem, Em: e.rel.Agora()}
 		for _, a := range p.Args[1:] {
 			k, v, _ := strings.Cut(a, "=")
+			if k == "conectores" {
+				cs, err := dominio.LerConectores(v)
+				if err != nil {
+					return err
+				}
+				h.Conectores = cs
+				continue
+			}
 			n, err := strconv.Atoi(v)
 			if err != nil {
 				return fmt.Errorf("%s", a)
@@ -206,7 +214,7 @@ func (e *Executor) usuario(p roteiro.Passo) error {
 			case "qtd_max":
 				h.QtdMaxOrdem = n
 			default:
-				return fmt.Errorf("habilita UID [posicao_max=N] [qtd_max=N]: %s", a)
+				return fmt.Errorf("habilita UID [posicao_max=N] [qtd_max=N] [conectores=pnt,flexscan]: %s", a)
 			}
 		}
 		return e.repo.GravarHabilitacao(h)

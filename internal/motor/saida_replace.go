@@ -42,7 +42,8 @@ type saidaReplace struct {
 // saidaPorReplacePossivel: a 1014 viva e aceita, sem pedido pendente, não disparada nem em erro,
 // cobrindo a posição; sem entrada viva, sem ticker divergente, com o disjuntor fechado.
 func (m *Motor) saidaPorReplacePossivel(op *operacao, p *ordem) bool {
-	if !m.p.SaidaPorReplace || p == nil || op.furado {
+	if !m.p.SaidaPorReplace || p == nil || op.furado || op.conector() != dominio.ConectorPnT {
+		// a Flexscan recusa o gatilho ultrapassado (sondagem de 23/10, razão 4): saída por cancel + limite
 		return false
 	}
 	if p.Estado != dominio.Ativa || p.pend != semPendencia || p.cancelarApos || !p.disparadaEm.IsZero() ||
