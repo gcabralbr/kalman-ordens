@@ -1,5 +1,7 @@
 // Package alerta emite os alertas do catálogo docs/ALERTAS.md (Telegram e evento ALERTA).
-// Os críticos repetem a cada ALERTA_REPETICAO_S até serem resolvidos; a resolução gera RESOLVIDO.
+// Os críticos repetem a cada ALERTA_REPETICAO_S até serem resolvidos — nos primeiros
+// ALERTA_REPETICAO_CURTA_S; depois, a cada ALERTA_REPETICAO_LONGA_S (22/10: sem enxurrada numa falha
+// longa) —; a resolução gera RESOLVIDO.
 // Confinado à goroutine do motor.
 package alerta
 
@@ -47,6 +49,7 @@ type Publicador func(codigo, texto string, operacaoID int64)
 type critico struct {
 	codigo, texto string
 	operacao      int64
+	desde         time.Time // a emissão: a repetição espaça depois de curtaAte
 	proximo       time.Time
 }
 
@@ -56,12 +59,17 @@ type Alertas struct {
 	publicar  Publicador
 	rel       relogio.Relogio
 	repeticao time.Duration
+	curtaAte  time.Duration // 0 = sempre a repeticao
+	longa     time.Duration
 	ativos    map[string]*critico
 }
 
 func Novo(n Notificador, p Publicador, rel relogio.Relogio, repeticao time.Duration) *Alertas {
 	return &Alertas{notif: n, publicar: p, rel: rel, repeticao: repeticao, ativos: map[string]*critico{}}
 }
+
+// Espacar: repetição a cada `repeticao` só até curtaAte desde a emissão; depois, a cada longa.
+func (a *Alertas) Espacar(curtaAte, longa time.Duration) { a.curtaAte, a.longa = curtaAte, longa }
 
 // Emitir: alerta com código do catálogo. Se o código é crítico, chave identifica a condição
 // (uma segunda emissão com a mesma chave não duplica) e ele repete até Resolver(chave).
@@ -79,7 +87,8 @@ func (a *Alertas) Emitir(codigo, chave, texto string, operacaoID int64) {
 		if _, ja := a.ativos[chave]; ja {
 			return
 		}
-		a.ativos[chave] = &critico{codigo: codigo, texto: texto, operacao: operacaoID, proximo: a.rel.Agora().Add(a.repeticao)}
+		agora := a.rel.Agora()
+		a.ativos[chave] = &critico{codigo: codigo, texto: texto, operacao: operacaoID, desde: agora, proximo: agora.Add(a.repeticao)}
 	}
 	a.enviar(codigo, texto, operacaoID)
 }
@@ -91,7 +100,11 @@ func (a *Alertas) Resolver(chave string) {
 		return
 	}
 	delete(a.ativos, chave)
-	a.enviar("RESOLVIDO", fmt.Sprintf("%s: %s", c.codigo, chave), c.operacao)
+	texto := c.codigo // sem chave própria a chave é o código: "RESOLVIDO: FONTE_DEGRADADA", não repetido
+	if chave != c.codigo {
+		texto = fmt.Sprintf("%s: %s", c.codigo, chave)
+	}
+	a.enviar("RESOLVIDO", texto, c.operacao)
 }
 
 // Ativo diz se a condição está aberta.
@@ -120,6 +133,9 @@ func (a *Alertas) Tick() {
 			continue
 		}
 		c.proximo = agora.Add(a.repeticao)
+		if a.longa > 0 && agora.Sub(c.desde) >= a.curtaAte {
+			c.proximo = agora.Add(a.longa)
+		}
 		a.notif.Notificar(c.codigo, c.texto+" (continua)")
 	}
 }

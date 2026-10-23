@@ -122,17 +122,18 @@ type Parametros struct {
 	Flexscan     bool
 	ContasHMLFlx []string
 
-	ColarEntrada, FolgaStop, ColarSaida, Tick int64
-	AjusteDegrauMin                           int64
-	TimeoutEntrada, TimeoutSaida, EsperaStop  time.Duration
-	EsperaErro, EsperaFillPosRecusa           time.Duration
-	PrazoConfirmacao, EsperaEncerramento      time.Duration
-	RetentativaProtecao, AlertaSemProtecao    time.Duration
-	AlertaPendente, RepeticaoAlerta           time.Duration
-	SilencioMassStatus, AlertaSessaoPresa     time.Duration
-	IdadeMaxPreco, IdadeMaxPrecoDivergente    time.Duration
-	MaxRepreco                                int
-	ConsultaPnTEspera, ConsultaPnTIntervalo   time.Duration
+	ColarEntrada, FolgaStop, ColarSaida, Tick  int64
+	AjusteDegrauMin                            int64
+	TimeoutEntrada, TimeoutSaida, EsperaStop   time.Duration
+	EsperaErro, EsperaFillPosRecusa            time.Duration
+	PrazoConfirmacao, EsperaEncerramento       time.Duration
+	RetentativaProtecao, AlertaSemProtecao     time.Duration
+	AlertaPendente, RepeticaoAlerta            time.Duration
+	RepeticaoAlertaCurta, RepeticaoAlertaLonga time.Duration
+	SilencioMassStatus, AlertaSessaoPresa      time.Duration
+	IdadeMaxPreco, IdadeMaxPrecoDivergente     time.Duration
+	MaxRepreco                                 int
+	ConsultaPnTEspera, ConsultaPnTIntervalo    time.Duration
 	// v1.10: limitador de taxa da sessão (só as entradas esperam) e cache de usuários
 	TaxaMsgS  float64
 	RajadaMsg int
@@ -199,6 +200,8 @@ func (c Config) Parametros() Parametros {
 		AlertaSemProtecao:       c.Segundos("ALERTA_SEM_PROTECAO_S", 2),
 		AlertaPendente:          c.Segundos("ALERTA_PENDENTE_S", 3),
 		RepeticaoAlerta:         c.Segundos("ALERTA_REPETICAO_S", 30),
+		RepeticaoAlertaCurta:    c.Segundos("ALERTA_REPETICAO_CURTA_S", 120), // (v1.15) até aqui a cada 30 s;
+		RepeticaoAlertaLonga:    c.Segundos("ALERTA_REPETICAO_LONGA_S", 300), // depois, a cada 5 min
 		SilencioMassStatus:      c.Segundos("MASS_STATUS_SILENCIO_S", 3),
 		AlertaSessaoPresa:       c.Segundos("SESSAO_PRESA_ALERTA_S", 60),
 		IdadeMaxPreco:           c.Segundos("PRECO_IDADE_MAX_S", 3),

@@ -475,6 +475,7 @@ func Novo(c config.Config, rel relogio.Relogio, r repo.Repositorio, f preco.Font
 		entradasUID: map[int][]time.Time{}, ultimaEntradaUID: map[ladoUID]time.Time{}, ultimaOpUID: map[int]*operacao{},
 	}
 	m.al = alerta.Novo(n, m.publicarAlerta, rel, p.RepeticaoAlerta)
+	m.al.Espacar(p.RepeticaoAlertaCurta, p.RepeticaoAlertaLonga)
 	metricas.DefinirFilas(func() [3]int { return [3]int{len(m.p0), len(m.p1), len(m.p2)} }, capFilaP0+capFilaP1+capFilaP2)
 	return m
 }

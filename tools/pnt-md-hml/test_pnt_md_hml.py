@@ -377,8 +377,18 @@ class TestComGravacao(unittest.TestCase):
 
 AGORA = time.time()
 AMOSTRA_20 = "/var/tmp/pnt-md-hml-amostra-20261020.jsonl.gz"
-GRAVACAO_19 = os.path.join(VAR, "pnt-md-hml-WINZ26-20261019.jsonl.gz")
-GRAVACAO_21 = os.path.join(VAR, "pnt-md-hml-WINZ26-20261021.jsonl")
+
+
+def gravacao(dia):
+    """A gravação do dia em var/, compactada ou não (a parada das 14:35 compacta a do dia)."""
+    arq = os.path.join(VAR, f"pnt-md-hml-WINZ26-{dia}.jsonl")
+    return arq + ".gz" if os.path.exists(arq + ".gz") else arq
+
+
+GRAVACAO_19 = gravacao("20261019")
+GRAVACAO_20 = gravacao("20261020")  # do restart das 10:45:41 (Trading já no 1º status, book normal)
+GRAVACAO_21 = gravacao("20261021")
+GRAVACAO_22 = gravacao("20261022")
 
 
 def nivel(px, q=1):
@@ -577,8 +587,9 @@ def com_pedidas(**k):
 
 
 class TestReconexao(unittest.TestCase):
-    """A decisão de reconectar: book degenerado nesta conexão, em negociação, por mais de 10 s; no
-    máximo uma a cada 60 s; alerta depois de 5 seguidas sem book normal."""
+    """A decisão de reconectar: book degenerado nesta conexão, em negociação, por mais de 10 s; a 1ª
+    de uma sequência só 45 s depois da entrada em negociação; no máximo uma a cada 30 s; alerta depois
+    de 5 seguidas sem book normal."""
 
     def novo(self):
         self.rel = Relogio(1792584000.0)
@@ -594,8 +605,52 @@ class TestReconexao(unittest.TestCase):
             self.assertIsNone(r.observar(1000.0 + t, e))
         e.update("SecurityStatus", "Trading")  # a contagem começa aqui, não no primeiro book degenerado
         self.assertIsNone(r.observar(1030.0, e))
-        self.assertIsNone(r.observar(1039.9, e))
-        self.assertIn("book degenerado em negociação", r.observar(1040.0, e))
+        self.assertIsNone(r.observar(1074.9, e))  # 10 s degenerado já passou; falta a espera de 45 s
+        motivo = r.observar(1075.0, e)
+        self.assertIn("book degenerado em negociação há 45 s, 45 s da entrada em negociação", motivo)
+
+    def test_primeira_45s_depois_seguintes_30s(self):
+        e, r = self.novo(), m.Reconexao()
+        e.update("SecurityStatus", "Pre-Open")
+        e.update("AggrBook", livro([1, 2], [3], Aggregated=False))
+        r.observar(1000.0, e)
+        e.update("SecurityStatus", "Trading")
+        r.observar(1000.0, e)  # a entrada em negociação às 1000
+        feitas = []
+        for t in range(1, 200):
+            if feitas and feitas[-1] == t - 5:  # a conexão nova (5 s depois): degenerada até a 4ª
+                e.marcar(conectado=True, feed_ok=True)
+                e.update("SecurityStatus", "Trading")  # o snapshot da conexão nova: não reinicia o relógio
+                e.update("AggrBook", livro([1], [3], Aggregated=len(feitas) >= 4))
+            motivo = r.observar(1000.0 + t, e)
+            if motivo:
+                r.registrar(1000.0 + t, motivo)
+                feitas.append(t)
+                e.marcar(conectado=False, motivo="reconexão")
+        self.assertEqual(feitas, [45, 75, 105, 135])
+        self.assertEqual(r.saude()["reconexoes_seguidas"], 0)
+
+    def test_leilao_reinicia_a_espera(self):
+        e, r = self.novo(), m.Reconexao()
+        e.update("SecurityStatus", "Trading")  # já negociando no 1º status: sem espera
+        e.update("AggrBook", livro([1], [3]))
+        r.observar(1000.0, e)
+        e.update("SecurityStatus", "Pre-Open")  # leilão no meio do dia
+        r.observar(1100.0, e)
+        e.update("SecurityStatus", "Trading")
+        e.update("AggrBook", livro([1], [3], Aggregated=False))
+        self.assertIsNone(r.observar(1110.0, e))  # a volta à negociação, vista às 1110
+        self.assertIsNone(r.observar(1154.9, e))
+        self.assertIsNotNone(r.observar(1155.0, e))
+
+    def test_ja_negociando_no_primeiro_status_nao_espera(self):
+        # serviço subido com o pregão aberto: não se sabe quando a negociação começou
+        e, r = self.novo(), m.Reconexao()
+        e.update("SecurityStatus", "Trading")
+        e.update("AggrBook", livro([1], [3], Aggregated=False))
+        self.assertIsNone(r.observar(1000.0, e))
+        motivo = r.observar(1010.0, e)
+        self.assertEqual(motivo, "book degenerado em negociação há 10 s (Aggregated=false)")
 
     def test_book_normal_zera_a_contagem(self):
         e, r = self.novo(), m.Reconexao()
@@ -625,17 +680,17 @@ class TestReconexao(unittest.TestCase):
                 r.registrar(1000.0 + t, motivo)
                 feitas.append(t)
                 e.marcar(conectado=False, motivo="reconexão")
-        self.assertEqual(feitas[0], 10)
-        self.assertTrue(all(b - a >= 60 for a, b in zip(feitas, feitas[1:])), feitas)
-        self.assertEqual(len(feitas), 7)
+        self.assertEqual(feitas[0], 10)  # Trading já no 1º status: sem a espera de 45 s
+        self.assertTrue(all(b - a >= 30 for a, b in zip(feitas, feitas[1:])), feitas)
+        self.assertEqual(len(feitas), 13)
         self.assertTrue(r.saude()["reconexao_alerta"])
-        self.assertEqual(r.saude()["reconexoes_book"], 7)
+        self.assertEqual(r.saude()["reconexoes_book"], 13)
         e.marcar(conectado=True, feed_ok=True)
         e.update("AggrBook", livro([1], [3]))
         r.observar(1500.0, e)
         self.assertEqual(r.saude()["reconexoes_seguidas"], 0)
         self.assertFalse(r.saude()["reconexao_alerta"])
-        self.assertEqual(r.saude()["reconexoes_book"], 7)
+        self.assertEqual(r.saude()["reconexoes_book"], 13)
 
     def test_pedido_manual(self):
         e, r = self.novo(), m.Reconexao()
@@ -655,11 +710,21 @@ class TestReconexao(unittest.TestCase):
 
 @unittest.skipUnless(os.path.exists(AMOSTRA_20), "sem a amostra de 20/10")
 class TestReconexao20(unittest.TestCase):
-    def test_pede_depois_da_abertura(self):
+    def test_nenhuma_antes_dos_45s(self):
         r = com_pedidas()
         reproduzir(AMOSTRA_20, rec=r)
-        # Trading às 09:00:51.438; a amostra vai até 09:01:24: uma reconexão ~10 s depois
-        self.assertEqual(r.pedidas, ["09:01:01"])
+        # Trading às 09:00:51.438; a amostra vai até 09:01:24, antes dos +45 s (09:01:36): nenhuma
+        # (com os 10 s de antes de 22/10 seria às 09:01:01)
+        self.assertEqual(r.pedidas, [])
+
+
+@unittest.skipUnless(os.path.exists(GRAVACAO_20), "sem a gravação de 20/10")
+class TestReconexao20Restart(unittest.TestCase):
+    def test_nenhuma_com_o_book_normal(self):
+        r = com_pedidas()
+        reproduzir(GRAVACAO_20, 300000, rec=r)
+        # restart das 10:45:41: Trading já no 1º status e book normal
+        self.assertEqual(r.pedidas, [])
 
 
 @unittest.skipUnless(os.path.exists(GRAVACAO_21), "sem a gravação de 21/10")
@@ -667,10 +732,20 @@ class TestReconexao21(unittest.TestCase):
     def test_pede_depois_do_trading_e_para_com_a_conexao_nova(self):
         r = com_pedidas()
         reproduzir(GRAVACAO_21, rec=r, ate="09:06:00")
-        # Trading às 09:00:32.979; a conexão nova das 09:02:27 vem normal
-        self.assertEqual(r.pedidas[0][:7], "09:00:4")
-        self.assertTrue(all(p < "09:02:27" for p in r.pedidas), r.pedidas)
-        self.assertEqual(len(r.pedidas), 2)  # 09:00:4x e 09:01:4x
+        # Trading às 09:00:32.979 (+45 s = 09:01:18, depois a cada 30 s); a conexão nova das 09:02:27
+        # (restart manual) vem normal
+        self.assertEqual(r.pedidas, ["09:01:18", "09:01:48", "09:02:19"])
+        self.assertEqual(r.saude()["reconexoes_seguidas"], 0)
+
+
+@unittest.skipUnless(os.path.exists(GRAVACAO_22), "sem a gravação de 22/10")
+class TestReconexao22(unittest.TestCase):
+    def test_primeira_a_45s_do_trading(self):
+        r = com_pedidas()
+        reproduzir(GRAVACAO_22, rec=r, ate="09:06:00")
+        # Trading às 09:00:59.253: a 1ª a +45 s (09:01:44; a de 22/10 saiu a +10 s e a conexão de +16 s
+        # degenerou), a 2ª 30 s depois; a gravação tem a conexão das 09:02:15 normal
+        self.assertEqual(r.pedidas, ["09:01:44", "09:02:15"])
         self.assertEqual(r.saude()["reconexoes_seguidas"], 0)
 
 

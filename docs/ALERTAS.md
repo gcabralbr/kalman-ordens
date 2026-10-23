@@ -4,8 +4,10 @@ Fonte única. Roteiros (`alerta CODIGO`), Telegram e gestor usam estes códigos.
 **Textos só em ASCII** (SPEC v1.4 L1): o `texto` dos alertas, o `motivo` das recusas e os textos
 dos eventos saem sem acento nem símbolo fora do ASCII (o Kalman grava em latin1).
 Todo alerta sai no Telegram (direto ou pelo `ALERTA_WEBHOOK_URL`, com o texto `[<ALERTA_SERVIDOR> kalman-ordens] ...`) e como evento `ALERTA` (`{"codigo": ..., "texto": ..., "operacao_id": ...}`).
-**Crítico** = repete a cada 30 s (`ALERTA_REPETICAO_S`) até a condição se resolver; a resolução
-gera um alerta `RESOLVIDO` com o código original no texto.
+**Crítico** = repete a cada 30 s (`ALERTA_REPETICAO_S`) nos primeiros 2 min (`ALERTA_REPETICAO_CURTA_S`)
+e depois a cada 5 min (`ALERTA_REPETICAO_LONGA_S`), até a condição se resolver (v1.15); a resolução
+gera um alerta `RESOLVIDO` com o código original no texto (`RESOLVIDO: FONTE_DEGRADADA`; com chave
+própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 
 ## Alertas
 
