@@ -1,0 +1,35 @@
+cenario 103 Flexscan: restart com a proteção viva — o mass status (GET /orders/filter) traz o stop executado durante a queda; KM desconhecida viva → DIVERGENTE
+hora 2026-10-23 11:40:00
+# SPEC-FLEXSCAN-v1 §7. No boot a ponte não sabe nada; o login concilia: as ordens KM da conta (vivas,
+# e as terminais do motor de hoje) voltam como 150=I com o executado. Uma ordem KM viva que o motor
+# não conhece é a divergência de sempre.
+config FLEXSCAN_URL=falso
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+executa COMPRADO_FLX OP=2801
+
+# o serviço cai; a B3 executa o stop nesse meio tempo
+reinicia_servico
+flx_executa $FP preco=129410
+aguarda_logon
+avanca 3s
+evento SAIDA_EXECUTADA operacao_id=2801 qtd=1 preco=129410 origem=STOP_SERVIDOR
+evento ZERADA operacao_id=2801 origem=STOP_SERVIDOR
+saude posicao=0 divergente=false conciliando=false
+flx_nada
+
+# outra posição; uma KM viva que o motor não conhece aparece na mesma conta (o mass status só
+# pergunta as contas com ordem viva ou posição, v1.10 C5)
+executa COMPRADO_FLX OP=2802
+flx_cria KM-E-9999-1 id=>X
+reinicia_servico
+aguarda_logon
+avanca 3s
+alerta DESCONHECIDA
+alerta DIVERGENTE
+saude divergente=true posicao=1
+flx_nada

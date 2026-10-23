@@ -46,19 +46,21 @@ func (m *Motor) saude() Resposta {
 		ult = m.ultimaEntrada.Format(time.RFC3339)
 	}
 	r := Resposta{
-		"versao":             Versao,
-		"sessao_logada":      m.fix != nil && m.fix.Logado(),
-		"conciliando":        m.conciliando,
-		"posicao":            m.posicaoTotal(),
-		"parada":             parada,
-		"divergente":         m.divergente,
-		"simbolo":            m.vigente,
-		"simbolo_divergente": m.algumaDivergente(),
-		"ambiente":           m.p.Ambiente,
-		"idade_preco_ms":     idade,
-		"ordens_vivas":       vivas,
-		"alertas_criticos":   m.al.Ativos(),
-		"fonte":              m.saudeFonte(),
+		"versao":        Versao,
+		"sessao_logada": m.fix != nil && m.fix.Logado(),
+		"conciliando":   m.conciliando,
+		"posicao":       m.posicaoTotal(),
+		// SPEC-FLEXSCAN-v1: o desligamento do pnt-md-hml (14:35) só olha o PnT
+		"posicao_por_conector": m.posicaoPorConector(),
+		"parada":               parada,
+		"divergente":           m.divergente,
+		"simbolo":              m.vigente,
+		"simbolo_divergente":   m.algumaDivergente(),
+		"ambiente":             m.p.Ambiente,
+		"idade_preco_ms":       idade,
+		"ordens_vivas":         vivas,
+		"alertas_criticos":     m.al.Ativos(),
+		"fonte":                m.saudeFonte(),
 		"limites": map[string]any{
 			"entradas_hoje":                m.entradasHoje,
 			"entradas_ultimo_minuto":       len(m.entradasRec),
@@ -116,6 +118,19 @@ func sinalDe(op *operacao) any {
 		return x
 	}
 	return map[string]any{"entrada": f(op.SinalEntrada), "saida": f(op.SinalSaida)}
+}
+
+func (m *Motor) posicaoPorConector() map[string]int {
+	r := map[string]int{dominio.ConectorPnT: 0}
+	if m.flx != nil {
+		r[dominio.ConectorFlexscan] = 0
+	}
+	for _, op := range m.ops {
+		if p := op.posicao(); p != 0 {
+			r[op.conector()] += p
+		}
+	}
+	return r
 }
 
 func (m *Motor) algumaDivergente() bool {

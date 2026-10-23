@@ -37,9 +37,14 @@ func TestDetector(t *testing.T) {
 var (
 	reListen   = regexp.MustCompile(`net\.Listen\(\s*"tcp"\s*,\s*([^)]*)\)`)
 	reProibido = regexp.MustCompile(`ListenAndServe|net\.ListenPacket|net\.ListenTCP|NewUnstartedServer|httptest\.serve|SocketAcceptHost`)
-	excecoes   = map[string]string{
-		// endereço do serviço: validado como loopback antes (main.go, soLoopback)
-		"cmd/kalman-ordens/main.go": `net.Listen("tcp", endereco)`,
+	excecoes   = map[string][]string{
+		"cmd/kalman-ordens/main.go": {
+			// endereço do serviço: validado como loopback antes (main.go, soLoopback)
+			`net.Listen("tcp", endereco)`,
+			// SPEC-FLEXSCAN-v1 §5.1: o receptor do webhook, com IP explícito (main.go, ipExplicito) e um
+			// handler de uma rota só (flexscan.Receptor); o mux do admin nunca é servido nele
+			`net.Listen("tcp", end)`,
+		},
 	}
 	// SocketAcceptHost só é aceito nas configurações globais (a sessão ignora a chave).
 	reAcceptHost = regexp.MustCompile(`GlobalSettings\(\)\.Set\(config\.SocketAcceptHost,\s*"127\.0\.0\.1"\)`)
@@ -70,7 +75,10 @@ func TestListenersDoRepositorioEmLoopback(t *testing.T) {
 			if m := reListen.FindStringSubmatch(linha); m != nil {
 				arg := strings.TrimSpace(m[1])
 				literal := strings.HasPrefix(arg, `"127.0.0.1:`) || strings.HasPrefix(arg, `fmt.Sprintf("127.0.0.1:`)
-				excecao := excecoes[rel] != "" && strings.Contains(linha, excecoes[rel])
+				excecao := false
+				for _, x := range excecoes[rel] {
+					excecao = excecao || strings.Contains(linha, x)
+				}
 				if !literal && !excecao {
 					t.Errorf("%s:%d: listener sem 127.0.0.1 literal: %s", rel, i+1, strings.TrimSpace(linha))
 				}

@@ -1,0 +1,51 @@
+[
+ {
+  "Legs": [
+   {
+    "ILegAllocAccount": "S-1117150",
+    "LegAvgPx": 207965.0,
+    "LegDatedDate": "2026-10-23 12:08:22",
+    "LegExecQty": 1,
+    "LegOrdType": "2",
+    "LegQuantity": 1,
+    "LegRefID": "24cca02a-6b14-4298-b115-78108e188a59:1",
+    "LegResting": "N",
+    "LegSecurityExchange": "XBMF",
+    "LegSide": "1",
+    "LegSymbol": "WINZ26",
+    "LegMsg": "Id: 397F36917E47A4679ACD7336059590BB",
+    "LegCumQtyPerc": 100.0,
+    "LegLastPx": 207965.0,
+    "LegLastQty": 1
+   }
+  ],
+  "CustomParameters": {
+   "PriceLimit": 208015.0,
+   "SyntheticBracket": "OFF"
+  },
+  "InstanceCreationDate": "2026-10-23 12:08:22",
+  "UserName": "flx_gammaquant",
+  "StrategyCode": "sorder",
+  "StrategyId": "89D596B75C6E8F7238763A1D21913FDC",
+  "ClOrdID": "24cca02a-6b14-4298-b115-78108e188a59",
+  "InstanceStrategyId": "ORDPROXY0202FLX.FLX0000000000002",
+  "OrdStatus": "5",
+  "AvgPrice": 207965.0,
+  "BasketId": "fxs",
+  "CreateDate": "2026-10-23 12:08:22",
+  "DocNumber": "00000000000",
+  "DocType": "1",
+  "EndTime": "21:00:00",
+  "ExecutedQtty": 1,
+  "ExpireDate": "20261023",
+  "InitTime": "07:00:00",
+  "Name": "KM-STP-E-1",
+  "TargetDesc": "208015",
+  "TargetQtty": 1,
+  "Text": "Executada, 1/1@207965",
+  "TimeInForce": "0",
+  "TimeStamp": "2026-10-23 12:08:22",
+  "CumQtyPerc": "100.00",
+  "Env": "SIM"
+ }
+]

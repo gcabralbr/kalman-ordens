@@ -29,6 +29,7 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/alerta"
 	"gammaquant.com.br/kalman-ordens/internal/api"
 	"gammaquant.com.br/kalman-ordens/internal/config"
+	"gammaquant.com.br/kalman-ordens/internal/flexscan"
 	"gammaquant.com.br/kalman-ordens/internal/motor"
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
@@ -187,12 +188,58 @@ func servir(ctx context.Context, cfg config.Config) error {
 	defer tg.Parar()
 
 	rel := relogio.Real{}
-	pr := preco.NovaHTTP(cfg.Texto("PRECOS_URL", "http://172.16.110.51:9090"), cfg.Texto("PRECOS_ATIVO", "WINFUT"), rel)
-	pr.ComSaude(cfg.Texto("PRECOS_SAUDE_URL", "")) // HML: o /saude do pnt-md-hml (motivo do FONTE_DEGRADADA)
+	// fonte de preço por conector (SPEC-FLEXSCAN-v1): PRECOS_URL é o padrão; PRECOS_URL_<CONECTOR>
+	// só onde difere (HML: PnT → 9096, o book D-1 da HML do PnT; Flexscan → 9090, o D0 do simulador)
+	urlPnT := cfg.Texto("PRECOS_URL_PNT", cfg.Texto("PRECOS_URL", "http://172.16.110.51:9090"))
+	pr := preco.NovaHTTP(urlPnT, cfg.Texto("PRECOS_ATIVO", "WINFUT"), rel)
+	pr.ComSaude(cfg.Texto("PRECOS_SAUDE_URL_PNT", cfg.Texto("PRECOS_SAUDE_URL", ""))) // HML: o /saude do pnt-md-hml (motivo do FONTE_DEGRADADA)
 	pr.Iniciar(200 * time.Millisecond)
 	defer pr.Parar()
 
 	m := motor.Novo(cfg, rel, r, pr, tg)
+	flxCfg := flexscan.ConfigDe(cfg)
+	var ponte *flexscan.Ponte
+	var srvWebhook *http.Server
+	if flxCfg.URL != "" {
+		if flxCfg.Usuario == "" || flxCfg.Senha == "" {
+			return fmt.Errorf("FLEXSCAN_URL sem FLEXSCAN_USUARIO/FLEXSCAN_SENHA")
+		}
+		if u := cfg.Texto("PRECOS_URL_FLEXSCAN", cfg.Texto("PRECOS_URL", "http://172.16.110.51:9090")); u != urlPnT {
+			pf := preco.NovaHTTP(u, cfg.Texto("PRECOS_ATIVO", "WINFUT"), rel)
+			pf.ComSaude(cfg.Texto("PRECOS_SAUDE_URL_FLEXSCAN", ""))
+			pf.Iniciar(200 * time.Millisecond)
+			defer pf.Parar()
+			m.UsarPrecosFlexscan(pf)
+		}
+		ponte = flexscan.Nova(flxCfg, m.OuvinteFlexscan(), rel)
+		m.UsarFlexscan(ponte)
+		if end := cfg.Texto("FLEXSCAN_WEBHOOK_ENDERECO", ""); end != "" {
+			if end == endereco {
+				return fmt.Errorf("FLEXSCAN_WEBHOOK_ENDERECO igual ao HTTP_ENDERECO: o webhook tem listener próprio")
+			}
+			if err := ipExplicito(end); err != nil {
+				return err
+			}
+			rec, err := flexscan.NovoReceptor(ponte, cfg.Texto("FLEXSCAN_WEBHOOK_PREFIXO", "/flexscan/webhook/"), cfg.Texto("FLEXSCAN_WEBHOOK_SEGREDO", ""))
+			if err != nil {
+				return err
+			}
+			// só a rota do webhook: o mux do admin nunca é servido fora do loopback (SPEC §5.1)
+			srvWebhook = &http.Server{Addr: end, Handler: rec, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
+				WriteTimeout: 10 * time.Second, MaxHeaderBytes: 8 << 10}
+			lw, err := net.Listen("tcp", end)
+			if err != nil {
+				return fmt.Errorf("FLEXSCAN_WEBHOOK_ENDERECO %q: %w", end, err)
+			}
+			go func() {
+				if err := srvWebhook.Serve(lw); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					slog.Error("webhook flexscan", "erro", err)
+				}
+			}()
+		} else {
+			slog.Warn("flexscan sem receptor de webhook (FLEXSCAN_WEBHOOK_ENDERECO vazio): só a consulta")
+		}
+	}
 	s, err := pnt.NovaSessao(pnt.ConfigSessao{
 		SenderCompID: cfg.Texto("FIX_SENDER_COMP_ID", ""),
 		TargetCompID: cfg.Texto("FIX_TARGET_COMP_ID", "PNT_DSA"),
@@ -239,6 +286,10 @@ func servir(ctx context.Context, cfg config.Config) error {
 	if err := s.Iniciar(); err != nil {
 		return err
 	}
+	if ponte != nil {
+		ponte.Iniciar()
+		slog.Info("flexscan: conector ligado", "url", flxCfg.URL, "usuario", flxCfg.Usuario, "webhook", srvWebhook != nil)
+	}
 
 	fim := make(chan struct{})
 	go func() {
@@ -250,6 +301,9 @@ func servir(ctx context.Context, cfg config.Config) error {
 				return
 			case <-t.C:
 				m.Tick()
+				if ponte != nil {
+					ponte.Tick()
+				}
 			}
 		}
 	}()
@@ -262,6 +316,15 @@ func servir(ctx context.Context, cfg config.Config) error {
 	// Parar o processo NÃO cancela a 1014: a posição continua protegida no PnT (Parte 6).
 	slog.Info("desligando: logout FIX, nada é cancelado no PnT")
 	close(fim)
+	if ponte != nil {
+		// as ordens da Flexscan ficam na bolsa (a stop-limite é da B3)
+		ponte.Parar()
+	}
+	if srvWebhook != nil {
+		ctxW, cancelW := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = srvWebhook.Shutdown(ctxW)
+		cancelW()
+	}
 	s.Parar()
 	ctxFim, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -280,6 +343,20 @@ func maquina() string {
 		h = h[:i]
 	}
 	return h
+}
+
+// ipExplicito: o receptor do webhook escuta num IP dado (ex.: 172.16.110.53:9098), nunca em todas as
+// interfaces (0.0.0.0, ::, ou sem host).
+func ipExplicito(endereco string) error {
+	host, _, err := net.SplitHostPort(endereco)
+	if err != nil {
+		return fmt.Errorf("FLEXSCAN_WEBHOOK_ENDERECO %q: %w", endereco, err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || ip.IsUnspecified() {
+		return fmt.Errorf("FLEXSCAN_WEBHOOK_ENDERECO %q: use o IP da interface (ex.: 172.16.110.53:9098), não todas", endereco)
+	}
+	return nil
 }
 
 func soLoopback(endereco string) error {

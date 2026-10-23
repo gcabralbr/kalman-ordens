@@ -31,6 +31,9 @@ var Catalogo = map[string]bool{
 	"PNT_BOLSA_INDISPONIVEL": true,
 	"BANCO_QUARENTENA":       true, "PROTECAO_RESERVA_REPLACES": false, "TUNNEL_RECUSA_ENTRADA": false,
 	"FONTE_DEGRADADA": true,
+	// SPEC-FLEXSCAN-v1
+	"FLEXSCAN_LOGIN": true, "FLEXSCAN_PERMISSAO": true, "FLEXSCAN_WEBHOOK_ATRASADO": false, "FLEXSCAN_WEBHOOK_INVALIDO": false,
+	"FLEXSCAN_WEBHOOK_INCOERENTE": true, "FLEXSCAN_ESTADO_INESPERADO": true,
 }
 
 // Notificador entrega o alerta para fora (Telegram). Não pode bloquear.

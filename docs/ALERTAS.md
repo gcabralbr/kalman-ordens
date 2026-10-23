@@ -66,6 +66,12 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `VIRADA_COM_OPERACAO` | virada de dia com operação não encerrada | sim |
 | `ERRO_INTERNO` | exceção no motor | sim |
 | `RESOLVIDO` | um alerta crítico deixou de valer | não |
+| `FLEXSCAN_LOGIN` | (SPEC-FLEXSCAN-v1) login na Flexscan falhou: sem resposta ou recusado (a ponte tenta a cada `FLEXSCAN_ESPERA_LOGIN_S`), ou erro definitivo (senha bloqueada/inválida/expirada, usuário inativo, MFA: não tenta sozinho); entradas da Flexscan recusadas (`SEM_SESSAO`); resolve no login | sim |
+| `FLEXSCAN_PERMISSAO` | (SPEC-FLEXSCAN-v1) 403 numa ordem da Flexscan (permissão do usuário de API) | sim |
+| `FLEXSCAN_WEBHOOK_ATRASADO` | (SPEC-FLEXSCAN-v1) a consulta periódica viu uma mudança espontânea (fill, stop executado, cancelamento) que o webhook não trouxe; resolve quando um webhook traz a próxima | não |
+| `FLEXSCAN_WEBHOOK_INVALIDO` | (SPEC-FLEXSCAN-v1) webhook com o segredo certo e corpo de forma desconhecida: gravado, respondido 200, consulta das vivas | não |
+| `FLEXSCAN_WEBHOOK_INCOERENTE` | (SPEC-FLEXSCAN-v1) retrato do webhook que não bate com a ordem (ClOrdID, conta, símbolo, lado, usuário, quantidade): descartado (forjado ou bug) | sim |
+| `FLEXSCAN_ESTADO_INESPERADO` | (SPEC-FLEXSCAN-v1) ordem da Flexscan em estado 4/8/9 (UNBALANCED, SUSPENDING, SUSPENDED) ou com o gatilho mudado sem pedido nosso; o preço limite ajustado ao túnel pela Flexscan **não** gera alerta (evento `FLX-PRECO`) | sim |
 
 ## Códigos de recusa do `POST /ordens`
 
@@ -76,17 +82,18 @@ gera um alerta `RESOLVIDO` com o código original no texto.
 | `UID_NAO_HABILITADO` | ENTRADA de uid sem habilitação ativa em `kalmanordemusuario` (só a CLI altera) | não | — |
 | `CONFIG_USUARIO_INDISPONIVEL` | `acusuario` ou a habilitação ilegíveis (banco) | não | `USUARIO_CONFIG` |
 | `CONFIG_USUARIO_INVALIDA` | JSON do ambiente inválido, sem `Robo.CORSeqId`, ou uid sem linha em `acusuario` | não | `USUARIO_CONFIG` |
-| `DESTINO_NAO_SUPORTADO` | `Robo.CORSeqId` = 88 (Capital → Flexscan) | não | — |
-| `DESTINO_INVALIDO` | `Robo.CORSeqId` = 9999 (simulador do GQ) ou outro ≠ 85 | não | `USUARIO_CONFIG` |
-| `CONTA_INVALIDA` | `Robo.CCONroConta` ausente ou não só dígitos (o simulador usa `QUANT`) | não | `USUARIO_CONFIG` |
-| `CONTA_AMBIENTE` | trava cruzada (`ORDENS_AMBIENTE` × `ORDENS_CONTAS_HML`) | não | `CONTA_AMBIENTE` (crítico) |
+| `DESTINO_NAO_SUPORTADO` | `Robo.CORSeqId` = 88 (Capital → Flexscan) numa instância sem `FLEXSCAN_URL` | não | — |
+| `DESTINO_NAO_HABILITADO` | (SPEC-FLEXSCAN-v1) o conector do destino do GQ (85 → PNT, 88 → FLEXSCAN) fora dos `conectores` da habilitação do uid | não | — |
+| `DESTINO_INVALIDO` | `Robo.CORSeqId` = 9999 (simulador do GQ) ou outro ≠ 85 e ≠ 88 | não | `USUARIO_CONFIG` |
+| `CONTA_INVALIDA` | `Robo.CCONroConta` ausente; no PnT, não só dígitos (o simulador usa `QUANT`); na Flexscan, fora de letras, dígitos e hífen | não | `USUARIO_CONFIG` |
+| `CONTA_AMBIENTE` | trava cruzada (`ORDENS_AMBIENTE` × `ORDENS_CONTAS_HML`, ou `FLEXSCAN_CONTAS_HML` no destino 88) | não | `CONTA_AMBIENTE` (crítico) |
 | `SIMBOLO_INVALIDO` | ticker do marketdata não é contrato de WIN | não | `SIMBOLO_INVALIDO` |
 | `CAMPO_INVALIDO` | campo ausente ou inválido; SAIDA com uid diferente do da operação | não | — |
 | `SEM_STOP` | ENTRADA sem `stop_pts` | não | — |
 | `DUPLICADA` | `operacao_id` (e papel) já recebido | não | `DUPLICADA_DIFERENTE` se o conteúdo difere |
 | `PARADA` | serviço em parada | não | — |
 | `DIVERGENTE` | estado divergente | não | — |
-| `SEM_SESSAO` | sessão FIX não logada | não | — |
+| `SEM_SESSAO` | sessão FIX não logada; no destino 88, conector Flexscan sem token | não | — |
 | `PNT_BOLSA_INDISPONIVEL` | disjuntor de bolsa indisponível aberto, ou a bolsa voltou há menos de `DISJUNTOR_ESTAVEL_S` sem rejeição (v1.10 §9) | não | — |
 | `CONCILIANDO` | conciliação do logon em andamento | não | — |
 | `SEM_CONFIRMACAO` | há ordem sem confirmação do PnT | não | — |

@@ -1,0 +1,47 @@
+[
+ {
+  "Legs": [
+   {
+    "ILegAllocAccount": "S-1117150",
+    "LegAvgPx": 0.0,
+    "LegDatedDate": "2026-10-23 12:08:12",
+    "LegExecQty": 0,
+    "LegOrdType": "2",
+    "LegQuantity": 1,
+    "LegRefID": "e2c433a1-7f34-4c61-b913-0eb92701be9c:1",
+    "LegResting": "N",
+    "LegSecurityExchange": "XBMF",
+    "LegSide": "1",
+    "LegSymbol": "WINZ26",
+    "LegMsg": "Id: 031983CA798530445CFCE5BA03113D6A"
+   }
+  ],
+  "CustomParameters": {
+   "PriceLimit": 176770.0,
+   "SyntheticBracket": "OFF"
+  },
+  "InstanceCreationDate": "2026-10-23 12:08:12",
+  "UserName": "flx_gammaquant",
+  "StrategyCode": "sorder",
+  "StrategyId": "E21C291E58251C2B65E7A7B749105473",
+  "ClOrdID": "e2c433a1-7f34-4c61-b913-0eb92701be9c",
+  "InstanceStrategyId": "ORDPROXY0202FLX.FLX0000000000002",
+  "OrdStatus": "3",
+  "AvgPrice": 0.0,
+  "BasketId": "fxs",
+  "CreateDate": "2026-10-23 12:08:12",
+  "DocNumber": "00000000000",
+  "DocType": "1",
+  "EndTime": "21:00:00",
+  "ExecutedQtty": 0,
+  "ExpireDate": "20261023",
+  "InitTime": "07:00:00",
+  "Name": "KM-REJ-E-1",
+  "TargetDesc": "176770",
+  "TargetQtty": 1,
+  "Text": "Ordem aceita, 1@176770",
+  "TimeInForce": "0",
+  "TimeStamp": "2026-10-23 12:08:12",
+  "Env": "SIM"
+ }
+]

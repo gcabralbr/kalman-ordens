@@ -1,0 +1,56 @@
+cenario 96 Flexscan: parciais pelo webhook (repetido e fora de ordem) → stop-limite ajustada por PUT → timeout da entrada → stop executado pela B3
+hora 2026-10-23 10:20:00
+# SPEC-FLEXSCAN-v1 §4.3: o executado só sobe (o mesmo retrato duas vezes não duplica o fill); cada
+# item da lista é fundido sozinho (a ordem da lista não importa, webhook 009 do apisim); a edição é
+# confirmada pela consulta (orderStatus 5 = REPLACED, viva). Com FLEXSCAN_CONFIRMAR_FILL=0 o fill
+# do webhook vale direto. O stop executado pela B3 chega como 3 → 5 (FINISHED) no retrato.
+config FLEXSCAN_URL=falso
+config FLEXSCAN_CONFIRMAR_FILL=0
+config LIMITE_POSICAO_MAX=3
+config LIMITE_QTD_ORDEM=3
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+
+entrada 2101 C qtd=3 uid=8
+resposta aceito=true
+flx_recebe POST name=KM-E-2101-1 qtty=3 ordType=2 price=130020 id=>E1
+
+# 1º negócio: o mesmo retrato duas vezes → um fill, uma proteção de 1
+flx_executa $E1 qtd=1 preco=130010
+flx_webhook $E1
+flx_webhook $E1
+evento ENTRADA_EXECUTADA operacao_id=2101 qtd=1 preco=130010 qtd_total=1 preco_medio=130010
+conta_eventos ENTRADA_EXECUTADA operacao_id=2101 = 1
+flx_recebe POST name=KM-P-2101-1 qtty=1 ordType=4 stopPrice=129510 price=129410 id=>P1
+evento PROTEGIDA operacao_id=2101 qtd=1 preco_stop=129510
+
+# 2º negócio, numa lista com a proteção antes da entrada
+flx_executa $E1 qtd=1 preco=130020
+flx_webhook $P1 $E1
+evento ENTRADA_EXECUTADA operacao_id=2101 qtd=1 preco=130020 qtd_total=2 preco_medio=130015
+# a proteção vai a 2 contratos sobre o médio 130015 (PUT; a consulta vê o 5 com os valores novos)
+flx_recebe PUT id=$P1 qtty=2 stopPrice=129515 price=129415
+evento PROTEGIDA operacao_id=2101 qtd=2 preco_stop=129515 preco_limite=129415
+flx_ordem $P1 status=5 qtd=2 stop=129515
+
+# TIMEOUT_ENTRADA: cancela o restante da entrada
+avanca 3s
+flx_recebe DELETE id=$E1
+flx_ordem $E1 status=4 exec=2
+avanca 8100ms
+evento ENTRADA_ENCERRADA operacao_id=2101 qtd_final=2 preco_medio=130015
+saude posicao=2
+flx_nada
+nada
+
+# a B3 executa a stop-limite (sem ação nossa): o webhook traz o 5 (FINISHED) do retrato
+preco bid=129400 ask=129405 preco=129415
+flx_executa $P1 preco=129415
+flx_webhook $P1
+evento SAIDA_EXECUTADA operacao_id=2101 qtd=2 preco=129415 origem=STOP_SERVIDOR
+evento ZERADA operacao_id=2101 origem=STOP_SERVIDOR pnl_pts=-1200
+saude posicao=0
+flx_nada
+nada

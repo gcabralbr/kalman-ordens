@@ -1,0 +1,35 @@
+cenario 104 Flexscan e PnT juntos: limites globais somados; PnT sem sessão não recusa a Flexscan; conector fora da habilitação → DESTINO_NAO_HABILITADO
+hora 2026-10-23 11:50:00
+# SPEC-FLEXSCAN-v1 §2 item 1 e §3.2. O uid 7 vai pelo PnT (85), o 8 pela Flexscan (88); o 9 escolheu
+# a Flexscan no GQ mas a habilitação dele é só do PnT.
+config FLEXSCAN_URL=falso
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+usuario 9 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 9
+
+executa INICIO
+
+# conector fora da habilitação
+entrada 2901 C uid=9
+resposta aceito=false codigo=DESTINO_NAO_HABILITADO
+flx_nada
+
+# posição 1 pela Flexscan; o limite global (LIMITE_POSICAO_MAX=1) vale para o PnT também
+executa COMPRADO_FLX OP=2902
+entrada 2903 C
+resposta aceito=false codigo=POSICAO_MAXIMA
+nada
+
+# PnT sem sessão: a Flexscan segue (o ajuste da proteção sai)
+pnt_recusa_logon "already logged on"
+derruba_sessao
+avanca 2s
+saude sessao_logada=false flexscan.logado=true
+stop 2902 preco=129800 uid=8
+resposta aceito=true situacao=ENVIADO
+flx_recebe PUT id=$FP stopPrice=129800
+evento PROTECAO_AJUSTADA operacao_id=2902 preco_stop=129800
+flx_nada

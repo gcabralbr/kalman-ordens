@@ -457,6 +457,56 @@ time", 39=B, 1014 disparada ou terminal) não conta para a regra genérica (rote
   ```
   Teste: `scripts/teste-pnt-md-hml-horario.sh`.
 
+### 1.15 Conector Flexscan (mínimo útil, SPEC-FLEXSCAN-v1)
+
+O destino 88 (`Robo.CORSeqId`, Capital → Flexscan) passa a ser executado pela ponte REST; o resto do
+serviço (limites, travas, alertas, contrato com o Kalman) é o mesmo. Quem decide no teste é a
+**principal** (mercado de hoje; o simulador da Flexscan roda com o mercado de hoje), não a kalman-hml.
+
+- **Migração 0011** (aplicada pelo `servir`): `conectores` na habilitação; as linhas existentes ficam
+  `PNT` (nada muda para quem já estava habilitado).
+- **Habilitação:** `kalman-ordens usuario habilitar -uid N -conectores flexscan -motivo "teste Flex"`
+  (`pnt,flexscan` para os dois); `usuario conferir -uid N` mostra `destino=88 conector=FLEXSCAN
+  conta=S-1117150`. Destino do GQ fora da lista → `DESTINO_NAO_HABILITADO`.
+- **`/saude`:** `flexscan` (`logado`, `token_expira`, `webhooks_recebidos`, `ultimo_webhook`,
+  `ordens_vivas`, `ultimo_erro`, e com fonte própria `simbolo`/`fonte`), `posicao_por_conector`, e
+  `conector` em cada ordem viva. `sessao_logada` continua sendo a do PnT; o desligamento do
+  pnt-md-hml (14:35) só olha a posição e as ordens do PnT.
+- **Fonte de preço:** `PRECOS_URL` é a padrão (na .53, a 9096 do pnt-md-hml); `PRECOS_URL_FLEXSCAN`
+  (`http://172.16.110.53:9090`, a da principal) dá à Flexscan o mercado de hoje para o colar, o
+  `BOOK_DESCOLADO`, o resultado do dia e o `FONTE_DEGRADADA:FLEXSCAN`.
+
+Instalação na .53 (depois da suíte verde no worktree do pacote):
+
+```
+# 1. o receptor provisório sai da 9098 (o usuário para o var/flex-sim/receptor.py)
+ss -ltnp | grep 9098                     # nada
+# 2. binário (como sempre: REAL da kalman-hml desligado, posição 0 no 9092)
+sudo install -o root -g root -m 755 dist/kalman-ordens /opt/kalman-ordens/kalman-ordens
+# 3. /etc/kalman-ordens/service.env (modo 600): as chaves do bloco Flexscan do service.env.example
+#    FLEXSCAN_URL=https://apisim.flexscan.com.br/v1
+#    FLEXSCAN_USUARIO=flx_gammaquant
+#    FLEXSCAN_SENHA=...
+#    FLEXSCAN_CONTAS_HML=S-1117150
+#    FLEXSCAN_WEBHOOK_ENDERECO=172.16.110.53:9098
+#    FLEXSCAN_WEBHOOK_SEGREDO=<o do var/flex-sim/segredo.txt: é o do URL já cadastrado na Flexscan>
+#    PRECOS_URL_FLEXSCAN=http://172.16.110.53:9090
+sudo systemctl restart kalman-ordens
+journalctl -u kalman-ordens -n 30 | grep -E 'migração|flexscan'   # "migração aplicada ... 0011", "flexscan: login", "conector ligado"
+curl -s 127.0.0.1:9092/saude | jq '{versao, sessao_logada, flexscan, posicao_por_conector}'
+# 4. o webhook chega: uma ação no simulador (ou o primeiro pedido do uid) → webhooks_recebidos > 0
+# 5. habilitar o uid de teste e conferir
+sudo kalman-ordens usuario habilitar -uid N -conectores flexscan -motivo "teste Flex (principal)"
+sudo kalman-ordens usuario conferir -uid N
+```
+
+Firewall: a 9098 em `172.16.110.53` só para o nginx que repassa o webhook. O nginx continua respondendo
+200 a não-POST (o cadastro do webhook na Flexscan exige) e repassando só POST; o caminho chega sem o
+prefixo `/kalman-ordens`.
+
+Desligar a Flexscan sem tirar o binário: apagar `FLEXSCAN_URL` do `service.env` e reiniciar (o
+destino 88 volta a `DESTINO_NAO_SUPORTADO`; as ordens que estiverem na Flexscan ficam lá — zerar antes).
+
 ### 1.11 Emergência KHML (instância HML do Kalman, módulo `KHML`)
 
 A tela de admin da principal fala com o módulo `KALMAN`; para uma operação da KHML

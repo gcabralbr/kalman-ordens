@@ -1,0 +1,32 @@
+cenario 102 Flexscan: o receptor do webhook — 404 igual para segredo, método e caminho errados; corpo desconhecido (200 + alerta); retrato forjado descartado
+hora 2026-10-23 11:30:00
+# SPEC-FLEXSCAN-v1 §5. Só POST <prefixo><segredo>; o resto é 404 sem corpo. Corpo com o segredo certo
+# e forma desconhecida: 200 (sem reenvio em laço), FLEXSCAN_WEBHOOK_INVALIDO e consulta das vivas.
+# Retrato que não bate com a ordem (conta de outro): descartado, FLEXSCAN_WEBHOOK_INCOERENTE.
+config FLEXSCAN_URL=falso
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+executa COMPRADO_FLX OP=2701
+
+flx_webhook_http POST /flexscan/webhook/segredo-errado-0123456789abcdefghijklmnop []
+resposta _status=404
+flx_webhook_http GET /flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl
+resposta _status=404
+flx_webhook_http POST /flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl/x []
+resposta _status=404
+flx_webhook_http POST /kalman-ordens/flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl []
+resposta _status=404
+
+flx_webhook_corpo "nao e lista"
+alerta FLEXSCAN_WEBHOOK_INVALIDO
+
+# o stop "executado" numa conta que não é a da ordem: descartado
+flx_webhook_corpo [{"ClOrdID":"$FP","Name":"KM-P-2701-1","OrdStatus":"5","ExecutedQtty":1,"TargetQtty":1,"AvgPrice":129410,"UserName":"flx_roteiro","StrategyCode":"sorder","Text":"Executada","Legs":[{"ILegAllocAccount":"OUTRA-CONTA","LegSymbol":"WINZ26","LegSide":"2","LegOrdType":"4","LegQuantity":1,"LegExecQty":1,"LegLastPx":129410,"LegLastQty":1}]}]
+alerta FLEXSCAN_WEBHOOK_INCOERENTE
+sem_evento SAIDA_EXECUTADA operacao_id=2701
+saude posicao=1 divergente=false
+flx_ordem $FP status=0
+flx_nada
+nada

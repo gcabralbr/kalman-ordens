@@ -1,0 +1,29 @@
+cenario 101 Flexscan: webhook mudo — a consulta periódica pega o stop executado (FLEXSCAN_WEBHOOK_ATRASADO); o próximo webhook resolve
+hora 2026-10-23 11:20:00
+# SPEC-FLEXSCAN-v1 §2 item 6: as ordens vivas são consultadas a cada FLEXSCAN_CONSULTA_S (5 s). Uma
+# mudança espontânea vista primeiro pela consulta é o webhook atrasado (ou perdido).
+config FLEXSCAN_URL=falso
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+executa COMPRADO_FLX OP=2601
+
+# a B3 executa o stop; o webhook não chega
+preco bid=129400 ask=129405 preco=129400
+flx_executa $FP preco=129410
+avanca 5s
+evento SAIDA_EXECUTADA operacao_id=2601 qtd=1 preco=129410 origem=STOP_SERVIDOR
+evento ZERADA operacao_id=2601 origem=STOP_SERVIDOR
+alerta FLEXSCAN_WEBHOOK_ATRASADO
+saude posicao=0
+
+# a próxima mudança espontânea chega pelo webhook: nada de atraso (o alerta não é crítico: não
+# repete nem gera RESOLVIDO)
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+executa COMPRADO_FLX OP=2602
+avanca 10s
+sem_alerta FLEXSCAN_WEBHOOK_ATRASADO
+flx_nada

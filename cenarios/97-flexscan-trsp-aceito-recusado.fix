@@ -1,0 +1,54 @@
+cenario 97 Flexscan: TRSP aceito (PUT, 5 na consulta) e recusado (razão 4 pelo webhook; sem sinal, pela janela); preço limite ajustado ao túnel sem alerta; gatilho mexido sem pedido → crítico
+hora 2026-10-23 10:40:00
+# SPEC-FLEXSCAN-v1 §4.3 regra 3: a edição se decide pelo estado, não pelo valor. Recusada pelo
+# webhook ("Edicao rejeitada, razão: 4", webhook 013 do apisim) ou, sem sinal novo (o clxRejReason
+# fica grudado), pelo fim da janela da consulta ativa (FLEXSCAN_CONFIRMA_S): o stop anterior fica.
+config FLEXSCAN_URL=falso
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+executa COMPRADO_FLX OP=2201
+
+# TRSP aceito
+stop 2201 preco=129800 uid=8
+resposta aceito=true situacao=ENVIADO
+flx_recebe PUT id=$FP stopPrice=129800 price=129700 qtty=-
+evento PROTECAO_AJUSTADA operacao_id=2201 preco_stop=129800 preco_limite=129700 preco_stop_anterior=129510
+flx_ordem $FP status=5 stop=129800 preco=129700
+
+# TRSP recusado: o webhook traz a recusa
+flx_recusa_edicao $FP
+stop 2201 preco=129900 uid=8
+resposta aceito=true situacao=ENVIADO
+flx_recebe PUT id=$FP stopPrice=129900 price=129800
+flx_webhook $FP
+evento PROTECAO_AJUSTE_RECUSADO operacao_id=2201 preco_stop_pedido=129900 preco_stop=129800
+alerta RECUSA_PNT
+sem_alerta PROTECAO_REJEITADA
+flx_ordem $FP stop=129800
+
+# recusado de novo, sem webhook: o clxRejReason continua 4 (não é sinal novo); a janela decide
+flx_recusa_edicao $FP
+stop 2201 preco=129950 uid=8
+resposta aceito=true situacao=ENVIADO
+flx_recebe PUT id=$FP stopPrice=129950 price=129850
+avanca 4800ms
+sem_evento PROTECAO_AJUSTE_RECUSADO preco_stop_pedido=129950
+avanca 300ms
+evento PROTECAO_AJUSTE_RECUSADO operacao_id=2201 preco_stop_pedido=129950 preco_stop=129800
+saude posicao=1 divergente=false parada=null
+
+# a Flexscan ajusta o preço limite ao túnel sem pedido nosso: não é divergência nem alerta
+flx_altera $FP preco=129740
+avanca 5s
+sem_alerta FLEXSCAN_ESTADO_INESPERADO
+flx_nada
+
+# o gatilho mudou sem pedido nosso: crítico
+flx_altera $FP stop=129700
+avanca 5s
+alerta FLEXSCAN_ESTADO_INESPERADO
+saude posicao=1
+flx_nada
+nada

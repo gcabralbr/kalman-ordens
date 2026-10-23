@@ -52,3 +52,18 @@ bloco COMPRADO OP
   evento PROTEGIDA operacao_id=$OP preco_stop=129510 preco_limite=129410 qtd=1
   saude posicao=1
 fim
+
+# SPEC-FLEXSCAN-v1: posição comprada de 1 a 130010 pela Flexscan falsa, protegida pela stop-limite.
+# O roteiro declara config FLEXSCAN_URL=falso, o uid 8 no destino 88 e a habilitação dele. Capturas:
+# FE (a entrada) e FP (a proteção), os ids da Flexscan.
+bloco COMPRADO_FLX OP
+  entrada $OP C uid=8
+  resposta aceito=true
+  flx_recebe POST name=KM-E-$OP-1 qtty=1 ordType=2 price=130020 account=S-1117150 id=>FE
+  flx_executa $FE preco=130010
+  flx_webhook $FE
+  evento ENTRADA_EXECUTADA operacao_id=$OP qtd=1 preco=130010 qtd_total=1 preco_medio=130010
+  flx_recebe POST name=KM-P-$OP-1 qtty=1 ordType=4 stopPrice=129510 price=129410 id=>FP
+  evento PROTEGIDA operacao_id=$OP preco_stop=129510 preco_limite=129410 qtd=1
+  saude posicao=1
+fim

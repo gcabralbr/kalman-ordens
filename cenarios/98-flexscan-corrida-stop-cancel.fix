@@ -1,0 +1,29 @@
+cenario 98 Flexscan: saída do gestor enquanto a B3 executa o stop — DELETE recusado (400), a consulta traz o fill, sem saída limite; o webhook atrasado não muda nada
+hora 2026-10-23 10:50:00
+# SPEC-FLEXSCAN-v1 §4.3: 400 no DELETE de ordem terminal → a consulta decide antes do 35=9 (o "too
+# late" de hoje); o fill do stop vem da consulta; o 35=9 com 39=2 não manda a saída.
+config FLEXSCAN_URL=falso
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+executa COMPRADO_FLX OP=2301
+
+# a B3 executa a stop-limite; o webhook ainda não chegou
+preco bid=129400 ask=129405 preco=129400
+flx_executa $FP preco=129410
+saida 2301 V SINAL_OPOSTO uid=8
+resposta aceito=true
+flx_recebe DELETE id=$FP
+evento SAIDA_EXECUTADA operacao_id=2301 qtd=1 preco=129410 origem=STOP_SERVIDOR
+evento ZERADA operacao_id=2301 origem=STOP_SERVIDOR pnl_pts=-600
+saude posicao=0
+avanca 6s
+flx_nada
+nada
+
+# o webhook do stop chega depois: o mesmo estado, nada muda
+flx_webhook $FP
+conta_eventos SAIDA_EXECUTADA operacao_id=2301 = 1
+saude posicao=0 divergente=false
+flx_nada

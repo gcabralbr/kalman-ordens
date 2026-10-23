@@ -120,3 +120,31 @@ texto que iria ao Telegram e todo `motivo` de resposta HTTP é ASCII (SPEC v1.4 
 `ENTRADA_TARDIA` (fill de entrada depois da espera de encerramento; só registro, o gestor nunca
 reabre a operação). O gestor trata tudo o que não é `GESTOR` como operação fechada pelo serviço,
 com esse motivo.
+
+## Flexscan (SPEC-FLEXSCAN-v1)
+
+Com `config FLEXSCAN_URL=falso` o executor sobe a Flexscan falsa (`internal/flexscan/falso`, a API REST
+com o comportamento observado no apisim em 23/10) e a ponte, ligada ao motor como o conector da
+Flexscan; espera o login dela antes do primeiro passo. Os padrões dos roteiros: usuário `flx_roteiro`,
+`FLEXSCAN_CONTAS_HML=S-1117150`, `FLEXSCAN_TIMEOUT_MS=300` (a falsa segura 600 ms um pedido programado
+com `timeout`), sem limite de taxa, receptor do webhook ligado (chamado direto, sem listener). O uid da
+Flexscan é declarado no roteiro (`usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}` e
+`habilita 8 conectores=flexscan`); o bloco `COMPRADO_FLX OP` do `_comum.fix` monta a posição comprada
+protegida (capturas `FE` e `FP`). O `avanca` também move a ponte (consulta ativa e periódica, token).
+
+| Instrução | Efeito |
+|---|---|
+| `flx_recebe METODO [campo=valor ...] [id=ID] [id=>NOME]` | o próximo pedido de alteração (POST, PUT, DELETE) que a Flexscan falsa recebeu casa: campos do corpo JSON (número como número; `campo=-` = ausente); `id=` confere a ordem (PUT/DELETE); `id=>NOME` captura o id (no POST, o da ordem criada). As consultas (GET) não entram na fila |
+| `flx_nada` | nenhum pedido de alteração pendente |
+| `flx_executa ID [qtd=N] preco=P` | a bolsa executa N (padrão: o restante) a P |
+| `flx_webhook ID [ID ...]` | o webhook com a lista de retratos (estratégia sorder) dessas ordens, na ordem dada |
+| `flx_webhook_corpo CORPO` | o webhook com o corpo cru (o resto da linha; `$NOME` resolvido) |
+| `flx_webhook_http METODO /caminho [corpo]` | um pedido qualquer ao receptor; `resposta _status=N` confere |
+| `flx_falha timeout\|500\|400\|401\|403 [cria=1] [texto=...] [codigo=N]` | o próximo pedido de alteração falha assim; `timeout cria=1`: a ordem nasce (ou a edição/o cancel acontece) e a resposta se perde |
+| `flx_recusa_edicao ID [texto]` | a próxima edição (PUT) é recusada como a razão 4 do apisim (202, valores antigos, `clxRejReason` 4, `Text` "Edicao rejeitada, ...") |
+| `flx_cancela ID` | cancelamento que não foi nosso |
+| `flx_altera ID [preco=N] [stop=N] [status=X] [texto=...]` | muda a ordem como a Flexscan faria sozinha (ex.: preço ajustado ao túnel) |
+| `flx_cria NOME [conta=] [lado=] [tipo=] [qtd=] [preco=] [status=] [id=>NOME]` | uma ordem que não passou pelo serviço |
+| `flx_ordem ID campo=valor ...` | confere o estado na Flexscan falsa (`status`, `preco`, `stop`, `exec`, `qtd`, `nome`, `conta`) |
+| `flx_token_expira` | todo token atual passa a dar 401 |
+| `flx_login recusa\|senha\|aceita` | os logins seguintes falham (transitório; `senha`: 3402, definitivo) ou voltam a passar |

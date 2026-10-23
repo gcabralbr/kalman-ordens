@@ -1,0 +1,47 @@
+cenario 99 Flexscan: POST sem resposta ("não sei") — SEM_CONFIRMACAO, o mass status procura pelo name: não criada (entrada encerra, proteção recriada) ou criada (segue)
+hora 2026-10-23 11:00:00
+# SPEC-FLEXSCAN-v1 §2 item 3 e §4.3: timeout no POST nunca é reenvio. A ordem fica ENVIANDO; sem
+# resposta em PRAZO_CONFIRMACAO_S o motor pede o mass status, e a ponte procura as ordens da conta
+# (GET /orders/filter) pelo name — 3 vezes, 1 s entre elas, se faltar alguma. Não achada: 150=8
+# (não foi criada). Achada: o 150=I dela, e a operação segue.
+config FLEXSCAN_URL=falso
+config LIMITE_POSICAO_MAX=3
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+
+# 1. entrada não criada
+flx_falha timeout
+entrada 2401 C uid=8
+resposta aceito=true
+flx_recebe POST name=KM-E-2401-1
+avanca 3100ms
+alerta SEM_CONFIRMACAO
+evento ENTRADA_ENCERRADA operacao_id=2401 qtd_final=0
+saude conciliando=false divergente=false parada=null posicao=0
+flx_nada
+
+# 2. entrada criada e executada (a Flexscan aceitou, a resposta e o webhook se perderam): o mass
+#    status a acha pelo name com o fill, e a operação segue
+flx_falha timeout cria=1
+entrada 2402 C uid=8
+resposta aceito=true
+flx_recebe POST name=KM-E-2402-1 id=>E2
+flx_executa $E2 preco=130010
+# 3. e o POST da proteção também fica sem resposta, sem criar: recriada com outro name
+flx_falha timeout
+avanca 3100ms
+alerta SEM_CONFIRMACAO
+evento ENTRADA_EXECUTADA operacao_id=2402 qtd=1 preco=130010
+flx_recebe POST name=KM-P-2402-1 ordType=4
+avanca 3100ms
+alerta SEM_CONFIRMACAO
+alerta PROTECAO_REJEITADA
+avanca 1s
+flx_recebe POST name=KM-P-2402-2 ordType=4 stopPrice=129510 price=129410 id=>P2
+evento PROTEGIDA operacao_id=2402 preco_stop=129510 qtd=1
+saude posicao=1 divergente=false parada=null conciliando=false
+flx_nada

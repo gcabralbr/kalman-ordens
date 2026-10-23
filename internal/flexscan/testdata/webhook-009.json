@@ -1,0 +1,100 @@
+[
+ {
+  "Legs": [
+   {
+    "ILegAllocAccount": "S-1117150",
+    "LegAvgPx": 207460.0,
+    "LegDatedDate": "2026-10-23 11:42:05",
+    "LegExecQty": 1,
+    "LegOrdType": "2",
+    "LegQuantity": 1,
+    "LegRefID": "d45a8bac-52e1-4020-a5ff-159b6f4e407f:1",
+    "LegResting": "N",
+    "LegSecurityExchange": "XBMF",
+    "LegSide": "2",
+    "LegSymbol": "WINZ26",
+    "LegMsg": "Id: 0F02D81D0A5C87CF802F4FA3F2559F7C",
+    "LegCumQtyPerc": 100.0,
+    "LegLastPx": 207460.0,
+    "LegLastQty": 1
+   }
+  ],
+  "CustomParameters": {
+   "PriceLimit": 207410.0,
+   "SyntheticBracket": "OFF"
+  },
+  "InstanceCreationDate": "2026-10-23 11:42:05",
+  "UserName": "flx_gammaquant",
+  "StrategyCode": "sorder",
+  "StrategyId": "C7FF5C53EBEF4C0458309CBF994E2C7C",
+  "ClOrdID": "d45a8bac-52e1-4020-a5ff-159b6f4e407f",
+  "InstanceStrategyId": "ORDPROXY0202FLX.FLX0000000000001",
+  "OrdStatus": "5",
+  "AvgPrice": 207460.0,
+  "BasketId": "fxs",
+  "CreateDate": "2026-10-23 11:42:05",
+  "DocNumber": "00000000000",
+  "DocType": "1",
+  "EndTime": "21:00:00",
+  "ExecutedQtty": 1,
+  "ExpireDate": "20261023",
+  "InitTime": "07:00:00",
+  "Name": "KM-WH-S-2",
+  "TargetDesc": "207410",
+  "TargetQtty": 1,
+  "Text": "Executada, 1/1@207460",
+  "TimeInForce": "0",
+  "TimeStamp": "2026-10-23 11:42:05",
+  "CumQtyPerc": "100.00",
+  "Env": "SIM"
+ },
+ {
+  "Legs": [
+   {
+    "ILegAllocAccount": "S-1117150",
+    "LegAvgPx": 0.0,
+    "LegDatedDate": "2026-10-23 11:42:02",
+    "LegExecQty": 0,
+    "LegOrdType": "4",
+    "LegQuantity": 1,
+    "LegRefID": "790e7f26-c4f4-49e0-ab55-cd8a72b467a2:1",
+    "LegResting": "N",
+    "LegSecurityExchange": "XBMF",
+    "LegSide": "2",
+    "LegSymbol": "WINZ26",
+    "LegMsg": "Id: 11DF332A7ECA0CADBF0EC2DED05BD747",
+    "LegWorkingIndicator": "N",
+    "LegCumQtyPerc": 0.0
+   }
+  ],
+  "CustomParameters": {
+   "PriceLimit": 207060.0,
+   "StopPrice": 207160.0,
+   "SyntheticBracket": "OFF"
+  },
+  "InstanceCreationDate": "2026-10-23 11:41:59",
+  "UserName": "flx_gammaquant",
+  "StrategyCode": "sorder",
+  "StrategyId": "CD961D63EB4D791262C098F3F4C41EEE",
+  "ClOrdID": "790e7f26-c4f4-49e0-ab55-cd8a72b467a2",
+  "InstanceStrategyId": "ORDPROXY0202FLX.FLX0000000000002",
+  "OrdStatus": "7",
+  "AvgPrice": 0.0,
+  "BasketId": "fxs",
+  "CreateDate": "2026-10-23 11:41:59",
+  "DocNumber": "00000000000",
+  "DocType": "1",
+  "EndTime": "21:00:00",
+  "ExecutedQtty": 0,
+  "ExpireDate": "20261023",
+  "InitTime": "07:00:00",
+  "Name": "KM-WH-P-2",
+  "TargetDesc": "207060 STOP 207160",
+  "TargetQtty": 1,
+  "Text": "Cancelada,1@207060",
+  "TimeInForce": "0",
+  "TimeStamp": "2026-10-23 11:42:05",
+  "CumQtyPerc": "0.00",
+  "Env": "SIM"
+ }
+]

@@ -58,6 +58,10 @@ var verbos = map[string]int{
 	"usuario": -1, "habilita": -1, "desabilita": 1,
 	"pnt_recusa_logon": 1, "pnt_aceita_logon": 0, "aguarda_recusas": 1, "pnt_espera_seq": 1, "pnt_esquece": 1,
 	"corrompe_store": 0, "descarta": -1, "sinal": -1,
+	// SPEC-FLEXSCAN-v1: a Flexscan falsa (config FLEXSCAN_URL=falso)
+	"flx_recebe": -1, "flx_nada": 0, "flx_executa": -1, "flx_webhook": -1, "flx_webhook_corpo": -1, "flx_webhook_http": -1,
+	"flx_falha": -1, "flx_recusa_edicao": -1, "flx_cancela": 1, "flx_token_expira": 0, "flx_altera": -1, "flx_ordem": -1,
+	"flx_login": 1, "flx_cria": -1,
 }
 
 // verbosDePreparo também valem no _comum.fix e no cabeçalho (Cenario.Preparo).
@@ -333,6 +337,25 @@ func (l *leitor) expandir(ls []linha, params map[string]string, capturas map[str
 				return nil, err
 			}
 			r = append(r, pp)
+			continue
+		}
+		if verbo == "flx_webhook_corpo" {
+			// o corpo cru: o resto da linha
+			partes := strings.SplitN(strings.TrimSpace(texto), " ", 2)
+			if len(partes) < 2 {
+				return nil, fmt.Errorf("%s: flx_webhook_corpo CORPO", ln.origem)
+			}
+			p.Args = partes[1:]
+			r = append(r, p)
+			continue
+		}
+		if verbo == "flx_webhook_http" {
+			partes := strings.SplitN(strings.TrimSpace(texto), " ", 4)
+			if len(partes) < 3 {
+				return nil, fmt.Errorf("%s: flx_webhook_http METODO /caminho [corpo]", ln.origem)
+			}
+			p.Args = partes[1:]
+			r = append(r, p)
 			continue
 		}
 		if verbo == "http" || verbo == "http_async" {

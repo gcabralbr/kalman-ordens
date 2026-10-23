@@ -428,3 +428,49 @@ roteiros 13–18, `FLEXSCAN_POSICAO_NO_FIM`.
 Faixa alta se o fill parcial ou a recusa de ordem nova vierem num formato que a fusão não cobre
 (volta ao falso e aos roteiros), ou se o pregão do apisim tiver indisponibilidade. A F1 do motor
 (destino) é inócua para o PnT e pode ser instalada antes, separada.
+
+---
+
+## 14. Mínimo útil implementado (23/10, branch `flexscan-m1`)
+
+Decisões do usuário de 23/10, depois da aprovação:
+
+1. **Quem decide no teste é a principal** (mercado de hoje; o simulador da Flexscan roda com o mercado
+   de hoje), com um **uid de teste próprio** (não o 1450), para os limites por uid não somarem o teste
+   do PnT (kalman-hml, módulo KHML) com o da Flexscan (principal, módulo KALMAN).
+2. **Fonte de preço por conector de execução**, não por corretora (a mesma corretora pode ser testada
+   pelos dois caminhos): `PRECOS_URL` padrão + `PRECOS_URL_<CONECTOR>` opcional (`PNT`, `FLEXSCAN`),
+   só onde difere. Na .53: PnT → 9096 (HML D-1), Flexscan → `http://172.16.110.53:9090` (D0). Em
+   produção, a mesma. Idem `PRECOS_SAUDE_URL_<CONECTOR>`.
+3. Nome: a habilitação guarda **conectores** (`PNT`, `FLEXSCAN`), não "destinos" (§2 item 1).
+
+O que ficou diferente do desenho (§3–§5), e por quê:
+
+- **"Não sei" no POST pelo próprio motor:** a ponte não procura sozinha; o motor marca
+  `SEM_CONFIRMACAO` em `PRAZO_CONFIRMACAO_S` e pede o mass status, e a ponte responde ao AF com as ordens
+  KM da conta (`GET /orders/filter`), consultando até 3 vezes se faltar uma ordem "não sei". Não achada:
+  150=8 antes das respostas (entrada encerra; proteção recriada com outro name, `PROTECAO_REJEITADA`);
+  achada: o 150=I dela, com o executado. Conta sem ordens: 35=j 380=101, como o PnT.
+- **Edição (PUT):** aceita = consulta com `orderStatus 5` e `transactTime` posterior ao PUT, ou retrato
+  "Editada" com o gatilho pedido; recusada = retrato "Edicao rejeitada" ou `clxRejReason` novo; sem
+  sinal até `FLEXSCAN_CONFIRMA_S` → 35=9 (o motor mantém o stop anterior). O mesmo para o DELETE.
+- **Preço ajustado ao túnel:** a ponte grava o efetivo no evento `FLX-PRECO`; o motor guarda o pedido
+  (`kalmanordem.preco`), como antes.
+- **Disjuntor de bolsa e saída por replace:** só no PnT (`SAIDA_POR_REPLACE` não vale para o 88).
+- **Limites globais:** somam os dois conectores; o resultado do dia avalia cada posição pelo preço da
+  fonte do seu conector.
+- **`/saude`:** `posicao_por_conector` e `conector` nas ordens vivas; o desligamento do pnt-md-hml
+  (14:35) só olha o PnT.
+- **`FLEXSCAN_WEBHOOK_ATRASADO`** saiu não crítico (aviso; não repete).
+- **Fora do mínimo útil** (como na §12.2): CLI do webhook e `FLEXSCAN_WEBHOOK_AUSENTE`; vigia de órfã
+  (a ordem "não achada" que aparece depois); `/executions` e `/positions` na conciliação; 503 com a fila
+  cheia (a fila da ponte não tem limite); rotação do segredo; `GET /flexscan/ordens` no admin;
+  `FLEXSCAN_POSICAO_NO_FIM`; roteiros 13–18 da §10.2 (os 16–17 entraram no 104).
+
+Roteiros: 95 (entrada → fill → stop-limite → saída), 96 (parciais pelo webhook, repetido e fora de
+ordem, PUT de quantidade, timeout da entrada, stop pela B3), 97 (TRSP aceito e recusado, túnel,
+gatilho mexido), 98 (corrida stop × DELETE), 99 (POST "não sei"), 100 (401, login recusado, volta),
+101 (webhook mudo), 102 (receptor: 404, corpo inválido, retrato forjado), 103 (restart, KM
+desconhecida), 104 (dois conectores, limites somados, `DESTINO_NAO_HABILITADO`). Unidade:
+`internal/flexscan` (leitores sobre os arquivos reais da sondagem, máscara do segredo/senha/token,
+nada de `/algos/commands`, `DELETE /webhooks` ou `remove_previous`).

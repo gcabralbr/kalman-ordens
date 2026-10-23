@@ -1,0 +1,48 @@
+cenario 95 Flexscan: entrada → consulta ativa → fill (webhook confirmado pela consulta) → stop-limite → saída por DELETE + limite
+hora 2026-10-23 10:15:00
+# SPEC-FLEXSCAN-v1: o uid 8 escolheu no GQ o destino 88 (Capital → Flexscan) com a conta do apisim;
+# a habilitação dele só permite a Flexscan. A ponte fala com a Flexscan falsa (REST) e devolve ao
+# motor os ExecutionReports sintéticos; o contrato com o Kalman é o mesmo do PnT.
+config FLEXSCAN_URL=falso
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+
+entrada 2001 C uid=8
+resposta aceito=true
+# compra: ask 130005 + COLAR_ENTRADA 15 = 130020; name = o ClOrdID do motor
+flx_recebe POST name=KM-E-2001-1 symbol=WINZ26 side=1 qtty=1 ordType=2 price=130020 account=S-1117150 exchange=XBMF timeInForce=0 stopPrice=- id=>E1
+evento ENTRADA_ENVIADA operacao_id=2001
+nada
+
+# a bolsa executa; o webhook traz o retrato e a consulta que ele dispara confirma o fill
+flx_executa $E1 preco=130010
+flx_webhook $E1
+evento ENTRADA_EXECUTADA operacao_id=2001 qtd=1 preco=130010 qtd_total=1 preco_medio=130010
+
+# proteção: stop-limite (tipo 4) no lado oposto, gatilho 130010 − 500, limite − 100
+flx_recebe POST name=KM-P-2001-1 side=2 qtty=1 ordType=4 stopPrice=129510 price=129410 account=S-1117150 id=>P1
+evento ENTRADA_ENCERRADA operacao_id=2001 qtd_final=1 preco_medio=130010
+evento PROTEGIDA operacao_id=2001 preco_stop=129510 preco_limite=129410 qtd=1
+saude posicao=1 flexscan.logado=true sessao_logada=true
+
+# a consulta periódica (5 s) não muda nada
+avanca 10s
+flx_nada
+nada
+
+# saída do gestor: DELETE da proteção; a consulta ativa vê a cancelada e a saída limite sai
+preco bid=130100 ask=130105 preco=130100
+saida 2001 V SINAL_OPOSTO uid=8
+resposta aceito=true
+flx_recebe DELETE id=$P1
+flx_ordem $P1 status=4
+flx_recebe POST name=KM-S-2001-1 side=2 qtty=1 ordType=2 price=130050 id=>S1
+flx_executa $S1 preco=130100
+flx_webhook $S1
+evento SAIDA_EXECUTADA operacao_id=2001 qtd=1 preco=130100 origem=GESTOR
+evento ZERADA operacao_id=2001 preco_medio_saida=130100 pnl_pts=90 origem=GESTOR
+saude posicao=0
+flx_nada
+nada

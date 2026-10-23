@@ -1,0 +1,44 @@
+cenario 100 Flexscan: 401 → um login e um reenvio só daquele pedido; login recusado → sem sessão (SEM_SESSAO, FLEXSCAN_LOGIN) → volta
+hora 2026-10-23 11:10:00
+# SPEC-FLEXSCAN-v1 §2 item 2 e §6. Token invalidado: o pedido leva 401, a ponte faz um login e
+# reenvia o mesmo pedido uma vez (a Flexscan falsa só registra o que passou da autenticação). Com o
+# login recusado, o segundo 401 deixa o conector sem sessão: o pedido em curso é recusado ao motor,
+# entradas da Flexscan recebem SEM_SESSAO, e a ponte tenta o login a cada FLEXSCAN_ESPERA_LOGIN_S.
+config FLEXSCAN_URL=falso
+config FLEXSCAN_ESPERA_LOGIN_S=0.001
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+executa COMPRADO_FLX OP=2501
+
+# 401 e reenvio
+flx_token_expira
+stop 2501 preco=129800 uid=8
+resposta aceito=true situacao=ENVIADO
+flx_recebe PUT id=$FP stopPrice=129800 price=129700
+evento PROTECAO_AJUSTADA operacao_id=2501 preco_stop=129800
+sem_alerta SESSAO_CAIU
+flx_nada
+
+# login recusado (transitório): sem sessão
+flx_login recusa
+flx_token_expira
+stop 2501 preco=129850 uid=8
+resposta aceito=true situacao=ENVIADO
+alerta SESSAO_CAIU
+evento PROTECAO_AJUSTE_RECUSADO operacao_id=2501 preco_stop_pedido=129850 preco_stop=129800
+saude flexscan.logado=false sessao_logada=true
+entrada 2502 C uid=8
+resposta aceito=false codigo=SEM_SESSAO
+avanca 300ms
+alerta FLEXSCAN_LOGIN
+
+# volta: login, conciliação da conta (a proteção viva aparece no mass status)
+flx_login aceita
+avanca 300ms
+alerta SESSAO_VOLTOU
+saude flexscan.logado=true conciliando=false divergente=false posicao=1
+flx_ordem $FP status=5 stop=129800
+flx_nada
+nada

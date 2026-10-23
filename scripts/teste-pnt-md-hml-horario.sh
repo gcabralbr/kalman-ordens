@@ -60,6 +60,8 @@ SESSAO='{"sessao_logada":false,"conciliando":false,"divergente":false,"posicao":
 CONC='{"sessao_logada":true,"conciliando":true,"divergente":false,"posicao":0,"ordens_vivas":null}'
 DIV='{"sessao_logada":true,"conciliando":false,"divergente":true,"posicao":0,"ordens_vivas":null}'
 VIVAS2='{"sessao_logada":true,"conciliando":false,"divergente":false,"posicao":0,"ordens_vivas":[{"clordid":"KM1"},{"clordid":"KM2"}]}'
+FLX='{"sessao_logada":true,"conciliando":false,"divergente":false,"posicao":1,"posicao_por_conector":{"PNT":0,"FLEXSCAN":1},"ordens_vivas":[{"clordid":"KM-P-1-1","conector":"FLEXSCAN"}]}'
+PNTFLX='{"sessao_logada":true,"conciliando":false,"divergente":false,"posicao":2,"posicao_por_conector":{"PNT":1,"FLEXSCAN":1},"ordens_vivas":[{"clordid":"KM-P-1-1","conector":"FLEXSCAN"}]}'
 FORA=FORA
 RUIM='{nao json'
 
@@ -96,7 +98,11 @@ fi
 touch "$T/ativo"; parar 14:35 "$Z_VAZIA"
 [ $RC = 0 ] && parou && ok "zerado (ordens_vivas []): para" || falha "zerado []" "$(cat "$T/saida")"
 
-for caso in "POS:posicao 1" "VIVA:1 ordem(ns) KM viva(s)" "SESSAO:sessao FIX nao logada" "CONC:conciliando" \
+# SPEC-FLEXSCAN-v1: posição e ordens da Flexscan (a principal, mercado de hoje) não seguram o pnt-md-hml
+touch "$T/ativo"; parar 14:35 "$FLX"
+[ $RC = 0 ] && parou && ok "só a Flexscan com posição e ordem viva: para" || falha "flexscan" "$(cat "$T/saida")"
+
+for caso in "POS:posicao 1" "PNTFLX:posicao 1" "VIVA:1 ordem(ns) KM viva(s)" "SESSAO:sessao FIX nao logada" "CONC:conciliando" \
             "DIV:divergente" "VIVAS2:2 ordem(ns) KM viva(s)" "FORA:kalman-ordens sem resposta" "RUIM:resposta ilegivel"; do
   nome=${caso%%:*}; motivo=${caso#*:}
   resp=${!nome}

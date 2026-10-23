@@ -1,0 +1,5 @@
+{
+ "status": "PENDING CANCEL",
+ "description": "Cancel request sent to exec engine. Please check the snapshot url for status updates.",
+ "snapshot_url": "https://apisim.flexscan.com.br/v1/orders/f48bd687-c3d5-48ec-b8c6-ab16a3461b95"
+}

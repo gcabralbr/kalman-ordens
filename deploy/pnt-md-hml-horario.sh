@@ -67,8 +67,9 @@ nao_zerado() {
     if (.sessao_logada != true) then "sessao FIX nao logada"
     elif (.conciliando != false) then "conciliando"
     elif (.divergente != false) then "divergente"
-    elif (.posicao != 0) then "posicao \(.posicao)"
-    elif ((.ordens_vivas // []) | length) != 0 then "\((.ordens_vivas | length)) ordem(ns) KM viva(s)"
+    elif ((.posicao_por_conector.PNT // .posicao) != 0) then "posicao \(.posicao_por_conector.PNT // .posicao)"
+    elif ([(.ordens_vivas // [])[] | select((.conector // "PNT") == "PNT")] | length) != 0
+      then "\([(.ordens_vivas // [])[] | select((.conector // "PNT") == "PNT")] | length) ordem(ns) KM viva(s)"
     else "" end' <<<"$s" 2>/dev/null || echo "resposta ilegivel de $SAUDE"
 }
 

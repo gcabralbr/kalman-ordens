@@ -85,6 +85,8 @@ func (m *Motor) processarFlexscan(msg pnt.Mensagem) {
 		m.execReport(msg)
 	case "9":
 		m.cancelRejeitado(msg)
+	case "j":
+		m.businessReject(msg) // o mass status de conta sem ordens (380=101)
 	default:
 		slog.Debug("mensagem da ponte ignorada", "tipo", msg.Tipo, "conector", dominio.ConectorFlexscan)
 	}

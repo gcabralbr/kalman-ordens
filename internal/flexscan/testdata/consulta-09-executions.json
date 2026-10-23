@@ -1,0 +1,27 @@
+{
+ "num_records": 1,
+ "records": [
+  {
+   "symbol": "WINZ26",
+   "exchange": "BVMF",
+   "side": "1",
+   "lastQuantity": 1,
+   "lastPrice": 207760.0,
+   "transactTime": "20261023-14:06:08",
+   "marketAtrOrderId": "4364BF0609FE0F135127E6473FDA2A18",
+   "uniqueTradeId": "33",
+   "strategyId": "ORDPROXY0202FLX.FLX0000000000001",
+   "deskId": "flexscan",
+   "basketId": "fxs",
+   "account": "S-1117150",
+   "enteringTrader": "",
+   "orderUpdateType": "3",
+   "isClose": false,
+   "clordid": "801692fd-0918-4c56-be2a-c4a4620a286b"
+  }
+ ],
+ "limit": 25,
+ "offset": 0,
+ "current_page": 1,
+ "has_next": false
+}

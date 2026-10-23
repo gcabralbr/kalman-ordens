@@ -20,6 +20,8 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/api"
 	"gammaquant.com.br/kalman-ordens/internal/config"
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
+	"gammaquant.com.br/kalman-ordens/internal/flexscan"
+	flxfalso "gammaquant.com.br/kalman-ordens/internal/flexscan/falso"
 	"gammaquant.com.br/kalman-ordens/internal/motor"
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
@@ -49,12 +51,21 @@ func (n *notificador) Notificar(codigo, texto string) {
 }
 
 type servico struct {
-	motor   *motor.Motor
-	sessao  *pnt.Sessao
-	http    http.Handler
-	baseEnv int64 // falso.EnviadasApp() ao subir
-	baseRec int64 // falso.RecebidasApp() ao subir
+	motor    *motor.Motor
+	sessao   *pnt.Sessao
+	http     http.Handler
+	baseEnv  int64              // falso.EnviadasApp() ao subir
+	baseRec  int64              // falso.RecebidasApp() ao subir
+	ponte    *flexscan.Ponte    // SPEC-FLEXSCAN-v1: com config FLEXSCAN_URL=falso
+	receptor *flexscan.Receptor // a rota do webhook (chamada direto, sem listener)
 }
+
+// SegredoWebhookRoteiro: o FLEXSCAN_WEBHOOK_SEGREDO dos roteiros (o teste de máscara procura por ele
+// no que foi gravado).
+const SegredoWebhookRoteiro = "segredo-do-roteiro-0123456789abcdefghijkl"
+
+// SenhaFlexscanRoteiro: a FLEXSCAN_SENHA dos roteiros (idem).
+const SenhaFlexscanRoteiro = "senha-do-roteiro-flexscan"
 
 // Executor de um cenário.
 type Executor struct {
@@ -68,6 +79,7 @@ type Executor struct {
 	notif       *notificador
 	pnt         *falso.Falso
 	svc         *servico
+	flx         *flxfalso.Falso // a Flexscan falsa (só com config FLEXSCAN_URL=falso)
 	cfg         config.Config
 	capturas    map[string]string
 	resposta    map[string]any
@@ -165,6 +177,19 @@ func (e *Executor) preparar() error {
 	for k, x := range e.c.Config {
 		v[k] = x
 	}
+	if v["FLEXSCAN_URL"] == "falso" {
+		// SPEC-FLEXSCAN-v1: a Flexscan falsa, com o relógio do roteiro nos horários das ordens
+		e.flx = flxfalso.Novo("flx_roteiro", SenhaFlexscanRoteiro, e.rel.Agora)
+		v["FLEXSCAN_URL"] = e.flx.URL()
+		v["FLEXSCAN_USUARIO"], v["FLEXSCAN_SENHA"] = "flx_roteiro", SenhaFlexscanRoteiro
+		for k, x := range map[string]string{"FLEXSCAN_WEBHOOK_ENDERECO": "roteiro", "FLEXSCAN_WEBHOOK_SEGREDO": SegredoWebhookRoteiro,
+			"FLEXSCAN_TIMEOUT_MS": "300", "FLEXSCAN_REQ_POR_S": "0", "FLEXSCAN_CONTAS_HML": "S-1117150"} {
+			if v[k] == "" {
+				v[k] = x
+			}
+		}
+		e.flx.EsperaTimeout(600 * time.Millisecond)
+	}
 	e.cfg = config.Novo(v)
 	for _, p := range e.c.Preparo {
 		if err := e.usuario(p); err != nil {
@@ -236,17 +261,39 @@ func (e *Executor) subir() error {
 		return err
 	}
 	m.Usar(s)
+	var ponte *flexscan.Ponte
+	var rec *flexscan.Receptor
+	if e.flx != nil {
+		ponte = flexscan.Nova(flexscan.ConfigDe(e.cfg), m.OuvinteFlexscan(), e.rel)
+		m.UsarFlexscan(ponte)
+		if rec, err = flexscan.NovoReceptor(ponte, e.cfg.Texto("FLEXSCAN_WEBHOOK_PREFIXO", "/flexscan/webhook/"), e.cfg.Texto("FLEXSCAN_WEBHOOK_SEGREDO", "")); err != nil {
+			return err
+		}
+	}
 	if err := m.Iniciar(); err != nil {
 		return err
 	}
 	e.logonsMotor = 0
-	e.svc = &servico{motor: m, sessao: s, http: api.Handler(m, e.cfg.Segundos("HTTP_ESPERA_S", 5)), baseEnv: e.pnt.EnviadasApp() + e.pnt.Reentregas(), baseRec: e.pnt.RecebidasApp()}
-	return s.Iniciar()
+	e.svc = &servico{motor: m, sessao: s, http: api.Handler(m, e.cfg.Segundos("HTTP_ESPERA_S", 5)), baseEnv: e.pnt.EnviadasApp() + e.pnt.Reentregas(), baseRec: e.pnt.RecebidasApp(),
+		ponte: ponte, receptor: rec}
+	if err := s.Iniciar(); err != nil {
+		return err
+	}
+	if ponte != nil {
+		ponte.Iniciar()
+		if !esperarAte(5*time.Second, ponte.Logado) {
+			return fmt.Errorf("a ponte Flexscan não logou na Flexscan falsa")
+		}
+	}
+	return nil
 }
 
 func (e *Executor) descer() {
 	if e.svc == nil {
 		return
+	}
+	if e.svc.ponte != nil {
+		e.svc.ponte.Parar()
 	}
 	e.svc.sessao.Parar()
 	e.svc.motor.Parar()
@@ -263,6 +310,9 @@ func (e *Executor) encerrar() {
 	if e.pnt != nil {
 		e.pnt.Parar()
 	}
+	if e.flx != nil {
+		e.flx.Parar()
+	}
 	if m, ok := e.falha.Repositorio.(*repo.MariaDB); ok {
 		m.Fechar()
 	}
@@ -275,12 +325,21 @@ func (e *Executor) ocioso() {
 		return // motor_lento: nada anda até motor_normal
 	}
 	fim := time.Now().Add(3 * time.Second)
+	pnte := e.svc.ponte
 	for time.Now().Before(fim) {
 		proc := e.svc.motor.Processadas()
-		dentro := !e.pnt.Logado() || proc >= e.pnt.EnviadasApp()+e.pnt.Reentregas()-e.svc.baseEnv
+		var pntParte, flxParte int64
+		if e.pnt.Logado() {
+			pntParte = e.pnt.EnviadasApp() + e.pnt.Reentregas() - e.svc.baseEnv
+		}
+		if pnte != nil {
+			flxParte = pnte.Entregues() // os ERs sintéticos da ponte também contam no Processadas
+		}
+		dentro := proc >= pntParte+flxParte || (pnte == nil && !e.pnt.Logado())
 		fora := e.pnt.RecebidasApp()-e.svc.baseRec >= e.svc.sessao.Enviadas()
-		if dentro && fora {
-			if e.svc.motor.Processadas() == proc {
+		quieta := pnte == nil || !pnte.Ocupada()
+		if dentro && fora && quieta {
+			if e.svc.motor.Processadas() == proc && (pnte == nil || (!pnte.Ocupada() && pnte.Entregues() == flxParte)) {
 				return
 			}
 		}
@@ -307,6 +366,9 @@ func (e *Executor) passo(p roteiro.Passo) error {
 				continue
 			}
 			e.svc.motor.Tick()
+			if e.svc.ponte != nil {
+				e.svc.ponte.Tick()
+			}
 			e.ocioso()
 		}
 		return nil
@@ -529,6 +591,9 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return e.eventos(p)
 	case "alerta", "sem_alerta":
 		return e.alerta(p)
+	}
+	if strings.HasPrefix(p.Verbo, "flx_") {
+		return e.flexscan(p)
 	}
 	return fmt.Errorf("verbo sem execução: %s", p.Verbo)
 }
