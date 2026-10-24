@@ -517,7 +517,7 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		if err != nil {
 			return err
 		}
-		antes := e.svc.sessao.Recebidas()
+		antes := e.svc.sessao.Entregues()
 		if p.Verbo == "envia" {
 			err = e.pnt.Enviar(cs)
 		} else {
@@ -529,7 +529,7 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		if e.travado != nil && p.Verbo == "envia" {
 			// motor_lento: espera a mensagem chegar à sessão (o motor não a trata até motor_normal)
 			fim := time.Now().Add(esperaMensagem)
-			for e.svc.sessao.Recebidas() <= antes && time.Now().Before(fim) {
+			for e.svc.sessao.Entregues() <= antes && time.Now().Before(fim) {
 				time.Sleep(time.Millisecond)
 			}
 		}

@@ -105,6 +105,7 @@ type Sessao struct {
 	ultimaSq atomic.Int64
 	enviadas atomic.Int64
 	recebida atomic.Int64
+	entregue atomic.Int64 // entregues ao ouvinte (testes: o executor espera por este)
 
 	mu        sync.Mutex // init
 	init      *quickfix.Initiator
@@ -375,6 +376,9 @@ func (s *Sessao) Logado() bool { return s.logado.Load() }
 func (s *Sessao) Enviadas() int64  { return s.enviadas.Load() }
 func (s *Sessao) Recebidas() int64 { return s.recebida.Load() }
 
+// Entregues: mensagens de aplicação já entregues ao ouvinte (testes).
+func (s *Sessao) Entregues() int64 { return s.entregue.Load() }
+
 // Enviar manda uma mensagem de aplicação e devolve o MsgSeqNum usado.
 //
 // Com a sessão caída, devolve ErrSemSessao: o QuickFIX/Go aceitaria a mensagem sem erro, mas a
@@ -547,11 +551,15 @@ func (s *Sessao) FromAdmin(m *quickfix.Message, _ quickfix.SessionID) quickfix.M
 }
 
 func (s *Sessao) FromApp(m *quickfix.Message, _ quickfix.SessionID) quickfix.MessageRejectError {
-	msg := Ler(m.String())
-	s.entregar(func() { s.ouvinte.Recebeu(msg) })
-	// conta depois de entregar: quem espera pelo contador (o executor dos roteiros, com o motor
-	// travado) sabe que a chegada já foi carimbada no motor (marcarChegada)
 	s.recebida.Add(1)
+	msg := Ler(m.String())
+	s.entregar(func() {
+		s.ouvinte.Recebeu(msg)
+		// depois de entregar: quem espera por este contador (o executor dos roteiros, com o motor
+		// travado) sabe que a chegada já foi carimbada no motor (marcarChegada) e a mensagem está na
+		// fila dele. O Recebidas continua contando antes (24/10: contá-lo depois abria outra janela)
+		s.entregue.Add(1)
+	})
 	return nil
 }
 
