@@ -1158,7 +1158,9 @@ func (p *Ponte) massStatus(ctx context.Context, reqID, conta string) {
 		case <-time.After(time.Second):
 		}
 	}
-	hoje := time.Now().UTC().Format("20060102")
+	// "hoje" pelo relógio do serviço, no fuso de Brasília (o sendingTime vem em UTC: 21:00 BRT já é o
+	// dia seguinte em UTC)
+	hoje := p.rel.Agora().In(fuso).Format("20060102")
 	var msgs []pnt.Mensagem
 	// POST "não sei" que não aparece depois das consultas: não foi criada — a entrada encerra sem
 	// reenvio, a proteção é recriada pelo motor com outro name (SPEC §2 item 3); vai antes das
@@ -1169,7 +1171,7 @@ func (p *Ponte) massStatus(ctx context.Context, reqID, conta string) {
 		if !strings.HasPrefix(e.Nome, "KM-") {
 			continue
 		}
-		if e.Fase.Terminal() && (!nomeDoMotor.MatchString(e.Nome) || e.Quando.Format("20060102") != hoje) {
+		if e.Fase.Terminal() && (!nomeDoMotor.MatchString(e.Nome) || e.Quando.In(fuso).Format("20060102") != hoje) {
 			continue
 		}
 		sel = append(sel, e)
