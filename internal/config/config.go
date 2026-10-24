@@ -171,6 +171,8 @@ type Parametros struct {
 	PerdaDiaPts, BookDescoladoPts                     int64
 	JanelaInicio, JanelaFim, HoraZeragem              time.Duration
 	FonteJanelaInicio, FonteJanelaFim, FonteDegradada time.Duration
+	// 24/10: a janela do FONTE_DEGRADADA só vale em dia de pregão (seg–sex, fora dos feriados)
+	FeriadosArq string
 }
 
 // Parametros lê tudo com os padrões da SPEC (v1 + v1.1).
@@ -250,6 +252,7 @@ func (c Config) Parametros() Parametros {
 	}
 	p.FonteJanelaInicio, p.FonteJanelaFim = c.Intervalo("FONTE_JANELA", "09:00-18:25")
 	p.FonteDegradada = c.Segundos("FONTE_DEGRADADA_S", 30)
+	p.FeriadosArq = c.Texto("FERIADOS_ARQ", "/var/lib/kalman/feriados.json")
 	return p
 }
 

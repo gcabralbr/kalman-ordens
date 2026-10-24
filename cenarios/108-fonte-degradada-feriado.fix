@@ -1,0 +1,13 @@
+cenario 108 FONTE_DEGRADADA só em dia de pregão: feriado (20/11, do arquivo de feriados) — sem alerta
+hora 2026-11-20 08:59:00
+# 24/10: a janela do FONTE_DEGRADADA não olhava o dia. Agora só vale em dia de pregão (seg-sex, fora
+# dos feriados de FERIADOS_ARQ; nos roteiros, cenarios/referencia/feriados-teste.json), a mesma
+# regra do horário do pnt-md-hml. Janela da .53.
+config FONTE_JANELA=09:00-14:30
+
+executa INICIO
+preco vazio
+avanca 2m
+sem_alerta FONTE_DEGRADADA
+saude fonte.degradada=false fonte.dia_de_pregao=false "fonte.sem_pregao=feriado: Dia Nacional de Zumbi e da Consciencia Negra"
+nada

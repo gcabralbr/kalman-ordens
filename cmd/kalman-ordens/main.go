@@ -197,6 +197,12 @@ func servir(ctx context.Context, cfg config.Config) error {
 	defer pr.Parar()
 
 	m := motor.Novo(cfg, rel, r, pr, tg)
+	// a janela do FONTE_DEGRADADA só vale em dia de pregão (24/10): sem os feriados, vale seg–sex
+	if n, err := m.ConferirFeriados(); err != nil {
+		slog.Warn("feriados ilegíveis: o FONTE_DEGRADADA vale de seg a sex, inclusive feriados", "arquivo", cfg.Texto("FERIADOS_ARQ", "/var/lib/kalman/feriados.json"), "erro", err)
+	} else {
+		slog.Info("feriados", "dias", n)
+	}
 	flxCfg := flexscan.ConfigDe(cfg)
 	var ponte *flexscan.Ponte
 	var srvWebhook *http.Server

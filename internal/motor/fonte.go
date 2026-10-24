@@ -57,7 +57,9 @@ func (m *Motor) observarFonteDe(f preco.Fonte, chave, prefixo string, ruimDesde 
 	agora := m.agora()
 	h := m.horaDoDia()
 	motivo := ""
-	if h >= m.p.FonteJanelaInicio && h < m.p.FonteJanelaFim {
+	// 24/10: só em dia de pregão (no sábado, com o pnt-md-hml parado e o 9090 sem preço, alertou o dia
+	// todo); fora dele, como fora da janela: nada alerta e o que estiver aberto se resolve
+	if pregao, _ := m.pregao.DiaDePregao(agora); pregao && h >= m.p.FonteJanelaInicio && h < m.p.FonteJanelaFim {
 		motivo = m.motivoFonteRuim(f.Ler(), agora)
 	}
 	if motivo == "" {
@@ -95,12 +97,18 @@ func (m *Motor) saudeFonteDe(chave string, ruimDesde time.Time, motivo string) m
 	if !ruimDesde.IsZero() {
 		desde = ruimDesde.Format(time.RFC3339)
 	}
-	return map[string]any{
-		"degradada":  m.al.Ativo(chave),
-		"ruim_desde": desde,
-		"motivo":     motivo,
-		"janela":     fmt.Sprintf("%s-%s", hhmm(m.p.FonteJanelaInicio), hhmm(m.p.FonteJanelaFim)),
+	pregao, porque := m.pregao.DiaDePregao(m.agora())
+	r := map[string]any{
+		"degradada":     m.al.Ativo(chave),
+		"ruim_desde":    desde,
+		"motivo":        motivo,
+		"janela":        fmt.Sprintf("%s-%s", hhmm(m.p.FonteJanelaInicio), hhmm(m.p.FonteJanelaFim)),
+		"dia_de_pregao": pregao,
 	}
+	if !pregao {
+		r["sem_pregao"] = porque
+	}
+	return r
 }
 
 func hhmm(d time.Duration) string {

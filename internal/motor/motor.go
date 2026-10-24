@@ -25,6 +25,7 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/preco"
+	"gammaquant.com.br/kalman-ordens/internal/pregao"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
 	"gammaquant.com.br/kalman-ordens/pnt"
@@ -362,6 +363,7 @@ type Motor struct {
 	// FONTE_DEGRADADA dela
 	flx               Envio
 	flxJaLogou        bool
+	pregao            *pregao.Calendario // dia de pregão (a janela do FONTE_DEGRADADA)
 	precosFlx         preco.Fonte
 	vigenteFlx        string
 	fonteFlxRuimDesde time.Time
@@ -475,6 +477,7 @@ func Novo(c config.Config, rel relogio.Relogio, r repo.Repositorio, f preco.Font
 		entradasUID: map[int][]time.Time{}, ultimaEntradaUID: map[ladoUID]time.Time{}, ultimaOpUID: map[int]*operacao{},
 	}
 	m.al = alerta.Novo(n, m.publicarAlerta, rel, p.RepeticaoAlerta)
+	m.pregao = pregao.Novo(p.FeriadosArq, relogio.Fuso)
 	m.al.Espacar(p.RepeticaoAlertaCurta, p.RepeticaoAlertaLonga)
 	metricas.DefinirFilas(func() [3]int { return [3]int{len(m.p0), len(m.p1), len(m.p2)} }, capFilaP0+capFilaP1+capFilaP2)
 	return m
@@ -498,6 +501,9 @@ func (m *Motor) ConsultarAoVivo(desde int64, limite int) map[string]any {
 	}
 	return m.aoVivo.Consultar(desde, limite, aovivo.Estado{Logada: m.fix != nil && m.fix.Logado(), Fila: f, Parada: parada, BolsaIndisponivelDesde: bolsa})
 }
+
+// ConferirFeriados: o arquivo de feriados (a partida registra o resultado).
+func (m *Motor) ConferirFeriados() (int, error) { return m.pregao.Conferir() }
 
 // Usar liga a sessão FIX.
 func (m *Motor) Usar(e Envio) { m.fix = e }

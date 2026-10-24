@@ -468,6 +468,11 @@ instalada (`TestServirAtualizaDoInstalado`, com `cmd/kalman-ordens/testdata/inst
 para depois de 5 partidas em 5 min e alerta, o login na Flexscan só acontece depois de a partida
 inteira dar certo e tem limite que vale entre restarts (`/var/lib/kalman-ordens/flexscan-login.json`).
 
+Feriados (24/10: o `FONTE_DEGRADADA` alertou o sábado todo): a janela dele só vale em dia de pregão,
+lendo `FERIADOS_ARQ` (`/var/lib/kalman/feriados.json`, o do Kalman). O usuário `kalman-ordens` precisa
+atravessar o diretório (o arquivo já é 644): `sudo chmod o+x /var/lib/kalman` (sem listar o conteúdo).
+Na partida o journal diz `feriados dias=N`; "feriados ilegíveis" = vale seg–sex, inclusive feriados.
+
 Todo pacote:
 
 ```

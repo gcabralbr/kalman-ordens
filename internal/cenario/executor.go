@@ -177,6 +177,10 @@ func (e *Executor) preparar() error {
 	for k, x := range e.c.Config {
 		v[k] = x
 	}
+	if v["FERIADOS_ARQ"] == "" {
+		// os feriados de teste (o arquivo real da máquina não entra nos roteiros)
+		v["FERIADOS_ARQ"] = filepath.Join("..", "..", "cenarios", "referencia", "feriados-teste.json")
+	}
 	if v["FLEXSCAN_URL"] == "falso" {
 		// SPEC-FLEXSCAN-v1: a Flexscan falsa, com o relógio do roteiro nos horários das ordens
 		e.flx = flxfalso.Novo("flx_roteiro", SenhaFlexscanRoteiro, e.rel.Agora)

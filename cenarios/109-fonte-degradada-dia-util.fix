@@ -1,0 +1,13 @@
+cenario 109 FONTE_DEGRADADA só em dia de pregão: segunda depois do sábado, fonte ruim — com alerta
+hora 2026-10-26 08:59:00
+# 24/10: a janela do FONTE_DEGRADADA não olhava o dia. Agora só vale em dia de pregão (seg-sex, fora
+# dos feriados de FERIADOS_ARQ; nos roteiros, cenarios/referencia/feriados-teste.json), a mesma
+# regra do horário do pnt-md-hml. Janela da .53.
+config FONTE_JANELA=09:00-14:30
+
+executa INICIO
+preco vazio
+avanca 2m
+alerta FONTE_DEGRADADA
+saude fonte.degradada=true fonte.dia_de_pregao=true
+nada
