@@ -20,8 +20,8 @@ func TestDiaDePregao(t *testing.T) {
 		pregao bool
 		motivo string
 	}{
-		{"2026-10-23 09:00", true, ""},         // sexta
-		{"2026-10-24 09:00", false, "sabado"},  // 24/10: o FONTE_DEGRADADA alertou o dia todo
+		{"2026-10-23 09:00", true, ""},        // sexta
+		{"2026-10-24 09:00", false, "sabado"}, // 24/10: o FONTE_DEGRADADA alertou o dia todo
 		{"2026-10-25 09:00", false, "domingo"},
 		{"2026-10-26 09:00", true, ""},
 		{"2026-11-20 09:00", false, "feriado: Consciencia Negra"},
