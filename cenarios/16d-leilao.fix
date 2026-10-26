@@ -1,4 +1,4 @@
-cenario 16d status84 != 0 (leilão) → entrada recusada; saída usa o que houver
+cenario 16d status84 != 0 (leilão) → entrada recusada; saída com limite largo sobre o último negócio (v1.18)
 hora 2026-10-13 11:50:00
 # No leilão de abertura o marketdata manda bid, ask e status84 != 0, sem preco.
 # status84 é verificado antes dos campos ausentes: o código é LEILAO, não SEM_PRECO.
@@ -17,10 +17,12 @@ entrada 1643 C
 resposta aceito=false codigo=LEILAO
 nada
 
-# saída durante o leilão: bid 130000 − 50
+# saída durante o leilão (v1.18): limite largo, SAIDA_LEILAO_PCT (10) % sobre o último negócio; sem
+# preco na leitura, o último guardado do símbolo (130000): 117000; nunca bid − 50 (o bid é de leilão)
 preco status84=2 preco=-
 saida 1641 V SINAL_OPOSTO
 resposta aceito=true
 recebe 35=F 11=KM-P-1641-2 41=KM-P-1641-1 37=dsa.1641.P
 envia @ER 11=KM-P-1641-2 41=KM-P-1641-1 37=dsa.1641.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
-recebe 35=D 11=KM-S-1641-1 38=1 44=129950 54=2 847=1031
+recebe 35=D 11=KM-S-1641-1 38=1 44=117000 54=2 847=1031
+alerta SAIDA_EM_LEILAO

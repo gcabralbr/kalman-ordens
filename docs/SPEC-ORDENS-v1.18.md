@@ -48,4 +48,4 @@ Roteiro **111** (`111-leilao-de-ampliacao.fix`), três fases:
    preço de reabertura (126.500).
 
 Mutações conferidas: sem o `status84` no `precoConfiavel`, a fase 1 alerta `STOP_FURADO` no leilão;
-sem a regra 4, a fase 2 repreça no leilão. O 16c e o 110 da v1.17 seguem.
+sem a regra 4, a fase 2 repreça no leilão. O 16c e o 110 da v1.17 seguem. O **16d** (leilão de abertura, sem `preco`) passa a esperar 117.000 sobre o último guardado e o `SAIDA_EM_LEILAO` (era bid − 50).
