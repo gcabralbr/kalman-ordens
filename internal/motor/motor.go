@@ -354,23 +354,21 @@ type Motor struct {
 	rel    relogio.Relogio
 	repo   repo.Repositorio
 	precos preco.Fonte
-	// FONTE_DEGRADADA (fonte.go)
-	fonteRuimDesde time.Time
-	fonteMotivo    string
-	fix            Envio
+	// FONTE_DEGRADADA e MERCADO_TRAVADO (fonte.go)
+	fonte estadoFonte
+	fix   Envio
 	// SPEC-FLEXSCAN-v1: o conector Flexscan (a ponte REST, com a mesma interface da sessão FIX) e a
 	// fonte de preço dele (PRECOS_URL_FLEXSCAN; nil = a mesma do PnT), com o contrato vigente e o
 	// FONTE_DEGRADADA dela
-	flx               Envio
-	flxJaLogou        bool
-	pregao            *pregao.Calendario // dia de pregão (a janela do FONTE_DEGRADADA)
-	precosFlx         preco.Fonte
-	vigenteFlx        string
-	fonteFlxRuimDesde time.Time
-	fonteFlxMotivo    string
-	al                *alerta.Alertas
-	p0, p1, p2        chan func() // entrada por prioridade (volta.go)
-	fim               chan struct{}
+	flx        Envio
+	flxJaLogou bool
+	pregao     *pregao.Calendario // dia de pregão (a janela do FONTE_DEGRADADA)
+	precosFlx  preco.Fonte
+	vigenteFlx string
+	fonteFlx   estadoFonte
+	al         *alerta.Alertas
+	p0, p1, p2 chan func() // entrada por prioridade (volta.go)
+	fim        chan struct{}
 
 	v              *estadoVolta    // o que a volta acumula até o commit
 	esperandoTaxa  []envioPendente // esperando o limitador de taxa (entradas) ou a próxima volta (maxEnviosPorVolta)
@@ -475,6 +473,8 @@ func Novo(c config.Config, rel relogio.Relogio, r repo.Repositorio, f preco.Font
 		sinaisFila:  map[chaveSinal]int{},
 		aoVivo:      aovivo.Novo(rel),
 		entradasUID: map[int][]time.Time{}, ultimaEntradaUID: map[ladoUID]time.Time{}, ultimaOpUID: map[int]*operacao{},
+		fonte:    estadoFonte{chave: "FONTE_DEGRADADA", chaveTravado: "MERCADO_TRAVADO"},
+		fonteFlx: estadoFonte{chave: "FONTE_DEGRADADA:FLEXSCAN", chaveTravado: "MERCADO_TRAVADO:FLEXSCAN", prefixo: "[flexscan] "},
 	}
 	m.al = alerta.Novo(n, m.publicarAlerta, rel, p.RepeticaoAlerta)
 	m.pregao = pregao.Novo(p.FeriadosArq, relogio.Fuso)

@@ -550,3 +550,34 @@ antes das 17:09:28 por outro uso do `flx_gammaquant`.
 - **Unidade:** `StartLimitIntervalSec=300`, `StartLimitBurst=5`, `RestartSec=10`,
   `OnFailure=kalman-ordens-falhou@%n.service` (alerta crítico com o último erro, pelo `disco.env`).
 - **LEIA 1.16:** conferir o journal nos primeiros segundos depois do restart e voltar ao anterior.
+
+### 14.5 Mercado travado no limite e ampliação do limite (26/10; antes de ligar o 5725)
+
+Origem: 26/10, dia que se esperava circuit breaker. **Futuros (WIN) não têm circuit breaker na
+B3**: só não negociam além do limite de oscilação do dia. O que aconteceu foi o WIN parado no limite
+de baixa (177.215, −14,90%) desde a abertura, só com ofertas de venda (128,8k contratos/813 ofertas no
+melhor, nenhum comprador), `status84` 0. A 9090 mostrou bid = ask = 177.215 (o bid preso no último
+valor do feed) e o `FONTE_DEGRADADA:FLEXSCAN` classificou como "book cruzado". Gravação do dia:
+`var/precos-9090-20261026.jsonl` (`var/grava-9090.py`). A sondagem de suspensão
+(`scripts/flexscan-cb.py suspensao`) não se aplica a futuros; a stop de teste `CB-P-092251`
+(gatilho 132.910) fica viva até o `limpar` do fim do dia.
+
+Os dois cenários a cobrir (nos dois conectores; no PnT o mesmo vale para a 1014):
+
+1. **Mercado travado no limite.** Posição no lado travado **não sai**: sem compradores no limite de
+   baixa, a comprada não vende (nem o stop nem a saída executam); sem vendedores no de alta, a
+   vendida não compra. Feito na v1.17 (SPEC-ORDENS-v1.17): `MERCADO_TRAVADO` (alerta próprio, com as
+   posições da fonte e qual lado não sai), recusa de entrada `MERCADO_TRAVADO`, `/saude`
+   `fonte.travado*`. A fazer: o que o motor **deixa de fazer** travado — o stop furado de reserva
+   pode disparar com negócios no limite (preço além do limite da stop-limite) e trocar uma stop que
+   está na fila do limite por uma saída limite que a B3 recusa (fora do limite de oscilação) ou
+   que perde a prioridade; o repreço da saída também. Proposta: com a fonte travada e a posição no
+   lado preso, não cancelar a proteção nem repreçar; só alertar.
+2. **Ampliação do limite.** Se a B3 amplia o limite, o preço pode atravessar stops com gap: a
+   stop-limite dispara e não executa (gatilho e limite ultrapassados de uma vez). É o stop furado
+   da Flexscan, que só existe pela reserva de preço (`verificarFuro`: último além do limite por
+   `ESPERA_STOP_S` com preço fresco); sem sinal de disparo (retrato 3 → 5 direto;
+   `LegWorkingIndicator` não lido, SIM-3). Falta o roteiro do stop furado na Flexscan e o
+   `status84` no `precoConfiavel` (leilão de reabertura depois da ampliação, se houver).
+
+O 5725 (REAL Flexscan) só liga depois do item 2 e da proposta do item 1.

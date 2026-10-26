@@ -11,10 +11,10 @@ entrada 1632 C
 resposta aceito=false codigo=SEM_PRECO
 nada
 
-# só bid ausente também recusa
+# só bid ausente também recusa: em negociação é mercado travado (book de um lado só; v1.17, 26/10)
 preco bid=- ask=130005
 entrada 1633 C
-resposta aceito=false codigo=SEM_PRECO
+resposta aceito=false codigo=MERCADO_TRAVADO
 
 # saída: sem bid, o limite sai do preco − COLAR_SAIDA_PTS = 129950
 preco bid=- ask=- preco=130000

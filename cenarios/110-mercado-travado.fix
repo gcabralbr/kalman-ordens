@@ -1,0 +1,53 @@
+cenario 110 MERCADO_TRAVADO (v1.17): em negociação, bid = ask ou book de um lado só → alerta próprio (não FONTE_DEGRADADA), entrada recusada, a posição no lado travado vai no texto
+hora 2026-10-26 09:10:00
+# 26/10 09:17: o WIN parou no limite de baixa (177.215, −14,90%) só com ofertas de venda; a 9090
+# mostrou bid = ask = 177.215 (o bid preso no último valor), status84 0, e o FONTE_DEGRADADA dizia
+# "book cruzado". Não é a fonte: é o mercado — e a posição no lado travado não sai.
+
+executa INICIO
+
+# bid = ask em negociação: a entrada é recusada como MERCADO_TRAVADO (era BOOK_INVALIDO)
+preco preco=130000 bid=130000 ask=130000 idade=100ms
+entrada 1101 C
+resposta aceito=false codigo=MERCADO_TRAVADO
+preco bid=130000 ask=130005 idade=100ms
+avanca 1s
+executa COMPRADO OP=1102
+
+preco bid=130000 ask=130000 idade=100ms
+avanca 29s
+saude fonte.travado=false fonte.travado_motivo=* fonte.travado_desde=* fonte.degradada=false fonte.motivo=
+sem_alerta MERCADO_TRAVADO
+avanca 2s
+alerta MERCADO_TRAVADO
+saude fonte.travado=true fonte.degradada=false
+# o preço parado não é preço velho enquanto o mercado está travado (26/10: 18 min sem negócio)
+preco idade=2m
+avanca 2m
+saude fonte.degradada=false fonte.motivo= fonte.travado=true
+sem_alerta FONTE_DEGRADADA
+sem_alerta MERCADO_TRAVADO
+# o book volta aos dois lados: resolve
+preco bid=130000 ask=130005 idade=100ms
+avanca 1s
+alerta RESOLVIDO
+saude fonte.travado=false fonte.travado_motivo= fonte.travado_desde=null
+
+# só ofertas de venda (sem compradores): a comprada é a que não sai
+preco bid=- ask=130000 idade=100ms
+avanca 31s
+alerta MERCADO_TRAVADO
+saude fonte.travado=true fonte.degradada=false
+preco bid=130000 ask=130005 idade=100ms
+avanca 1s
+alerta RESOLVIDO
+
+# bid > ask continua book cruzado (FONTE_DEGRADADA), não travado
+preco bid=130005 ask=130000 idade=100ms
+avanca 32s
+alerta FONTE_DEGRADADA
+saude fonte.travado=false
+preco bid=130000 ask=130005 idade=100ms
+avanca 1s
+alerta RESOLVIDO
+nada

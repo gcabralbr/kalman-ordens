@@ -26,7 +26,8 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `ENTRADA_EM_ERRO` | entrada em estado de erro (39=7) sem reativação: cancelada; leva o texto 58 | não |
 | `BANCO_QUARENTENA` | (v1.13) linha do lote recusada pelo banco por erro de dado (1406, 1366, 1264, 1292, 1048, 1452): foi para a `kalmanordemquarentena` e o resto do lote gravou; o serviço segue. Na subida com linha pendente: PARADA (BLOQUEAR, origem QUARENTENA). Resolve no `POST /retomar` depois de `kalman-ordens quarentena resolver` | sim |
 | `PROTECAO_RESERVA_REPLACES` | (v1.13) a 1014 chegou a `REPLACES_1014_MAX − REPLACES_1014_RESERVA` replaces (MaxReplaces 20771 do PnT, padrão 100): ajustes do stop recusados daqui em diante (`PROTECAO_LIMITE_REPLACES`); o trailing segue pelo TRSP do gestor (saída por replace, na reserva) | não |
-| `FONTE_DEGRADADA` | (v1.14) fonte de preço ruim por mais de `FONTE_DEGRADADA_S` (30) dentro de `FONTE_JANELA` (09:00-18:25) **em dia de pregão** (seg–sex, fora dos feriados de `FERIADOS_ARQ`; 24/10): sem resposta, `{}` (no pnt-md-hml: book degenerado ou atraso acima da base), 404/400; em negociação, sem bid/ask, book cruzado ou preço mais velho que `PRECO_IDADE_MAX_S`; leilão com preço não conta. Motivo da própria fonte com `PRECOS_SAUDE_URL` (o `/saude` do pnt-md-hml). No `/saude`: `fonte`. Resolve quando a fonte volta ou a janela fecha | sim |
+| `FONTE_DEGRADADA` | (v1.14) fonte de preço ruim por mais de `FONTE_DEGRADADA_S` (30) dentro de `FONTE_JANELA` (09:00-18:25) **em dia de pregão** (seg–sex, fora dos feriados de `FERIADOS_ARQ`; 24/10): sem resposta, `{}` (no pnt-md-hml: book degenerado ou atraso acima da base), 404/400; em negociação, sem bid nem ask, book cruzado (bid > ask) ou preço mais velho que `PRECO_IDADE_MAX_S`; leilão com preço não conta; mercado travado não conta (é `MERCADO_TRAVADO`, v1.17). Motivo da própria fonte com `PRECOS_SAUDE_URL` (o `/saude` do pnt-md-hml). No `/saude`: `fonte`. Resolve quando a fonte volta ou a janela fecha | sim |
+| `MERCADO_TRAVADO` | (v1.17, 26/10) em negociação (`status84` 0), **bid = ask** ou **book de um lado só** (só ask: sem compradores; só bid: sem vendedores) por mais de `FONTE_DEGRADADA_S`, na mesma janela e só em dia de pregão; uma chave por fonte (`MERCADO_TRAVADO`, `MERCADO_TRAVADO:FLEXSCAN`). É o mercado parado no limite de oscilação (26/10: WIN em 177.215, −14,90%, só vendedores, a 9090 com bid = ask) — ou a fonte errada; o preço parado não conta como velho enquanto durar. Entradas recusadas (`MERCADO_TRAVADO`). O texto lista as posições daquela fonte: **posição no lado travado não sai** — nem o stop nem a saída executam até destravar (sem compradores, a comprada; sem vendedores, a vendida; com bid = ask a fonte não diz o lado). No `/saude`: `fonte.travado`, `travado_desde`, `travado_motivo`. Resolve quando o book volta aos dois lados ou a janela fecha | sim |
 | `TUNNEL_RECUSA_ENTRADA` | (v1.13) entrada recusada pelo PnT com "tunnel" no 58: na primeira recusa falsa, ligar `IGNORE_TUNNEL_ENTRADA` | não |
 | `CONCILIACAO` | resultado da conciliação do logon (ordens KM, ignoradas, divergências, posição); o mass status vazio (35=j 380=101 "No orders found.") é só registrado (v1.3 E2) | não |
 | `MASS_STATUS_REJEITADO` | mass status rejeitado por motivo diferente de 380=4; entradas bloqueadas | sim |
@@ -111,10 +112,11 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `ENTRADAS_POR_MINUTO_UID` | o uid já teve `LIMITE_ENTRADAS_MIN_UID` entradas no último minuto (v1.10 L; não vale na virada de mão) | não | — |
 | `INTERVALO_MINIMO_UID` | menos de `LIMITE_INTERVALO_UID_S` desde a última entrada do uid no mesmo sentido (v1.10 L) | não | — |
 | `PERDA_DIARIA` | perda do dia atingida (e BLOQUEAR) | sim | `PARADA` |
-| `SEM_PRECO` | sem resposta de preço, `{}`, 404, 400, ou falta preco/bid/ask | sim | — |
+| `SEM_PRECO` | sem resposta de preço, `{}`, 404, 400, ou falta preco (ou bid e ask juntos) | sim | — |
 | `LEILAO` | `status84 != 0` | sim | — |
 | `PRECO_VELHO` | `idade_seg > 3` | sim | — |
-| `BOOK_INVALIDO` | `bid >= ask` | sim | — |
+| `MERCADO_TRAVADO` | (v1.17) `status84` 0 com bid = ask ou book de um lado só (limite de oscilação); vem antes de `SEM_PRECO`/`BOOK_INVALIDO` | sim | — |
+| `BOOK_INVALIDO` | `bid > ask` (bid = ask é `MERCADO_TRAVADO`) | sim | — |
 | `BOOK_DESCOLADO` | \|meio − preco\| > 150 | sim | — |
 | `ENVIO_FALHOU` | a biblioteca recusou a mensagem antes do fio | não | `RECUSA_PNT` |
 | `SEM_POSICAO` | SAIDA sem posição real | não | `SEM_POSICAO` (não quando a operação já foi zerada pelo stop) |

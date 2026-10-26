@@ -415,6 +415,10 @@ func (m *Motor) verificarPrecoEntrada(l preco.Leitura) *recusa {
 	if l.Status84 != 0 {
 		return limite("LEILAO", fmt.Sprintf("status84 = %d", l.Status84))
 	}
+	if t := mercadoTravado(l); t != nil {
+		// v1.17 (26/10): antes BOOK_INVALIDO (bid = ask) ou SEM_PRECO (um lado só)
+		return limite("MERCADO_TRAVADO", t.motivo(l, m.agora()))
+	}
 	if l.Preco == nil || l.Bid == nil || l.Ask == nil {
 		return limite("SEM_PRECO", "falta preco, bid ou ask")
 	}
