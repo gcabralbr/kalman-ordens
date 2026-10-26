@@ -62,12 +62,21 @@ def salvar_estado(e):
     json.dump(e, open(ESTADO_ARQ, "w"), indent=1)
 
 
+def ler_token(s):
+    """O token puro ou o JSON que o `login` grava ({"token": ..., "em": ...}): aceita os dois (26/10:
+    FLEX_TOKEN=$(cat token) levava o JSON inteiro para o Authorization)."""
+    s = s.strip()
+    if s.startswith("{"):
+        return json.loads(s)["token"]
+    return s
+
+
 def token():
     t = os.environ.get("FLEX_TOKEN")
     if t:
-        return t
+        return ler_token(t)
     try:
-        return json.load(open(TOKEN_ARQ))["token"]
+        return ler_token(open(TOKEN_ARQ).read())
     except FileNotFoundError:
         sys.exit("sem token: rode `login` (um só) ou exporte FLEX_TOKEN")
 

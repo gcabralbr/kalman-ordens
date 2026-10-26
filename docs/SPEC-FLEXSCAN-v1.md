@@ -581,3 +581,37 @@ Os dois cenários a cobrir (nos dois conectores; no PnT o mesmo vale para a 1014
    `status84` no `precoConfiavel` (leilão de reabertura depois da ampliação, se houver).
 
 O 5725 (REAL Flexscan) só liga depois do item 2 e da proposta do item 1.
+
+#### 14.5.1 Leilão de ampliação do limite (26/10 09:38, observado)
+
+Teste pela API direta, conta `S-1117150`, com a 9090 em `status84` 3 (registro do usuário em
+`var/flex-cb-20261026/manual.jsonl`):
+- PUT da stop: aceito (estado 5 em < 0,5 s);
+- POST de limite nova: aceito (estado 0, `isInMarket` 1);
+- DELETE das duas: aceitos (estado 4 em < 0,5 s).
+
+Nada executou e a conta ficou limpa. **Durante o leilão a B3 aceita alterar, registrar e cancelar.**
+A saída por DELETE da stop + limite funciona e a limite entra no leilão.
+
+**A 9090 em leilão:** `status84` 3, mas `preco` = último negócio (177.215), não o preço teórico do
+leilão (166.790 no Profit). O preço teórico não existe no contrato do `/precos/atual`. O que o código
+faz hoje com esse preço:
+
+| Onde | Hoje | Problema |
+|---|---|---|
+| `verificarFuro` → `precoConfiavel` (`tick.go:262`) | não olha `status84` | compara o limite da stop com um preço que não é o de reabertura (furo falso ou furo não visto); só não dispara hoje porque o `ts` parado deixa o preço velho (> 3 s) |
+| `precoSaida` (`saida.go:179`) | bid/ask ∓ `COLAR_SAIDA` × k, em leilão também | bid/ask de leilão (26/10: bid = ask = 177.215, presos) não são referência; a saída pode ficar fora do preço de reabertura |
+| `precoDoDia` → `precoConfiavel` (`motor.go:1134`) | último negócio | o resultado do dia (e a `PERDA_DIARIA`) marca a posição em 177.215 com a reabertura em 166.790 |
+| `BOOK_DESCOLADO` (`entrada.go:432`) | só na entrada | não se aplica: a entrada já é recusada por `LEILAO` antes |
+
+**Proposta (próximo pacote, depois da v1.17):**
+1. `precoConfiavel` devolve nil com `status84` ≠ 0. Sem STOP_FURADO por comparação durante o leilão,
+   e o resultado do dia fica sem preço (como já acontece com preço velho).
+2. Saída com `status84` ≠ 0: limite largo, marcada `SAIDA_EM_LEILAO` (alerta crítico com o
+   `status84`). A largura é decisão aberta; o leilão aceita limite. Depois da reabertura
+   (`status84` volta a 0), repreço normal sobre o book.
+3. Roteiros, um por cenário:
+   - **travado no limite:** `status84` 0, bid = ask = limite, sem bid real; é o roteiro 110 da v1.17;
+   - **leilão de ampliação:** `status84` 3, `preco` parado no limite, bid/ask presos. Sem STOP_FURADO;
+     saída pedida entra como `SAIDA_EM_LEILAO`; na reabertura com gap além do limite da stop, o furo
+     pela reserva e a saída.
