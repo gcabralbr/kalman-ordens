@@ -155,7 +155,9 @@ func (m *Motor) enviarSaida(op *operacao) {
 		return
 	}
 	m.al.Resolver(chaveOp("SAIDA_SEM_PRECO", op))
-	if degradado {
+	if m.emLeilao(op) {
+		m.avisarSaidaEmLeilao(op, px)
+	} else if degradado {
 		m.al.Emitir("SAIDA_PRECO_DEGRADADO", "", fmt.Sprintf("saída da operação %d com preço velho ou sem bid/ask", op.OperacaoID), op.OperacaoID)
 	}
 	o := m.novaOrdem(op, dominio.Saida, lado, abs(pos), pnt.EstrategiaAgendada)
@@ -192,6 +194,10 @@ func (m *Motor) precoSaida(op *operacao, lado dominio.Lado, k int) (px int64, di
 	if l.Situacao != preco.OK {
 		return 0, false, false, false
 	}
+	if l.Status84 != 0 {
+		px, ok := m.precoSaidaLeilao(op, l, lado)
+		return px, false, false, ok
+	}
 	ref := l.Ask
 	if lado == dominio.Venda {
 		ref = l.Bid
@@ -210,6 +216,42 @@ func (m *Motor) precoSaida(op *operacao, lado dominio.Lado, k int) (px int64, di
 		return m.abaixo(ref.Sub(colar)), false, degradado, true
 	}
 	return m.acima(ref.Add(colar)), false, degradado, true
+}
+
+// emLeilao (v1.18): a fonte da operação diz leilão (status84 != 0). Com ticker divergente vale o
+// caminho da B5.c.
+func (m *Motor) emLeilao(op *operacao) bool {
+	l := m.precosDo(op.conector()).Ler()
+	return l.Situacao == preco.OK && l.Status84 != 0 && !m.divergenteOp(op)
+}
+
+// precoSaidaLeilao (v1.18, 26/10): em leilão bid/ask e preco não são referência (o preco é o último
+// negócio; o teórico não está na fonte). A saída vai com limite largo, SAIDA_LEILAO_PCT sobre o último
+// negócio (venda abaixo, compra acima): o leilão executa no preço de reabertura, não no limite. Nunca a
+// mercado. Sem preco na leitura (leilão de abertura), o último guardado do símbolo.
+func (m *Motor) precoSaidaLeilao(op *operacao, l preco.Leitura, lado dominio.Lado) (int64, bool) {
+	ref := l.Preco
+	if ref == nil {
+		u, ok := m.ultimos[m.chaveUltimo(op.conector(), op.Simbolo)]
+		if !ok {
+			return 0, false
+		}
+		ref = &u.px
+	}
+	pct := decimal.NewFromInt(m.p.SaidaLeilaoPct).Div(decimal.NewFromInt(100))
+	if lado == dominio.Venda {
+		return m.abaixo(ref.Mul(decimal.NewFromInt(1).Sub(pct))), true
+	}
+	return m.acima(ref.Mul(decimal.NewFromInt(1).Add(pct))), true
+}
+
+// avisarSaidaEmLeilao: SAIDA_EM_LEILAO, crítico, uma vez por leilão; resolve quando o status84 volta
+// a 0 (repreço normal) ou a operação zera.
+func (m *Motor) avisarSaidaEmLeilao(op *operacao, px int64) {
+	op.saidaEmLeilao = true
+	m.al.Emitir("SAIDA_EM_LEILAO", chaveOp("SAIDA_EM_LEILAO", op),
+		fmt.Sprintf("saída da operação %d em leilão (status84 %d): limite %d, %d%% sobre o último negócio; sem repreço até o leilão acabar",
+			op.OperacaoID, m.precosDo(op.conector()).Ler().Status84, px, m.p.SaidaLeilaoPct), op.OperacaoID)
 }
 
 // ultimoCertoValido: há último preco do símbolo da posição com até IDADE_MAX_PRECO_DIVERGENTE_S.
@@ -231,7 +273,7 @@ func (m *Motor) zerada(op *operacao) {
 	op.PnL = op.pnlRealizado()
 	op.zeradaEm = m.agora()
 	m.mudar(op, dominio.Zerada)
-	for _, k := range []string{"SEM_PROTECAO", "STOP_FURADO", "SAIDA_ESGOTOU", "CANCEL_SEM_RESPOSTA", "SAIDA_SEM_PRECO", "SAIDA_SEM_FILL", "SAIDA_DIVERGENTE", "SAIDA_BLOQUEADA", "PROTECAO_RECRIADA", "PROTECAO_INSTAVEL", "PROTECAO_EM_ERRO", "PROTECAO_EM_ERRO_PRESA", "CONTA_ALTERADA", "SIMBOLO"} {
+	for _, k := range []string{"SEM_PROTECAO", "STOP_FURADO", "SAIDA_ESGOTOU", "SAIDA_EM_LEILAO", "CANCEL_SEM_RESPOSTA", "SAIDA_SEM_PRECO", "SAIDA_SEM_FILL", "SAIDA_DIVERGENTE", "SAIDA_BLOQUEADA", "PROTECAO_RECRIADA", "PROTECAO_INSTAVEL", "PROTECAO_EM_ERRO", "PROTECAO_EM_ERRO_PRESA", "CONTA_ALTERADA", "SIMBOLO"} {
 		m.al.Resolver(chaveOp(k, op))
 	}
 	ps, _ := op.medio(false)
@@ -316,6 +358,24 @@ func (m *Motor) tickSaida(op *operacao) {
 		op.congelada = true
 		m.cancelar(s)
 		return
+	}
+	if m.emLeilao(op) {
+		// v1.18: em leilão a saída fica no limite largo (uma troca, se ela veio de antes do leilão);
+		// sem repreço nem contagem até o status84 voltar a 0
+		op.proximoRepreco = agora.Add(m.intervaloRepreco(op))
+		if px, _, _, ok := m.precoSaida(op, s.Lado, 1); ok && (!op.saidaEmLeilao || px != s.Preco) {
+			if !op.saidaEmLeilao {
+				m.avisarSaidaEmLeilao(op, px)
+			}
+			if px != s.Preco {
+				m.replace(s, s.QtdExec+abs(op.posicao()), px, 0, 0)
+			}
+		}
+		return
+	}
+	if op.saidaEmLeilao {
+		op.saidaEmLeilao = false
+		m.al.Resolver(chaveOp("SAIDA_EM_LEILAO", op))
 	}
 	op.repreco++
 	if op.repreco > m.p.MaxRepreco {

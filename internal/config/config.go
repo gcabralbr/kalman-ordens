@@ -158,6 +158,7 @@ type Parametros struct {
 	// v1.11: saída por replace da 1014 (gatilho além do preço) em vez de cancel + nova ordem
 	SaidaPorReplace     bool
 	SaidaReplaceAlemPts int64
+	SaidaLeilaoPct      int64 // v1.18: limite da saída em leilão, % sobre o último negócio
 	SaidaReplaceTimeout time.Duration
 	// v1.13: 20864=Y (IgnoreTunnel) também nas entradas (a 1014 e a saída sempre levam)
 	IgnoreTunnelEntrada bool
@@ -211,6 +212,7 @@ func (c Config) Parametros() Parametros {
 		MaxRepreco:              c.Inteiro("MAX_REPRECO_SAIDA", 3),
 		SaidaPorReplace:         c.Bool("SAIDA_POR_REPLACE", false),
 		SaidaReplaceAlemPts:     c.Pontos("SAIDA_REPLACE_ALEM_PTS", 100),
+		SaidaLeilaoPct:          int64(c.Inteiro("SAIDA_LEILAO_PCT", 10)),
 		SaidaReplaceTimeout:     c.Segundos("SAIDA_REPLACE_TIMEOUT_S", 2),
 		IgnoreTunnelEntrada:     c.Bool("IGNORE_TUNNEL_ENTRADA", false),
 		Replaces1014Max:         c.Inteiro("REPLACES_1014_MAX", 100),

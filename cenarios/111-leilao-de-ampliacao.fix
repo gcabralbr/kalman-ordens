@@ -1,0 +1,82 @@
+cenario 111 Leilão de ampliação do limite (v1.18): em leilão o preco não é referência — sem stop furado por comparação, resultado do dia sem preço, saída com limite largo (SAIDA_EM_LEILAO) e sem repreço; na reabertura com gap, o furo pela reserva e o repreço normal
+hora 2026-10-26 10:00:00
+# as fases perdem ~14.500 pts (o gap): a perda do dia não pode parar o roteiro
+config LIMITE_PERDA_DIA_PTS=100000
+# 26/10 09:38: a 9090 em status84 3 com preco = último negócio (177.215) e o teórico do leilão em
+# 166.790 (Profit). A B3 aceita alterar, registrar e cancelar no leilão (SPEC-FLEXSCAN-v1 §14.5.1).
+
+executa INICIO
+executa COMPRADO OP=1111
+
+# leilão com o preco abaixo do limite da 1014 (129410): não é o preço de reabertura, não fura
+preco status84=3 preco=129300 bid=129300 ask=129300 idade=100ms
+avanca 10s
+sem_alerta STOP_FURADO
+nada
+saude limites.resultado_dia_pts=0 posicao=1
+
+# reabertura com gap além do limite: o furo pela reserva (5 s), cancel e saída sobre o book
+preco status84=0 preco=129000 bid=128995 ask=129000 idade=100ms
+avanca 5s
+nada
+avanca 1s
+alerta STOP_FURADO
+recebe 35=F 11=KM-P-1111-2 41=KM-P-1111-1 37=dsa.1111.P
+envia @ER 11=KM-P-1111-2 41=KM-P-1111-1 37=dsa.1111.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-1111-1 38=1 40=2 44=128945 54=2 847=1031
+envia @ER 11=KM-S-1111-1 37=dsa.1111.S 150=F 39=2 54=2 38=1 44=128945 847=1031 32=1 31=128995 14=1 151=0 6=128995
+evento ZERADA operacao_id=1111 origem=STOP_FURADO
+saude posicao=0
+
+# saída pedida durante o leilão (61 s: o intervalo mínimo entre entradas)
+avanca 61s
+preco status84=0 preco=130000 bid=130000 ask=130005 idade=100ms
+executa COMPRADO OP=1112
+preco status84=3 preco=130000 bid=130000 ask=130000 idade=100ms
+saida 1112 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-1112-2 41=KM-P-1112-1 37=dsa.1112.P
+envia @ER 11=KM-P-1112-2 41=KM-P-1112-1 37=dsa.1112.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+# limite largo: 130000 × (1 − 10%) = 117000, nunca a mercado
+recebe 35=D 11=KM-S-1112-1 38=1 40=2 44=117000 54=2 847=1031
+alerta SAIDA_EM_LEILAO
+envia @ER 11=KM-S-1112-1 37=dsa.1112.S 150=0 39=0 54=2 38=1 44=117000 847=1031 14=0 151=1 6=0
+# sem repreço (nem contagem) enquanto durar o leilão
+avanca 10s
+nada
+sem_alerta SAIDA_ESGOTOU
+sem_alerta SAIDA_EM_LEILAO
+
+# reabertura abaixo do limite largo (sem execução): repreço normal sobre o book (o primeiro: bid − 100)
+preco status84=0 preco=116500 bid=116495 ask=116500 idade=100ms
+avanca 2s
+alerta RESOLVIDO
+recebe 35=G 11=KM-S-1112-2 41=KM-S-1112-1 37=dsa.1112.S 38=1 44=116395 54=2 847=1031
+envia @ER 11=KM-S-1112-2 41=KM-S-1112-1 37=dsa.1112.S 150=5 39=5 54=2 38=1 44=116395 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-S-1112-2 37=dsa.1112.S 150=F 39=2 54=2 38=1 44=116395 847=1031 32=1 31=116495 14=1 151=0 6=116495
+evento ZERADA operacao_id=1112 origem=GESTOR
+saude posicao=0
+
+# saída já no livro quando o leilão começa: uma troca para o limite largo, e só uma
+avanca 61s
+preco status84=0 preco=130000 bid=130000 ask=130005 idade=100ms
+executa COMPRADO OP=1113
+saida 1113 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-1113-2 41=KM-P-1113-1 37=dsa.1113.P
+envia @ER 11=KM-P-1113-2 41=KM-P-1113-1 37=dsa.1113.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-1113-1 38=1 40=2 44=129950 54=2 847=1031
+envia @ER 11=KM-S-1113-1 37=dsa.1113.S 150=0 39=0 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
+preco status84=3 preco=130000 bid=130000 ask=130000 idade=100ms
+avanca 2s
+alerta SAIDA_EM_LEILAO
+recebe 35=G 11=KM-S-1113-2 41=KM-S-1113-1 37=dsa.1113.S 38=1 44=117000 54=2 847=1031
+envia @ER 11=KM-S-1113-2 41=KM-S-1113-1 37=dsa.1113.S 150=5 39=5 54=2 38=1 44=117000 847=1031 14=0 151=1 6=0
+avanca 10s
+nada
+# o leilão executa no preço de reabertura, não no limite
+envia @ER 11=KM-S-1113-2 37=dsa.1113.S 150=F 39=2 54=2 38=1 44=117000 847=1031 32=1 31=126500 14=1 151=0 6=126500
+evento ZERADA operacao_id=1113 origem=GESTOR
+alerta RESOLVIDO
+saude posicao=0
+nada

@@ -134,6 +134,7 @@ type operacao struct {
 	retentativaProtEm     time.Time
 	furoDesde             time.Time
 	furado                bool
+	saidaEmLeilao         bool          // v1.18: SAIDA_EM_LEILAO emitido; volta a false com o status84 0
 	saidaRep              *saidaReplace // saída por replace da 1014 em curso (v1.11; só em memória)
 	saidaAposEntrada      bool
 	encerramentoEm        time.Time

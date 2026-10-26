@@ -52,7 +52,7 @@ func (m *Motor) saidaPorReplacePossivel(op *operacao, p *ordem) bool {
 	}
 	pos := op.posicao()
 	return pos != 0 && p.Qtd == abs(pos) && p.Lado == dominio.ParaZerar(pos) &&
-		op.viva(dominio.Entrada) == nil && !m.divergenteOp(op) && m.bolsa.desde.IsZero()
+		op.viva(dominio.Entrada) == nil && !m.divergenteOp(op) && m.bolsa.desde.IsZero() && !m.emLeilao(op) // v1.18: em leilão, cancel + limite largo
 }
 
 // precoSaidaReplace: gatilho além do preço e limite do degrau k. ok=false sem preço utilizável.

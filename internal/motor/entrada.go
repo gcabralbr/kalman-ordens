@@ -436,9 +436,11 @@ func (m *Motor) verificarPrecoEntrada(l preco.Leitura) *recusa {
 }
 
 // precoConfiavel: o preco do símbolo pedido, fresco; nil se não houver (ou se o marketdata está
-// em outro contrato).
+// em outro contrato). v1.18 (26/10): nil em leilão (status84 != 0) — o preco da 9090 é o último
+// negócio, não o teórico do leilão (09:38: 177.215 com a reabertura em 166.790); sem stop furado por
+// comparação e sem resultado do dia sobre ele.
 func (m *Motor) precoConfiavel(l preco.Leitura, simbolo string) *decimal.Decimal {
-	if l.Situacao != preco.OK || simbolo == "" || l.Ticker != simbolo || l.Preco == nil || l.Idade(m.agora()) > m.p.IdadeMaxPreco {
+	if l.Situacao != preco.OK || l.Status84 != 0 || simbolo == "" || l.Ticker != simbolo || l.Preco == nil || l.Idade(m.agora()) > m.p.IdadeMaxPreco {
 		return nil
 	}
 	return l.Preco
