@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strconv"
 	"time"
 
@@ -41,6 +42,11 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if p.StopPts == nil || *p.StopPts <= 0 {
 		return nil, simples("SEM_STOP", "stop_pts ausente na ENTRADA: sem stop, não há ordem")
 	}
+	// PNT_DESLIGADO: o uid só habilitado no PnT nem chega à conta (sem CONTA_AMBIENTE); com os dois
+	// conectores, a escolha do GQ decide depois da conta
+	if m.p.PnTDesligado && !slices.Contains(hab.Conectores, dominio.ConectorFlexscan) {
+		return nil, conectorDesligado()
+	}
 	if m.operacaoDo(p) != nil {
 		// a idempotência (repetido) já tratou o reenvio; aqui só chega operação sem pedido guardado
 		return nil, simples("DUPLICADA", "operação já recebida")
@@ -67,6 +73,9 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	conta, r := m.contaParaEntrada(*p.UID)
 	if r != nil {
 		return nil, r
+	}
+	if conta.Conector == dominio.ConectorPnT && m.p.PnTDesligado {
+		return nil, conectorDesligado()
 	}
 	// SPEC-FLEXSCAN-v1 §14: o conector (da habilitação) tem de ter sessão e, no PnT, o disjuntor de
 	// bolsa fechado
@@ -540,4 +549,9 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+// conectorDesligado: a recusa da entrada de uid PNT com PNT_DESLIGADO (28/10).
+func conectorDesligado() *recusa {
+	return simples("CONECTOR_DESLIGADO", "conector PNT desligado nesta instancia (PNT_DESLIGADO)")
 }

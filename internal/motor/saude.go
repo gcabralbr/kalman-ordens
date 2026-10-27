@@ -48,6 +48,7 @@ func (m *Motor) saude() Resposta {
 	r := Resposta{
 		"versao":        Versao,
 		"sessao_logada": m.fix != nil && m.fix.Logado(),
+		"pnt_desligado": m.p.PnTDesligado,
 		"conciliando":   m.conciliando,
 		"posicao":       m.posicaoTotal(),
 		// SPEC-FLEXSCAN-v1: o desligamento do pnt-md-hml (14:35) só olha o PnT

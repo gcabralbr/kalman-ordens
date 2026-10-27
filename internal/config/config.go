@@ -121,6 +121,9 @@ type Parametros struct {
 	// SPEC-FLEXSCAN-v1: o conector Flexscan existe (FLEXSCAN_URL) e as contas de HML dele
 	Flexscan     bool
 	ContasHMLFlx []string
+	// PNT_DESLIGADO (28/10): sem sessão FIX nem fonte do PnT; entradas de uid com conector PNT
+	// recusadas (CONECTOR_DESLIGADO). A Flexscan segue igual.
+	PnTDesligado bool
 
 	ColarEntrada, FolgaStop, ColarSaida, Tick  int64
 	AjusteDegrauMin                            int64
@@ -185,6 +188,7 @@ func (c Config) Parametros() Parametros {
 		ContasHML:        listaContas(c.Texto("ORDENS_CONTAS_HML", "")),
 		ConfereConta:     c.Segundos("CONFERE_CONTA_S", 60),
 		Flexscan:         c.Texto("FLEXSCAN_URL", "") != "",
+		PnTDesligado:     c.Bool("PNT_DESLIGADO", false),
 		ContasHMLFlx:     listaContas(c.Texto("FLEXSCAN_CONTAS_HML", "")),
 
 		ColarEntrada:            c.Pontos("COLAR_ENTRADA_PTS", 15),

@@ -89,6 +89,7 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `CONFIG_USUARIO_INVALIDA` | JSON do ambiente inválido, sem `Robo.CORSeqId`, ou uid sem linha em `acusuario` | não | `USUARIO_CONFIG` |
 | `CONECTOR_NAO_HABILITADO` | (SPEC-FLEXSCAN-v1 §14.3) o `Robo.Conector` do GQ não está entre os `conectores` da habilitação do uid | não | — |
 | `CONECTOR_INDEFINIDO` | (SPEC-FLEXSCAN-v1 §14.3) o GQ não traz `Robo.Conector` e a habilitação tem mais de um conector | não | — |
+| `CONECTOR_DESLIGADO` | (SPEC v1.19.1) `PNT_DESLIGADO=1` e o uid só habilitado no PnT (logo depois da habilitação, antes da conta), ou habilitado nos dois e o GQ escolhe o PnT | não | — |
 | `CONECTOR_NAO_CONFIGURADO` | (SPEC-FLEXSCAN-v1 §14) o conector da habilitação é FLEXSCAN e a instância não tem `FLEXSCAN_URL` | não | — |
 | `DESTINO_INVALIDO` | `Robo.CORSeqId` (a corretora) = 9999 (simulador do GQ) ou fora das conhecidas (85 BTG, 88 Capital); a corretora não decide o conector | não | `USUARIO_CONFIG` |
 | `CONTA_INVALIDA` | `Robo.CCONroConta` ausente; pela regra do conector da habilitação: PnT só dígitos (o simulador usa `QUANT`); Flexscan até 20 letras, dígitos e hífen | não | `USUARIO_CONFIG` |

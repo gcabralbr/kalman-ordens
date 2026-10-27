@@ -128,7 +128,13 @@ func obrigatorias(cfg config.Config, chaves ...string) error {
 func servir(ctx context.Context, cfg config.Config) error {
 	motor.Versao = versao
 	slog.Info("kalman-ordens subindo", "versao", versao)
-	if err := obrigatorias(cfg, "DB_DSN", "FIX_SENDER_COMP_ID", "FIX_HOST", "FIX_PORTA", "ORDENS_AMBIENTE", "ORDENS_CONTAS_HML"); err != nil {
+	// PNT_DESLIGADO (28/10): sem sessão FIX nem fonte do PnT; só a Flexscan
+	pntDesligado := cfg.Bool("PNT_DESLIGADO", false)
+	if pntDesligado {
+		if err := obrigatorias(cfg, "DB_DSN", "ORDENS_AMBIENTE", "FLEXSCAN_URL"); err != nil {
+			return fmt.Errorf("PNT_DESLIGADO: %w", err)
+		}
+	} else if err := obrigatorias(cfg, "DB_DSN", "FIX_SENDER_COMP_ID", "FIX_HOST", "FIX_PORTA", "ORDENS_AMBIENTE", "ORDENS_CONTAS_HML"); err != nil {
 		return err
 	}
 	if a := cfg.Texto("ORDENS_AMBIENTE", ""); a != usuario.HML && a != usuario.Producao {
@@ -191,8 +197,14 @@ func servir(ctx context.Context, cfg config.Config) error {
 	// fonte de preço por conector (SPEC-FLEXSCAN-v1): PRECOS_URL é o padrão; PRECOS_URL_<CONECTOR>
 	// só onde difere (HML: PnT → 9096, o book D-1 da HML do PnT; Flexscan → 9090, o D0 do simulador)
 	urlPnT := cfg.Texto("PRECOS_URL_PNT", cfg.Texto("PRECOS_URL", "http://172.16.110.51:9090"))
+	saudePnT := cfg.Texto("PRECOS_SAUDE_URL_PNT", cfg.Texto("PRECOS_SAUDE_URL", "")) // HML: o /saude do pnt-md-hml (motivo do FONTE_DEGRADADA)
+	if pntDesligado {
+		// a fonte única é a da Flexscan (o FONTE_DEGRADADA e o MERCADO_TRAVADO são dela)
+		urlPnT = cfg.Texto("PRECOS_URL_FLEXSCAN", cfg.Texto("PRECOS_URL", "http://172.16.110.51:9090"))
+		saudePnT = cfg.Texto("PRECOS_SAUDE_URL_FLEXSCAN", "")
+	}
 	pr := preco.NovaHTTP(urlPnT, cfg.Texto("PRECOS_ATIVO", "WINFUT"), rel)
-	pr.ComSaude(cfg.Texto("PRECOS_SAUDE_URL_PNT", cfg.Texto("PRECOS_SAUDE_URL", ""))) // HML: o /saude do pnt-md-hml (motivo do FONTE_DEGRADADA)
+	pr.ComSaude(saudePnT)
 	pr.Iniciar(200 * time.Millisecond)
 	defer pr.Parar()
 
@@ -246,32 +258,37 @@ func servir(ctx context.Context, cfg config.Config) error {
 			slog.Warn("flexscan sem receptor de webhook (FLEXSCAN_WEBHOOK_ENDERECO vazio): só a consulta")
 		}
 	}
-	s, err := pnt.NovaSessao(pnt.ConfigSessao{
-		SenderCompID: cfg.Texto("FIX_SENDER_COMP_ID", ""),
-		TargetCompID: cfg.Texto("FIX_TARGET_COMP_ID", "PNT_DSA"),
-		Host:         cfg.Texto("FIX_HOST", ""),
-		Porta:        cfg.Inteiro("FIX_PORTA", 0),
-		Usuario:      cfg.Texto("FIX_USUARIO", ""),
-		Senha:        cfg.Texto("FIX_SENHA", ""),
-		Dir:          cfg.Texto("FIX_DIR", "/var/lib/kalman-ordens/fix"),
-		Inicio:       cfg.Texto("FIX_INICIO", "08:30:00"),
-		Fim:          cfg.Texto("FIX_FIM", "17:55:00"),
-		HeartBtInt:   cfg.Inteiro("FIX_HEARTBEAT", 30),
-		ReconexaoS:   cfg.Inteiro("FIX_RECONEXAO_S", 5),
-		// espera crescente depois de logon recusado ou store ilegível (SPEC v1.3 B1, D1)
-		ReconexaoMaxS: cfg.Inteiro("FIX_RECONEXAO_MAX_S", 60),
-		// envio liberado só depois do reenvio que o PnT pede logo após o logon (v1.3 A2)
-		SincroniaMs:  cfg.Inteiro("FIX_SINCRONIA_MS", 500),
-		ResetOnLogon: cfg.Bool("FIX_RESET_ON_LOGON", false),
-		// fsync do store FIX a cada mensagem (padrão: sim); ver docs/CARGA-2026-10-15.md seção 7
-		SemSyncStore: !cfg.Bool("FIX_STORE_SYNC", true),
-		// monitor ao vivo (GET /sessao/ao-vivo): cada mensagem do fio, em memória
-		Espelho: m.AoVivo().Registrar,
-	}, m)
-	if err != nil {
-		return err
+	var s *pnt.Sessao
+	if !pntDesligado {
+		s, err = pnt.NovaSessao(pnt.ConfigSessao{
+			SenderCompID: cfg.Texto("FIX_SENDER_COMP_ID", ""),
+			TargetCompID: cfg.Texto("FIX_TARGET_COMP_ID", "PNT_DSA"),
+			Host:         cfg.Texto("FIX_HOST", ""),
+			Porta:        cfg.Inteiro("FIX_PORTA", 0),
+			Usuario:      cfg.Texto("FIX_USUARIO", ""),
+			Senha:        cfg.Texto("FIX_SENHA", ""),
+			Dir:          cfg.Texto("FIX_DIR", "/var/lib/kalman-ordens/fix"),
+			Inicio:       cfg.Texto("FIX_INICIO", "08:30:00"),
+			Fim:          cfg.Texto("FIX_FIM", "17:55:00"),
+			HeartBtInt:   cfg.Inteiro("FIX_HEARTBEAT", 30),
+			ReconexaoS:   cfg.Inteiro("FIX_RECONEXAO_S", 5),
+			// espera crescente depois de logon recusado ou store ilegível (SPEC v1.3 B1, D1)
+			ReconexaoMaxS: cfg.Inteiro("FIX_RECONEXAO_MAX_S", 60),
+			// envio liberado só depois do reenvio que o PnT pede logo após o logon (v1.3 A2)
+			SincroniaMs:  cfg.Inteiro("FIX_SINCRONIA_MS", 500),
+			ResetOnLogon: cfg.Bool("FIX_RESET_ON_LOGON", false),
+			// fsync do store FIX a cada mensagem (padrão: sim); ver docs/CARGA-2026-10-15.md seção 7
+			SemSyncStore: !cfg.Bool("FIX_STORE_SYNC", true),
+			// monitor ao vivo (GET /sessao/ao-vivo): cada mensagem do fio, em memória
+			Espelho: m.AoVivo().Registrar,
+		}, m)
+		if err != nil {
+			return err
+		}
+		m.Usar(s)
+	} else {
+		slog.Warn("PNT_DESLIGADO: sem sessão FIX nem fonte do PnT; entradas de uid com conector PNT recusadas (CONECTOR_DESLIGADO)", "fonte", urlPnT)
 	}
-	m.Usar(s)
 	// Parte 7.3: estado do dia carregado antes de logar.
 	if err := m.Iniciar(); err != nil {
 		return err
@@ -289,8 +306,10 @@ func servir(ctx context.Context, cfg config.Config) error {
 		}
 	}()
 
-	if err := s.Iniciar(); err != nil {
-		return err
+	if s != nil {
+		if err := s.Iniciar(); err != nil {
+			return err
+		}
 	}
 	if ponte != nil {
 		ponte.Iniciar()
@@ -316,7 +335,7 @@ func servir(ctx context.Context, cfg config.Config) error {
 
 	pronto(endereco)
 	slog.Info("kalman-ordens no ar", "versao", versao, "http", endereco, "fix", cfg.Texto("FIX_HOST", "")+":"+cfg.Texto("FIX_PORTA", ""),
-		"ambiente", cfg.Texto("ORDENS_AMBIENTE", ""))
+		"ambiente", cfg.Texto("ORDENS_AMBIENTE", ""), "pnt_desligado", pntDesligado)
 
 	<-ctx.Done()
 	// Parar o processo NÃO cancela a 1014: a posição continua protegida no PnT (Parte 6).
@@ -331,7 +350,9 @@ func servir(ctx context.Context, cfg config.Config) error {
 		_ = srvWebhook.Shutdown(ctxW)
 		cancelW()
 	}
-	s.Parar()
+	if s != nil {
+		s.Parar()
+	}
 	ctxFim, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctxFim)

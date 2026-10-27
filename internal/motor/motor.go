@@ -514,7 +514,13 @@ func (m *Motor) ConsultarAoVivo(desde int64, limite int) map[string]any {
 func (m *Motor) ConferirFeriados() (int, error) { return m.pregao.Conferir() }
 
 // Usar liga a sessão FIX.
-func (m *Motor) Usar(e Envio) { m.fix = e }
+// Com PNT_DESLIGADO a sessão é ignorada: o PnT fica sem conector (logado falso, nada enviado).
+func (m *Motor) Usar(e Envio) {
+	if m.p.PnTDesligado {
+		return
+	}
+	m.fix = e
+}
 
 // UsarFlexscan liga o conector Flexscan (a ponte REST).
 func (m *Motor) UsarFlexscan(e Envio) { m.flx = e }
@@ -874,14 +880,25 @@ func (m *Motor) Eventos(desde int64, limite int, modulo string) ([]repo.Publicad
 
 // ---------------------------------------------------------------- pnt.Ouvinte (só enfileira)
 
-func (m *Motor) Logou() { m.entrarFIX(m.aoLogar) }
+func (m *Motor) Logou() {
+	if m.p.PnTDesligado {
+		return // PNT_DESLIGADO: nenhuma sessão FIX vale
+	}
+	m.entrarFIX(m.aoLogar)
+}
 func (m *Motor) Caiu() {
+	if m.p.PnTDesligado {
+		return // PNT_DESLIGADO: nenhuma sessão FIX vale
+	}
 	m.entrarFIX(func() {
 		m.conciliando = false
 		m.al.Emitir("SESSAO_CAIU", "", "sessão FIX caiu", 0)
 	})
 }
 func (m *Motor) Recebeu(msg pnt.Mensagem) {
+	if m.p.PnTDesligado {
+		return // PNT_DESLIGADO: nenhuma sessão FIX vale
+	}
 	metricas.FixMensagens.Inc("recebida", msg.Tipo)
 	m.marcarChegada(msg.Texto(11), msg.Texto(41))
 	if (msg.Tipo == "8" && msg.Texto(150) == "I") || msg.Tipo == "j" {
@@ -891,20 +908,42 @@ func (m *Motor) Recebeu(msg pnt.Mensagem) {
 	m.entrarFIX(func() { m.processadas++; m.processar(msg) })
 }
 func (m *Motor) RejeicaoRecebida(msg pnt.Mensagem) {
+	if m.p.PnTDesligado {
+		return // PNT_DESLIGADO: nenhuma sessão FIX vale
+	}
 	metricas.FixMensagens.Inc("recebida", "3")
 	m.entrarFIX(func() { m.rejeicaoSessao(msg) })
 }
 func (m *Motor) MensagemIlegivel(texto string) {
+	if m.p.PnTDesligado {
+		return // PNT_DESLIGADO: nenhuma sessão FIX vale
+	}
 	m.entrarFIX(func() { m.processadas++; m.mensagemIlegivel(texto) })
 }
 func (m *Motor) RejeicaoEnviada(msg pnt.Mensagem) {
+	if m.p.PnTDesligado {
+		return // PNT_DESLIGADO: nenhuma sessão FIX vale
+	}
 	m.entrarFIX(func() { m.processadas++; m.rejeicaoEnviada(msg) })
 }
-func (m *Motor) LogonRecusado(texto string) { m.entrarFIX(func() { m.logonRecusado(texto) }) }
+func (m *Motor) LogonRecusado(texto string) {
+	if m.p.PnTDesligado {
+		return
+	}
+	m.entrarFIX(func() { m.logonRecusado(texto) })
+}
 func (m *Motor) EventoSessao(tipo, texto string) {
+	if m.p.PnTDesligado {
+		return
+	}
 	m.entrarFIX(func() { m.registrarSessao(tipo, texto) })
 }
-func (m *Motor) StoreIlegivel(texto string) { m.entrarFIX(func() { m.storeIlegivel(texto) }) }
+func (m *Motor) StoreIlegivel(texto string) {
+	if m.p.PnTDesligado {
+		return
+	}
+	m.entrarFIX(func() { m.storeIlegivel(texto) })
+}
 
 // ---------------------------------------------------------------- carga do dia
 
