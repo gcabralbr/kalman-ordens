@@ -31,7 +31,7 @@ ao banco: o registro completo continua no `kalmanordemevento` (`msgtype FLX-*`, 
 ## 2. `/saude.flexscan`: webhook cadastrado e último login
 
 - **Conferência do cadastro:** `GET /webhooks` na partida (depois do login) e a cada
-  `FLEXSCAN_WEBHOOK_CONFERE_MIN` (60). Procura o nosso URL com o trigger `order.all`. **Chave nova
+  `FLEXSCAN_WEBHOOK_CONFERIR_MIN` (10). Procura o nosso URL com o trigger `order.all`. **Chave nova
   `FLEXSCAN_WEBHOOK_URL`:** a URL pública exatamente como cadastrada na Flexscan, com o segredo. O
   serviço só conhece o endereço de escuta (`FLEXSCAN_WEBHOOK_ENDERECO`), não o host público. Ela nunca
   vai para log, tráfego ou alerta. Só o `webhook_cadastro.go` fala com o recurso de webhooks, só com

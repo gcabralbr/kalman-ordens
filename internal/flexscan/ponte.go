@@ -96,7 +96,7 @@ func (c *Config) padroes() {
 		c.EsperaLogin = 30 * time.Second
 	}
 	if c.ConfereWebhook <= 0 {
-		c.ConfereWebhook = time.Hour
+		c.ConfereWebhook = 10 * time.Minute
 	}
 }
 

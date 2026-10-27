@@ -5,7 +5,7 @@ hora 2026-10-28 10:00:00
 # FLEXSCAN_WEBHOOK_URL aparecem no corpo do /flexscan/trafego.
 config FLEXSCAN_URL=falso
 config FLEXSCAN_WEBHOOK_URL=https://kalman.exemplo/flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl
-config FLEXSCAN_WEBHOOK_CONFERE_MIN=1
+config FLEXSCAN_WEBHOOK_CONFERIR_MIN=1
 config FLEXSCAN_PRIMEIRA_CONSULTA_MS=200
 usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
 habilita 8 conectores=flexscan

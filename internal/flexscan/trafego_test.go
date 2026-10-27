@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"gammaquant.com.br/kalman-ordens/internal/config"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
 )
 
@@ -34,5 +35,20 @@ func TestTrafegoBufferDesdeLimite(t *testing.T) {
 	l := ls[0]
 	if l.StatusHTTP != nil || l.DuracaoMs != nil || l.ClOrdID != nil || l.FlexscanID != nil || len(l.Resumo) != 200 || !strings.HasPrefix(l.Resumo, "aei x") {
 		t.Fatalf("linha: %+v", l)
+	}
+}
+
+// A conferência do cadastro do webhook: 10 min por padrão, FLEXSCAN_WEBHOOK_CONFERIR_MIN muda.
+func TestConferenciaWebhookPadrao(t *testing.T) {
+	if c := ConfigDe(config.Novo(map[string]string{})); c.ConfereWebhook != 10*time.Minute {
+		t.Fatalf("padrão: %s", c.ConfereWebhook)
+	}
+	if c := ConfigDe(config.Novo(map[string]string{"FLEXSCAN_WEBHOOK_CONFERIR_MIN": "3"})); c.ConfereWebhook != 3*time.Minute {
+		t.Fatalf("FLEXSCAN_WEBHOOK_CONFERIR_MIN=3: %s", c.ConfereWebhook)
+	}
+	var c Config
+	c.padroes()
+	if c.ConfereWebhook != 10*time.Minute {
+		t.Fatalf("padroes: %s", c.ConfereWebhook)
 	}
 }
