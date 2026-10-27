@@ -148,3 +148,8 @@ protegida (capturas `FE` e `FP`). O `avanca` também move a ponte (consulta ativ
 | `flx_ordem ID campo=valor ...` | confere o estado na Flexscan falsa (`status`, `preco`, `stop`, `exec`, `qtd`, `nome`, `conta`) |
 | `flx_token_expira` | todo token atual passa a dar 401 |
 | `flx_login recusa\|senha\|aceita` | os logins seguintes falham (transitório; `senha`: 3402, definitivo) ou voltam a passar |
+| `flx_webhooks limpa` / `falha=STATUS metodo=GET\|POST` / `cadastra url=U [triggers=a,b]` / `n=N [url=U]` | (v1.21) o cadastro de webhooks da falsa: some; a próxima chamada com o método responde STATUS; um cadastro feito por fora; confere quantos há (com essa URL) |
+| `flx_nao_achada 250ms` | (v1.21) o GET da ordem responde 404 "Order not found" até esse tempo depois do POST (`0` desliga), como o apisim de 27/10 |
+| `flx_trafego campo=valor ... = N` | (v1.21) quantas linhas do `GET /flexscan/trafego` casam (texto; `null`; `*` = presente; `~x` = contém); toda chamada falha se um token da falsa, a senha, o segredo ou a `FLEXSCAN_WEBHOOK_URL` aparecerem no corpo |
+
+Nos roteiros, `FLEXSCAN_PRIMEIRA_CONSULTA_MS` é 0 (a consulta do POST na hora, como antes da v1.21); o 115 liga os 200 ms. Sem `FLEXSCAN_WEBHOOK_URL`, não há conferência do cadastro.

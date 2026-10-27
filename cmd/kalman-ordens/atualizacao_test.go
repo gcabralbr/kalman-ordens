@@ -81,6 +81,9 @@ func TestServirAtualizaDoInstalado(t *testing.T) {
 		w.Write([]byte(`{"WINFUT":{"ticker":"WINZ26","preco":170370.0,"bid":170365.0,"ask":170370.0,"status84":0,"ts":"` + ts + `","idade_seg":0.1}}`))
 	}))
 	defer md.Close()
+	// v1.21: a Flexscan com fonte própria (a 9090), para o /saude.flexscan.fonte com compartilhada false
+	mdFlx := httptest.NewServer(md.Config.Handler)
+	defer mdFlx.Close()
 	livre := func() string {
 		ln, _ := net.Listen("tcp", "127.0.0.1:0")
 		defer ln.Close()
@@ -92,7 +95,7 @@ func TestServirAtualizaDoInstalado(t *testing.T) {
 		"DB_DSN": dsn, "FIX_SENDER_COMP_ID": "KALMAN_ATUALIZA", "FIX_HOST": "127.0.0.1", "FIX_PORTA": strconv.Itoa(f.Porta()),
 		"FIX_DIR": dirFix, "FIX_INICIO": "00:00:00", "FIX_FIM": "00:00:00", "FIX_RECONEXAO_S": "1",
 		"ORDENS_AMBIENTE": "HML", "ORDENS_CONTAS_HML": "12345", "ACUSUARIO_TABELA": "acusuario_teste",
-		"HTTP_ENDERECO": endereco, "PRECOS_URL": md.URL, "MASS_STATUS_SILENCIO_S": "0.5",
+		"HTTP_ENDERECO": endereco, "PRECOS_URL": md.URL, "PRECOS_URL_FLEXSCAN": mdFlx.URL, "MASS_STATUS_SILENCIO_S": "0.5",
 		"FLEXSCAN_URL": flx.URL(), "FLEXSCAN_USUARIO": "flx_atualiza", "FLEXSCAN_SENHA": "senha-atualiza",
 		"FLEXSCAN_CONTAS_HML": "S-1117150", "FLEXSCAN_ESTADO_LOGIN": dirFix + "/flexscan-login.json",
 		"FLEXSCAN_WEBHOOK_ENDERECO": livre(), "FLEXSCAN_WEBHOOK_SEGREDO": "segredo-da-atualizacao-0123456789abcdef",
@@ -125,6 +128,20 @@ func TestServirAtualizaDoInstalado(t *testing.T) {
 	obter(t, "http://"+endereco+"/ordens/8801", &op)
 	if op["estado"] != "ZERADA" || op["conector"] != "PNT" || op["conta"] != "12345" {
 		t.Fatalf("operação do instalado: %v", op)
+	}
+	var s map[string]any
+	for fim := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		s = map[string]any{}
+		obter(t, "http://"+endereco+"/saude", &s)
+		if f, _ := s["flexscan"].(map[string]any); f["simbolo"] == "WINZ26" || time.Now().After(fim) {
+			break
+		}
+	}
+	fl, _ := s["flexscan"].(map[string]any)
+	fo, _ := fl["fonte"].(map[string]any)
+	topo, _ := s["fonte"].(map[string]any)
+	if fo["compartilhada"] != false || fo["url"] != mdFlx.URL || fl["idade_preco_ms"] == nil || topo["url"] != nil {
+		t.Fatalf("/saude.flexscan com fonte própria: %v (topo %v)", fl, topo)
 	}
 	var h map[string]any
 	obter(t, "http://"+endereco+"/usuarios/7/habilitacao", &h)

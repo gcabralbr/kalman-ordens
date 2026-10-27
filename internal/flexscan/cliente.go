@@ -80,6 +80,9 @@ type cliente struct {
 
 	taxa   *balde
 	guarda *guardaLogin
+	// v1.21: chamado a cada login que esta chamada fez (ou que a guarda barrou), com o motivo, o
+	// resultado e a duração; nunca com usuário, senha ou token
+	aoLogin func(motivo string, err error, dur time.Duration)
 }
 
 func novoCliente(url, usuario, senha string, timeout time.Duration, reqPorS float64, rajada int, guarda *guardaLogin) *cliente {
@@ -92,6 +95,7 @@ func novoCliente(url, usuario, senha string, timeout time.Duration, reqPorS floa
 type ErroLogin struct {
 	Motivo     string
 	Definitivo bool
+	Status     int // v1.21: o HTTP da recusa (0 = sem resposta ou não tentado)
 }
 
 func (e *ErroLogin) Error() string { return e.Motivo }
@@ -123,6 +127,7 @@ func (c *cliente) login(ctx context.Context, motivo string) error {
 	var tok string
 	var exp time.Time
 	var err error
+	t0 := time.Now()
 	if e := c.guarda.pode(time.Now()); e != nil {
 		err = e
 		slog.Warn("flexscan: login não tentado", "motivo", motivo, "porque", e.Motivo)
@@ -143,7 +148,11 @@ func (c *cliente) login(ctx context.Context, motivo string) error {
 	c.errLogin = err
 	c.logando = nil
 	close(ch)
+	aoLogin := c.aoLogin
 	c.mu.Unlock()
+	if aoLogin != nil {
+		aoLogin(motivo, err, time.Since(t0))
+	}
 	return err
 }
 
@@ -163,7 +172,7 @@ func (c *cliente) fazerLogin(ctx context.Context) (string, time.Time, error) {
 	if resp.StatusCode != http.StatusOK {
 		r := Resposta{Status: resp.StatusCode, Corpo: b}
 		e := r.ErroAPI()
-		return "", time.Time{}, &ErroLogin{Motivo: fmt.Sprintf("login %d: %s", resp.StatusCode, r.TextoErro()), Definitivo: loginDefinitivo[e.Codigo]}
+		return "", time.Time{}, &ErroLogin{Motivo: fmt.Sprintf("login %d: %s", resp.StatusCode, r.TextoErro()), Definitivo: loginDefinitivo[e.Codigo], Status: resp.StatusCode}
 	}
 	var lr struct {
 		Token  string `json:"auth_token"`

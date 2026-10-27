@@ -23,6 +23,7 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/aovivo"
 	"gammaquant.com.br/kalman-ordens/internal/config"
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
+	"gammaquant.com.br/kalman-ordens/internal/flexscan"
 	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/pregao"
@@ -371,10 +372,12 @@ type Motor struct {
 	pregao     *pregao.Calendario // dia de pregão (a janela do FONTE_DEGRADADA)
 	precosFlx  preco.Fonte
 	vigenteFlx string
-	fonteFlx   estadoFonte
-	al         *alerta.Alertas
-	p0, p1, p2 chan func() // entrada por prioridade (volta.go)
-	fim        chan struct{}
+	// v1.21: as URLs do /precos/atual (o /saude mostra a da fonte da Flexscan)
+	urlPrecos, urlPrecosFlx string
+	fonteFlx                estadoFonte
+	al                      *alerta.Alertas
+	p0, p1, p2              chan func() // entrada por prioridade (volta.go)
+	fim                     chan struct{}
 
 	v              *estadoVolta    // o que a volta acumula até o commit
 	esperandoTaxa  []envioPendente // esperando o limitador de taxa (entradas) ou a próxima volta (maxEnviosPorVolta)
@@ -524,6 +527,9 @@ func (m *Motor) Usar(e Envio) {
 
 // UsarFlexscan liga o conector Flexscan (a ponte REST).
 func (m *Motor) UsarFlexscan(e Envio) { m.flx = e }
+
+// DefinirURLsPrecos (v1.21): as URLs das fontes, só para o /saude (flx vazia = fonte única).
+func (m *Motor) DefinirURLsPrecos(pnt, flx string) { m.urlPrecos, m.urlPrecosFlx = pnt, flx }
 
 // UsarPrecosFlexscan: a fonte de preço própria do conector Flexscan (PRECOS_URL_FLEXSCAN).
 func (m *Motor) UsarPrecosFlexscan(f preco.Fonte) { m.precosFlx = f }
@@ -1288,3 +1294,30 @@ type recusa struct {
 
 func simples(c, m string) *recusa { return &recusa{codigo: c, motivo: m} }
 func limite(c, m string) *recusa  { return &recusa{codigo: c, motivo: m, porLimite: true} }
+
+// TrafegoFlexscan (GET /flexscan/trafego, v1.21 §1): o tráfego da ponte, com a operação, o módulo e o
+// uid de cada linha pelo clordid (o mapa do monitor ao vivo; sem a fila do motor). ok falso = sem o
+// conector Flexscan.
+func (m *Motor) TrafegoFlexscan(desde int64, limite int) (map[string]any, bool) {
+	t, ok := m.flx.(interface {
+		Trafego(int64, int) ([]flexscan.LinhaTrafego, int64, map[string]any)
+	})
+	if m.flx == nil || !ok {
+		return nil, false
+	}
+	ls, ult, saude := t.Trafego(desde, limite)
+	for i := range ls {
+		if ls[i].ClOrdID == nil {
+			continue
+		}
+		mod, _, op, achou := doClOrdID(*ls[i].ClOrdID)
+		if !achou {
+			continue
+		}
+		ls[i].OperacaoID, ls[i].Modulo = &op, &mod
+		if uid, ok := m.aoVivo.Dono(mod, op); ok {
+			ls[i].UID = &uid
+		}
+	}
+	return map[string]any{"mensagens": ls, "ultimo_seq": ult, "saude": saude}, true
+}

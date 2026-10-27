@@ -209,6 +209,7 @@ func servir(ctx context.Context, cfg config.Config) error {
 	defer pr.Parar()
 
 	m := motor.Novo(cfg, rel, r, pr, tg)
+	m.DefinirURLsPrecos(urlPnT, "")
 	// a janela do FONTE_DEGRADADA só vale em dia de pregão (24/10): sem os feriados, vale seg–sex
 	if n, err := m.ConferirFeriados(); err != nil {
 		slog.Warn("feriados ilegíveis: o FONTE_DEGRADADA vale de seg a sex, inclusive feriados", "arquivo", cfg.Texto("FERIADOS_ARQ", "/var/lib/kalman/feriados.json"), "erro", err)
@@ -228,6 +229,7 @@ func servir(ctx context.Context, cfg config.Config) error {
 			pf.Iniciar(200 * time.Millisecond)
 			defer pf.Parar()
 			m.UsarPrecosFlexscan(pf)
+			m.DefinirURLsPrecos(urlPnT, u)
 		}
 		ponte = flexscan.Nova(flxCfg, m.OuvinteFlexscan(), rel)
 		m.UsarFlexscan(ponte)

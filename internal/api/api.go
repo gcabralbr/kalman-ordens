@@ -145,6 +145,31 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		}
 		escrever(w, http.StatusOK, m.ConsultarAoVivo(desde, limite))
 	})
+	// tráfego da ponte Flexscan (v1.21, a aba "Flexscan ao vivo" do admin): da memória, sem a fila
+	mux.HandleFunc("GET /flexscan/trafego", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		var desde int64
+		limite := 0
+		var err error
+		if v := q.Get("desde"); v != "" {
+			if desde, err = strconv.ParseInt(v, 10, 64); err != nil || desde < 0 {
+				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "desde invalido"})
+				return
+			}
+		}
+		if v := q.Get("limite"); v != "" {
+			if limite, err = strconv.Atoi(v); err != nil || limite <= 0 {
+				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "limite invalido"})
+				return
+			}
+		}
+		resp, ok := m.TrafegoFlexscan(desde, limite)
+		if !ok {
+			escrever(w, http.StatusNotFound, motor.Resposta{"erro": "flexscan nao configurada"})
+			return
+		}
+		escrever(w, http.StatusOK, resp)
+	})
 	mux.HandleFunc("GET /sessao/eventos", func(w http.ResponseWriter, r *http.Request) {
 		l, err := motor.EventosDaSessao(m.Repo(), r.URL.Query().Get("dia"))
 		responderHistorico(w, l, err)

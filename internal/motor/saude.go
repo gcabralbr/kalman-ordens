@@ -80,9 +80,20 @@ func (m *Motor) saude() Resposta {
 				f[k] = v
 			}
 		}
+		// v1.21 §3: a fonte da Flexscan sempre, com o mesmo detalhe da do PnT; com a fonte única
+		// (sem PRECOS_URL_FLEXSCAN próprio, ou PNT_DESLIGADO), compartilhada e os valores do topo
 		if m.precosFlx != nil {
-			f["simbolo"] = m.vigenteFlx
-			f["fonte"] = m.saudeFonteFlx()
+			fo := m.saudeFonteFlx()
+			fo["url"], fo["compartilhada"] = textoOuNulo(m.urlPrecosFlx), false
+			f["simbolo"], f["fonte"] = m.vigenteFlx, fo
+			f["idade_preco_ms"] = nil
+			if lf := m.precosFlx.Ler(); lf.Situacao == preco.OK {
+				f["idade_preco_ms"] = lf.Idade(agora).Milliseconds()
+			}
+		} else {
+			fo := m.saudeFonte()
+			fo["url"], fo["compartilhada"] = textoOuNulo(m.urlPrecos), true
+			f["simbolo"], f["fonte"], f["idade_preco_ms"] = m.vigente, fo, idade
 		}
 		r["flexscan"] = f
 	}

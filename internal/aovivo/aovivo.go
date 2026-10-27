@@ -87,6 +87,14 @@ func (m *Monitor) Associar(modulo string, operacaoID int64, uid int) {
 	m.mu.Unlock()
 }
 
+// Dono (v1.21): o uid da operação, para o tráfego da Flexscan.
+func (m *Monitor) Dono(modulo string, operacaoID int64) (int, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	uid, ok := m.donos[chaveOp{modulo, operacaoID}]
+	return uid, ok
+}
+
 // reClOrd: KM-<papel>-<op>-<n> (KALMAN) ou KM-<MODULO>-<papel>-<op>-<n> (v1.3 M3).
 var reClOrd = regexp.MustCompile(`^KM-(?:([A-Z][A-Z0-9]{1,7})-)?([EPS])-(\d+)-\d+$`)
 

@@ -28,5 +28,9 @@ func ConfigDe(c config.Config) Config {
 		EstadoLogin:   c.Texto("FLEXSCAN_ESTADO_LOGIN", "/var/lib/kalman-ordens/flexscan-login.json"),
 		LoginMax:      c.Inteiro("FLEXSCAN_LOGIN_MAX", 5),
 		LoginJanela:   time.Duration(c.Inteiro("FLEXSCAN_LOGIN_JANELA_MIN", 10)) * time.Minute,
+		// v1.21
+		PrimeiraConsulta: time.Duration(c.Inteiro("FLEXSCAN_PRIMEIRA_CONSULTA_MS", 200)) * time.Millisecond,
+		WebhookURL:       c.Texto("FLEXSCAN_WEBHOOK_URL", ""),
+		ConfereWebhook:   time.Duration(c.Inteiro("FLEXSCAN_WEBHOOK_CONFERE_MIN", 60)) * time.Minute,
 	}
 }

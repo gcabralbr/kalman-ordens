@@ -125,6 +125,18 @@ func (e *Executor) flexscan(p roteiro.Passo) error {
 	case "flx_token_expira":
 		e.flx.InvalidarTokens()
 		return nil
+	case "flx_webhooks":
+		return e.flxWebhooks(args)
+	case "flx_nao_achada":
+		// flx_nao_achada 250ms: o GET da ordem dá 404 até esse tempo depois do POST (0 = desliga)
+		d, err := time.ParseDuration(args[0])
+		if err != nil {
+			return err
+		}
+		e.flx.NaoAchadaPor(d)
+		return nil
+	case "flx_trafego":
+		return e.flxTrafego(args)
 	case "flx_login":
 		// flx_login recusa|aceita
 		switch args[0] {
@@ -289,6 +301,115 @@ func (e *Executor) flxRecebe(args []string) error {
 		if !iguaisTexto(v, fmt.Sprint(x)) && !iguaisNumero(v, fmt.Sprint(x)) {
 			return fmt.Errorf("flx_recebe %s: %s=%v, esperado %s (corpo %v)", pd.Metodo, k, x, v, pd.Corpo)
 		}
+	}
+	return nil
+}
+
+// flxWebhooks (v1.21): o cadastro de webhooks da Flexscan falsa.
+//
+//	flx_webhooks limpa                        o cadastro some
+//	flx_webhooks falha=STATUS metodo=GET|POST a próxima chamada com esse método responde STATUS
+//	flx_webhooks cadastra url=U [triggers=a,b] um cadastro feito por fora
+//	flx_webhooks n=N [url=U]                  confere quantos cadastros há (com essa URL)
+func (e *Executor) flxWebhooks(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("flx_webhooks: limpa | falha=STATUS metodo=M | cadastra url=U | n=N [url=U]")
+	}
+	if args[0] == "limpa" {
+		e.flx.LimparWebhooks()
+		return nil
+	}
+	kv := map[string]string{}
+	for _, a := range args {
+		k, v, _ := strings.Cut(a, "=")
+		kv[k] = v
+	}
+	switch {
+	case args[0] == "cadastra":
+		ts := []string{"order.all"}
+		if v := kv["triggers"]; v != "" {
+			ts = strings.Split(v, ",")
+		}
+		e.flx.CadastrarWebhook(kv["url"], ts...)
+		return nil
+	case kv["falha"] != "":
+		st, err := strconv.Atoi(kv["falha"])
+		if err != nil || kv["metodo"] == "" {
+			return fmt.Errorf("flx_webhooks falha=STATUS metodo=GET|POST")
+		}
+		e.flx.FalharWebhooks(kv["metodo"], st)
+		return nil
+	case kv["n"] != "":
+		e.ocioso()
+		n := 0
+		for _, u := range e.flx.Webhooks() {
+			if kv["url"] == "" || u == kv["url"] {
+				n++
+			}
+		}
+		if strconv.Itoa(n) != kv["n"] {
+			return fmt.Errorf("flx_webhooks: %d cadastro(s), esperava %s", n, kv["n"])
+		}
+		return nil
+	}
+	return fmt.Errorf("flx_webhooks: argumento %v", args)
+}
+
+// flxTrafego (v1.21): flx_trafego campo=valor ... = N — quantas linhas do GET /flexscan/trafego
+// casam (campos como texto; null = ausente; * = presente; ~texto = contém). Toda chamada confere que
+// nenhum token da falsa, a senha, o segredo do webhook nem a FLEXSCAN_WEBHOOK_URL aparecem no corpo.
+func (e *Executor) flxTrafego(args []string) error {
+	if len(args) < 2 || args[len(args)-2] != "=" {
+		return fmt.Errorf("flx_trafego campo=valor ... = N")
+	}
+	esperado := args[len(args)-1]
+	e.ocioso()
+	rec := httptest.NewRecorder()
+	e.svc.http.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/flexscan/trafego?limite=2000", nil))
+	corpo := rec.Body.String()
+	segredos := append(e.flx.Tokens(), SenhaFlexscanRoteiro, SegredoWebhookRoteiro)
+	if u := e.cfg.Texto("FLEXSCAN_WEBHOOK_URL", ""); u != "" {
+		segredos = append(segredos, u)
+	}
+	for _, s := range segredos {
+		if s != "" && strings.Contains(corpo, s) {
+			return fmt.Errorf("flx_trafego: segredo no corpo do /flexscan/trafego (%d caracteres)", len(s))
+		}
+	}
+	var r struct {
+		Mensagens []map[string]any `json:"mensagens"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &r); err != nil {
+		return fmt.Errorf("flx_trafego: %v (%s)", err, corpo)
+	}
+	n := 0
+	var vistas []string
+	for _, m := range r.Mensagens {
+		casa := true
+		for _, a := range args[:len(args)-2] {
+			k, v, _ := strings.Cut(a, "=")
+			got := "null"
+			if m[k] != nil {
+				got = fmt.Sprint(m[k])
+			}
+			switch {
+			case v == "*" && m[k] != nil:
+			case strings.HasPrefix(v, "~") && strings.Contains(got, v[1:]):
+			case got == v:
+			default:
+				casa = false
+			}
+			if !casa {
+				break
+			}
+		}
+		if casa {
+			n++
+		}
+		vistas = append(vistas, fmt.Sprintf("[%v %v %v %v]", m["tipo"], m["status_http"], m["clordid"], m["resumo"]))
+	}
+	if strconv.Itoa(n) != esperado {
+		return fmt.Errorf("flx_trafego %v: %d linha(s), esperava %s; linhas: %v", args[:len(args)-2], n, esperado, vistas)
 	}
 	return nil
 }

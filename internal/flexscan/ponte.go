@@ -55,6 +55,13 @@ type Config struct {
 	EstadoLogin string
 	LoginMax    int
 	LoginJanela time.Duration
+	// v1.21: a primeira consulta depois do 202 do POST espera isto (o GET logo depois do 202 dá
+	// 404 "Order not found"; 27/10); 0 = na hora, como antes
+	PrimeiraConsulta time.Duration
+	// v1.21: a URL pública do webhook (com o segredo), para conferir e recadastrar o cadastro na
+	// Flexscan a cada ConfereWebhook; vazia = não confere
+	WebhookURL     string
+	ConfereWebhook time.Duration
 }
 
 func (c *Config) padroes() {
@@ -88,6 +95,18 @@ func (c *Config) padroes() {
 	if c.EsperaLogin <= 0 {
 		c.EsperaLogin = 30 * time.Second
 	}
+	if c.ConfereWebhook <= 0 {
+		c.ConfereWebhook = time.Hour
+	}
+}
+
+// passosPost (v1.21): a consulta ativa do POST começa depois da espera, com os mesmos intervalos.
+func passosPost(espera time.Duration) []time.Duration {
+	ps := make([]time.Duration, len(passosAtiva))
+	for i, d := range passosAtiva {
+		ps[i] = espera + d
+	}
+	return ps
 }
 
 // passos da consulta ativa depois de uma ação (SPEC §4.4): +0, +0,3, +0,6, +1,2, +2,4 s, até Confirma.
@@ -128,7 +147,8 @@ type ordemP struct {
 	quandoVisto                          time.Time
 	aceitaEntregue                       bool
 	pend                                 *pendencia
-	ativaDesde                           time.Time // consulta ativa em curso (relógio do motor); zero = nenhuma
+	ativaDesde                           time.Time       // consulta ativa em curso (relógio do motor); zero = nenhuma
+	passos                               []time.Duration // os da janela atual (nil = passosAtiva)
 	passo                                int
 	proxPeriodica                        time.Time
 	consultaNaFila                       bool
@@ -172,6 +192,15 @@ type Ponte struct {
 	ultWebhook  time.Time
 	atrasoAtivo bool
 
+	// v1.21: tráfego, último login e o cadastro do webhook
+	traf              *trafego
+	ultLogin          map[string]any
+	webhookCad        *bool
+	webhookConfEm     time.Time
+	webhookRecadEm    time.Time
+	proxConfWebhook   time.Time // relógio do serviço; zero = conferir no próximo Tick logado
+	conferindoWebhook bool
+
 	entregues atomic.Int64
 	ctx       context.Context
 	cancelar  context.CancelFunc
@@ -183,9 +212,44 @@ func Nova(cfg Config, ouv Ouvinte, rel relogio.Relogio) *Ponte {
 	cfg.padroes()
 	ctx, cancel := context.WithCancel(context.Background())
 	guarda := novaGuarda(cfg.EstadoLogin, cfg.LoginMax, cfg.LoginJanela, cfg.Usuario, cfg.Senha)
-	return &Ponte{cfg: cfg, cli: novoCliente(cfg.URL, cfg.Usuario, cfg.Senha, cfg.Timeout, cfg.ReqPorS, cfg.Rajada, guarda), ouv: ouv, rel: rel,
+	p := &Ponte{cfg: cfg, cli: novoCliente(cfg.URL, cfg.Usuario, cfg.Senha, cfg.Timeout, cfg.ReqPorS, cfg.Rajada, guarda), ouv: ouv, rel: rel,
 		ordens: map[string]*ordemP{}, porNome: map[string]*ordemP{}, porCl: map[string]*ordemP{}, ocupadas: map[string]bool{},
-		sinal: make(chan struct{}, 1), ctx: ctx, cancelar: cancel}
+		sinal: make(chan struct{}, 1), ctx: ctx, cancelar: cancel, traf: novoTrafego(rel)}
+	p.cli.aoLogin = p.registrarLogin
+	return p
+}
+
+// Trafego (GET /flexscan/trafego, v1.21 §1): as linhas com seq > desde, o último seq e o bloco
+// saude (o /saude.flexscan mais os números do tráfego).
+func (p *Ponte) Trafego(desde int64, limite int) ([]LinhaTrafego, int64, map[string]any) {
+	ls, ult, extra := p.traf.Consultar(desde, limite)
+	s := p.Saude()
+	s["logado"] = p.Logado()
+	for k, v := range extra {
+		s[k] = v
+	}
+	return ls, ult, s
+}
+
+// registrarLogin (v1.21 §2): cada login que foi à rede, ou que a guarda barrou: o último no
+// /saude.flexscan e uma linha LOGIN no tráfego (sem usuário nem senha).
+func (p *Ponte) registrarLogin(motivo string, err error, dur time.Duration) {
+	resultado, status, texto := "OK", http.StatusOK, motivo+" OK"
+	var el *ErroLogin
+	if err != nil {
+		resultado, status = "FALHOU", -1
+		if errors.As(err, &el) && el.Status > 0 {
+			resultado, status = "RECUSADO", el.Status
+		}
+		texto = motivo + " " + resultado + ": " + err.Error()
+	}
+	if err != nil && el == nil {
+		dur = -1
+	}
+	p.mu.Lock()
+	p.ultLogin = map[string]any{"em": p.rel.Agora().In(relogio.Fuso).Format(formatoEmTrafego), "motivo": motivo, "resultado": resultado}
+	p.mu.Unlock()
+	p.traf.linha(TrafegoLogin, "ENV", status, dur, "", "", texto)
 }
 
 // Iniciar sobe os trabalhadores e faz o primeiro login (assíncrono).
@@ -237,8 +301,22 @@ func (p *Ponte) Saude() map[string]any {
 	if !p.ultWebhook.IsZero() {
 		ult = p.ultWebhook.Format(time.RFC3339)
 	}
+	var cad, confEm, recadEm, ultLogin any
+	if p.webhookCad != nil {
+		cad = *p.webhookCad
+	}
+	if !p.webhookConfEm.IsZero() {
+		confEm = p.webhookConfEm.In(relogio.Fuso).Format(time.RFC3339)
+	}
+	if !p.webhookRecadEm.IsZero() {
+		recadEm = p.webhookRecadEm.In(relogio.Fuso).Format(time.RFC3339)
+	}
+	if p.ultLogin != nil {
+		ultLogin = p.ultLogin
+	}
 	return map[string]any{"token_expira": exp, "webhooks_recebidos": p.webhooks, "ultimo_webhook": ult,
-		"ordens_acompanhadas": len(p.ordens), "ordens_vivas": vivas, "ultimo_erro": p.ultimoErro, "receptor": p.cfg.Webhook}
+		"ordens_acompanhadas": len(p.ordens), "ordens_vivas": vivas, "ultimo_erro": p.ultimoErro, "receptor": p.cfg.Webhook,
+		"webhook_cadastrado": cad, "webhook_conferido_em": confEm, "webhook_recadastrado_em": recadEm, "ultimo_login": ultLogin}
 }
 
 // ---------------------------------------------------------------- sessão (login e token)
@@ -336,6 +414,11 @@ func (p *Ponte) Tick() {
 		return
 	}
 	p.mu.Lock()
+	if p.cfg.WebhookURL != "" && !p.conferindoWebhook && (p.proxConfWebhook.IsZero() || !agora.Before(p.proxConfWebhook)) {
+		p.conferindoWebhook = true
+		p.proxConfWebhook = agora.Add(p.cfg.ConfereWebhook)
+		p.enfileirarLocked(prioConsulta, "", p.conferirWebhook)
+	}
 	var due []*ordemP
 	var expiradas []*ordemP
 	for _, o := range p.ordens {
@@ -343,7 +426,7 @@ func (p *Ponte) Tick() {
 			continue
 		}
 		if !o.ativaDesde.IsZero() {
-			if o.passo < len(passosAtiva) && !agora.Before(o.ativaDesde.Add(passosAtiva[o.passo])) {
+			if ps := o.passosDaJanela(); o.passo < len(ps) && !agora.Before(o.ativaDesde.Add(ps[o.passo])) {
 				o.passo++
 				due = append(due, o)
 				continue
@@ -377,7 +460,7 @@ func (p *Ponte) Tick() {
 // fimDaJanelaLocked: a consulta ativa acabou sem ver o efeito da ação — o pedido pendente se resolve
 // como recusado (35=9), para o motor seguir (SPEC §4.4: "sem efeito em 5 s → não sei").
 func (p *Ponte) fimDaJanelaLocked(o *ordemP) []pnt.Mensagem {
-	o.ativaDesde, o.passo = time.Time{}, 0
+	o.ativaDesde, o.passo, o.passos = time.Time{}, 0, nil
 	if o.pend == nil {
 		return nil
 	}
@@ -395,7 +478,15 @@ func (p *Ponte) fimDaJanelaLocked(o *ordemP) []pnt.Mensagem {
 // iniciarAtivaLocked: a janela da consulta ativa começa; quem chama faz a primeira consulta (o +0)
 // na hora, as seguintes saem no Tick.
 func (p *Ponte) iniciarAtivaLocked(o *ordemP) {
-	o.ativaDesde, o.passo = p.rel.Agora(), 1
+	o.ativaDesde, o.passo, o.passos = p.rel.Agora(), 1, nil
+}
+
+// passosDaJanela: os passos da consulta ativa em curso.
+func (o *ordemP) passosDaJanela() []time.Duration {
+	if o.passos != nil {
+		return o.passos
+	}
+	return passosAtiva
 }
 
 // ---------------------------------------------------------------- fila e trabalhadores
@@ -573,8 +664,17 @@ func numeroJSON(d decimal.Decimal) any {
 
 func (p *Ponte) post(ctx context.Context, o *ordemP, corpo map[string]any) {
 	p.registrarEnvio("POST", "/orders", o.nome, "", corpo)
+	t0 := time.Now()
 	r := p.cli.pedir(ctx, http.MethodPost, "/orders", corpo)
+	dur := time.Since(t0)
 	p.registrarResposta("POST", o.nome, "", r)
+	var criada struct {
+		ID string `json:"id"`
+	}
+	if r.Status == http.StatusAccepted {
+		_ = decodificar(r.Corpo, &criada)
+	}
+	p.traf.linha(TrafegoPOST, "ENV", statusDe(r), duracaoDe(r, dur), o.nome, criada.ID, comResposta(resumoOrdem(corpo), r))
 	var msgs []pnt.Mensagem
 	p.mu.Lock()
 	switch {
@@ -592,6 +692,13 @@ func (p *Ponte) post(ctx context.Context, o *ordemP, corpo map[string]any) {
 			p.ordens[a.ID] = o
 		}
 		msgs = append(msgs, p.er(o, "A", "A", nil))
+		if p.cfg.PrimeiraConsulta > 0 {
+			// v1.21: a primeira consulta sai no Tick, depois da espera (o 404 logo depois do 202)
+			// a periódica também espera (a ordem nova nasce com ela vencida: era o segundo 404)
+			o.ativaDesde, o.passo, o.passos = p.rel.Agora(), 0, passosPost(p.cfg.PrimeiraConsulta)
+			o.proxPeriodica = o.ativaDesde.Add(p.cfg.Consulta)
+			break
+		}
 		p.iniciarAtivaLocked(o)
 		defer p.consultar(ctx, o, "ativa") // depois de entregar o 150=A (os defers rodam ao contrário)
 	case r.Incerta():
@@ -693,7 +800,9 @@ func (p *Ponte) executarPedido(ctx context.Context, o *ordemP, pd *pendencia) {
 	var r Resposta
 	if pd.tipo == 'F' {
 		p.registrarEnvio("DELETE", caminho, pd.cl, id, nil)
+		t0 := time.Now()
 		r = p.cli.pedir(ctx, http.MethodDelete, caminho, nil)
+		p.traf.linha(TrafegoDELETE, "ENV", statusDe(r), duracaoDe(r, time.Since(t0)), pd.cl, id, comResposta("cancelamento", r))
 		p.registrarResposta("DELETE", pd.cl, id, r)
 	} else {
 		corpo := map[string]any{"price": numeroJSON(pd.preco)}
@@ -704,7 +813,9 @@ func (p *Ponte) executarPedido(ctx context.Context, o *ordemP, pd *pendencia) {
 			corpo["qtty"] = pd.qtd
 		}
 		p.registrarEnvio("PUT", caminho, pd.cl, id, corpo)
+		t0 := time.Now()
 		r = p.cli.pedir(ctx, http.MethodPut, caminho, corpo)
+		p.traf.linha(TrafegoPUT, "ENV", statusDe(r), duracaoDe(r, time.Since(t0)), pd.cl, id, comResposta(resumoOrdem(corpo), r))
 		p.registrarResposta("PUT", pd.cl, id, r)
 	}
 	if r.Status == http.StatusUnauthorized {
@@ -762,7 +873,14 @@ func (p *Ponte) consultar(ctx context.Context, o *ordemP, origem string) {
 	if id == "" {
 		return
 	}
+	t0 := time.Now()
 	r := p.cli.pedir(ctx, http.MethodGet, "/orders/"+url.PathEscape(id), nil)
+	dur := time.Since(t0)
+	p.traf.consulta()
+	if r.Status != http.StatusOK {
+		// v1.21: a consulta só vira linha do tráfego quando não é 200 ou quando muda o estado
+		p.traf.linha(TrafegoConsulta, "ENV", statusDe(r), duracaoDe(r, dur), o.nome, id, comResposta(origem, r))
+	}
 	if r.Status == http.StatusUnauthorized {
 		p.semSessao("401 depois de novo login")
 		return
@@ -786,6 +904,7 @@ func (p *Ponte) consultar(ctx context.Context, o *ordemP, origem string) {
 	if len(msgs) > 0 {
 		p.mu.Unlock()
 		p.registrarEstado("GET", o.nome, id, r.Corpo)
+		p.traf.linha(TrafegoConsulta, "ENV", r.Status, dur, o.nome, id, origem+": "+resumoEstado(e))
 		p.mu.Lock()
 	}
 	p.mu.Unlock()
@@ -994,6 +1113,7 @@ func (p *Ponte) avisoPrecoAjustado(o *ordemP, de, para decimal.Decimal) func(*Po
 	nome, id := o.nome, o.id
 	return func(p *Ponte) {
 		slog.Info("flexscan: preço ajustado pela Flexscan (túnel)", "nome", nome, "enviado", de, "efetivo", para)
+		p.traf.linha(TrafegoPreco, "REC", -1, -1, nome, id, fmt.Sprintf("enviado %s efetivo %s", de, para))
 		p.ouv.Registrar(repo.EventoFIX{Direcao: "REC", MsgType: "FLX-PRECO", ClOrdID: nome, OrderID: id,
 			Texto: fmt.Sprintf("preço ajustado pela Flexscan: %s -> %s", de, para)})
 	}
@@ -1298,6 +1418,7 @@ func (p *Ponte) ReceberWebhook(corpo []byte, origem string) error {
 	p.mu.Unlock()
 	p.ouv.Registrar(repo.EventoFIX{Direcao: "REC", MsgType: "FLX-WH", Texto: "origem " + origem, Bruta: mascararCorpo(string(corpo))})
 	es, err := LerWebhook(corpo)
+	p.registrarWebhook(es, err)
 	if err != nil {
 		p.ouv.Alertar("FLEXSCAN_WEBHOOK_INVALIDO", "FLEXSCAN_WEBHOOK_INVALIDO", "[flexscan] webhook com forma desconhecida: "+err.Error())
 		p.mu.Lock()
@@ -1450,4 +1571,34 @@ func codigoTexto(c int) string {
 		return ""
 	}
 	return strconv.Itoa(c)
+}
+
+// registrarWebhook (v1.21): a linha do tráfego de um webhook recebido (o receptor respondeu 200).
+func (p *Ponte) registrarWebhook(es []Estado, err error) {
+	if err != nil {
+		p.traf.linha(TrafegoWebhook, "REC", http.StatusOK, -1, "", "", "forma desconhecida: "+err.Error())
+		return
+	}
+	cl, id := "", ""
+	if len(es) == 1 {
+		cl, id = es[0].Nome, es[0].ID
+	}
+	partes := make([]string, 0, len(es))
+	for _, e := range es {
+		partes = append(partes, e.Nome+" "+resumoEstado(e))
+	}
+	p.traf.linha(TrafegoWebhook, "REC", http.StatusOK, -1, cl, id, fmt.Sprintf("%d retrato(s): %s", len(es), strings.Join(partes, "; ")))
+}
+
+// WebhookRecusado (v1.21): o receptor recusou (404) um pedido; o motivo, nunca o caminho.
+func (p *Ponte) WebhookRecusado(motivo string) {
+	p.traf.linha(TrafegoWebhook, "REC", http.StatusNotFound, -1, "", "", "recusado: "+motivo)
+}
+
+// duracaoDe: sem resposta, sem duração.
+func duracaoDe(r Resposta, d time.Duration) time.Duration {
+	if r.Status == 0 {
+		return -1
+	}
+	return d
 }

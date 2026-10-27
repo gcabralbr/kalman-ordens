@@ -31,8 +31,11 @@ ao banco: o registro completo continua no `kalmanordemevento` (`msgtype FLX-*`, 
 ## 2. `/saude.flexscan`: webhook cadastrado e último login
 
 - **Conferência do cadastro:** `GET /webhooks` na partida (depois do login) e a cada
-  `FLEXSCAN_WEBHOOK_CONFERE_MIN` (60). Procura o nosso URL (`FLEXSCAN_WEBHOOK_URL`) com o trigger
-  `order.all`.
+  `FLEXSCAN_WEBHOOK_CONFERE_MIN` (60). Procura o nosso URL com o trigger `order.all`. **Chave nova
+  `FLEXSCAN_WEBHOOK_URL`:** a URL pública exatamente como cadastrada na Flexscan, com o segredo. O
+  serviço só conhece o endereço de escuta (`FLEXSCAN_WEBHOOK_ENDERECO`), não o host público. Ela nunca
+  vai para log, tráfego ou alerta. Só o `webhook_cadastro.go` fala com o recurso de webhooks, só com
+  GET e POST (teste de arquitetura).
   - **Ausente:** recadastra (`POST /webhooks`, `target {type:"user"}`, triggers `order.all`, **sem
     `remove_previous`**, sem mexer nos outros cadastros) e confere de novo. Alerta **crítico**
     `FLEXSCAN_WEBHOOK_AUSENTE`, com "recadastrado" ou com o erro do recadastro. O alerta se resolve
@@ -53,6 +56,14 @@ do PnT, sem `PRECOS_URL_FLEXSCAN` próprio, ou `PNT_DESLIGADO=1` da v1.19.1), `c
 
 Junto (v1.19.1): a linha `kalman-ordens no ar` do journal mostra `fix=desligado` com
 `PNT_DESLIGADO=1` (era o `FIX_HOST:FIX_PORTA` ignorado).
+
+## 3b. A espera depois do 202 (27/10, "Order not found")
+
+`FLEXSCAN_PRIMEIRA_CONSULTA_MS` (200): depois do 202 do POST, a primeira consulta (ativa) sai aos
+200 ms. Depois vêm +300, +600, +1.200 e +2.400 ms sobre ela, como antes. A consulta **periódica**
+também passa a começar depois da janela. A ordem nova nascia com ela vencida, e o primeiro `Tick`
+(≤ 100 ms) a consultava de novo: era o segundo 404 da 991027002 (09:45:55.798 e .889). Com 0, volta
+ao de antes (os roteiros antigos rodam assim).
 
 ## 4. Contrato para o Kalman
 
@@ -122,14 +133,23 @@ para o topo da tela, como os outros críticos do `/saude`.
 
 ## 5. Testes
 
-- Roteiro **115** (Flexscan falsa), com `GET /webhooks` e `POST /webhooks` na falsa:
-  - **partida sem o webhook:** recadastro, `FLEXSCAN_WEBHOOK_AUSENTE` e `RESOLVIDO` na conferência
-    seguinte;
+- Roteiro **115** (`115-flexscan-ao-vivo.fix`, Flexscan falsa com `GET`/`POST /webhooks` e o 404
+  logo depois do POST). Mutações conferidas: com a espera em 0, aparece a CONSULTA 404 antes dos
+  200 ms; a URL no resumo do cadastro reprova a checagem de segredo.
+  - **partida sem o webhook:** recadastro, `FLEXSCAN_WEBHOOK_AUSENTE` e `RESOLVIDO` (a conferência
+    logo depois do POST acha a URL). Um cadastro de outro sistema fica intacto;
   - **conferência com erro:** `null`, sem alerta;
-  - **`/flexscan/trafego`:** POST, CONSULTA 404, PUT, DELETE, WEBHOOK e FLX-PRECO na ordem, com
-    `desde`; nenhum token ou segredo em nenhuma linha (o executor procura o token e o segredo da
-    falsa no corpo inteiro);
+  - **recadastro que falha:** `false` e o crítico; na conferência seguinte, recadastrado e resolvido;
+  - **`/flexscan/trafego`:**
+    - nenhuma consulta antes dos 200 ms, a CONSULTA 404 aos 200 ms e a 200 depois;
+    - POST (com a operação, o módulo, o uid, o id e a duração), WEBHOOK, PUT, LOGIN do 401, FLX-PRECO,
+      DELETE e WEBHOOK recusado (404, só o motivo);
+    - `desde`/`limite` inválidos dão 400;
+    - nenhum token, a senha, o segredo ou a URL do webhook no corpo (o executor procura a cada
+      `flx_trafego`);
   - **`/saude.flexscan`:** `ultimo_login`, e `fonte` com `compartilhada` `true` e `false`; com
     `PNT_DESLIGADO=1` (roteiro 114), `flexscan.simbolo` e `flexscan.fonte` presentes e iguais aos do
     topo.
-- Unidade: o buffer circular, o filtro das consultas e a máscara do `resumo`.
+- Unidade: `TestTrafegoBufferDesdeLimite` (buffer circular, `desde`, `limite`, resumo ASCII de até
+  200). `TestServirAtualizaDoInstalado`: `flexscan.fonte` com `compartilhada` false e a `url` da fonte
+  própria. `TestSemChamadasProibidas`: `/webhooks` só no `webhook_cadastro.go`, sem DELETE/PUT/remove.

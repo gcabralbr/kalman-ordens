@@ -1,0 +1,117 @@
+cenario 115 Flexscan ao vivo (v1.21): webhook ausente na partida → recadastro, FLEXSCAN_WEBHOOK_AUSENTE e RESOLVIDO; conferência com erro (null); recadastro que falha; tráfego (POST, CONSULTA 404 depois da espera de 200 ms, PUT, FLX-PRECO, DELETE, WEBHOOK, LOGIN) sem segredo; ultimo_login; fonte compartilhada
+hora 2026-10-28 10:00:00
+# SPEC-ORDENS v1.21. A falsa começa com o cadastro de webhooks vazio (como a apisim depois da troca
+# de senha de 23/10). Toda flx_trafego confere que nenhum token, a senha, o segredo nem a
+# FLEXSCAN_WEBHOOK_URL aparecem no corpo do /flexscan/trafego.
+config FLEXSCAN_URL=falso
+config FLEXSCAN_WEBHOOK_URL=https://kalman.exemplo/flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl
+config FLEXSCAN_WEBHOOK_CONFERE_MIN=1
+config FLEXSCAN_PRIMEIRA_CONSULTA_MS=200
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+# --- partida: conferência, ausente, recadastro, conferida de novo
+executa INICIO
+alerta FLEXSCAN_WEBHOOK_AUSENTE
+alerta RESOLVIDO
+flx_webhooks n=1 url=https://kalman.exemplo/flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl
+saude flexscan.webhook_cadastrado=true flexscan.webhook_conferido_em=* flexscan.webhook_recadastrado_em=* flexscan.ultimo_login.motivo=partida flexscan.ultimo_login.resultado=OK
+saude flexscan.fonte.compartilhada=true flexscan.simbolo=WINZ26 flexscan.idade_preco_ms=* flexscan.fonte.degradada=false
+flx_trafego tipo=LOGIN status_http=200 resumo=~partida = 1
+flx_trafego tipo=WEBHOOK_CADASTRO resumo=~ausente = 1
+flx_trafego tipo=WEBHOOK_CADASTRO resumo=~recadastro status_http=200 = 1
+flx_trafego tipo=WEBHOOK_CADASTRO resumo=~presente = 1
+
+# --- outro cadastro do usuário (de outro sistema) fica como está; a conferência acha o nosso
+flx_webhooks cadastra url=https://outro.exemplo/hook
+avanca 61s
+flx_trafego tipo=WEBHOOK_CADASTRO resumo=~presente = 2
+sem_alerta FLEXSCAN_WEBHOOK_AUSENTE
+flx_webhooks n=2
+
+# --- conferência com erro: não conferido (null), sem alerta
+flx_webhooks falha=500 metodo=GET
+avanca 61s
+saude flexscan.webhook_cadastrado=null
+sem_alerta FLEXSCAN_WEBHOOK_AUSENTE
+flx_trafego tipo=WEBHOOK_CADASTRO status_http=500 = 1
+avanca 61s
+saude flexscan.webhook_cadastrado=true
+
+# --- o cadastro some e o recadastro falha: crítico, false; na seguinte, recadastrado e resolvido
+flx_webhooks limpa
+flx_webhooks falha=500 metodo=POST
+avanca 61s
+alerta FLEXSCAN_WEBHOOK_AUSENTE
+saude flexscan.webhook_cadastrado=false
+flx_webhooks n=0
+avanca 61s
+alerta RESOLVIDO
+saude flexscan.webhook_cadastrado=true
+flx_webhooks n=1
+
+# --- tráfego: o GET logo depois do 202 dá 404 por 250 ms; a primeira consulta só sai aos 200 ms
+flx_nao_achada 250ms
+entrada 11501 C uid=8
+resposta aceito=true
+flx_recebe POST name=KM-E-11501-1 id=>E1
+avanca 100ms
+flx_trafego tipo=CONSULTA clordid=KM-E-11501-1 = 0
+avanca 100ms
+flx_trafego tipo=CONSULTA clordid=KM-E-11501-1 status_http=404 = 1
+avanca 300ms
+flx_trafego tipo=CONSULTA clordid=KM-E-11501-1 status_http=200 = 1
+flx_executa $E1 preco=130010
+flx_webhook $E1
+evento ENTRADA_EXECUTADA operacao_id=11501 preco=130010
+flx_recebe POST name=KM-P-11501-1 ordType=4 stopPrice=129510 price=129410 id=>P1
+avanca 1s
+evento PROTEGIDA operacao_id=11501 preco_stop=129510 stop_origem=INICIAL
+flx_trafego tipo=POST clordid=KM-E-11501-1 status_http=202 operacao_id=11501 modulo=KALMAN uid=8 flexscan_id=* duracao_ms=* resumo=~S-1117150 = 1
+flx_trafego tipo=WEBHOOK direcao=REC clordid=KM-E-11501-1 status_http=200 resumo=~retrato = 1
+flx_nao_achada 0
+
+# PUT do TRSP
+stop 11501 preco=129800 origem=TRSP uid=8
+resposta aceito=true situacao=ENVIADO
+flx_recebe PUT id=$P1 stopPrice=129800 price=129700
+evento PROTECAO_AJUSTADA operacao_id=11501 preco_stop=129800 stop_origem=TRSP
+flx_trafego tipo=PUT clordid=KM-P-11501-2 status_http=202 operacao_id=11501 resumo=~129800 = 1
+
+# o token vence: a consulta periódica toma 401 e o login seguinte é o "401"
+flx_token_expira
+avanca 6s
+saude flexscan.logado=true flexscan.ultimo_login.motivo=401 flexscan.ultimo_login.resultado=OK
+flx_trafego tipo=LOGIN = 2
+
+# a Flexscan ajusta o limite ao túnel: FLX-PRECO
+flx_altera $P1 preco=129740
+avanca 5s
+flx_trafego tipo=FLX-PRECO clordid=KM-P-11501-1 status_http=null resumo=~129740 = 1
+
+# saída: DELETE da stop e a limite
+preco bid=130100 ask=130105 preco=130100
+saida 11501 V SINAL_OPOSTO uid=8
+resposta aceito=true
+flx_recebe DELETE id=$P1
+flx_recebe POST name=KM-S-11501-1 id=>S1
+flx_executa $S1 preco=130100
+flx_webhook $S1
+evento ZERADA operacao_id=11501 origem=GESTOR
+flx_trafego tipo=DELETE clordid=KM-P-11501-3 status_http=202 operacao_id=11501 = 1
+
+# webhook num caminho errado: 404, o motivo e nunca o caminho
+flx_webhook_http POST /flexscan/webhook/errado {}
+resposta _status=404
+flx_trafego tipo=WEBHOOK status_http=404 resumo=~caminho = 1
+
+# consulta do tráfego: desde e limite inválidos, desde além do último
+http GET /flexscan/trafego?desde=-1
+resposta _status=400
+http GET /flexscan/trafego?limite=0
+resposta _status=400
+http GET /flexscan/trafego?desde=999999
+resposta _status=200 mensagens.#=0 ultimo_seq=* saude.logado=true saude.consultas_min=* saude.boot=* saude.latencia_post_p50_ms=*
+saude posicao=0 divergente=false parada=null
+flx_nada
+nada

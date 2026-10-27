@@ -70,6 +70,12 @@ type Falso struct {
 	loginErro *Falha
 	espera    time.Duration // timeout: quanto o falso segura a resposta
 	agora     func() time.Time
+
+	// v1.21: o cadastro de webhooks do usuário, a falha programada da próxima chamada a ele (por
+	// método) e o "Order not found" do GET logo depois do POST (o apisim de 27/10)
+	webhooks      []map[string]any
+	falhaWebhooks map[string]int
+	naoAchadaPor  time.Duration
 }
 
 // Novo sobe a Flexscan falsa (httptest, porta livre).
@@ -119,8 +125,8 @@ func (f *Falso) servir(w http.ResponseWriter, r *http.Request) {
 		default:
 			responder(w, http.StatusMethodNotAllowed, nil)
 		}
-	case r.URL.Path == "/webhooks" && r.Method == http.MethodGet:
-		responder(w, http.StatusOK, map[string]any{"records": []any{}})
+	case r.URL.Path == "/webhooks" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		f.cadastroWebhooks(w, r)
 	default:
 		responder(w, http.StatusNotFound, map[string]any{"title": "not found"})
 	}
@@ -468,8 +474,8 @@ func (f *Falso) get(w http.ResponseWriter, id string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	o := f.ordens[id]
-	if o == nil {
-		responder(w, http.StatusNotFound, map[string]any{"title": "not found"})
+	if o == nil || (f.naoAchadaPor > 0 && f.agora().Sub(o.Enviada) < f.naoAchadaPor) {
+		responder(w, http.StatusNotFound, map[string]any{"code": 404, "title": "Order not found with requested id"})
 		return
 	}
 	responder(w, http.StatusOK, f.registro(o))
@@ -547,4 +553,87 @@ func (f *Falso) Ids() []string {
 	r := append([]string(nil), f.ids...)
 	sort.Strings(r)
 	return r
+}
+
+// ---------------------------------------------------------------- v1.21: cadastro de webhooks
+
+func (f *Falso) cadastroWebhooks(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if st := f.falhaWebhooks[r.Method]; st != 0 {
+		delete(f.falhaWebhooks, r.Method)
+		responder(w, st, map[string]any{"code": st, "title": "webhook error", "description": "falha programada"})
+		return
+	}
+	if r.Method == http.MethodGet {
+		recs := make([]any, 0, len(f.webhooks))
+		for _, c := range f.webhooks {
+			recs = append(recs, c)
+		}
+		responder(w, http.StatusOK, map[string]any{"records": recs})
+		return
+	}
+	var c map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&c); err != nil || c["url"] == nil || c["triggers"] == nil || c["target"] == nil {
+		responder(w, http.StatusBadRequest, map[string]any{"code": 400, "title": "invalid webhook"})
+		return
+	}
+	c["id"] = fmt.Sprintf("wh-%d", len(f.webhooks)+1)
+	c["created_at"], c["created_by"] = f.agora().UTC().Format(time.RFC3339), f.Usuario
+	f.webhooks = append(f.webhooks, c)
+	responder(w, http.StatusOK, c)
+}
+
+// Webhooks: as URLs cadastradas, na ordem.
+func (f *Falso) Webhooks() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var us []string
+	for _, c := range f.webhooks {
+		us = append(us, fmt.Sprint(c["url"]))
+	}
+	return us
+}
+
+// CadastrarWebhook: um cadastro feito por fora (à mão, outro sistema).
+func (f *Falso) CadastrarWebhook(url string, triggers ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.webhooks = append(f.webhooks, map[string]any{"id": fmt.Sprintf("wh-%d", len(f.webhooks)+1), "url": url, "triggers": triggers,
+		"target": map[string]any{"type": "user", "id": f.Usuario}, "created_at": f.agora().UTC().Format(time.RFC3339), "created_by": f.Usuario})
+}
+
+// LimparWebhooks: o cadastro some (como depois da troca de senha de 23/10).
+func (f *Falso) LimparWebhooks() {
+	f.mu.Lock()
+	f.webhooks = nil
+	f.mu.Unlock()
+}
+
+// FalharWebhooks: a próxima chamada com esse método ao cadastro de webhooks responde status.
+func (f *Falso) FalharWebhooks(metodo string, status int) {
+	f.mu.Lock()
+	if f.falhaWebhooks == nil {
+		f.falhaWebhooks = map[string]int{}
+	}
+	f.falhaWebhooks[metodo] = status
+	f.mu.Unlock()
+}
+
+// NaoAchadaPor: o GET da ordem responde 404 "Order not found" até d depois do POST (0 = desliga).
+func (f *Falso) NaoAchadaPor(d time.Duration) {
+	f.mu.Lock()
+	f.naoAchadaPor = d
+	f.mu.Unlock()
+}
+
+// Tokens: os tokens emitidos (o executor procura segredo no tráfego).
+func (f *Falso) Tokens() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ts := make([]string, 0, len(f.tokens))
+	for t := range f.tokens {
+		ts = append(ts, t)
+	}
+	return ts
 }

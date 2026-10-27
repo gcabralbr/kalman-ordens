@@ -66,6 +66,7 @@ func (r *Receptor) recusar(w http.ResponseWriter, req *http.Request, motivo stri
 		// no máximo uma linha por minuto; sem o caminho (pode ter o segredo, certo ou errado)
 		slog.Warn("flexscan: webhook recusado", "motivo", motivo, "origem", origem(req), "metodo", req.Method)
 	}
+	r.ponte.WebhookRecusado(motivo)
 	w.Header().Set("Content-Length", "0")
 	w.WriteHeader(http.StatusNotFound)
 }
