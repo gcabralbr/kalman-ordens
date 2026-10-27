@@ -86,8 +86,16 @@ ao de antes (os roteiros antigos rodam assim).
      "resumo": "1 retrato: KM-TESTE-P-991027001-1 estado 5 exec 0/1"}
   ],
   "ultimo_seq": 814,
-  "saude": { "...": "os campos de /saude.flexscan (4.2)", "msgs_min": 12, "consultas_min": 40,
-             "latencia_post_p50_ms": 58, "latencia_post_max_ms": 140 }
+  "saude": {
+    "logado": true, "token_expira": "2026-10-27T19:20:21-03:00", "receptor": true,
+    "webhooks_recebidos": 7, "ultimo_webhook": "2026-10-27T09:45:59-03:00", "ultimo_erro": "",
+    "ordens_acompanhadas": 6, "ordens_vivas": 0,
+    "webhook_cadastrado": true, "webhook_conferido_em": "2026-10-27T09:52:40-03:00",
+    "webhook_recadastrado_em": null,
+    "ultimo_login": {"em": "2026-10-27T09:20:21.004-03:00", "motivo": "partida", "resultado": "OK"},
+    "boot": "2026-10-27T09:20:20.512-03:00", "msgs_min": 12, "consultas_min": 40,
+    "latencia_post_p50_ms": 58, "latencia_post_max_ms": 140
+  }
 }
 ```
 
@@ -104,13 +112,37 @@ ao de antes (os roteiros antigos rodam assim).
 | `operacao_id`, `modulo`, `uid` | ou `null` | da operação dona da ordem; `null` quando não há (login, cadastro, ordem não KM) |
 | `resumo` | texto | até 200 caracteres ASCII, sem segredo: lado, qtd, símbolo, preços e conta no POST; gatilho e limite novos no PUT; o texto de erro da Flexscan; no webhook, os retratos (name, estado, executado); no `FLX-PRECO`, "enviado X efetivo Y"; no `LOGIN`, o motivo e o resultado |
 
-`saude` traz os campos do `/saude.flexscan` (4.2) e mais:
+`saude` traz os campos **da ponte** do `/saude.flexscan` (4.2): `logado`, `token_expira`,
+`receptor`, `webhooks_recebidos`, `ultimo_webhook`, `ultimo_erro`, `ordens_acompanhadas`,
+`ordens_vivas`, `webhook_cadastrado`, `webhook_conferido_em`, `webhook_recadastrado_em` e
+`ultimo_login`. **Não traz `simbolo`, `idade_preco_ms` nem `fonte`**: esses ficam só no
+`/saude.flexscan`, porque o tráfego é lido da memória da ponte, sem a fila do motor (correção de
+27/10: o exemplo anterior dizia "os campos de /saude.flexscan"). Traz também:
 - `boot`: a hora da partida do processo;
 - `msgs_min`: linhas no último minuto;
 - `consultas_min`: consultas no último minuto, inclusive as que não entram no buffer;
 - `latencia_post_p50_ms` / `latencia_post_max_ms`: a duração dos POSTs no buffer (`null` sem POST).
 
 ### 4.2 `GET /saude` → `flexscan` (os campos novos)
+
+O bloco inteiro, como o serviço devolve (fonte única, `PNT_DESLIGADO=1`):
+
+```json
+{
+  "logado": true, "token_expira": "2026-10-27T19:20:21-03:00", "receptor": true,
+  "webhooks_recebidos": 7, "ultimo_webhook": "2026-10-27T09:45:59-03:00", "ultimo_erro": "",
+  "ordens_acompanhadas": 6, "ordens_vivas": 0,
+  "webhook_cadastrado": true, "webhook_conferido_em": "2026-10-27T09:52:40-03:00",
+  "webhook_recadastrado_em": null,
+  "ultimo_login": {"em": "2026-10-27T09:20:21.004-03:00", "motivo": "partida", "resultado": "OK"},
+  "simbolo": "WINZ26", "idade_preco_ms": 412,
+  "fonte": {"degradada": false, "ruim_desde": null, "motivo": "", "janela": "09:00-14:30",
+            "dia_de_pregao": true, "travado": false, "travado_desde": null, "travado_motivo": "",
+            "url": "http://172.16.110.53:9090", "compartilhada": true}
+}
+```
+
+`fonte.sem_pregao` (texto) só aparece quando não é dia de pregão.
 
 | Campo | Tipo | Valor |
 |---|---|---|
@@ -150,6 +182,11 @@ para o topo da tela, como os outros críticos do `/saude`.
   - **`/saude.flexscan`:** `ultimo_login`, e `fonte` com `compartilhada` `true` e `false`; com
     `PNT_DESLIGADO=1` (roteiro 114), `flexscan.simbolo` e `flexscan.fonte` presentes e iguais aos do
     topo.
+- **Contrato × serviço** (27/10): o verbo de roteiro `contrato ARQUIVO SECAO [caminho]` compara a
+  forma da última resposta HTTP com o primeiro bloco ```json da seção: as mesmas chaves nos dois
+  sentidos, cada item das listas e o tipo JSON quando os dois lados não são null. O 115 o usa no
+  `/flexscan/trafego` (§4.1) e no `/saude` → `flexscan` (§4.2). Com o exemplo antigo (o `"..."` no
+  `saude`), ele reprovava.
 - Unidade: `TestTrafegoBufferDesdeLimite` (buffer circular, `desde`, `limite`, resumo ASCII de até
   200). `TestServirAtualizaDoInstalado`: `flexscan.fonte` com `compartilhada` false e a `url` da fonte
   própria. `TestSemChamadasProibidas`: `/webhooks` só no `webhook_cadastro.go`, sem DELETE/PUT/remove.

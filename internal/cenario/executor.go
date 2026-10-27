@@ -541,6 +541,8 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return e.pedido(p)
 	case "stop":
 		return e.ajusteStop(p)
+	case "contrato":
+		return e.contrato(p.Args)
 	case "sinal":
 		return e.sinal(p)
 	case "usuario", "habilita", "desabilita":

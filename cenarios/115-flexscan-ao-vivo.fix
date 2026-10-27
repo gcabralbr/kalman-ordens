@@ -112,6 +112,11 @@ http GET /flexscan/trafego?limite=0
 resposta _status=400
 http GET /flexscan/trafego?desde=999999
 resposta _status=200 mensagens.#=0 ultimo_seq=* saude.logado=true saude.consultas_min=* saude.boot=* saude.latencia_post_p50_ms=*
+# o contrato (SPEC v1.21 §4.1 e §4.2) tem a forma da resposta real: o exemplo que o Kalman lê
+http GET /flexscan/trafego?limite=2000
+contrato docs/SPEC-ORDENS-v1.21.md 4.1
+http GET /saude
+contrato docs/SPEC-ORDENS-v1.21.md 4.2 flexscan
 saude posicao=0 divergente=false parada=null
 flx_nada
 nada
