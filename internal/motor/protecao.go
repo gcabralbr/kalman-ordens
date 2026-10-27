@@ -76,12 +76,10 @@ func (m *Motor) ajustarProtecao(op *operacao) {
 
 func (m *Motor) protecaoAceita(op *operacao, p *ordem) {
 	op.semProtecaoDesde = timeZero
-	switch {
-	case p.origemStop != "":
+	if p.origemStop != "" {
+		// a 1014 enviada por este processo; a de antes do restart (sem origem em memória) mantém a
+		// gravada, e sem gravada fica desconhecida (v1.20)
 		op.StopOrigem = p.origemStop
-	case op.StopOrigem == "":
-		// 1014 de antes do restart sem origem gravada: a do gatilho que o motor calcularia
-		op.StopOrigem = op.origemDoCalculo()
 	}
 	m.al.Resolver(chaveOp("SEM_PROTECAO", op))
 	m.al.Resolver(chaveOp("PROTECAO_RECRIADA", op))

@@ -32,23 +32,22 @@ const (
 // reOrigemStop: 2 a 20 de A–Z, 0–9 e _, começando por letra.
 var reOrigemStop = regexp.MustCompile(`^[A-Z][A-Z0-9_]{1,19}$`)
 
-// stopOrigem: a origem da stop confirmada na corretora (vazia, das operações anteriores = INICIAL).
-func (op *operacao) stopOrigem() string {
+// stopOrigem: a origem da stop confirmada na corretora; nil = desconhecida (v1.20: operação anterior
+// à v1.19, ou ainda sem proteção aceita). O Kalman mantém STOP_SERVIDOR.
+func (op *operacao) stopOrigem() any {
 	if op.StopOrigem == "" {
-		return OrigemStopInicial
+		return nil
 	}
 	return op.StopOrigem
 }
 
 // origemDoCalculo: a origem do gatilho que o calcularStop dá agora (o ajustado ou o da entrada).
+// Vazia = desconhecida: o ajuste anterior à v1.19, sem origem gravada (v1.20).
 func (op *operacao) origemDoCalculo() string {
-	switch {
-	case op.StopAjustado == 0:
+	if op.StopAjustado == 0 {
 		return OrigemStopInicial
-	case op.StopAjustadoOrigem != "":
-		return op.StopAjustadoOrigem
 	}
-	return OrigemStopGestor // ajuste anterior à v1.19
+	return op.StopAjustadoOrigem
 }
 
 // Situação do ajuste aceito.
@@ -180,7 +179,7 @@ func (m *Motor) gatilhoPorPontos(op *operacao, lado dominio.Lado, pts int64) int
 // fica (vira o pedido da operação, para nada tentar de novo) e o pedido guardado, se houver, cai;
 // o gestor recebe PROTECAO_AJUSTE_RECUSADO com o motivo e decide se pede de novo.
 func (m *Motor) ajusteRecusado(op *operacao, p *ordem, pedido int64, texto string) {
-	op.StopAjustado, op.StopAjustadoOrigem = p.Stop, op.stopOrigem()
+	op.StopAjustado, op.StopAjustadoOrigem = p.Stop, op.StopOrigem
 	op.protecaoDesatualizada = false
 	m.salvarOp(op)
 	slog.Warn("ajuste da proteção recusado pelo PnT", "op", op.OperacaoID, "pedido", pedido, "mantido", p.Stop, "texto", texto)

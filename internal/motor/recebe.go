@@ -529,12 +529,14 @@ func (m *Motor) replaceConfirmado(op *operacao, o *ordem, clNovo string) {
 		ajustada := op.StopAjustado != 0 && o.Stop != stopAntes
 		if o.Stop != stopAntes {
 			// v1.19: a origem vale quando a corretora confirma; sem a do pedido (restart), a do
-			// gatilho ajustado se for ele
+			// gatilho ajustado se for ele; senão desconhecida (v1.20)
 			switch {
 			case origemPend != "":
 				op.StopOrigem = origemPend
 			case o.Stop == op.StopAjustado:
 				op.StopOrigem = op.origemDoCalculo()
+			default:
+				op.StopOrigem = ""
 			}
 			o.origemStop = op.StopOrigem
 		}

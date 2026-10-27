@@ -32,7 +32,7 @@ Vale para os dois conectores (PnT: 35=G da 1014; Flexscan: PUT da stop).
      é ajuste.
 3. **Na operação:** `stop_origem` (confirmada) e `stop_ajustado_origem` (a do `StopAjustado`, para
    a 1014 recriada), na migração **0013**, com `ADD COLUMN IF NOT EXISTS`. As operações antigas
-   ficam nulas (= `INICIAL`).
+   ficam nulas. Na v1.19 elas valiam `INICIAL`; na v1.20 valem desconhecido, e o campo vem `null`.
 4. **Nos eventos e no GET:** o campo `stop_origem` em `PROTEGIDA`, `PROTECAO_AJUSTADA` e
    `PROTECAO_DISPARADA` (a origem da stop na corretora naquele momento), e em `SAIDA_EXECUTADA` e
    `ZERADA` quando a origem da saída é `STOP_SERVIDOR`. Também `stop_origem` no
@@ -98,12 +98,13 @@ da primeira consulta depois do 202.
 O corpo continua estrito. **O Kalman só pode mandar `origem` depois de a v1.19 estar instalada:**
 antes dela, o campo dá 400 `CAMPO_INVALIDO` e o ajuste não sai.
 
-**Eventos (`GET /eventos`):** o campo **`stop_origem`** (texto) traz a origem da stop que está (ou
-estava) na corretora. Os valores são `INICIAL`, `GESTOR` ou o que o Kalman mandou.
+**Eventos (`GET /eventos`):** o campo **`stop_origem`** traz a origem da stop que está (ou estava) na
+corretora. Os valores são `INICIAL`, `GESTOR` ou o que o Kalman mandou. Pela v1.20, também pode vir
+**`null` = desconhecida** (operação anterior à v1.19): o Kalman mantém `STOP_SERVIDOR`.
 
 | Evento | `stop_origem` |
 |---|---|
-| `PROTEGIDA` | sempre (`INICIAL` na 1014 da entrada; a origem do ajuste numa recriada) |
+| `PROTEGIDA` | sempre (`INICIAL` na 1014 da entrada; a origem do ajuste numa recriada; `null` se desconhecida) |
 | `PROTECAO_AJUSTADA` | sempre: a origem do ajuste confirmado |
 | `PROTECAO_DISPARADA` | sempre: a origem da stop que disparou |
 | `SAIDA_EXECUTADA` | só com `origem` = `STOP_SERVIDOR` (fill da stop) |
@@ -114,7 +115,8 @@ não pelo `motivo`**:
 
 | `stop_origem` | Motivo exibido |
 |---|---|
-| `INICIAL` (ou ausente, operação anterior à v1.19) | `STOP` (antes: `STOP_SERVIDOR`) |
+| `null` (desconhecida: operação anterior à v1.19; v1.20) | `STOP_SERVIDOR` (como hoje) |
+| `INICIAL` | `STOP` (antes: `STOP_SERVIDOR`) |
 | `TRSP` | `TRSP_SERVIDOR` |
 | `STOP_MANUAL` | `STOP_MANUAL_SERVIDOR` |
 | `GESTOR` | `STOP_SERVIDOR` (ajuste sem origem) |
