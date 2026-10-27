@@ -46,11 +46,13 @@ ao banco: o registro completo continua no `kalmanordemevento` (`msgtype FLX-*`, 
 ## 3. A fonte da Flexscan no `/saude`
 
 `/saude.flexscan` passa a ter **sempre** `simbolo`, `idade_preco_ms` e `fonte`, com os mesmos campos
-da fonte do PnT (o `fonte` do topo) e mais `url` e `compartilhada`. Com a mesma URL do PnT (sem
-`PRECOS_URL_FLEXSCAN` próprio), `compartilhada` vem `true` e os valores são os do PnT. **Hoje a .53
-está assim:** o `/saude` de 27/10 não traz `flexscan.fonte`, ou seja, a Flexscan lê a mesma fonte do
-PnT. A conferir no `service.env`: a SPEC-FLEXSCAN §14 previa PnT → 9096 (HML D-1) e Flexscan → 9090
-(D0).
+da fonte do PnT (o `fonte` do topo) e mais `url` e `compartilhada`. Com a fonte única (a mesma URL
+do PnT, sem `PRECOS_URL_FLEXSCAN` próprio, ou `PNT_DESLIGADO=1` da v1.19.1), `compartilhada` vem
+`true` e os valores são os do topo. **É o caso da .53 desde 27/10 15:32** (`PNT_DESLIGADO=1`): hoje o
+`flexscan.simbolo` e o `flexscan.fonte` vêm nulos, com a 9090 viva (o `simbolo` do topo é o dela).
+
+Junto (v1.19.1): a linha `kalman-ordens no ar` do journal mostra `fix=desligado` com
+`PNT_DESLIGADO=1` (era o `FIX_HOST:FIX_PORTA` ignorado).
 
 ## 4. Contrato para o Kalman
 
@@ -120,12 +122,14 @@ para o topo da tela, como os outros críticos do `/saude`.
 
 ## 5. Testes
 
-- Roteiro **114** (Flexscan falsa), com `GET /webhooks` e `POST /webhooks` na falsa:
+- Roteiro **115** (Flexscan falsa), com `GET /webhooks` e `POST /webhooks` na falsa:
   - **partida sem o webhook:** recadastro, `FLEXSCAN_WEBHOOK_AUSENTE` e `RESOLVIDO` na conferência
     seguinte;
   - **conferência com erro:** `null`, sem alerta;
   - **`/flexscan/trafego`:** POST, CONSULTA 404, PUT, DELETE, WEBHOOK e FLX-PRECO na ordem, com
     `desde`; nenhum token ou segredo em nenhuma linha (o executor procura o token e o segredo da
     falsa no corpo inteiro);
-  - **`/saude.flexscan`:** `ultimo_login`, e `fonte` com `compartilhada` `true` e `false`.
+  - **`/saude.flexscan`:** `ultimo_login`, e `fonte` com `compartilhada` `true` e `false`; com
+    `PNT_DESLIGADO=1` (roteiro 114), `flexscan.simbolo` e `flexscan.fonte` presentes e iguais aos do
+    topo.
 - Unidade: o buffer circular, o filtro das consultas e a máscara do `resumo`.

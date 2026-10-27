@@ -334,7 +334,11 @@ func servir(ctx context.Context, cfg config.Config) error {
 	}()
 
 	pronto(endereco)
-	slog.Info("kalman-ordens no ar", "versao", versao, "http", endereco, "fix", cfg.Texto("FIX_HOST", "")+":"+cfg.Texto("FIX_PORTA", ""),
+	fix := cfg.Texto("FIX_HOST", "") + ":" + cfg.Texto("FIX_PORTA", "")
+	if pntDesligado {
+		fix = "desligado"
+	}
+	slog.Info("kalman-ordens no ar", "versao", versao, "http", endereco, "fix", fix,
 		"ambiente", cfg.Texto("ORDENS_AMBIENTE", ""), "pnt_desligado", pntDesligado)
 
 	<-ctx.Done()
