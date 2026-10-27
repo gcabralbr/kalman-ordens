@@ -3,6 +3,7 @@ package motor
 import (
 	"fmt"
 	"log/slog"
+	"regexp"
 
 	"github.com/shopspring/decimal"
 
@@ -18,6 +19,36 @@ type AjusteStop struct {
 	UID       *int     `json:"uid,omitempty"`
 	PrecoStop *float64 `json:"preco_stop,omitempty"`
 	StopPts   *int64   `json:"stop_pts,omitempty"`
+	// Origem (v1.19): quem moveu o stop (TRSP, STOP_MANUAL...); ausente = GESTOR
+	Origem string `json:"origem,omitempty"`
+}
+
+// Origem da stop na corretora (v1.19). INICIAL: o stop_pts da entrada; GESTOR: ajuste sem origem.
+const (
+	OrigemStopInicial = "INICIAL"
+	OrigemStopGestor  = "GESTOR"
+)
+
+// reOrigemStop: 2 a 20 de A–Z, 0–9 e _, começando por letra.
+var reOrigemStop = regexp.MustCompile(`^[A-Z][A-Z0-9_]{1,19}$`)
+
+// stopOrigem: a origem da stop confirmada na corretora (vazia, das operações anteriores = INICIAL).
+func (op *operacao) stopOrigem() string {
+	if op.StopOrigem == "" {
+		return OrigemStopInicial
+	}
+	return op.StopOrigem
+}
+
+// origemDoCalculo: a origem do gatilho que o calcularStop dá agora (o ajustado ou o da entrada).
+func (op *operacao) origemDoCalculo() string {
+	switch {
+	case op.StopAjustado == 0:
+		return OrigemStopInicial
+	case op.StopAjustadoOrigem != "":
+		return op.StopAjustadoOrigem
+	}
+	return OrigemStopGestor // ajuste anterior à v1.19
 }
 
 // Situação do ajuste aceito.
@@ -51,6 +82,15 @@ func (m *Motor) ajustarStop(id int64, a AjusteStop) (Resposta, *recusa) {
 	}
 	if (a.PrecoStop == nil) == (a.StopPts == nil) {
 		return nil, simples("CAMPO_INVALIDO", "informe preco_stop ou stop_pts (um dos dois)")
+	}
+	origem := a.Origem
+	switch {
+	case origem == "":
+		origem = OrigemStopGestor
+	case origem == OrigemStopInicial:
+		return nil, simples("CAMPO_INVALIDO", "origem INICIAL e do servico")
+	case !reOrigemStop.MatchString(origem):
+		return nil, simples("CAMPO_INVALIDO", "origem invalida (2 a 20 de A-Z, 0-9 e _, comecando por letra)")
 	}
 	op := m.operacaoDo(Pedido{Modulo: a.Modulo, OperacaoID: &id})
 	if op == nil || op.Estado.Final() || op.posicao() == 0 {
@@ -102,7 +142,7 @@ func (m *Motor) ajustarStop(id int64, a AjusteStop) (Resposta, *recusa) {
 	if lado == dominio.Compra && !decimal.NewFromInt(stop).GreaterThan(*l.Ask) {
 		return nil, simples("STOP_ALEM_DO_PRECO", fmt.Sprintf("stop %d não está acima do ask %s (posição vendida)", stop, l.Ask))
 	}
-	op.StopAjustado = stop
+	op.StopAjustado, op.StopAjustadoOrigem = stop, origem
 	m.salvarOp(op)
 	_, lim := m.calcularStop(op, lado)
 	situacao := AjusteEnviado
@@ -112,7 +152,7 @@ func (m *Motor) ajustarStop(id int64, a AjusteStop) (Resposta, *recusa) {
 	case abs64(stop-p.Stop) < m.p.AjusteDegrauMin:
 		situacao = AjusteIgnorado
 	}
-	slog.Info("ajuste da proteção", "op", op.OperacaoID, "modulo", op.Modulo, "stop", stop, "limite", lim, "no_pnt", p.Stop, "situacao", situacao)
+	slog.Info("ajuste da proteção", "op", op.OperacaoID, "modulo", op.Modulo, "stop", stop, "limite", lim, "no_pnt", p.Stop, "situacao", situacao, "origem", origem)
 	if situacao != AjusteIgnorado {
 		m.ajustarProtecao(op)
 	}
@@ -140,7 +180,7 @@ func (m *Motor) gatilhoPorPontos(op *operacao, lado dominio.Lado, pts int64) int
 // fica (vira o pedido da operação, para nada tentar de novo) e o pedido guardado, se houver, cai;
 // o gestor recebe PROTECAO_AJUSTE_RECUSADO com o motivo e decide se pede de novo.
 func (m *Motor) ajusteRecusado(op *operacao, p *ordem, pedido int64, texto string) {
-	op.StopAjustado = p.Stop
+	op.StopAjustado, op.StopAjustadoOrigem = p.Stop, op.stopOrigem()
 	op.protecaoDesatualizada = false
 	m.salvarOp(op)
 	slog.Warn("ajuste da proteção recusado pelo PnT", "op", op.OperacaoID, "pedido", pedido, "mantido", p.Stop, "texto", texto)

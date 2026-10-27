@@ -1,0 +1,124 @@
+cenario 112 Origem do stop (v1.19): INICIAL na 1014 da entrada; o ajuste vale quando o 39=5 confirma; IGNORADO, AGUARDANDO e recusado não mudam; a stop executa com stop_origem; restart e 1014 recriada
+hora 2026-10-27 10:00:00
+# SPEC v1.19 §1. A origem do POST /operacoes/{id}/stop (TRSP, STOP_MANUAL...; ausente = GESTOR)
+# só vale quando a corretora confirma o replace. O que conta é a stop que estava lá quando executou.
+# A SAIDA do gestor depois do ZERADA pela stop: SEM_POSICAO sem alerta (§4); o 35=9 com 39=2 de uma
+# ordem já executada: sem alerta (§3).
+
+executa INICIO
+executa COMPRADO OP=11201
+conta_eventos PROTEGIDA operacao_id=11201 stop_origem=INICIAL = 1
+http GET /ordens/11201
+resposta stop_origem=INICIAL
+
+# --- validação: INICIAL é do serviço; minúsculas e um caractere só, fora do formato
+stop 11201 preco=129800 origem=INICIAL
+resposta aceito=false codigo=CAMPO_INVALIDO
+stop 11201 preco=129800 origem=trsp
+resposta aceito=false codigo=CAMPO_INVALIDO
+stop 11201 preco=129800 origem=T
+resposta aceito=false codigo=CAMPO_INVALIDO
+nada
+
+# --- TRSP: pendente não muda a origem; o 39=5 muda
+stop 11201 preco=129800 origem=TRSP
+resposta aceito=true situacao=ENVIADO preco_stop=129800
+recebe 35=G 11=KM-P-11201-2 41=KM-P-11201-1 37=dsa.11201.P 44=129700 847=1014 20828=129800 20829=129700
+http GET /ordens/11201
+resposta stop_origem=INICIAL
+envia @ER 11=KM-P-11201-2 41=KM-P-11201-1 37=dsa.11201.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+evento PROTECAO_AJUSTADA operacao_id=11201 preco_stop=129800 preco_stop_anterior=129510 stop_origem=TRSP
+http GET /ordens/11201
+resposta stop_origem=TRSP preco_stop_ajustado=129800
+
+# --- STOP_MANUAL abaixo do degrau (25 pts): IGNORADO, nada sai, a origem segue TRSP
+stop 11201 preco=129810 origem=STOP_MANUAL
+resposta aceito=true situacao=IGNORADO
+nada
+http GET /ordens/11201
+resposta stop_origem=TRSP
+
+# --- sem origem = GESTOR
+stop 11201 preco=129850
+resposta aceito=true situacao=ENVIADO
+recebe 35=G 11=KM-P-11201-3 41=KM-P-11201-2 37=dsa.11201.P 44=129750 847=1014 20828=129850 20829=129750
+envia @ER 11=KM-P-11201-3 41=KM-P-11201-2 37=dsa.11201.P 150=5 39=5 54=2 38=1 44=129750 847=1014 14=0 151=1 6=0 20828=129850 20829=129750
+evento PROTECAO_AJUSTADA operacao_id=11201 preco_stop=129850 stop_origem=GESTOR
+
+# --- dois em sequência: TRSP enviado, STOP_MANUAL AGUARDANDO. O TRSP confirma; o STOP_MANUAL sai
+# e, antes da resposta, a stop do TRSP dispara e executa: vale o TRSP
+stop 11201 preco=129900 origem=TRSP
+resposta aceito=true situacao=ENVIADO
+recebe 35=G 11=KM-P-11201-4 41=KM-P-11201-3 37=dsa.11201.P 44=129800 847=1014 20828=129900 20829=129800
+stop 11201 preco=129950 origem=STOP_MANUAL
+resposta aceito=true situacao=AGUARDANDO
+envia @ER 11=KM-P-11201-4 41=KM-P-11201-3 37=dsa.11201.P 150=5 39=5 54=2 38=1 44=129800 847=1014 14=0 151=1 6=0 20828=129900 20829=129800
+evento PROTECAO_AJUSTADA operacao_id=11201 preco_stop=129900 stop_origem=TRSP
+recebe 35=G 11=KM-P-11201-5 41=KM-P-11201-4 37=dsa.11201.P 44=129850 847=1014 20828=129950 20829=129850
+preco bid=129890 ask=129895 preco=129890
+envia @ER 11=KM-P-11201-4 37=dsa.11201.P 150=I 39=B 54=2 38=1 44=129800 847=1014 14=0 151=0 20807=1 20806=129800 6=0 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1."
+evento PROTECAO_DISPARADA operacao_id=11201 preco_stop=129900 stop_origem=TRSP
+envia @ER 11=KM-P-11201-4 37=dsa.11201.P 150=F 39=2 54=2 38=1 44=129800 847=1014 32=1 31=129890 14=1 151=0 6=129890
+evento SAIDA_EXECUTADA operacao_id=11201 qtd=1 preco=129890 origem=STOP_SERVIDOR stop_origem=TRSP
+evento ZERADA operacao_id=11201 origem=STOP_SERVIDOR motivo=STOP_SERVIDOR pnl_pts=-120 stop_origem=TRSP
+# o replace do STOP_MANUAL volta recusado com a ordem já executada (fill aplicado): só registro
+envia 35=9 11=KM-P-11201-5 41=KM-P-11201-4 37=dsa.11201.P 39=2 434=2 102=99 58="[IS-72] Replacing quantity must be bigger than current cumulative quantity. Cumulative Quantity: '1' OrderQty (38): '1'."
+avanca 4s
+sem_alerta RECUSA_PNT
+# a SAIDA TRSP do gestor depois do ZERADA pela stop: SEM_POSICAO, sem alerta
+saida 11201 V TRSP
+resposta aceito=false codigo=SEM_POSICAO
+sem_alerta SEM_POSICAO
+saude posicao=0 divergente=false parada=null
+nada
+
+# --- segunda operação: ajuste recusado pelo PnT (39=0, alerta na hora); restart; 1014 recriada
+avanca 61s
+preco bid=130000 ask=130005 preco=130000
+executa COMPRADO OP=11202
+stop 11202 preco=129800 origem=TRSP
+resposta aceito=true situacao=ENVIADO
+recebe 35=G 11=KM-P-11202-2 41=KM-P-11202-1 37=dsa.11202.P 44=129700 847=1014 20828=129800 20829=129700
+envia @ER 11=KM-P-11202-2 41=KM-P-11202-1 37=dsa.11202.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+evento PROTECAO_AJUSTADA operacao_id=11202 preco_stop=129800 stop_origem=TRSP
+stop 11202 preco=129900 origem=STOP_MANUAL
+resposta aceito=true situacao=ENVIADO
+recebe 35=G 11=KM-P-11202-3 41=KM-P-11202-2 37=dsa.11202.P 44=129800 847=1014 20828=129900 20829=129800
+envia 35=9 11=KM-P-11202-3 41=KM-P-11202-2 37=dsa.11202.P 39=0 434=2 102=99 58="[DSA-xx] Invalid stop price"
+evento PROTECAO_AJUSTE_RECUSADO operacao_id=11202 preco_stop_pedido=129900 preco_stop=129800
+alerta RECUSA_PNT
+http GET /ordens/11202
+resposta stop_origem=TRSP preco_stop_ajustado=129800
+
+# restart: a origem volta do banco
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345 584=>MS
+envia @ER 11=KM-P-11202-2 37=dsa.11202.P 150=I 39=0 584=$MS 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+avanca 3s
+alerta CONCILIACAO
+saude posicao=1 divergente=false parada=null
+nada
+http GET /ordens/11202
+resposta stop_origem=TRSP
+
+# o PnT cancela a 1014 sem pedido nosso: a recriada leva o gatilho e a origem do ajuste (TRSP)
+envia @ER 11=KM-P-11202-2 37=dsa.11202.P 150=4 39=4 54=2 38=1 44=129700 847=1014 14=0 151=0 6=0 58="Order cancelled by the system"
+recebe 35=D 11=KM-P-11202-4 38=1 40=2 44=129700 54=2 847=1014 20828=129800 20829=129700
+alerta PROTECAO_RECRIADA
+envia @ER 11=KM-P-11202-4 37=dsa.11202.P4 150=0 39=0 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=11202 preco_stop=129800 stop_origem=TRSP
+
+# saída do gestor: ZERADA origem GESTOR (sem stop_origem)
+saida 11202 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-11202-5 41=KM-P-11202-4 37=dsa.11202.P4
+envia @ER 11=KM-P-11202-4 41=KM-P-11202-4 37=dsa.11202.P4 150=4 39=4 54=2 38=1 44=129700 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-11202-1 38=1 44=129950 54=2 847=1031
+envia @ER 11=KM-S-11202-1 37=dsa.11202.S 198=PNT-11202 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=129990 14=1 151=0 6=129990
+evento SAIDA_EXECUTADA operacao_id=11202 origem=GESTOR
+evento ZERADA operacao_id=11202 origem=GESTOR motivo=SINAL_OPOSTO
+http GET /operacoes?dia=2026-10-27
+resposta _lista.0.operacao_id=11201 _lista.0.stop_origem=TRSP _lista.1.operacao_id=11202 _lista.1.stop_origem=TRSP
+saude posicao=0 divergente=false parada=null
+nada

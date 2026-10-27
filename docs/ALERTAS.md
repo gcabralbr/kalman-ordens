@@ -36,8 +36,9 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `DIVERGENTE` | inconsistência de posição ou de ordem não resolvida; BLOQUEAR | sim |
 | `SEM_CONFIRMACAO` | ordem em ENVIANDO sem nenhuma resposta do PnT em `PRAZO_CONFIRMACAO_S` | sim |
 | `PENDENTE_39A` | ordem em 39=A por mais de 3 s | não |
-| `RECUSA_PNT` | ordem, cancel ou replace rejeitado pelo PnT (35=8 39=8, 35=9, 35=3, 35=j) | não |
-| `CANCEL_STOP_REJEITADO` | cancel da 1014 rejeitado (35=9): aguardando fills do stop | não |
+| `RECUSA_PNT` | ordem, cancel ou replace rejeitado pelo PnT (35=8 39=8, 35=9, 35=3, 35=j). v1.19: 35=9 com 39=2 ("já executada") só alerta se o fill não chegar em `ESPERA_FILL_POS_RECUSA_S`; com o fill já aplicado, só registro | não |
+| `RECUSA_FLEXSCAN` | o mesmo do `RECUSA_PNT`, para as operações da Flexscan (v1.19; antes saíam como `RECUSA_PNT`) | não |
+| `CANCEL_STOP_REJEITADO` | cancel da 1014 rejeitado (35=9): aguardando fills do stop. v1.19: com 39=2, só se o fill não chegar em `ESPERA_FILL_POS_RECUSA_S` | não |
 | `CANCEL_SEM_RESPOSTA` | cancel enviado sem 39=6 nem 39=4 em `ESPERA_STOP_S`, ou com 39=6 e sem o 39=4 em `ESPERA_ENCERRAMENTO_S` depois dele (v1.3 F2) | sim |
 | `SEM_PROTECAO` | posição sem 1014 aceita por mais de 2 s | sim |
 | `PROTECAO_REJEITADA` | 1014 rejeitada (1ª vez: nova tentativa; 2ª: zera a posição) | não |
@@ -205,7 +206,8 @@ Respostas aceitas (`"aceito": true`, com `codigo` e `motivo`, SPEC v1.7 A4):
 
 Códigos e textos vistos nas respostas do PnT (o `[XXX-n]` no 58 de 35=9, 35=8 39=8 e dos avisos
 em 150=I), o que significam e o que o motor faz. Todo 35=9 ou 39=8 vira alerta `RECUSA_PNT` com o
-texto 58; os avisos são só informativos. Esta lista é para ler os logs e os alertas; código novo
+texto 58 (v1.19: o 35=9 com 39=2 só se o fill não chegar em `ESPERA_FILL_POS_RECUSA_S`); os avisos
+são só informativos. Esta lista é para ler os logs e os alertas; código novo
 visto na HML ou em produção entra aqui.
 
 | Código | Texto (58) | Em resposta a | Significado | O que o motor faz | Visto em |

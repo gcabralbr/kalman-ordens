@@ -157,18 +157,22 @@ type Operacao struct {
 	StopPts   int64
 	// StopAjustado: o gatilho da 1014 pedido pelo gestor (v1.4 K1; 0 = sem ajuste, vale StopPts
 	// sobre o médio). O último pedido vale; o que está no PnT é o Stop da 1014.
-	StopAjustado    int64
-	Estado          EstadoOperacao
-	MotivoEntrada   string
-	TsDecisao       string
-	MotivoSaida     string
-	OrigemSaida     string
-	SaidaPedidaEm   time.Time
-	Divergente      bool
-	PnL             decimal.Decimal
-	EncerrouEntrada bool
-	CriadaEm        time.Time
-	ContadorN       map[string]int // último n do ClOrdID, por papel
+	StopAjustado int64
+	// v1.19: a origem da stop confirmada na corretora (INICIAL, GESTOR, TRSP, STOP_MANUAL...; vazio
+	// = INICIAL, das operações anteriores) e a do StopAjustado (vale para a 1014 recriada).
+	StopOrigem         string
+	StopAjustadoOrigem string
+	Estado             EstadoOperacao
+	MotivoEntrada      string
+	TsDecisao          string
+	MotivoSaida        string
+	OrigemSaida        string
+	SaidaPedidaEm      time.Time
+	Divergente         bool
+	PnL                decimal.Decimal
+	EncerrouEntrada    bool
+	CriadaEm           time.Time
+	ContadorN          map[string]int // último n do ClOrdID, por papel
 	// Idempotência do POST /ordens: pedido e resposta originais (JSON).
 	PedidoEntrada, RespostaEntrada, PedidoSaida, RespostaSaida string
 	// POST /sinais (v1.10 §6): a posição da entrada e da saída na rajada do sinal (zero = avulsa).

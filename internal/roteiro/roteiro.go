@@ -505,12 +505,12 @@ func conferir(p Passo, capturas map[string]bool) error {
 	case "stop":
 		for _, a := range p.Args[min(1, len(p.Args)):] {
 			k, _, ok := strings.Cut(a, "=")
-			if !ok || (k != "preco" && k != "pts" && k != "uid" && k != "modulo") {
-				return fmt.Errorf("%s: stop OP preco=N|pts=N [uid=N] [modulo=M]: %q", p.Origem, a)
+			if !ok || (k != "preco" && k != "pts" && k != "uid" && k != "modulo" && k != "origem") {
+				return fmt.Errorf("%s: stop OP preco=N|pts=N [uid=N] [modulo=M] [origem=O]: %q", p.Origem, a)
 			}
 		}
 		if len(p.Args) < 1 {
-			return fmt.Errorf("%s: stop OP preco=N|pts=N [uid=N] [modulo=M]", p.Origem)
+			return fmt.Errorf("%s: stop OP preco=N|pts=N [uid=N] [modulo=M] [origem=O]", p.Origem)
 		}
 	case "resposta", "saude", "evento", "sem_evento":
 		inicio := 0

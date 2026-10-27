@@ -30,7 +30,8 @@ func (m *Motor) pedirSaida(p Pedido) (Resposta, *recusa) {
 	}
 	op := m.operacaoDo(p)
 	if op == nil || op.Estado.Final() {
-		if op == nil || op.OrigemSaida != "STOP_SERVIDOR" {
+		// v1.19: a saída do gestor que chega depois do ZERADA pela stop é corrida, não problema
+		if op == nil || (op.OrigemSaida != "STOP_SERVIDOR" && op.OrigemSaida != "STOP_FURADO") {
 			m.al.Emitir("SEM_POSICAO", "", fmt.Sprintf("SAIDA sem posição: operação %d", *p.OperacaoID), *p.OperacaoID)
 		}
 		return nil, simples("SEM_POSICAO", "operação sem posição real")
@@ -277,7 +278,11 @@ func (m *Motor) zerada(op *operacao) {
 		m.al.Resolver(chaveOp(k, op))
 	}
 	ps, _ := op.medio(false)
-	m.publicar("ZERADA", op, map[string]any{"preco_medio_saida": ps, "pnl_pts": op.PnL, "origem": op.OrigemSaida, "motivo": op.MotivoSaida})
+	d := map[string]any{"preco_medio_saida": ps, "pnl_pts": op.PnL, "origem": op.OrigemSaida, "motivo": op.MotivoSaida}
+	if op.OrigemSaida == "STOP_SERVIDOR" {
+		d["stop_origem"] = op.stopOrigem() // v1.19
+	}
+	m.publicar("ZERADA", op, d)
 }
 
 // tickSaida: repreço (A5) e nova saída quando a anterior acabou sem zerar.
@@ -486,6 +491,7 @@ func (m *Motor) avisarReservaReplaces(op *operacao, o *ordem) {
 func limparPendencia(o *ordem) {
 	o.pend, o.clPend, o.cancelPendenteEm = semPendencia, "", timeZero
 	o.qtdPend, o.precoPend, o.stopPend, o.stopLimPend = 0, 0, 0, 0
+	o.origemPend = ""
 }
 
 // conferirConta (v1.2 U4): a configuração do usuário no GQ mudou com posição aberta? A posição

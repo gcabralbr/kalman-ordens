@@ -68,7 +68,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 |---|---|
 | `entrada OP LADO [qtd=1] [stop=500] [motivo=SINAL] [ts=...] [uid=N] [modulo=M]` | `POST /ordens` papel ENTRADA, uid 7 (o habilitado no `_comum.fix`; `uid=` troca; `modulo=` põe o campo no corpo — sem ele, KALMAN); `ts_decisao` = hora do relógio no primeiro pedido da operação e **o mesmo** nos seguintes (o gestor reenvia o mesmo corpo); `ts=` força outro |
 | `saida OP LADO MOTIVO [qtd=1] [modulo=M]` | `POST /ordens` papel SAIDA; LADO é o lado da ordem de saída |
-| `stop OP preco=N\|pts=N [uid=N] [modulo=M]` | `POST /operacoes/OP/stop` (ajuste da proteção, SPEC v1.4 K): `preco=` vira `preco_stop`, `pts=` vira `stop_pts` |
+| `stop OP preco=N\|pts=N [uid=N] [modulo=M] [origem=O]` | `POST /operacoes/OP/stop` (ajuste da proteção, SPEC v1.4 K): `preco=` vira `preco_stop`, `pts=` vira `stop_pts`, `origem=` vira `origem` (v1.19) |
 | `sinal ID [parte=N] [partes=N] [modulo=M] [ts=T] e=OP:C\|V[:UID] ... s=OP:C\|V:MOTIVO[:UID] ...` | `POST /sinais` (SPEC v1.10 §6): `parte`/`partes` 1/1 se ausentes; entrada com qtd 1, stop_pts 500, motivo SINAL; uid 7 se ausente; `ts_decisao` = hora do relógio no primeiro envio do sinal e o mesmo nos reenvios |
 | `http METODO /caminho [json]` | requisição livre |
 | `http_async METODO /caminho [json]` / `http_aguarda` | a requisição fica em curso enquanto o roteiro segue (ex.: `GET /pnt/ordens`, que espera as respostas do PnT falso ao AF); `http_aguarda` espera a resposta (tempo real, até 15 s) e ela vira a "última resposta" |

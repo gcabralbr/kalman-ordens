@@ -63,7 +63,8 @@ preco bid=213085 ask=213090 preco=213090
 avanca 2s
 recebe 35=G 11=KM-S-900000002-3 41=KM-S-900000002-2 37=dsaGQ2.28619 38=1 44=213240 54=1 847=1031
 envia 35=9 37=dsaGQ2.28619 11=KM-S-900000002-3 41=KM-S-900000002-2 39=2 1=99999 434=2 102=99 58="[IS-72] Replacing quantity must be bigger than current cumulative quantity. Cumulative Quantity: '1' OrderQty (38): '1'.    [DSA-56] Pure status replace was not possible because of tag SenderLocationID (142);    "
-alerta RECUSA_PNT
+# v1.19: 35=9 com 39=2 ("já executada") não alerta enquanto o fill pode chegar
+sem_alerta RECUSA_PNT
 # 100 ms depois, o fill no ClOrdID vigente (-2)
 avanca 100ms
 nada
@@ -72,9 +73,10 @@ evento SAIDA_EXECUTADA operacao_id=900000002 qtd=1 preco=211685 origem=GESTOR
 evento ZERADA operacao_id=900000002 pnl_pts=-125 origem=GESTOR
 saude posicao=0
 
-# nenhuma saída nova, nenhum replace a mais
+# nenhuma saída nova, nenhum replace a mais; o fill veio: o RECUSA_PNT adiado não sai
 avanca 5s
 conta_eventos SAIDA_EXECUTADA operacao_id=900000002 = 1
+sem_alerta RECUSA_PNT
 sem_alerta SAIDA_ESGOTOU
 saude posicao=0
 nada

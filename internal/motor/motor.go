@@ -79,13 +79,15 @@ type ordem struct {
 	precoPend        int64
 	stopPend         int64
 	stopLimPend      int64
-	cancelarApos     bool
-	cancelamentos    int
-	ultimoCancel     time.Time
-	enviada          time.Time
-	pendenteDesde    time.Time
-	alertouPendente  bool
-	recriada         bool // 1014 recriada (P5/P8): rejeição conta no limite de recriações
+	// v1.19: a origem do gatilho enviado na 1014 nova (origemStop) e no replace pendente (origemPend)
+	origemStop, origemPend string
+	cancelarApos           bool
+	cancelamentos          int
+	ultimoCancel           time.Time
+	enviada                time.Time
+	pendenteDesde          time.Time
+	alertouPendente        bool
+	recriada               bool // 1014 recriada (P5/P8): rejeição conta no limite de recriações
 	// estado de erro do PnT (39=7, v1.1 F14): desde quando, o texto 58, se o motor já agiu e se o
 	// cancelamento foi por causa do erro (1014: recriar sob o limite da P8)
 	// saída com replace recusado pela ordem já terminal no PnT (35=9 com 39=2/4/8, v1.3 I1): desde
@@ -95,16 +97,19 @@ type ordem struct {
 	qtdNoDisparo     int
 	recusaTerminalEm time.Time
 	recusaTerminal39 string
-	saidaNoMass      bool
-	saidaSemFill     bool
-	emErroDesde      time.Time
-	erroTexto        string
-	erroTratado      bool
-	canceladaPorErro bool
-	decidirNoMass    bool  // cancel da 1014 em erro rejeitado por outro motivo: o mass status decide (F17)
-	seq              int64 // ordem de criação neste processo (0 = carregada do banco)
-	adiada           bool  // entrada de um sinal aberto: sai quando ele fechar (v1.10 §6)
-	retida           bool  // mensagem retida pelo disjuntor de bolsa indisponível (v1.10 §9)
+	// v1.19: 35=9 com 39=2 sem o fill aplicado: o alerta adiado (sai se o fill não vier a tempo)
+	recusaExecEm                      time.Time
+	recusaExecCodigo, recusaExecTexto string
+	saidaNoMass                       bool
+	saidaSemFill                      bool
+	emErroDesde                       time.Time
+	erroTexto                         string
+	erroTratado                       bool
+	canceladaPorErro                  bool
+	decidirNoMass                     bool  // cancel da 1014 em erro rejeitado por outro motivo: o mass status decide (F17)
+	seq                               int64 // ordem de criação neste processo (0 = carregada do banco)
+	adiada                            bool  // entrada de um sinal aberto: sai quando ele fechar (v1.10 §6)
+	retida                            bool  // mensagem retida pelo disjuntor de bolsa indisponível (v1.10 §9)
 	// lote (v1.10 B): já gravada uma vez e a cópia da última gravação (para não regravar igual)
 	persistida bool
 	gravada    dominio.Ordem
@@ -396,6 +401,8 @@ type Motor struct {
 	clordPorSeq map[int]string
 	parada      *Parada
 	divergente  bool
+	// v1.19: o conector da mensagem em processamento (FLEXSCAN dentro do processarFlexscan; vazio = PnT)
+	conectorMsg string
 	vigente     string                 // ticker do /precos/atual: o contrato das entradas (v1.2 S1)
 	ultimos     map[string]ultimoPreco // último preco conhecido por ticker (B5.c com a posição em outro)
 	proxConfere time.Time              // próxima conferência da conta das posições abertas (U4)

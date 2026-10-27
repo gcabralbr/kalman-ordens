@@ -80,6 +80,8 @@ func (o *OuvinteFlexscan) Registrar(ev repo.EventoFIX) {
 
 // processarFlexscan: como o processar do PnT, sem o disjuntor de bolsa e sem o túnel (são do PnT).
 func (m *Motor) processarFlexscan(msg pnt.Mensagem) {
+	m.conectorMsg = dominio.ConectorFlexscan // v1.19: o RECUSA_ sem operação identificada
+	defer func() { m.conectorMsg = "" }()
 	switch msg.Tipo {
 	case "8":
 		m.execReport(msg)

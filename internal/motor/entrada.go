@@ -155,7 +155,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 			op.RespostaEntrada = string(b)
 		} else {
 			// já respondida (esperava a taxa): o gestor sabe pelo evento
-			m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("entrada %s não saiu para o PnT (sessão caiu antes do envio)", o.ClOrdAtual), op.OperacaoID)
+			m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("entrada %s não saiu para o PnT (sessão caiu antes do envio)", o.ClOrdAtual), op.OperacaoID)
 			m.publicar("ENTRADA_ENCERRADA", op, map[string]any{"qtd_final": 0, "preco_medio": 0, "motivo": "REJEITADA"})
 		}
 		m.salvarOp(op)

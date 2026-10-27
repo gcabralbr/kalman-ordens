@@ -321,7 +321,7 @@ func (m *Motor) observarDisparo(op *operacao, o *ordem, st string, msg pnt.Mensa
 	if op.saidaRep != nil {
 		return // v1.11: o disparo é a saída por replace, não o stop (o Kalman não vê PROTECAO_DISPARADA)
 	}
-	m.publicar("PROTECAO_DISPARADA", op, map[string]any{"qtd_enviada": q, "preco_enviado": px, "preco_stop": o.Stop, "preco_limite": o.StopLim})
+	m.publicar("PROTECAO_DISPARADA", op, map[string]any{"qtd_enviada": q, "preco_enviado": px, "preco_stop": o.Stop, "preco_limite": o.StopLim, "stop_origem": op.stopOrigem()})
 }
 
 // observarErro (v1.1 F14): 39=7 é o estado de erro do PnT. Com 20856=Y a ordem volta sozinha
@@ -415,7 +415,7 @@ func (m *Motor) aplicarFill(op *operacao, o *ordem, cum int, avg decimal.Decimal
 	}
 	slog.Info("FILL", "clordid", o.ClOrdAtual, "orderid", o.OrderID, "delta", delta, "preco", px, "cum", cum)
 	if !px.IsPositive() {
-		m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("fill sem preço em %s", o.ClOrdAtual), op.OperacaoID)
+		m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("fill sem preço em %s", o.ClOrdAtual), op.OperacaoID)
 	}
 	if cum > o.Qtd {
 		m.marcarDivergente(op, fmt.Sprintf("execução acima da quantidade da ordem %s (%d/%d)", o.ClOrdAtual, cum, o.Qtd))
@@ -445,7 +445,11 @@ func (m *Motor) aplicarFill(op *operacao, o *ordem, cum int, avg decimal.Decimal
 	if estavaEncerrada {
 		m.al.Emitir("FILL_ORDEM_ENCERRADA", "", fmt.Sprintf("fill em ordem já encerrada, aceito: %s +%d", o.ClOrdAtual, delta), op.OperacaoID)
 	}
-	m.publicar("SAIDA_EXECUTADA", op, map[string]any{"qtd": delta, "preco": px, "origem": origem})
+	d := map[string]any{"qtd": delta, "preco": px, "origem": origem}
+	if origem == "STOP_SERVIDOR" {
+		d["stop_origem"] = op.stopOrigem() // v1.19
+	}
+	m.publicar("SAIDA_EXECUTADA", op, d)
 	pos := op.posicao()
 	switch {
 	case pos == 0:
@@ -504,6 +508,7 @@ func (m *Motor) replaceConfirmado(op *operacao, o *ordem, clNovo string) {
 		m.porClOrd[clNovo] = o
 	}
 	qtdAntes, stopAntes, limAntes := o.Qtd, o.Stop, o.StopLim
+	origemPend := o.origemPend
 	if o.pend == pendReplace {
 		o.Qtd = o.qtdPend
 		if o.precoPend != 0 {
@@ -522,13 +527,24 @@ func (m *Motor) replaceConfirmado(op *operacao, o *ordem, clNovo string) {
 	} else if o.Papel == dominio.Protecao {
 		op.rejeicoesProtecao = 0
 		ajustada := op.StopAjustado != 0 && o.Stop != stopAntes
+		if o.Stop != stopAntes {
+			// v1.19: a origem vale quando a corretora confirma; sem a do pedido (restart), a do
+			// gatilho ajustado se for ele
+			switch {
+			case origemPend != "":
+				op.StopOrigem = origemPend
+			case o.Stop == op.StopAjustado:
+				op.StopOrigem = op.origemDoCalculo()
+			}
+			o.origemStop = op.StopOrigem
+		}
 		if o.Qtd != qtdAntes || !ajustada {
-			m.publicar("PROTEGIDA", op, map[string]any{"preco_stop": o.Stop, "preco_limite": o.StopLim, "qtd": o.Qtd})
+			m.publicar("PROTEGIDA", op, map[string]any{"preco_stop": o.Stop, "preco_limite": o.StopLim, "qtd": o.Qtd, "stop_origem": op.stopOrigem()})
 		}
 		if ajustada {
 			// ajuste do gestor confirmado (v1.4 K1)
 			m.publicar("PROTECAO_AJUSTADA", op, map[string]any{"preco_stop": o.Stop, "preco_limite": o.StopLim, "qtd": o.Qtd,
-				"preco_stop_anterior": stopAntes, "preco_limite_anterior": limAntes})
+				"preco_stop_anterior": stopAntes, "preco_limite_anterior": limAntes, "stop_origem": op.stopOrigem()})
 		}
 	}
 	if cancelarDepois {
@@ -579,7 +595,7 @@ func (m *Motor) ordemEncerrada(op *operacao, o *ordem, motivo string) {
 
 func (m *Motor) ordemRejeitada(op *operacao, o *ordem, texto, codigo string) {
 	m.publicar("RECUSADA", op, map[string]any{"papel": o.Papel.String(), "motivo": texto, "codigo": codigo, "clordid": o.ClOrdAtual})
-	m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("recusa do PnT %s: [%s] %s", o.ClOrdAtual, codigo, texto), op.OperacaoID)
+	m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("recusa do PnT %s: [%s] %s", o.ClOrdAtual, codigo, texto), op.OperacaoID)
 	switch o.Papel {
 	case dominio.Entrada:
 		m.encerrarEntrada(op, "REJEITADA", true)
@@ -625,7 +641,7 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 	if o == nil {
 		if ehNosso(msg.Texto(11)) || ehNosso(msg.Texto(41)) {
 			m.registrarRecebida(nil, msg)
-			m.al.Emitir("RECUSA_PNT", "", "35=9 de ordem KM desconhecida: 11="+msg.Texto(11), 0)
+			m.al.Emitir(m.codigoRecusa(nil), "", "35=9 de ordem KM desconhecida: 11="+msg.Texto(11), 0)
 		}
 		return
 	}
@@ -648,18 +664,18 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 				m.enviarSaida(op)
 			} else {
 				// a 1014 provavelmente já disparou: não manda a saída, espera os fills
-				m.al.Emitir("CANCEL_STOP_REJEITADO", "", fmt.Sprintf("cancel da 1014 rejeitado (%s): aguardando fills do stop, operação %d", texto, op.OperacaoID), op.OperacaoID)
+				m.alertarRecusa(op, o, msg, "CANCEL_STOP_REJEITADO", fmt.Sprintf("cancel da 1014 rejeitado (%s): aguardando fills do stop, operação %d", texto, op.OperacaoID))
 				m.mudar(op, dominio.AguardandoStop)
 				op.aguardandoStopDesde = m.agora()
 			}
 		case o.Papel == dominio.Protecao && o.canceladaPorErro:
 			m.cancelProtecaoEmErroRejeitado(op, o, msg, texto)
 		default:
-			m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("cancel rejeitado (%s): %s", texto, o.ClOrdAtual), op.OperacaoID)
+			m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("cancel rejeitado (%s): %s", texto, o.ClOrdAtual))
 		}
 	} else {
 		if o.Papel == dominio.Protecao && op.saidaRep != nil {
-			m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("replace de saída da 1014 rejeitado (%s): %s", texto, o.ClOrdAtual), op.OperacaoID)
+			m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("replace de saída da 1014 rejeitado (%s): %s", texto, o.ClOrdAtual))
 			m.replaceDeSaidaRecusado(op, o, msg, texto)
 			m.salvarOrdem(o)
 			m.salvarOp(op)
@@ -670,13 +686,13 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 			// v1.3 I1: a ordem já está terminal no PnT (HML 14/10: [IS-72], o fill veio 100 ms
 			// depois). Repreço suspenso; espera o fill ou o 39=4; sem eles, mass status.
 			o.recusaTerminalEm, o.recusaTerminal39 = m.agora(), st
-			m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("replace da saída rejeitado com a ordem terminal no PnT (39=%s) (%s): %s; repreço suspenso, aguardando o fill ou o 39=4 por %s",
-				st, texto, o.ClOrdAtual, m.p.EsperaFillPosRecusa), op.OperacaoID)
+			m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("replace da saída rejeitado com a ordem terminal no PnT (39=%s) (%s): %s; repreço suspenso, aguardando o fill ou o 39=4 por %s",
+				st, texto, o.ClOrdAtual, m.p.EsperaFillPosRecusa))
 			m.salvarOrdem(o)
 			m.salvarOp(op)
 			return
 		}
-		m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("replace rejeitado (%s): %s", texto, o.ClOrdAtual), op.OperacaoID)
+		m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("replace rejeitado (%s): %s", texto, o.ClOrdAtual))
 		switch {
 		case ajuste:
 			m.ajusteRecusado(op, o, stopPedido, texto)
@@ -701,7 +717,7 @@ func (m *Motor) cancelProtecaoEmErroRejeitado(op *operacao, o *ordem, msg pnt.Me
 		m.recriarProtecaoAusente(op, "1014 em erro: cancel rejeitado, ordem não encontrada no PnT "+texto)
 		return
 	}
-	m.al.Emitir("RECUSA_PNT", "", fmt.Sprintf("cancel da 1014 em erro rejeitado %s: %s; mass status para decidir", texto, o.ClOrdAtual), op.OperacaoID)
+	m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("cancel da 1014 em erro rejeitado %s: %s; mass status para decidir", texto, o.ClOrdAtual), op.OperacaoID)
 	o.decidirNoMass = true
 	if !m.conciliando && m.algumLogado() {
 		m.conciliando = true
@@ -803,7 +819,7 @@ func (m *Motor) rejeicaoGenerica(msg pnt.Mensagem, refID, texto string) {
 	o := m.porClOrd[cl]
 	m.registrarRecebida(o, msg)
 	if o == nil {
-		m.al.Emitir("RECUSA_PNT", "", "rejeição sem ordem identificada: "+texto, 0)
+		m.al.Emitir(m.codigoRecusa(nil), "", "rejeição sem ordem identificada: "+texto, 0)
 		return
 	}
 	op := m.donoDa[o]
@@ -812,7 +828,7 @@ func (m *Motor) rejeicaoGenerica(msg pnt.Mensagem, refID, texto string) {
 		eraCancel := o.pend == pendCancel
 		ajuste, stopPedido := m.eraAjuste(op, o), o.stopPend
 		limparPendencia(o)
-		m.al.Emitir("RECUSA_PNT", "", "pedido rejeitado "+texto+": "+o.ClOrdAtual, op.OperacaoID)
+		m.al.Emitir(m.codigoRecusa(op), "", "pedido rejeitado "+texto+": "+o.ClOrdAtual, op.OperacaoID)
 		switch {
 		case ajuste:
 			m.ajusteRecusado(op, o, stopPedido, texto)
@@ -885,5 +901,49 @@ func (m *Motor) marcarDivergente(op *operacao, motivo string) {
 	m.al.Emitir("DIVERGENTE", "DIVERGENTE", "DIVERGENTE: "+motivo, op.OperacaoID)
 	if m.parada == nil {
 		m.ativarParada("BLOQUEAR", "auto", "divergência: "+motivo)
+	}
+}
+
+// codigoRecusa (v1.19): RECUSA_PNT ou RECUSA_FLEXSCAN, pelo conector da operação; sem operação, pelo
+// de onde veio a mensagem.
+func (m *Motor) codigoRecusa(op *operacao) string {
+	con := m.conectorMsg
+	if op != nil {
+		con = op.conector()
+	}
+	if con == dominio.ConectorFlexscan {
+		return "RECUSA_FLEXSCAN"
+	}
+	return "RECUSA_PNT"
+}
+
+// alertarRecusa (v1.19): o 35=9 com 39=2 diz que a ordem já executou na corretora. Com o fill já
+// aplicado, só registro; sem ele, o alerta espera ESPERA_FILL_POS_RECUSA_S e só sai se o fill não
+// vier (verificarRecusasExecutadas). Outro 39: alerta na hora, como antes.
+func (m *Motor) alertarRecusa(op *operacao, o *ordem, msg pnt.Mensagem, codigo, texto string) {
+	if msg.Texto(39) != "2" {
+		m.al.Emitir(codigo, "", texto, op.OperacaoID)
+		return
+	}
+	if o.Estado == dominio.Executada {
+		slog.Info("recusa com a ordem já executada e o fill aplicado: só registro", "op", op.OperacaoID, "clordid", o.ClOrdAtual, "texto", texto)
+		return
+	}
+	slog.Info("recusa com a ordem já executada: aguardando o fill", "op", op.OperacaoID, "clordid", o.ClOrdAtual, "espera", m.p.EsperaFillPosRecusa, "texto", texto)
+	o.recusaExecEm, o.recusaExecCodigo, o.recusaExecTexto = m.agora(), codigo, texto
+}
+
+// verificarRecusasExecutadas (v1.19): o fill da ordem que a corretora disse executada chegou? Sem ele
+// em ESPERA_FILL_POS_RECUSA_S, o alerta adiado sai.
+func (m *Motor) verificarRecusasExecutadas(op *operacao, agora time.Time) {
+	for _, o := range op.ordens {
+		switch {
+		case o.recusaExecEm.IsZero():
+		case o.Estado == dominio.Executada:
+			o.recusaExecEm = timeZero
+		case agora.Sub(o.recusaExecEm) >= m.p.EsperaFillPosRecusa:
+			o.recusaExecEm = timeZero
+			m.al.Emitir(o.recusaExecCodigo, "", fmt.Sprintf("%s; sem fill em %s", o.recusaExecTexto, m.p.EsperaFillPosRecusa), op.OperacaoID)
+		}
 	}
 }

@@ -39,7 +39,7 @@ func inserir(tx *sql.Tx, cabeca string, ncol int, linhas [][]any, sufixo string)
 	return nil
 }
 
-const colunasOp = `id, data, modulo, operacao_id, uid, conta, destino, conector, simbolo, lado, qtd_pedida, stop_pts, stop_ajustado, estado,
+const colunasOp = `id, data, modulo, operacao_id, uid, conta, destino, conector, simbolo, lado, qtd_pedida, stop_pts, stop_ajustado, stop_origem, stop_ajustado_origem, estado,
 	motivo_entrada, ts_decisao, motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts, encerrou_entrada, contador_n,
 	pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, sinal_entrada, sinal_saida, criado_em, atualizado_em`
 
@@ -47,7 +47,7 @@ func linhaOp(o dominio.Operacao, agora time.Time) []any {
 	cn, _ := json.Marshal(o.ContadorN)
 	// v1.13: textos cortados ao tamanho da coluna (o 1406 não trava mais o lote; HML 19/10 10:41)
 	return []any{o.ID, o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(cortar(o.Conta, 20)), o.Destino, dominio.ConectorDe(o.Conector), nulo(cortar(o.Simbolo, 20)), o.Lado.Letra(), o.QtdPedida,
-		o.StopPts, nuloInt(o.StopAjustado), string(o.Estado), nulo(cortar(o.MotivoEntrada, 20)), nulo(cortar(o.TsDecisao, 40)), nulo(cortar(o.MotivoSaida, 60)),
+		o.StopPts, nuloInt(o.StopAjustado), nulo(cortar(o.StopOrigem, 20)), nulo(cortar(o.StopAjustadoOrigem, 20)), string(o.Estado), nulo(cortar(o.MotivoEntrada, 20)), nulo(cortar(o.TsDecisao, 40)), nulo(cortar(o.MotivoSaida, 60)),
 		nulo(cortar(o.OrigemSaida, 30)),
 		utc(o.SaidaPedidaEm), o.Divergente, o.PnL.String(), o.EncerrouEntrada, string(cn), nulo(o.PedidoEntrada), nulo(o.RespostaEntrada),
 		nulo(o.PedidoSaida), nulo(o.RespostaSaida), rajadaSQL(o.SinalEntrada), rajadaSQL(o.SinalSaida), utc(o.CriadaEm), agora}
@@ -87,7 +87,8 @@ func (r *MariaDB) GravarLote(l *Lote) error {
 		return err
 	}
 	if err := inserir(tx, "INSERT INTO kalmanordemoperacao ("+colunasOp+")", ncolOp, velhas,
-		`ON DUPLICATE KEY UPDATE estado=VALUES(estado), stop_ajustado=VALUES(stop_ajustado), motivo_saida=VALUES(motivo_saida),
+		`ON DUPLICATE KEY UPDATE estado=VALUES(estado), stop_ajustado=VALUES(stop_ajustado), stop_origem=VALUES(stop_origem),
+		stop_ajustado_origem=VALUES(stop_ajustado_origem), motivo_saida=VALUES(motivo_saida),
 		origem_saida=VALUES(origem_saida), saida_pedida_em=VALUES(saida_pedida_em), divergente=VALUES(divergente), pnl_pts=VALUES(pnl_pts),
 		encerrou_entrada=VALUES(encerrou_entrada), contador_n=VALUES(contador_n), pedido_entrada=VALUES(pedido_entrada),
 		resposta_entrada=VALUES(resposta_entrada), pedido_saida=VALUES(pedido_saida), resposta_saida=VALUES(resposta_saida),
@@ -129,7 +130,7 @@ func (r *MariaDB) GravarLote(l *Lote) error {
 		if e.OrdemID != 0 {
 			ordem = e.OrdemID
 		}
-		ev = append(ev, []any{ordem, modulo(e.Modulo), e.Direcao, cortar(e.MsgType, 4), nulo(cortar(e.ExecType, 1)), nulo(cortar(e.OrdStatus, 1)),
+		ev = append(ev, []any{ordem, modulo(e.Modulo), e.Direcao, cortar(e.MsgType, 20), nulo(cortar(e.ExecType, 1)), nulo(cortar(e.OrdStatus, 1)),
 			nulo(cortar(e.ClOrdID, 60)), nulo(cortar(e.OrderID, 40)), nulo(cortar(e.ExecID, 80)), lq, lp, cq, ap, nulo(cortar(e.Texto, 1000)), nulo(cortar(e.Codigo, 20)), nulo(e.Bruta), utc(e.Em)})
 	}
 	// INSERT IGNORE: o fill repetido (37, 17) já foi descartado pelo motor; a chave única fica de rede

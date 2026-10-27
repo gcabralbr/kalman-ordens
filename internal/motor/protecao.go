@@ -37,6 +37,7 @@ func (m *Motor) ajustarProtecao(op *operacao) {
 		}
 		o := m.novaOrdem(op, dominio.Protecao, lado, qtd, pnt.EstrategiaStop)
 		o.Stop, o.StopLim, o.Preco = stop, lim, lim
+		o.origemStop = op.origemDoCalculo()
 		m.salvarOrdem(o)
 		m.indexar(op, o)
 		chegada := m.chegadaFIX
@@ -69,18 +70,26 @@ func (m *Motor) ajustarProtecao(op *operacao) {
 	}
 	if p.Qtd != qtd || p.Stop != stop || p.Lado != lado {
 		m.replace(p, qtd, lim, stop, lim)
+		p.origemPend = op.origemDoCalculo()
 	}
 }
 
 func (m *Motor) protecaoAceita(op *operacao, p *ordem) {
 	op.semProtecaoDesde = timeZero
+	switch {
+	case p.origemStop != "":
+		op.StopOrigem = p.origemStop
+	case op.StopOrigem == "":
+		// 1014 de antes do restart sem origem gravada: a do gatilho que o motor calcularia
+		op.StopOrigem = op.origemDoCalculo()
+	}
 	m.al.Resolver(chaveOp("SEM_PROTECAO", op))
 	m.al.Resolver(chaveOp("PROTECAO_RECRIADA", op))
 	m.al.Resolver(chaveOp("PROTECAO_EM_ERRO", op))
 	if op.Estado == dominio.PosicionadaSemProtecao || op.Estado == dominio.Entrando {
 		m.mudar(op, dominio.Protegida)
 	}
-	m.publicar("PROTEGIDA", op, map[string]any{"preco_stop": p.Stop, "preco_limite": p.StopLim, "qtd": p.Qtd})
+	m.publicar("PROTEGIDA", op, map[string]any{"preco_stop": p.Stop, "preco_limite": p.StopLim, "qtd": p.Qtd, "stop_origem": op.stopOrigem()})
 	if op.zerarAposProtecao {
 		// ENTRADA_TARDIA (A3): protegida, agora zera
 		op.zerarAposProtecao = false
@@ -175,6 +184,7 @@ func (m *Motor) recriarProtecao(op *operacao, motivo string) {
 	}
 	o := m.novaOrdem(op, dominio.Protecao, lado, abs(pos), pnt.EstrategiaStop)
 	o.Stop, o.StopLim, o.Preco = stop, lim, lim
+	o.origemStop = op.origemDoCalculo()
 	o.recriada = true
 	m.salvarOrdem(o)
 	m.indexar(op, o)

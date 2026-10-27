@@ -20,11 +20,14 @@ envia @ER 11=KM-S-5301-1 37=dsa.5301.S 198=PNT-5301 150=0 39=0 54=2 38=1 44=1299
 avanca 2s
 recebe 35=G 11=KM-S-5301-2 41=KM-S-5301-1 37=dsa.5301.S 44=129900
 envia 35=9 37=dsa.5301.S 11=KM-S-5301-2 41=KM-S-5301-1 39=2 1=12345 434=2 102=99 58="[IS-72] Replacing quantity must be bigger than current cumulative quantity. Cumulative Quantity: '1' OrderQty (38): '1'."
-alerta RECUSA_PNT
+sem_alerta RECUSA_PNT
 avanca 2900ms
 nada
+sem_alerta RECUSA_PNT
 avanca 100ms
 recebe 35=AF 585=9 1=12345 584=>MS
+# v1.19: o RECUSA_PNT do 39=2 sai aos 3 s sem fill
+alerta RECUSA_PNT
 # o PnT traz a saída viva, sem execução: incoerente com o 39=2 do 35=9
 envia @ER 11=KM-S-5301-1 37=dsa.5301.S 198=PNT-5301 150=I 39=0 584=$MS 54=2 38=1 44=129950 847=1031 14=0 151=1 6=0
 envia @ER 11=KM-P-5301-1 37=dsa.5301.P 150=I 39=4 584=$MS 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0

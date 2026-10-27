@@ -24,7 +24,8 @@ resposta aceito=true situacao=ENVIADO
 flx_recebe PUT id=$FP stopPrice=129900 price=129800
 flx_webhook $FP
 evento PROTECAO_AJUSTE_RECUSADO operacao_id=2201 preco_stop_pedido=129900 preco_stop=129800
-alerta RECUSA_PNT
+alerta RECUSA_FLEXSCAN
+sem_alerta RECUSA_PNT
 sem_alerta PROTECAO_REJEITADA
 flx_ordem $FP stop=129800
 

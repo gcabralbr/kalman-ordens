@@ -845,6 +845,8 @@ func (e *Executor) ajusteStop(p roteiro.Passo) error {
 			b["uid"], _ = strconv.Atoi(v)
 		case "modulo":
 			b["modulo"] = v
+		case "origem":
+			b["origem"] = v
 		default:
 			return fmt.Errorf("stop: argumento %q", a)
 		}

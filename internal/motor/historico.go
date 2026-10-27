@@ -206,7 +206,7 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 			"operacao_id": d.OperacaoID, "uid": d.UID, "modulo": d.Modulo, "estado": d.Estado, "lado": d.Lado.Letra(),
 			"qtd": d.QtdPedida, "preco_medio_entrada": medioOuNulo(op, true), "preco_medio_saida": medioOuNulo(op, false),
 			"pnl_pts": d.PnL, "motivo_saida": textoOuNulo(d.MotivoSaida), "origem_saida": textoOuNulo(d.OrigemSaida),
-			"criada_em": emBR(d.CriadaEm), "zerada_em": emBROuNulo(zerada[k]), "alertas_n": alertas[k],
+			"stop_origem": op.stopOrigem(), "criada_em": emBR(d.CriadaEm), "zerada_em": emBROuNulo(zerada[k]), "alertas_n": alertas[k],
 			"sinal": sinalDe(op), "em": d.CriadaEm,
 		})
 	}
@@ -250,7 +250,7 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 		}
 		lista = append(lista, map[string]any{
 			"operacao_id": opID, "uid": u, "modulo": p.Modulo, "estado": "RECUSADA", "lado": textoOuNulo(c.Lado), "qtd": qtd,
-			"preco_medio_entrada": nil, "preco_medio_saida": nil, "pnl_pts": nil, "motivo_saida": nil, "origem_saida": nil,
+			"preco_medio_entrada": nil, "preco_medio_saida": nil, "pnl_pts": nil, "motivo_saida": nil, "origem_saida": nil, "stop_origem": nil,
 			"criada_em": emBR(p.Em), "zerada_em": nil, "alertas_n": 0,
 			"rota": p.Rota, "papel": textoOuNulo(p.Papel), "http_status": p.HTTPStatus, "codigo": textoOuNulo(p.Codigo),
 			"motivo": textoOuNulo(resp.Motivo), "corpo": jsonOuTexto(p.Corpo),

@@ -175,6 +175,7 @@ func (m *Motor) verificarSemConfirmacao(agora time.Time) bool {
 
 func (m *Motor) acoesDeTempo(op *operacao, agora time.Time) {
 	m.tratarErros(op, agora)
+	m.verificarRecusasExecutadas(op, agora)
 	if e := op.viva(dominio.Entrada); e != nil && e.Estado != dominio.Enviando && e.Estado != dominio.SemConfirmacao &&
 		!e.enviada.IsZero() && e.pend == semPendencia && agora.Sub(e.enviada) >= m.p.TimeoutEntrada {
 		switch {

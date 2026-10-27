@@ -99,7 +99,7 @@ func (m *Motor) descrever(op *operacao) Resposta {
 	return Resposta{"existe": true, "modulo": op.Modulo, "operacao_id": op.OperacaoID, "estado": op.Estado, "divergente": op.Divergente, "posicao": op.posicao(),
 		"uid": op.UID, "conta": op.Conta, "destino": op.Destino, "conector": op.conector(), "simbolo": op.Simbolo,
 		"preco_medio_entrada": pe, "preco_medio_saida": ps, "motivo_saida": op.MotivoSaida, "origem_saida": op.OrigemSaida,
-		"pnl_pts": op.PnL, "preco_stop_ajustado": op.StopAjustado, "ordens": os, "sinal": sinalDe(op)}
+		"pnl_pts": op.PnL, "preco_stop_ajustado": op.StopAjustado, "stop_origem": op.stopOrigem(), "ordens": os, "sinal": sinalDe(op)}
 }
 
 // sinalDe (v1.10 §6): a posição da entrada e da saída nas rajadas dos sinais; nulo = avulsa.
