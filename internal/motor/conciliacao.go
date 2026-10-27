@@ -233,7 +233,7 @@ func (m *Motor) conciliar() {
 			// [PnT-13] o mass status traz só as ativas: viva aqui e ausente lá
 			divergencias++
 			op.Divergente = true
-			m.al.Emitir("DESCONHECIDA", "", fmt.Sprintf("ordem viva na tabela e ausente no PnT: %s", o.ClOrdAtual), op.OperacaoID)
+			m.al.Emitir("DESCONHECIDA", "", fmt.Sprintf("ordem viva na tabela e ausente na %s: %s", op.corretora(), o.ClOrdAtual), op.OperacaoID)
 			o.Estado = dominio.Desconhecida
 			limparPendencia(o)
 			m.salvarOrdem(o)

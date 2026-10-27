@@ -162,7 +162,7 @@ func (m *Motor) verificarSemConfirmacao(agora time.Time) bool {
 			o.Estado = dominio.SemConfirmacao
 			m.salvarOrdem(o)
 			achou = true
-			m.al.Emitir("SEM_CONFIRMACAO", chaveOp("SEM_CONFIRMACAO", op), fmt.Sprintf("ordem %s sem resposta do PnT em %s", o.ClOrdAtual, m.p.PrazoConfirmacao), op.OperacaoID)
+			m.al.Emitir("SEM_CONFIRMACAO", chaveOp("SEM_CONFIRMACAO", op), fmt.Sprintf("ordem %s sem resposta da %s em %s", o.ClOrdAtual, op.corretora(), m.p.PrazoConfirmacao), op.OperacaoID)
 		}
 	}
 	if achou && !m.conciliando {

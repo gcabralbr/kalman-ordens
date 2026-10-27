@@ -249,7 +249,7 @@ func (p *Ponte) registrarLogin(motivo string, err error, dur time.Duration) {
 	p.mu.Lock()
 	p.ultLogin = map[string]any{"em": p.rel.Agora().In(relogio.Fuso).Format(formatoEmTrafego), "motivo": motivo, "resultado": resultado}
 	p.mu.Unlock()
-	p.traf.linha(TrafegoLogin, "ENV", status, dur, "", "", texto)
+	p.linhaGravada(TrafegoLogin, msgLogin, status, dur, texto)
 }
 
 // Iniciar sobe os trabalhadores e faz o primeiro login (assíncrono).
@@ -1579,7 +1579,12 @@ func (p *Ponte) registrarWebhook(es []Estado, err error) {
 		p.traf.linha(TrafegoWebhook, "REC", http.StatusOK, -1, "", "", "forma desconhecida: "+err.Error())
 		return
 	}
-	cl, id := "", ""
+	cl, id, resumo := resumoWebhook(es)
+	p.traf.linha(TrafegoWebhook, "REC", http.StatusOK, -1, cl, id, resumo)
+}
+
+// resumoWebhook: os retratos de um webhook (o clordid e o id quando é uma ordem só).
+func resumoWebhook(es []Estado) (cl, id, resumo string) {
 	if len(es) == 1 {
 		cl, id = es[0].Nome, es[0].ID
 	}
@@ -1587,7 +1592,18 @@ func (p *Ponte) registrarWebhook(es []Estado, err error) {
 	for _, e := range es {
 		partes = append(partes, e.Nome+" "+resumoEstado(e))
 	}
-	p.traf.linha(TrafegoWebhook, "REC", http.StatusOK, -1, cl, id, fmt.Sprintf("%d retrato(s): %s", len(es), strings.Join(partes, "; ")))
+	return cl, id, fmt.Sprintf("%d retrato(s): %s", len(es), strings.Join(partes, "; "))
+}
+
+// linhaGravada: as linhas que só o tráfego conhece (LOGIN, WEBHOOK_CADASTRO) também vão ao
+// kalmanordemevento, para o recarregamento da partida (sem segredo: só o resumo e o status).
+func (p *Ponte) linhaGravada(tipo, msgtype string, status int, dur time.Duration, resumo string) {
+	p.traf.linha(tipo, "ENV", status, dur, "", "", resumo)
+	cod := ""
+	if status >= 0 {
+		cod = strconv.Itoa(status)
+	}
+	p.ouv.Registrar(repo.EventoFIX{Direcao: "ENV", MsgType: msgtype, Texto: resumoTrafego(resumo), Codigo: cod})
 }
 
 // WebhookRecusado (v1.21): o receptor recusou (404) um pedido; o motivo, nunca o caminho.

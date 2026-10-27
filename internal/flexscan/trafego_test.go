@@ -1,12 +1,14 @@
 package flexscan
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"gammaquant.com.br/kalman-ordens/internal/config"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
+	"gammaquant.com.br/kalman-ordens/internal/repo"
 )
 
 // v1.21: o buffer circular do tráfego (as últimas 2.000), desde e limite, e o resumo (ASCII, uma
@@ -50,5 +52,54 @@ func TestConferenciaWebhookPadrao(t *testing.T) {
 	c.padroes()
 	if c.ConfereWebhook != 10*time.Minute {
 		t.Fatalf("padroes: %s", c.ConfereWebhook)
+	}
+}
+
+// 28/10: o tráfego recarregado do kalmanordemevento — pedido e resposta pareados (duração, id do
+// POST), timeout sem duração, consulta 404, evento antigo (msgtype "FLX-") e resposta sem pedido
+// ignorados, login gravado; no máximo a capacidade do buffer, as mais recentes.
+func TestLinhasDoRegistro(t *testing.T) {
+	t0 := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	em := func(ms int) time.Time { return t0.Add(time.Duration(ms) * time.Millisecond) }
+	evs := []repo.EventoFIX{
+		{Direcao: "REC", MsgType: "FLX-", ClOrdID: "KM-E-1-1", Em: em(0)}, // antes da 0013
+		{Direcao: "ENV", MsgType: msgLogin, Texto: "partida OK", Codigo: "200", Em: em(1)},
+		{Direcao: "ENV", MsgType: "FLX-POST", ClOrdID: "KM-E-1-1", Bruta: "POST /orders account=S-1 price=130020 qtty=1 side=1 symbol=WINZ26", Em: em(10)},
+		{Direcao: "REC", MsgType: "FLX-202", ClOrdID: "KM-E-1-1", Texto: "POST ", Bruta: `{"id":"abc"}`, Em: em(71)},
+		{Direcao: "REC", MsgType: "FLX-404", ClOrdID: "KM-E-1-1", OrderID: "abc", Texto: "GET Order not found", Em: em(300)},
+		{Direcao: "ENV", MsgType: "FLX-DELETE", ClOrdID: "KM-E-1-2", OrderID: "abc", Bruta: "DELETE /orders/abc", Em: em(400)},
+		{Direcao: "REC", MsgType: "FLX-SEMRESPOSTA", ClOrdID: "KM-E-1-2", OrderID: "abc", Texto: "DELETE timeout", Em: em(3400)},
+		{Direcao: "REC", MsgType: "FLX-202", ClOrdID: "KM-E-9-9", Texto: "PUT ", Em: em(3500)}, // sem pedido
+	}
+	ls := LinhasDoRegistro(evs)
+	if len(ls) != 4 {
+		t.Fatalf("%d linhas: %+v", len(ls), ls)
+	}
+	login, post, cons, del := ls[0], ls[1], ls[2], ls[3]
+	if login.Tipo != TrafegoLogin || *login.StatusHTTP != 200 || login.Resumo != "partida OK" {
+		t.Fatalf("login: %+v", login)
+	}
+	if post.Tipo != TrafegoPOST || *post.StatusHTTP != 202 || *post.DuracaoMs != 61 || *post.FlexscanID != "abc" ||
+		post.Resumo != "C 1 WINZ26 limite 130020 conta S-1" || post.Em != "2026-10-28T09:00:00.010-03:00" {
+		t.Fatalf("post: %+v", post)
+	}
+	if cons.Tipo != TrafegoConsulta || *cons.StatusHTTP != 404 || cons.Resumo != "consulta -> Order not found" {
+		t.Fatalf("consulta: %+v", cons)
+	}
+	if del.Tipo != TrafegoDELETE || del.StatusHTTP != nil || del.DuracaoMs != nil || del.Resumo != "cancelamento -> sem resposta: timeout" {
+		t.Fatalf("delete: %+v", del)
+	}
+	// o buffer: as mais recentes, numeradas a partir de 1
+	var muitos []repo.EventoFIX
+	for i := 0; i < CapacidadeTrafego+10; i++ {
+		muitos = append(muitos, repo.EventoFIX{Direcao: "ENV", MsgType: msgLogin, Texto: strconv.Itoa(i), Codigo: "200", Em: em(i)})
+	}
+	p := &Ponte{traf: novoTrafego(relogio.NovoControlado(t0))}
+	if n := p.CarregarTrafego(muitos); n != CapacidadeTrafego {
+		t.Fatalf("carregadas: %d", n)
+	}
+	ls, ult, s := p.traf.Consultar(0, 1)
+	if ult != CapacidadeTrafego || ls[0].Seq != 1 || ls[0].Resumo != "10" || s["recarregadas"] != CapacidadeTrafego {
+		t.Fatalf("buffer: ult %d %+v %v", ult, ls, s["recarregadas"])
 	}
 }

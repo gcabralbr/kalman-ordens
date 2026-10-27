@@ -112,6 +112,9 @@ func (m *Medido) DiaDaOperacao(mod string, id int64) (string, bool, error) {
 func (m *Medido) EventosFIXDasOrdens(ids []int64) ([]EventoFIX, error) {
 	return medir("EventosFIXDasOrdens", func() ([]EventoFIX, error) { return m.Base.EventosFIXDasOrdens(ids) })
 }
+func (m *Medido) EventosFlexscanEntre(de, ate time.Time, limite int) ([]EventoFIX, error) {
+	return medir("EventosFlexscanEntre", func() ([]EventoFIX, error) { return m.Base.EventosFlexscanEntre(de, ate, limite) })
+}
 func (m *Medido) PublicadosDaOperacao(mod string, id int64) ([]Publicado, error) {
 	return medir("PublicadosDaOperacao", func() ([]Publicado, error) { return m.Base.PublicadosDaOperacao(mod, id) })
 }

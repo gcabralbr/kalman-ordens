@@ -205,3 +205,8 @@ func (r *MariaDB) Expurgar(antes time.Time, lote int, simular bool) (map[string]
 	}
 	return n, nil
 }
+
+func (r *MariaDB) EventosFlexscanEntre(de, ate time.Time, limite int) ([]EventoFIX, error) {
+	return r.eventosFIX(`id IN (SELECT id FROM (SELECT id FROM kalmanordemevento WHERE em >= ? AND em < ? AND msgtype LIKE 'FLX-%'
+		ORDER BY id DESC LIMIT ?) ultimos)`, de.UTC(), ate.UTC(), limite)
+}

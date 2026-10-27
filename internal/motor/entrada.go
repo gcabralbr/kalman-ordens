@@ -64,7 +64,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 		return nil, simples("SEM_SESSAO", "sessão FIX não logada")
 	}
 	if m.haSemConfirmacao() {
-		return nil, simples("SEM_CONFIRMACAO", "há ordem sem confirmação do PnT")
+		return nil, simples("SEM_CONFIRMACAO", "há ordem sem confirmação da corretora")
 	}
 	if m.conciliando {
 		return nil, simples("CONCILIANDO", "conciliação em andamento")

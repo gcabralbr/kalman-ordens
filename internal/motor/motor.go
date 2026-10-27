@@ -542,8 +542,27 @@ func (m *Motor) Iniciar() error {
 	m.carregarUsuarios()
 	m.verQuarentena()
 	m.verParada()
+	m.recarregarTrafegoFlexscan()
 	go m.laco()
 	return nil
+}
+
+// recarregarTrafegoFlexscan (28/10): as trocas do dia com a Flexscan voltam ao buffer do
+// /flexscan/trafego (antes do login da ponte). Falha de leitura não impede a partida: só log.
+func (m *Motor) recarregarTrafegoFlexscan() {
+	t, ok := m.flx.(interface{ CarregarTrafego([]repo.EventoFIX) int })
+	if m.flx == nil || !ok {
+		return
+	}
+	de, ate, err := Dia(m.dia)
+	if err == nil {
+		var evs []repo.EventoFIX
+		if evs, err = m.repo.EventosFlexscanEntre(de, ate, 4*flexscan.CapacidadeTrafego); err == nil {
+			slog.Info("flexscan: tráfego do dia recarregado", "eventos", len(evs), "linhas", t.CarregarTrafego(evs))
+			return
+		}
+	}
+	slog.Warn("flexscan: tráfego do dia não recarregado", "erro", err)
 }
 
 // recontarReplaces (v1.13): os 35=G já enviados a cada 1014 viva, do kalmanordemevento.
@@ -1320,4 +1339,13 @@ func (m *Motor) TrafegoFlexscan(desde int64, limite int) (map[string]any, bool) 
 		}
 	}
 	return map[string]any{"mensagens": ls, "ultimo_seq": ult, "saude": saude}, true
+}
+
+// corretora (28/10): o nome do conector da operação nos textos de alerta e recusa ("PnT" ou
+// "Flexscan"); a operação da Flexscan não aparece mais como do PnT.
+func (op *operacao) corretora() string {
+	if op.conector() == dominio.ConectorFlexscan {
+		return "Flexscan"
+	}
+	return "PnT"
 }

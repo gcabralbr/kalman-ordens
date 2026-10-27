@@ -50,7 +50,7 @@ func (p *Ponte) conferirWebhook(ctx context.Context) {
 	if r.Status == http.StatusUnauthorized {
 		p.semSessao("401 depois de novo login")
 	}
-	p.traf.linha(TrafegoWebhookCadastro, "ENV", statusDe(r), duracaoDe(r, time.Since(t0)), "", "",
+	p.linhaGravada(TrafegoWebhookCadastro, msgCadastro, statusDe(r), duracaoDe(r, time.Since(t0)),
 		comResposta(fmt.Sprintf("recadastro (%s; %d outro(s) cadastro(s) do usuario)", gatilhoWebhook, n), r))
 	if r.Status != http.StatusOK && r.Status != http.StatusCreated {
 		texto := fmt.Sprintf("[flexscan] webhook ausente do cadastro da Flexscan e o recadastro falhou (%s): so a consulta segura as execucoes", r.TextoErro())
@@ -81,14 +81,14 @@ func (p *Ponte) listarWebhooks(ctx context.Context) (achou bool, outros int, ok 
 		p.mu.Lock()
 		p.webhookCad = nil
 		p.mu.Unlock()
-		p.traf.linha(TrafegoWebhookCadastro, "ENV", statusDe(r), dur, "", "", comResposta("conferencia", r))
+		p.linhaGravada(TrafegoWebhookCadastro, msgCadastro, statusDe(r), dur, comResposta("conferencia", r))
 		return false, 0, false
 	}
 	var l struct {
 		Records []cadastroWebhook `json:"records"`
 	}
 	if err := decodificar(r.Corpo, &l); err != nil {
-		p.traf.linha(TrafegoWebhookCadastro, "ENV", r.Status, dur, "", "", "conferencia: lista ilegivel")
+		p.linhaGravada(TrafegoWebhookCadastro, msgCadastro, r.Status, dur, "conferencia: lista ilegivel")
 		return false, 0, false
 	}
 	for _, c := range l.Records {
@@ -98,7 +98,7 @@ func (p *Ponte) listarWebhooks(ctx context.Context) (achou bool, outros int, ok 
 			outros++
 		}
 	}
-	p.traf.linha(TrafegoWebhookCadastro, "ENV", r.Status, dur, "", "",
+	p.linhaGravada(TrafegoWebhookCadastro, msgCadastro, r.Status, dur,
 		fmt.Sprintf("conferencia: %s (%d outro(s) cadastro(s) do usuario)", map[bool]string{true: "presente", false: "ausente"}[achou], outros))
 	return achou, outros, true
 }

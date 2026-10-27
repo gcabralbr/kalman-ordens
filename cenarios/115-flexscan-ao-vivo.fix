@@ -73,7 +73,7 @@ flx_nao_achada 0
 
 # PUT do TRSP
 stop 11501 preco=129800 origem=TRSP uid=8
-resposta aceito=true situacao=ENVIADO
+resposta aceito=true situacao=ENVIADO preco_stop_corretora=129510 preco_limite_corretora=129410 preco_stop_pnt=129510
 flx_recebe PUT id=$P1 stopPrice=129800 price=129700
 evento PROTECAO_AJUSTADA operacao_id=11501 preco_stop=129800 stop_origem=TRSP
 flx_trafego tipo=PUT clordid=KM-P-11501-2 status_http=202 operacao_id=11501 resumo=~129800 = 1
@@ -112,11 +112,37 @@ http GET /flexscan/trafego?limite=0
 resposta _status=400
 http GET /flexscan/trafego?desde=999999
 resposta _status=200 mensagens.#=0 ultimo_seq=* saude.logado=true saude.consultas_min=* saude.boot=* saude.latencia_post_p50_ms=*
+# a lista do dia diz o conector (28/10: a operação da Flexscan aparecia como do PnT no admin)
+http GET /operacoes?dia=2026-10-28
+resposta _lista.0.operacao_id=11501 _lista.0.conector=FLEXSCAN
+
 # o contrato (SPEC v1.21 §4.1 e §4.2) tem a forma da resposta real: o exemplo que o Kalman lê
 http GET /flexscan/trafego?limite=2000
 contrato docs/SPEC-ORDENS-v1.21.md 4.1
 http GET /saude
 contrato docs/SPEC-ORDENS-v1.21.md 4.2 flexscan
+
+# --- restart (28/10): o tráfego do dia volta do kalmanordemevento, no mesmo formato e uma vez só
+# (o processo é novo); as consultas pela mesma regra (só a 404 e as que mudaram o estado); o login
+# e o cadastro também. O webhook recusado (404) não é gravado e não volta
+reinicia_servico
+aguarda_logon
+avanca 3s
+http GET /flexscan/trafego?limite=1
+resposta saude.recarregadas=* mensagens.0.seq=1
+flx_trafego tipo=POST clordid=KM-E-11501-1 status_http=202 operacao_id=11501 modulo=KALMAN uid=8 flexscan_id=* duracao_ms=* resumo=~S-1117150 = 1
+flx_trafego tipo=CONSULTA clordid=KM-E-11501-1 status_http=404 = 1
+flx_trafego tipo=PUT clordid=KM-P-11501-2 status_http=202 resumo=~129800 = 1
+flx_trafego tipo=DELETE clordid=KM-P-11501-3 status_http=202 = 1
+flx_trafego tipo=FLX-PRECO clordid=KM-P-11501-1 resumo=~129740 = 1
+flx_trafego tipo=WEBHOOK clordid=KM-E-11501-1 status_http=200 resumo=~retrato = 1
+# a partida nova acha o webhook (presente): os dois recadastros são os do registro
+flx_trafego tipo=WEBHOOK_CADASTRO resumo=~recadastro status_http=200 = 2
+flx_trafego tipo=LOGIN resumo=~partida = 2
+flx_trafego tipo=LOGIN resumo=~401 = 1
+flx_trafego tipo=WEBHOOK status_http=404 = 0
+http GET /flexscan/trafego?limite=2000
+contrato docs/SPEC-ORDENS-v1.21.md 4.1
 saude posicao=0 divergente=false parada=null
 flx_nada
 nada

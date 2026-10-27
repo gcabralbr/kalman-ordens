@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,6 +81,9 @@ type Repositorio interface {
 	// DiaDaOperacao: o dia (pregão) da operação (modulo vazio = KALMAN).
 	DiaDaOperacao(modulo string, operacaoID int64) (string, bool, error)
 	EventosFIXDasOrdens(ordemIDs []int64) ([]EventoFIX, error)
+	// EventosFlexscanEntre (28/10): os eventos da ponte Flexscan (msgtype FLX-*) em [de, ate), os
+	// limite mais recentes, em ordem; o tráfego da aba "Flexscan ao vivo" recarregado na partida.
+	EventosFlexscanEntre(de, ate time.Time, limite int) ([]EventoFIX, error)
 	PublicadosDaOperacao(modulo string, operacaoID int64) ([]Publicado, error)
 	// PublicadosEntre: [de, ate); tipo vazio = todos.
 	PublicadosEntre(de, ate time.Time, tipo string) ([]Publicado, error)
@@ -363,4 +367,19 @@ func (m *Memoria) Eventos() []EventoFIX {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]EventoFIX(nil), m.eventos...)
+}
+
+func (m *Memoria) EventosFlexscanEntre(de, ate time.Time, limite int) ([]EventoFIX, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var es []EventoFIX
+	for _, e := range m.eventos {
+		if strings.HasPrefix(e.MsgType, "FLX-") && !e.Em.Before(de) && e.Em.Before(ate) {
+			es = append(es, e)
+		}
+	}
+	if len(es) > limite {
+		es = es[len(es)-limite:]
+	}
+	return es, nil
 }

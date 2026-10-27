@@ -64,6 +64,8 @@ type trafego struct {
 	ini, n    int
 	seq       int64
 	consultas []time.Time // as do último minuto, inclusive as que não viram linha
+	// linhas recarregadas do kalmanordemevento na partida (as trocas do dia antes do restart)
+	recarregadas int
 }
 
 func novoTrafego(rel relogio.Relogio) *trafego {
@@ -152,7 +154,7 @@ func (t *trafego) Consultar(desde int64, limite int) ([]LinhaTrafego, int64, map
 		sort.Slice(posts, func(i, j int) bool { return posts[i] < posts[j] })
 		p50, max = posts[(len(posts)-1)/2], posts[len(posts)-1]
 	}
-	return lista, t.seq, map[string]any{"boot": t.boot.In(relogio.Fuso).Format(formatoEmTrafego), "msgs_min": minuto,
+	return lista, t.seq, map[string]any{"boot": t.boot.In(relogio.Fuso).Format(formatoEmTrafego), "recarregadas": t.recarregadas, "msgs_min": minuto,
 		"consultas_min": len(t.consultas), "latencia_post_p50_ms": p50, "latencia_post_max_ms": max}
 }
 

@@ -356,7 +356,7 @@ func (m *Motor) statusDaOrdem(op *operacao, o *ordem, st string, estavaEncerrada
 	final := st == "4" || st == "8" || st == "C"
 	switch {
 	case viva && estavaEncerrada:
-		m.al.Emitir("CONCILIACAO", "", fmt.Sprintf("ordem viva no PnT e encerrada na tabela, atualizando: %s", o.ClOrdAtual), op.OperacaoID)
+		m.al.Emitir("CONCILIACAO", "", fmt.Sprintf("ordem viva na %s e encerrada na tabela, atualizando: %s", op.corretora(), o.ClOrdAtual), op.OperacaoID)
 		o.Estado = ativaOuParcial(o)
 	case viva:
 		if o.Estado == dominio.Enviando || o.Estado == dominio.SemConfirmacao || o.Estado == dominio.Desconhecida || o.Estado == dominio.Pendente {
@@ -372,7 +372,7 @@ func (m *Motor) statusDaOrdem(op *operacao, o *ordem, st string, estavaEncerrada
 		}
 	case final && !estavaEncerrada:
 		m.confirmar(op, o)
-		m.al.Emitir("CONCILIACAO", "", fmt.Sprintf("ordem encerrada no PnT (39=%s) e viva na tabela: %s", st, o.ClOrdAtual), op.OperacaoID)
+		m.al.Emitir("CONCILIACAO", "", fmt.Sprintf("ordem encerrada na %s (39=%s) e viva na tabela: %s", op.corretora(), st, o.ClOrdAtual), op.OperacaoID)
 		limparPendencia(o)
 		motivo := map[string]string{"4": "CANCELADA", "8": "REJEITADA", "C": "EXPIRADA"}[st]
 		o.Estado = map[string]dominio.EstadoOrdem{"4": dominio.Cancelada, "8": dominio.Rejeitada, "C": dominio.Expirada}[st]
@@ -597,7 +597,7 @@ func (m *Motor) ordemEncerrada(op *operacao, o *ordem, motivo string) {
 
 func (m *Motor) ordemRejeitada(op *operacao, o *ordem, texto, codigo string) {
 	m.publicar("RECUSADA", op, map[string]any{"papel": o.Papel.String(), "motivo": texto, "codigo": codigo, "clordid": o.ClOrdAtual})
-	m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("recusa do PnT %s: [%s] %s", o.ClOrdAtual, codigo, texto), op.OperacaoID)
+	m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("recusa da %s %s: [%s] %s", op.corretora(), o.ClOrdAtual, codigo, texto), op.OperacaoID)
 	switch o.Papel {
 	case dominio.Entrada:
 		m.encerrarEntrada(op, "REJEITADA", true)

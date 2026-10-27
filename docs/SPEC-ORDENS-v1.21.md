@@ -28,6 +28,26 @@ ao banco: o registro completo continua no `kalmanordemevento` (`msgtype FLX-*`, 
   404 "Order not found" logo depois do 202) ou quando mudam o estado de uma ordem. As que não trazem
   novidade só contam em `saude.consultas_min`, para não encher o buffer.
 
+## 1b. O tráfego volta depois de um restart (28/10)
+
+Antes, o buffer era só da memória e se perdia a cada restart: a aba mostrava "serviço desde
+<partida>". Agora, na partida (antes do login da ponte), o serviço recarrega do `kalmanordemevento`
+as trocas do dia com a Flexscan: os 8.000 eventos `FLX-*` mais recentes, até as 2.000 linhas do
+buffer, no mesmo formato.
+- **POST/PUT/DELETE:** o pedido e a resposta pareados pelo método e pelo clordid. A duração é a
+  diferença das horas gravadas, e o id da ordem vem da resposta do POST.
+- **CONSULTA:** as que falharam (gravadas com o status) e as que mudaram o estado (gravadas com o
+  corpo). As outras nunca foram gravadas, então a regra é a mesma do buffer ao vivo.
+- **WEBHOOK, FLX-PRECO:** do corpo e do texto gravados.
+- **LOGIN e WEBHOOK_CADASTRO:** passam a ser gravados (`FLX-LOGIN`, `FLX-WHCAD`, só o resumo e o
+  status), a partir deste pacote.
+
+Ficam de fora:
+- os eventos de antes da 0013 (o `msgtype` cortado em "FLX-" não diz o que foi);
+- o webhook recusado (404, que não é gravado: seria uma porta para encher o banco).
+
+`saude.recarregadas` diz quantas linhas vieram do registro.
+
 ## 2. `/saude.flexscan`: webhook cadastrado e último login
 
 - **Conferência do cadastro:** `GET /webhooks` na partida (depois do login) e a cada
@@ -93,7 +113,7 @@ ao de antes (os roteiros antigos rodam assim).
     "webhook_cadastrado": true, "webhook_conferido_em": "2026-10-27T09:52:40-03:00",
     "webhook_recadastrado_em": null,
     "ultimo_login": {"em": "2026-10-27T09:20:21.004-03:00", "motivo": "partida", "resultado": "OK"},
-    "boot": "2026-10-27T09:20:20.512-03:00", "msgs_min": 12, "consultas_min": 40,
+    "boot": "2026-10-27T09:20:20.512-03:00", "recarregadas": 0, "msgs_min": 12, "consultas_min": 40,
     "latencia_post_p50_ms": 58, "latencia_post_max_ms": 140
   }
 }
@@ -119,6 +139,8 @@ ao de antes (os roteiros antigos rodam assim).
 `/saude.flexscan`, porque o tráfego é lido da memória da ponte, sem a fila do motor (correção de
 27/10: o exemplo anterior dizia "os campos de /saude.flexscan"). Traz também:
 - `boot`: a hora da partida do processo;
+- `recarregadas`: quantas linhas do buffer vieram do registro do dia na partida (28/10, ver 1b). As
+  linhas recarregadas têm o mesmo formato e começam no `seq` 1; as ao vivo seguem a numeração;
 - `msgs_min`: linhas no último minuto;
 - `consultas_min`: consultas no último minuto, inclusive as que não entram no buffer;
 - `latencia_post_p50_ms` / `latencia_post_max_ms`: a duração dos POSTs no buffer (`null` sem POST).
@@ -157,6 +179,29 @@ O bloco inteiro, como o serviço devolve (fonte única, `PNT_DESLIGADO=1`):
 Os campos que já existem continuam iguais: `logado`, `token_expira`, `receptor`, `webhooks_recebidos`,
 `ultimo_webhook`, `ultimo_erro`, `ordens_acompanhadas` e `ordens_vivas`.
 
+### 4.2b A operação da Flexscan não aparece como do PnT (28/10)
+
+Na tela de admin, a operação da Flexscan aparecia com "PnT" porque o `GET /operacoes` não trazia o
+conector (a tela assume `PNT` na falta, `o.conector || 'PNT'`). O serviço passa a trazer:
+- **`GET /operacoes`:** `conector` (`PNT` ou `FLEXSCAN`) em cada operação; `null` na linha de pedido
+  recusado que não virou operação. O `GET /ordens/{id}` e o histórico já traziam;
+- **`POST /operacoes/{id}/stop` (resposta):** `preco_stop_corretora` e `preco_limite_corretora`, o que
+  está na corretora, com nome neutro. Os `preco_stop_pnt`/`preco_limite_pnt` continuam (mesmo valor)
+  por compatibilidade;
+- **textos de alerta e recusa** que também valem para a Flexscan dizem o conector da operação:
+  - "recusa da Flexscan ...";
+  - "ordem viva na Flexscan e encerrada na tabela";
+  - "ordem viva na tabela e ausente na Flexscan";
+  - "ordem ... sem resposta da Flexscan";
+  - "a stop já disparou na Flexscan";
+  - "há ordem sem confirmação da corretora".
+
+  Os que só existem no PnT (sessão FIX, estado de erro 39=7, túnel, `GET /pnt/ordens`) não mudam.
+
+**Pedido ao CC do Kalman:** na linha do tempo da operação (`kalman-admin.html`), os textos fixos
+"enviada ao PnT", "recusado pelo PnT", "rejeitada pelo PnT" e "nada foi ao PnT" devem usar o
+`conector` da operação (`operacao.conector` no histórico, `conector` na lista do dia).
+
 ### 4.3 Alerta novo
 
 `FLEXSCAN_WEBHOOK_AUSENTE`, **crítico**: o webhook não está cadastrado na Flexscan. O texto diz se o
@@ -182,6 +227,15 @@ para o topo da tela, como os outros críticos do `/saude`.
   - **`/saude.flexscan`:** `ultimo_login`, e `fonte` com `compartilhada` `true` e `false`; com
     `PNT_DESLIGADO=1` (roteiro 114), `flexscan.simbolo` e `flexscan.fonte` presentes e iguais aos do
     topo.
+- **Recarregamento (28/10):**
+  - roteiro 115: `reinicia_servico` no fim. O tráfego volta uma vez só, no mesmo formato
+    (POST com a operação, o módulo, o uid, o id e a duração; a CONSULTA 404; PUT, DELETE, FLX-PRECO,
+    WEBHOOK, LOGIN, o cadastro), sem o webhook recusado. O contrato confere também depois do
+    restart. Mutação: sem o recarregamento, reprova;
+  - `TestLinhasDoRegistro`: pareamento, timeout, evento antigo e resposta sem pedido, o limite do
+    buffer;
+  - o 115 também verifica o `conector` FLEXSCAN no `GET /operacoes` e os `preco_*_corretora` do
+    ajuste.
 - **Contrato × serviço** (27/10): o verbo de roteiro `contrato ARQUIVO SECAO [caminho]` compara a
   forma da última resposta HTTP com o primeiro bloco ```json da seção: as mesmas chaves nos dois
   sentidos, cada item das listas e o tipo JSON quando os dois lados não são null. O 115 o usa no

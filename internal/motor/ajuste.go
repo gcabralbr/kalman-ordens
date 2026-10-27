@@ -106,7 +106,7 @@ func (m *Motor) ajustarStop(id int64, a AjusteStop) (Resposta, *recusa) {
 		return nil, simples("SEM_PROTECAO", "sem 1014 viva")
 	}
 	if !p.disparadaEm.IsZero() {
-		return nil, simples("PROTECAO_DISPARADA", "a 1014 já disparou no PnT")
+		return nil, simples("PROTECAO_DISPARADA", "a stop já disparou na "+op.corretora())
 	}
 	if p.replaces >= m.p.Replaces1014Max-m.p.Replaces1014Reserva {
 		// v1.13: a reserva fica para a saída por replace; o trailing segue pelo TRSP do gestor
@@ -156,7 +156,9 @@ func (m *Motor) ajustarStop(id int64, a AjusteStop) (Resposta, *recusa) {
 		m.ajustarProtecao(op)
 	}
 	return Resposta{"aceito": true, "modulo": op.Modulo, "operacao_id": op.OperacaoID, "situacao": situacao,
-		"preco_stop": stop, "preco_limite": lim, "preco_stop_pnt": p.Stop, "preco_limite_pnt": p.StopLim}, nil
+		"preco_stop": stop, "preco_limite": lim, "preco_stop_pnt": p.Stop, "preco_limite_pnt": p.StopLim,
+		// 28/10: o que está na corretora, com nome neutro (os _pnt ficam por compatibilidade)
+		"preco_stop_corretora": p.Stop, "preco_limite_corretora": p.StopLim}, nil
 }
 
 // protecaoOcupada: a 1014 tem um pedido sem resposta (envio, replace, cancel) ou está em erro —
