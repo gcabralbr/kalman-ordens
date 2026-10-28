@@ -3,7 +3,9 @@ package motor
 import (
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
+	"strconv"
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/pnt"
@@ -190,7 +192,30 @@ func (m *Motor) conciliar() {
 	naoJulgadas := 0
 	vistas := map[*ordem]bool{}
 	ignoradas, divergencias := 0, 0
+	// v1.22: primeiro as ordens que a corretora tem e o banco não (enviadas antes da gravação, o
+	// processo caiu): reconstituídas e aplicadas antes das outras, para o fill da saída zerar a
+	// operação antes de a 1014 cancelada parecer "cancelada sem pedido nosso"
+	reconstituidas := map[int]*ordem{}
 	for i, r := range m.massRespostas {
+		if r != nil && m.localizar(r.Texto(37), r.Texto(11), r.Texto(41)) == nil {
+			if o := m.reconstituir(*r); o != nil {
+				reconstituidas[i] = o
+			}
+		}
+	}
+	ordemAplicar := make([]int, 0, len(m.massRespostas))
+	for i := range m.massRespostas {
+		if reconstituidas[i] != nil {
+			ordemAplicar = append(ordemAplicar, i)
+		}
+	}
+	for i := range m.massRespostas {
+		if reconstituidas[i] == nil {
+			ordemAplicar = append(ordemAplicar, i)
+		}
+	}
+	for _, i := range ordemAplicar {
+		r := m.massRespostas[i]
 		if r == nil {
 			ignoradas++
 			continue
@@ -300,4 +325,91 @@ func (m *Motor) conciliar() {
 	}
 	m.al.Emitir("CONCILIACAO", "", texto, 0)
 	slog.Info("conciliação", "resumo", texto)
+}
+
+// reconstituir (v1.22): a 1014 e a saída saem antes da gravação do lote; se o processo cai entre o
+// envio e a gravação, a ordem fica na corretora sem a linha no banco. O ClOrdID diz a operação e o
+// papel: com a operação conhecida e não encerrada, a ordem é recriada com o que o mass status traz
+// (lado, quantidade, preço, gatilho 20828/20829, id), o contador de ClOrdID da operação passa do número dela e
+// sai ORDEM_RECONSTITUIDA (crítico); o ExecutionReport é aplicado depois, como o de qualquer ordem
+// (fill incluído). Sem a operação, encerrada ou com o ClOrdID fora do formato: nil (DESCONHECIDA,
+// como antes).
+func (m *Motor) reconstituir(r pnt.Mensagem) *ordem {
+	cl := r.Texto(11)
+	g := reClOrdN.FindStringSubmatch(cl)
+	if g == nil {
+		return nil
+	}
+	modulo := g[1]
+	if modulo == "" {
+		modulo = dominio.ModuloPadrao
+	}
+	opid, _ := strconv.ParseInt(g[3], 10, 64)
+	n, _ := strconv.Atoi(g[4])
+	op := m.porOp[chaveOperacao{modulo, opid}]
+	if op == nil || op.Estado.Final() {
+		return nil
+	}
+	papel := dominio.Papel(g[2][0])
+	lado := dominio.Compra
+	if r.Texto(54) == "2" {
+		lado = dominio.Venda
+	}
+	qtd, _ := r.Inteiro(38)
+	estrategia := pnt.EstrategiaAgendada
+	if papel == dominio.Protecao {
+		estrategia = pnt.EstrategiaStop
+	}
+	if papel == dominio.Entrada {
+		for _, x := range op.ordens {
+			if x.Papel == dominio.Entrada {
+				estrategia = x.Estrategia
+			}
+		}
+	}
+	m.seqOrdens++
+	o := &ordem{seq: m.seqOrdens, Ordem: dominio.Ordem{
+		ID: m.novoIDOrdem(), Data: op.Data, Modulo: op.Modulo, UID: op.UID, OperacaoID: op.OperacaoID, Papel: papel, Conta: op.Conta, Simbolo: op.Simbolo,
+		ClOrdBase: cl, ClOrdAtual: cl, Estrategia: estrategia, Lado: lado, Qtd: qtd, Estado: dominio.Enviando, CriadaEm: m.agora(),
+	}}
+	if px, ok := r.Decimal(44); ok {
+		o.Preco = px.Round(0).IntPart()
+	}
+	if px, ok := r.Decimal(20828); ok { // gatilho da 1014 (PnT; a ponte da Flexscan põe o mesmo)
+		o.Stop, o.StopLim = px.Round(0).IntPart(), o.Preco
+	}
+	if px, ok := r.Decimal(20829); ok {
+		o.StopLim = px.Round(0).IntPart()
+	}
+	if op.ContadorN == nil {
+		op.ContadorN = map[string]int{}
+	}
+	if n > op.ContadorN[papel.String()] {
+		op.ContadorN[papel.String()] = n // o próximo ClOrdID do papel não repete o dela
+	}
+	m.indexar(op, o)
+	m.salvarOrdem(o)
+	if papel == dominio.Saida && !op.Estado.Saindo() && faseViva(r.Texto(39)) {
+		// a saída viva na corretora: a operação está saindo (a 1014 cancelada pela saída não é
+		// "cancelada sem pedido nosso")
+		m.mudar(op, dominio.Saindo)
+	}
+	m.salvarOp(op)
+	slog.Warn("conciliação: ordem da corretora sem linha no banco, reconstituída", "op", op.OperacaoID, "clordid", cl, "id", r.Texto(37))
+	m.al.Emitir("ORDEM_RECONSTITUIDA", chaveOp("ORDEM_RECONSTITUIDA:"+cl, op),
+		fmt.Sprintf("ordem %s na %s sem registro no banco (enviada e nao gravada: o processo caiu no meio?): reconstituida pela operacao %d (%s %d, 39=%s); conferir",
+			cl, op.corretora(), op.OperacaoID, lado.Letra(), qtd, r.Texto(39)), op.OperacaoID)
+	return o
+}
+
+// reClOrdN: o ClOrdID do motor com o número (KM-[MOD-]P-<op>-<n>).
+var reClOrdN = regexp.MustCompile(`^KM-(?:([A-Z][A-Z0-9]{1,7})-)?([EPS])-(\d+)-(\d+)$`)
+
+// faseViva: o 39 de uma ordem que ainda trabalha (nova, parcial, substituída, pendentes).
+func faseViva(st string) bool {
+	switch st {
+	case "0", "1", "5", "6", "A", "E":
+		return true
+	}
+	return false
 }

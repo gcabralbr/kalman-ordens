@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -90,7 +91,11 @@ type estadoVolta struct {
 	estados     []repo.EstadoNovo
 	sessao      []repo.EventoSessao
 	envios      []envioPendente
-	aposVolta   []func()
+	enviados    int      // envios limitados desta volta (maxEnviosPorVolta), nas duas rodadas
+	respostas   []func() // v1.22: respostas HTTP, antes da gravação
+	// respostas que esperam o envio de uma entrada da volta (depois da gravação)
+	respostasTarde []func()
+	aposVolta      []func()
 
 	muPedidos sync.Mutex
 	pedidos   []repo.PedidoHTTP // vêm das goroutines HTTP
@@ -173,11 +178,36 @@ func (m *Motor) laco() {
 	}
 }
 
-// aposVolta: f roda depois do commit e do envio desta volta (respostas HTTP, Fazer).
+// aposVolta: f roda depois do commit e do envio desta volta (Fazer, Parar, consultas do admin).
 func (m *Motor) aposVolta(f func()) { m.v.aposVolta = append(m.v.aposVolta, f) }
 
-// fecharVolta: grava o lote, envia e só então responde.
+// responder (v1.22): a resposta HTTP de um pedido sai no fim da volta, antes da gravação do lote
+// (o banco lento não segura o gestor; a resposta vem da memória do motor, a mesma do GET /ordens).
+// Com uma entrada desta volta esperando o envio (ela sai depois da gravação), a resposta espera o
+// envio, como antes: a entrada que não sai muda a resposta (ENVIO_FALHOU).
+func (m *Motor) responder(f func()) {
+	if slices.ContainsFunc(m.v.envios, func(e envioPendente) bool { return e.prio == prioEntrada }) {
+		m.v.respostasTarde = append(m.v.respostasTarde, f)
+		return
+	}
+	m.v.respostas = append(m.v.respostas, f)
+}
+
+// loteLento (v1.22): a gravação do lote acima disso deixa um WARN no journal.
+const loteLento = time.Second
+
+// fecharVolta (v1.22): 1014, saída, cancel e mass status saem antes da gravação (não esperam o
+// banco), as respostas HTTP também; depois grava o lote, envia as entradas (gravar antes de enviar,
+// v1.10 B, segue valendo para a entrada) e roda o aposVolta. Um envio que sai e não chega ao banco
+// (o processo cai no meio) é achado pela conciliação da partida (conciliacao.go, reconstituir).
 func (m *Motor) fecharVolta() {
+	m.v.enviados = 0
+	m.despachar(true)
+	rs := m.v.respostas
+	m.v.respostas = nil
+	for _, f := range rs {
+		f()
+	}
 	l := m.montarLote()
 	if !l.Vazio() {
 		t0 := time.Now()
@@ -187,8 +217,12 @@ func (m *Motor) fecharVolta() {
 			slog.Warn("gravação do lote falhou, tentando de novo", "erro", err, "linhas", l.Linhas())
 			err = m.repo.GravarLote(l)
 		}
-		metricas.Lote.Observar(time.Since(t0).Seconds())
+		dur := time.Since(t0)
+		metricas.Lote.Observar(dur.Seconds())
 		metricas.LoteLinhas.Observar(float64(l.Linhas()))
+		if dur >= loteLento {
+			slog.Warn("gravação do lote lenta", "duracao_ms", dur.Milliseconds(), "linhas", l.Linhas())
+		}
 		if err != nil && repo.ErroDeDado(err) {
 			// v1.13: erro de dado não se resolve repetindo: linha a linha, a ruim para a quarentena
 			slog.Error("gravação do lote: erro de dado, gravando linha a linha", "erro", err, "linhas", l.Linhas())
@@ -203,7 +237,13 @@ func (m *Motor) fecharVolta() {
 			m.loteGravado(l)
 		}
 	}
-	m.despachar()
+	m.despachar(false)
+	// as que esperavam a entrada, e o que a gravação ou o envio decidiram, respondem nesta volta
+	rs = append(m.v.respostasTarde, m.v.respostas...)
+	m.v.respostas, m.v.respostasTarde = nil, nil
+	for _, f := range rs {
+		f()
+	}
 	fs := m.v.aposVolta
 	m.v.aposVolta = nil
 	for _, f := range fs {
@@ -422,10 +462,22 @@ func (m *Motor) recarregarTokens(agora time.Time) {
 // entrada tem balde próprio (FIX_TAXA_MSG_S − FIX_RESERVA_SAIDA_MSG_S) e só sai com saldo; 1014,
 // cancel, saída e mass status não passam pelo balde da entrada — a reserva deles nunca é esgotada
 // por entradas. A entrada que espera mais que ENTRADA_TTL_FILA_S é descartada (não entra
-// atrasada).
-func (m *Motor) despachar() {
-	pend := append(m.esperandoTaxa, m.v.envios...)
+// atrasada). urgentes (v1.22): só o que não é entrada (a rodada antes da gravação); as entradas
+// ficam para a rodada depois dela.
+func (m *Motor) despachar(urgentes bool) {
+	todos := append(m.esperandoTaxa, m.v.envios...)
 	m.esperandoTaxa, m.v.envios = nil, nil
+	pend := todos
+	if urgentes {
+		pend = nil
+		for _, e := range todos {
+			if e.prio == prioEntrada {
+				m.v.envios = append(m.v.envios, e)
+			} else {
+				pend = append(pend, e)
+			}
+		}
+	}
 	defer func() { metricas.DefinirAguardandoTaxa(len(m.esperandoTaxa)) }()
 	if len(pend) == 0 {
 		return
@@ -433,7 +485,7 @@ func (m *Motor) despachar() {
 	sort.SliceStable(pend, func(i, j int) bool { return pend[i].prio < pend[j].prio })
 	agora := m.agora()
 	m.recarregarTokens(agora)
-	enviados := 0
+	enviados := &m.v.enviados
 	for _, e := range pend {
 		if m.reter(e) {
 			continue // disjuntor de bolsa indisponível: só a sonda sai
@@ -447,13 +499,13 @@ func (m *Motor) despachar() {
 			continue
 		}
 		limitado := e.o != nil && e.prio != prioProtecao
-		if limitado && enviados >= maxEnviosPorVolta {
+		if limitado && *enviados >= maxEnviosPorVolta {
 			m.esperandoTaxa = append(m.esperandoTaxa, e)
 			continue
 		}
 		if e.prio != prioEntrada {
 			if limitado {
-				enviados++
+				*enviados++
 			}
 			m.despacharUm(e)
 			continue
@@ -470,10 +522,10 @@ func (m *Motor) despachar() {
 			continue
 		}
 		m.tokens--
-		enviados++
+		*enviados++
 		m.despacharUm(e)
 	}
-	if enviados >= maxEnviosPorVolta && len(m.esperandoTaxa) > 0 {
+	if *enviados >= maxEnviosPorVolta && len(m.esperandoTaxa) > 0 {
 		// sobrou envio pelo limite da volta: uma volta logo (depois do que estiver na P0 e na P1)
 		m.agendarVolta()
 	}

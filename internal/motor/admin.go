@@ -60,7 +60,7 @@ func (m *Motor) AcaoOperacaoAssincrona(acao, modulo string, id int64, a AcaoAdmi
 		if rec != nil {
 			r = m.recusar(Pedido{Modulo: modulo, OperacaoID: &id, Papel: acao}, rec)
 		}
-		m.aposVolta(func() { ch <- r })
+		m.responder(func() { ch <- r })
 	})
 	return ch
 }
@@ -491,7 +491,7 @@ func (m *Motor) AlterarHabilitacaoAssincrono(uid int, a HabilitacaoAdmin) <-chan
 		if rec != nil {
 			r = m.recusar(Pedido{UID: &uid, Papel: "HABILITACAO"}, rec)
 		}
-		m.aposVolta(func() { ch <- r })
+		m.responder(func() { ch <- r })
 	})
 	return ch
 }

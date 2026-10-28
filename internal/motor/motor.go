@@ -716,7 +716,8 @@ type respostaPendente struct {
 	entregue bool
 }
 
-// PedirAssincrono enfileira o pedido; o resultado chega no canal depois do commit e do envio.
+// PedirAssincrono enfileira o pedido; o resultado chega no canal no fim da volta, antes da gravação
+// (v1.22) e depois do envio da 1014 e da saída.
 // Quem desiste de esperar (503) não cancela nada: o motor processa o pedido do mesmo jeito.
 func (m *Motor) PedirAssincrono(p Pedido) <-chan Resposta {
 	ch := make(chan Resposta, 1)
@@ -725,7 +726,7 @@ func (m *Motor) PedirAssincrono(p Pedido) <-chan Resposta {
 		m.respostaAtual = rp
 		rp.r = m.pedir(p)
 		m.respostaAtual = nil
-		m.aposVolta(func() { rp.entregue = true; ch <- rp.r })
+		m.responder(func() { rp.entregue = true; ch <- rp.r })
 	})
 	return ch
 }

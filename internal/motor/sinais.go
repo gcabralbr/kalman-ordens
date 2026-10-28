@@ -132,7 +132,7 @@ func (m *Motor) SinalAssincrono(p PedidoSinal) <-chan Resposta {
 		defer func() { m.pedidoEm = timeZero }()
 		m.pedirSinal(p, origem, func(r Resposta) {
 			m.partesNaFila(k, -1)
-			m.aposVolta(func() { ch <- r })
+			m.responder(func() { ch <- r })
 		})
 	})
 	return ch

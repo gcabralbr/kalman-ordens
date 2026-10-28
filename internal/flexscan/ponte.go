@@ -1343,6 +1343,11 @@ func (p *Ponte) massStatus(ctx context.Context, reqID, conta string) {
 		o.preco, o.stop, o.rejVista, o.quandoVisto = e.Preco, e.Stop, e.Rejeicao, e.Quando
 		o.aceitaEntregue = o.aceitaEntregue || e.Fase == FaseViva || e.Fase.Terminal()
 		extra := map[int]string{584: reqID, 911: strconv.Itoa(len(sel)), 17: fmt.Sprintf("MS:%s:%s", reqID, e.ID), 151: strconv.Itoa(max(o.qtd-o.exec, 0))}
+		if o.tipo == "4" && o.stop.IsPositive() {
+			// v1.22: o gatilho e o limite da stop, como no PnT, para o motor reconstituir a 1014 que
+			// saiu e não chegou ao banco
+			extra[20828], extra[20829] = o.stop.String(), o.preco.String()
+		}
 		if i == len(sel)-1 {
 			extra[912] = "Y"
 		}

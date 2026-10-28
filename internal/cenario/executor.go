@@ -448,6 +448,11 @@ func (e *Executor) passo(p roteiro.Passo) error {
 			}
 		}
 		return fmt.Errorf("banco_erro_dado operacao=N")
+	case "banco_descarta":
+		// banco_descarta (v1.22): daqui até o reinicia_servico, os lotes não chegam ao banco (o
+		// processo "cai" antes do commit; o envio da 1014 e da saída já saiu)
+		e.falha.descartar()
+		return nil
 	case "quarentena_resolver":
 		// quarentena_resolver id=N : como a CLI (kalman-ordens quarentena resolver)
 		for _, a := range p.Args {
@@ -1246,16 +1251,22 @@ func Dir(base, nome string) (string, error) {
 // 19/10), nos dois backends, para os roteiros da quarentena do lote.
 type repoComFalha struct {
 	repo.Repositorio
-	mu sync.Mutex
-	op int64
+	mu       sync.Mutex
+	op       int64
+	descarta bool
 }
 
 func (r *repoComFalha) definir(op int64) { r.mu.Lock(); r.op = op; r.mu.Unlock() }
 
+func (r *repoComFalha) descartar() { r.mu.Lock(); r.descarta = true; r.mu.Unlock() }
+
 func (r *repoComFalha) GravarLote(l *repo.Lote) error {
 	r.mu.Lock()
-	op := r.op
+	op, descarta := r.op, r.descarta
 	r.mu.Unlock()
+	if descarta {
+		return nil
+	}
 	if op != 0 {
 		for _, o := range append(append([]dominio.Operacao{}, l.NovasOperacoes...), l.Operacoes...) {
 			if o.OperacaoID == op {

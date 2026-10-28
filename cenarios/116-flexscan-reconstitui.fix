@@ -1,0 +1,60 @@
+cenario 116 Flexscan (v1.22): a saída sai antes da gravação do lote; o processo cai antes do commit; na partida, a conciliação acha a KM-S na corretora sem a linha no banco, reconstitui pela operação do ClOrdID (ORDEM_RECONSTITUIDA, crítico) e aplica o fill; sem divergência; a saída reconstituída viva segue sem recriar a 1014 (o caso da operação inexistente é o roteiro 103)
+hora 2026-10-28 11:30:00
+# SPEC-ORDENS v1.22 §1. A 1014, a saída, o cancel e o mass status saem antes da gravação do lote; a
+# entrada continua depois. banco_descarta: daqui até o restart, nenhum lote chega ao banco.
+config FLEXSCAN_URL=falso
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+executa COMPRADO_FLX OP=2601
+
+# a saída sai; o banco não vê nada dela (nem o DELETE da 1014, nem a KM-S)
+banco_descarta
+preco bid=130100 ask=130105 preco=130100
+saida 2601 V SINAL_OPOSTO uid=8
+resposta aceito=true
+flx_recebe DELETE id=$FP
+flx_recebe POST name=KM-S-2601-1 id=>S1
+flx_executa $S1 preco=130100
+
+# o processo cai e sobe: a tabela diz PROTEGIDA com a 1014 viva; a Flexscan diz 1014 cancelada e
+# KM-S-2601-1 executada
+reinicia_servico
+aguarda_logon
+avanca 3s
+alerta ORDEM_RECONSTITUIDA
+evento ZERADA operacao_id=2601
+alerta CONCILIACAO
+sem_alerta DESCONHECIDA
+sem_alerta DIVERGENTE
+saude posicao=0 divergente=false
+http GET /operacoes?dia=2026-10-28
+resposta _lista.0.operacao_id=2601 _lista.0.estado=ZERADA
+
+# o próximo ClOrdID de saída da operação não repete o reconstituído (o contador passou dele)
+flx_nada
+
+# a saída reconstituída ainda viva (sem fill): a operação fica saindo pela KM-S; a 1014 cancelada
+# pela nossa saída não é recriada
+avanca 2m
+preco bid=130000 ask=130005 preco=130000
+executa COMPRADO_FLX OP=2602
+banco_descarta
+preco bid=130100 ask=130105 preco=130100
+saida 2602 V SINAL_OPOSTO uid=8
+resposta aceito=true
+flx_recebe DELETE id=$FP
+flx_recebe POST name=KM-S-2602-1 id=>S2
+reinicia_servico
+aguarda_logon
+avanca 3s
+alerta ORDEM_RECONSTITUIDA
+sem_alerta PROTECAO_RECRIADA
+sem_alerta DIVERGENTE
+saude posicao=1 divergente=false
+flx_nada
+flx_executa $S2 preco=130100
+flx_webhook $S2
+evento ZERADA operacao_id=2602
+saude posicao=0

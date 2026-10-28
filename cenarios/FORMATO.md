@@ -88,6 +88,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 | `aguarda_logon [N]` | espera o serviço logar (tempo real, até 10 s); com N, espera N logons novos (ex.: um que cai no reenvio e o seguinte) |
 | `derruba_sessao` | o PnT falso derruba a conexão; o serviço reconecta sozinho |
 | `corrompe checksum` / `corrompe bodylength N` | a próxima mensagem de aplicação do PnT falso sai no fio com o 10 errado, ou com o 9 somado de N (e o 10 recalculado); o store do falso guarda a certa, então um ResendRequest a entrega íntegra |
+| `banco_descarta` | (v1.22) daqui até o `reinicia_servico`, a gravação do lote não chega ao banco (responde OK): o processo que cai depois de enviar a 1014 ou a saída e antes do commit |
 | `reinicia_servico` | encerra o processo do serviço e sobe de novo com o mesmo banco (no MariaDB, numa conexão nova) e o mesmo store FIX; o relógio continua de onde estava |
 | `pnt_recusa_logon "TEXTO"` / `pnt_aceita_logon` | o PnT falso passa a recusar todo logon com 35=5 58=TEXTO, sem contar a sequência do logon recusado (como o PnT da HML segurando a sessão depois de uma queda abrupta) / volta a aceitar |
 | `aguarda_recusas N` | espera (tempo real, até 15 s) o PnT falso ter recusado N logons desde o início |
