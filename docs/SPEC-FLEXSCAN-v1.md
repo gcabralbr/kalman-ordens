@@ -247,7 +247,7 @@ duas fontes gera o mesmo ExecID, e o `registrarRecebida` do motor descarta o seg
 ### 5.4 Cadastro
 
 CLI `kalman-ordens flexscan webhook listar` (URL com segredo mascarado) e `registrar`
-(`target {type:"user", id:<usuário>}`, triggers `order.all`, **sem `remove_previous`**). O de
+(`target {type:"user", id:<usuário>}`, triggers `order.all` e `algo.changed` desde a v1.21.1, **sem `remove_previous`**). O de
 hoje (feito à mão, `order.all` + `algo.changed`) fica; o serviço confere no boot e a cada hora
 (`GET /webhooks`) e, sem o nosso URL, alerta crítico `FLEXSCAN_WEBHOOK_AUSENTE` (a consulta
 periódica segura as execuções). Rotação de segredo (cabem 2 por alvo) fica fora do mínimo útil.

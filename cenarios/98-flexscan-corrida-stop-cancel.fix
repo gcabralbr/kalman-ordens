@@ -1,4 +1,4 @@
-cenario 98 Flexscan: saída do gestor enquanto a B3 executa o stop — DELETE recusado (400), a consulta traz o fill, sem saída limite; o webhook atrasado não muda nada
+cenario 98 Flexscan: saída do gestor enquanto a B3 executa o stop — DELETE recusado (400), a consulta traz o fill, sem saída limite; o webhook atrasado não muda nada; o 400 "Finalizado" com a consulta ainda sem o fill espera o fill sem alerta (v1.21.1)
 hora 2026-10-23 10:50:00
 # SPEC-FLEXSCAN-v1 §4.3: 400 no DELETE de ordem terminal → a consulta decide antes do 35=9 (o "too
 # late" de hoje); o fill do stop vem da consulta; o 35=9 com 39=2 não manda a saída.
@@ -25,5 +25,29 @@ nada
 # o webhook do stop chega depois: o mesmo estado, nada muda
 flx_webhook $FP
 conta_eventos SAIDA_EXECUTADA operacao_id=2301 = 1
+saude posicao=0 divergente=false
+flx_nada
+
+# --- v1.21.1: o DELETE recusado com o texto do simulador (28/10, estado em português) e a consulta
+# ainda sem o fill: o 35=9 sai com 39=2 e o motor espera o fill (ESPERA_FILL_POS_RECUSA_S); o fill
+# chega pelo webhook: só registro, sem alerta
+avanca 2m
+preco bid=130000 ask=130005 preco=130000
+executa COMPRADO_FLX OP=2302
+preco bid=129400 ask=129405 preco=129400
+flx_falha 400 texto="order cannot be canceled because it is in the state: Finalizado" codigo=4003
+saida 2302 V SINAL_OPOSTO uid=8
+resposta aceito=true
+flx_recebe DELETE id=$FP
+avanca 1s
+sem_alerta CANCEL_STOP_REJEITADO
+sem_alerta RECUSA_FLEXSCAN
+flx_executa $FP preco=129410
+flx_webhook $FP
+evento SAIDA_EXECUTADA operacao_id=2302 qtd=1 preco=129410 origem=STOP_SERVIDOR
+evento ZERADA operacao_id=2302 origem=STOP_SERVIDOR pnl_pts=-600
+avanca 6s
+sem_alerta CANCEL_STOP_REJEITADO
+sem_alerta RECUSA_FLEXSCAN
 saude posicao=0 divergente=false
 flx_nada

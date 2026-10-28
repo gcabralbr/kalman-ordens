@@ -184,7 +184,7 @@ type Ponte struct {
 	logado      atomic.Bool
 	jaLogou     bool
 	definitivo  bool      // login com erro definitivo: não tenta sozinho
-	proxLogin   time.Time // tempo real
+	proxLogin   time.Time // relógio do serviço (o virtual nos roteiros)
 	logando     bool
 	renovando   bool
 	ultimoErro  string
@@ -344,7 +344,7 @@ func (p *Ponte) tentarLogin() {
 			if errors.As(err, &el) && el.Definitivo {
 				p.definitivo = true
 			}
-			p.proxLogin = time.Now().Add(p.cfg.EsperaLogin)
+			p.proxLogin = p.rel.Agora().Add(p.cfg.EsperaLogin)
 			definitivo := p.definitivo
 			p.mu.Unlock()
 			slog.Warn("flexscan: login falhou", "erro", err, "definitivo", definitivo)
@@ -370,8 +370,8 @@ func (p *Ponte) semSessao(motivo string) {
 	}
 	p.mu.Lock()
 	p.ultimoErro = motivo
-	if p.proxLogin.IsZero() || time.Now().After(p.proxLogin) {
-		p.proxLogin = time.Now()
+	if p.proxLogin.IsZero() || p.rel.Agora().After(p.proxLogin) {
+		p.proxLogin = p.rel.Agora()
 	}
 	p.mu.Unlock()
 }
@@ -404,7 +404,7 @@ func (p *Ponte) Tick() {
 		}
 	} else {
 		p.mu.Lock()
-		vez := !p.proxLogin.IsZero() && time.Now().After(p.proxLogin) && !p.logando
+		vez := !p.proxLogin.IsZero() && agora.After(p.proxLogin) && !p.logando
 		p.mu.Unlock()
 		if vez {
 			p.tentarLogin()
@@ -847,11 +847,25 @@ func (p *Ponte) executarPedido(ctx context.Context, o *ordemP, pd *pendencia) {
 			if foraDoHorario(r) {
 				texto = "[flexscan] FORA_DO_HORARIO: " + r.TextoErro()
 			}
-			msgs = append(msgs, p.rejeicaoPedido(o, pd, map[byte]string{'F': "1", 'G': "2"}[pd.tipo], texto, strconv.Itoa(r.ErroAPI().Codigo)))
+			m := p.rejeicaoPedido(o, pd, map[byte]string{'F': "1", 'G': "2"}[pd.tipo], texto, strconv.Itoa(r.ErroAPI().Codigo))
+			if !o.fase.Terminal() && finalizadaNoTexto(r) {
+				// v1.21.1: a recusa diz que a ordem já executou e a consulta ainda não mostra o fill:
+				// 39=2, e o motor espera o fill (ESPERA_FILL_POS_RECUSA_S) antes de alertar
+				trocar(&m, 39, "2")
+			}
+			msgs = append(msgs, m)
 		}
 		p.mu.Unlock()
 		p.entregar(msgs)
 	}
+}
+
+// finalizadaNoTexto (v1.21.1): o 400 de ordem já executada. Simulador, 28/10: "order cannot be
+// canceled because it is in the state: Finalizado" (o estado em português).
+func finalizadaNoTexto(r Resposta) bool {
+	t := strings.ToLower(r.TextoErro())
+	return r.Status == http.StatusBadRequest && (strings.Contains(t, "finalizad") || strings.Contains(t, "executad") ||
+		strings.Contains(t, "filled") || strings.Contains(t, "finished"))
 }
 
 // foraDoHorario: o 400 de horário (o texto exato é [SIM-6]; até lá, pelas palavras).
@@ -1133,6 +1147,16 @@ func add(m *pnt.Mensagem, tag int, v string) {
 	if v != "" {
 		m.Campos = append(m.Campos, pnt.Campo{Tag: tag, Valor: v})
 	}
+}
+
+// trocar: o valor de uma tag já posta (e a bruta de novo).
+func trocar(m *pnt.Mensagem, tag int, v string) {
+	for i := range m.Campos {
+		if m.Campos[i].Tag == tag {
+			m.Campos[i].Valor = v
+		}
+	}
+	bruta(m)
 }
 
 func bruta(m *pnt.Mensagem) {
@@ -1579,20 +1603,24 @@ func (p *Ponte) registrarWebhook(es []Estado, err error) {
 		p.traf.linha(TrafegoWebhook, "REC", http.StatusOK, -1, "", "", "forma desconhecida: "+err.Error())
 		return
 	}
-	cl, id, resumo := resumoWebhook(es)
-	p.traf.linha(TrafegoWebhook, "REC", http.StatusOK, -1, cl, id, resumo)
+	cl, id, resumo, nomes := resumoWebhook(es)
+	p.traf.linha(TrafegoWebhook, "REC", http.StatusOK, -1, cl, id, resumo, nomes...)
 }
 
-// resumoWebhook: os retratos de um webhook (o clordid e o id quando é uma ordem só).
-func resumoWebhook(es []Estado) (cl, id, resumo string) {
+// resumoWebhook: os retratos de um webhook (o clordid e o id quando é uma ordem só; com vários, os
+// clordid de todos em nomes, para quem consulta achar a operação).
+func resumoWebhook(es []Estado) (cl, id, resumo string, nomes []string) {
 	if len(es) == 1 {
 		cl, id = es[0].Nome, es[0].ID
 	}
 	partes := make([]string, 0, len(es))
 	for _, e := range es {
 		partes = append(partes, e.Nome+" "+resumoEstado(e))
+		if len(es) > 1 {
+			nomes = append(nomes, e.Nome)
+		}
 	}
-	return cl, id, fmt.Sprintf("%d retrato(s): %s", len(es), strings.Join(partes, "; "))
+	return cl, id, fmt.Sprintf("%d retrato(s): %s", len(es), strings.Join(partes, "; ")), nomes
 }
 
 // linhaGravada: as linhas que só o tráfego conhece (LOGIN, WEBHOOK_CADASTRO) também vão ao

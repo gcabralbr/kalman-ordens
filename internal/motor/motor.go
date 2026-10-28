@@ -1326,10 +1326,14 @@ func (m *Motor) TrafegoFlexscan(desde int64, limite int) (map[string]any, bool) 
 	}
 	ls, ult, saude := t.Trafego(desde, limite)
 	for i := range ls {
-		if ls[i].ClOrdID == nil {
-			continue
+		var mod string
+		var op int64
+		var achou bool
+		if ls[i].ClOrdID != nil {
+			mod, _, op, achou = doClOrdID(*ls[i].ClOrdID)
+		} else {
+			mod, op, achou = mesmaOperacao(ls[i].ClOrdIDs)
 		}
-		mod, _, op, achou := doClOrdID(*ls[i].ClOrdID)
 		if !achou {
 			continue
 		}
@@ -1339,6 +1343,18 @@ func (m *Motor) TrafegoFlexscan(desde int64, limite int) (map[string]any, bool) 
 		}
 	}
 	return map[string]any{"mensagens": ls, "ultimo_seq": ult, "saude": saude}, true
+}
+
+// mesmaOperacao (v1.21.1): a operação de um webhook com vários retratos, se todos forem dela.
+func mesmaOperacao(cls []string) (modulo string, op int64, ok bool) {
+	for i, cl := range cls {
+		m, _, o, achou := doClOrdID(cl)
+		if !achou || (i > 0 && (m != modulo || o != op)) {
+			return "", 0, false
+		}
+		modulo, op = m, o
+	}
+	return modulo, op, len(cls) > 0
 }
 
 // corretora (28/10): o nome do conector da operação nos textos de alerta e recusa ("PnT" ou

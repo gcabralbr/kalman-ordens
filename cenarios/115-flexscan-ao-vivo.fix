@@ -1,4 +1,4 @@
-cenario 115 Flexscan ao vivo (v1.21): webhook ausente na partida → recadastro, FLEXSCAN_WEBHOOK_AUSENTE e RESOLVIDO; conferência com erro (null); recadastro que falha; tráfego (POST, CONSULTA 404 depois da espera de 200 ms, PUT, FLX-PRECO, DELETE, WEBHOOK, LOGIN) sem segredo; ultimo_login; fonte compartilhada
+cenario 115 Flexscan ao vivo (v1.21 e v1.21.1): webhook ausente na partida → recadastro com order.all e algo.changed; cadastro incompleto (só order.all) → recadastra só o que falta; FLEXSCAN_WEBHOOK_AUSENTE e RESOLVIDO; conferência com erro (null); recadastro que falha; tráfego (POST, CONSULTA 404 depois da espera de 200 ms, PUT, FLX-PRECO, DELETE, WEBHOOK, LOGIN) sem segredo; ultimo_login; fonte compartilhada
 hora 2026-10-28 10:00:00
 # SPEC-ORDENS v1.21. A falsa começa com o cadastro de webhooks vazio (como a apisim depois da troca
 # de senha de 23/10). Toda flx_trafego confere que nenhum token, a senha, o segredo nem a
@@ -15,6 +15,7 @@ executa INICIO
 alerta FLEXSCAN_WEBHOOK_AUSENTE
 alerta RESOLVIDO
 flx_webhooks n=1 url=https://kalman.exemplo/flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl
+flx_webhooks gatilhos=order.all,algo.changed url=https://kalman.exemplo/flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl
 saude flexscan.webhook_cadastrado=true flexscan.webhook_conferido_em=* flexscan.webhook_recadastrado_em=* flexscan.ultimo_login.motivo=partida flexscan.ultimo_login.resultado=OK
 saude flexscan.fonte.compartilhada=true flexscan.simbolo=WINZ26 flexscan.idade_preco_ms=* flexscan.fonte.degradada=false
 flx_trafego tipo=LOGIN status_http=200 resumo=~partida = 1
@@ -49,6 +50,19 @@ avanca 61s
 alerta RESOLVIDO
 saude flexscan.webhook_cadastrado=true
 flx_webhooks n=1
+
+# --- v1.21.1: o cadastro fica só com order.all (o recadastro de 28/10 03:50): incompleto, crítico;
+# recadastra só o algo.changed (sem repetir o order.all) e resolve
+flx_webhooks limpa
+flx_webhooks cadastra url=https://kalman.exemplo/flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl triggers=order.all
+avanca 61s
+alerta FLEXSCAN_WEBHOOK_AUSENTE
+alerta RESOLVIDO
+saude flexscan.webhook_cadastrado=true
+flx_webhooks n=2 url=https://kalman.exemplo/flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl
+flx_webhooks gatilhos=order.all,algo.changed url=https://kalman.exemplo/flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl
+flx_trafego tipo=WEBHOOK_CADASTRO resumo="~incompleto, sem algo.changed" = 1
+flx_trafego tipo=WEBHOOK_CADASTRO resumo="~recadastro (algo.changed;" status_http=200 = 1
 
 # --- tráfego: o GET logo depois do 202 dá 404 por 250 ms; a primeira consulta só sai aos 200 ms
 flx_nao_achada 250ms
@@ -99,6 +113,10 @@ flx_executa $S1 preco=130100
 flx_webhook $S1
 evento ZERADA operacao_id=11501 origem=GESTOR
 flx_trafego tipo=DELETE clordid=KM-P-11501-3 status_http=202 operacao_id=11501 = 1
+# v1.21.1: um webhook com vários retratos da mesma operação (28/10 09:01:45, entrada executada + stop
+# aceito da 234339) tem a operação, o módulo e o usuário (clordid e flexscan_id ficam null)
+flx_webhook $S1 $P1
+flx_trafego tipo=WEBHOOK clordid=null flexscan_id=null operacao_id=11501 modulo=KALMAN uid=8 resumo="~2 retrato(s)" = 1
 
 # webhook num caminho errado: 404, o motivo e nunca o caminho
 flx_webhook_http POST /flexscan/webhook/errado {}
@@ -136,8 +154,9 @@ flx_trafego tipo=PUT clordid=KM-P-11501-2 status_http=202 resumo=~129800 = 1
 flx_trafego tipo=DELETE clordid=KM-P-11501-3 status_http=202 = 1
 flx_trafego tipo=FLX-PRECO clordid=KM-P-11501-1 resumo=~129740 = 1
 flx_trafego tipo=WEBHOOK clordid=KM-E-11501-1 status_http=200 resumo=~retrato = 1
-# a partida nova acha o webhook (presente): os dois recadastros são os do registro
-flx_trafego tipo=WEBHOOK_CADASTRO resumo=~recadastro status_http=200 = 2
+flx_trafego tipo=WEBHOOK clordid=null operacao_id=11501 modulo=KALMAN uid=8 resumo="~2 retrato(s)" = 1
+# a partida nova acha o webhook (presente): os três recadastros são os do registro
+flx_trafego tipo=WEBHOOK_CADASTRO resumo=~recadastro status_http=200 = 3
 flx_trafego tipo=LOGIN resumo=~partida = 2
 flx_trafego tipo=LOGIN resumo=~401 = 1
 flx_trafego tipo=WEBHOOK status_http=404 = 0

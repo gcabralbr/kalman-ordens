@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,6 +31,15 @@ type Ordem struct {
 	Texto                                string // Text do retrato (o último evento)
 	Transact                             time.Time
 	Enviada                              time.Time
+}
+
+// textoTerminal: o 400 de PUT/DELETE de ordem terminal. Executada, o do simulador de 28/10 (o estado
+// em português); as outras, o de antes.
+func textoTerminal(o *Ordem, acao string) string {
+	if o.Status == "2" {
+		return "order cannot be " + acao + " because it is in the state: Finalizado"
+	}
+	return "order is not active"
 }
 
 func (o *Ordem) terminal() bool {
@@ -301,7 +311,7 @@ func (f *Falso) put(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	if o.terminal() {
-		responder(w, http.StatusBadRequest, map[string]any{"code": 4003, "title": "Bad Request", "description": "order is not active"})
+		responder(w, http.StatusBadRequest, map[string]any{"code": 4003, "title": "Bad Request", "description": textoTerminal(o, "replaced")})
 		return
 	}
 	if t, ok := f.recusaPUT[id]; ok {
@@ -355,7 +365,7 @@ func (f *Falso) del(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	if o.terminal() {
-		responder(w, http.StatusBadRequest, map[string]any{"code": 4003, "title": "Bad Request", "description": "order is not active"})
+		responder(w, http.StatusBadRequest, map[string]any{"code": 4003, "title": "Bad Request", "description": textoTerminal(o, "canceled")})
 		return
 	}
 	f.cancelar(id)
@@ -593,6 +603,34 @@ func (f *Falso) Webhooks() []string {
 		us = append(us, fmt.Sprint(c["url"]))
 	}
 	return us
+}
+
+// Gatilhos (v1.21.1): os triggers somados dos cadastros com essa URL, sem repetição, em ordem.
+func (f *Falso) Gatilhos(url string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var gs []string
+	for _, c := range f.webhooks {
+		if fmt.Sprint(c["url"]) != url {
+			continue
+		}
+		var ts []string
+		switch x := c["triggers"].(type) {
+		case []string:
+			ts = x
+		case []any:
+			for _, t := range x {
+				ts = append(ts, fmt.Sprint(t))
+			}
+		}
+		for _, t := range ts {
+			if !slices.Contains(gs, t) {
+				gs = append(gs, t)
+			}
+		}
+	}
+	slices.Sort(gs)
+	return gs
 }
 
 // CadastrarWebhook: um cadastro feito por fora (à mão, outro sistema).

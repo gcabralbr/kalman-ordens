@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -311,6 +312,7 @@ func (e *Executor) flxRecebe(args []string) error {
 //	flx_webhooks falha=STATUS metodo=GET|POST a próxima chamada com esse método responde STATUS
 //	flx_webhooks cadastra url=U [triggers=a,b] um cadastro feito por fora
 //	flx_webhooks n=N [url=U]                  confere quantos cadastros há (com essa URL)
+//	flx_webhooks gatilhos=a,b url=U            confere os triggers somados dos cadastros da URL
 func (e *Executor) flxWebhooks(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("flx_webhooks: limpa | falha=STATUS metodo=M | cadastra url=U | n=N [url=U]")
@@ -338,6 +340,14 @@ func (e *Executor) flxWebhooks(args []string) error {
 			return fmt.Errorf("flx_webhooks falha=STATUS metodo=GET|POST")
 		}
 		e.flx.FalharWebhooks(kv["metodo"], st)
+		return nil
+	case kv["gatilhos"] != "":
+		e.ocioso()
+		quer := strings.Split(kv["gatilhos"], ",")
+		slices.Sort(quer)
+		if tem := e.flx.Gatilhos(kv["url"]); !slices.Equal(tem, quer) {
+			return fmt.Errorf("flx_webhooks: gatilhos %v, esperava %v", tem, quer)
+		}
 		return nil
 	case kv["n"] != "":
 		e.ocioso()

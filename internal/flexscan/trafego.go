@@ -51,6 +51,9 @@ type LinhaTrafego struct {
 	Modulo     *string `json:"modulo"`
 	UID        *int    `json:"uid"`
 	Resumo     string  `json:"resumo"`
+	// ClOrdIDs (v1.21.1): os clordid dos retratos de um webhook com vários (ClOrdID fica null); quem
+	// consulta preenche a operação se todos forem da mesma.
+	ClOrdIDs []string `json:"-"`
 
 	em time.Time
 }
@@ -72,9 +75,10 @@ func novoTrafego(rel relogio.Relogio) *trafego {
 	return &trafego{rel: rel, boot: rel.Agora()}
 }
 
-// linha: status < 0 = sem resposta (null); dur < 0 = sem duração (null); cl/id vazios = null.
-func (t *trafego) linha(tipo, direcao string, status int, dur time.Duration, cl, id, resumo string) {
-	l := LinhaTrafego{Tipo: tipo, Direcao: direcao, Resumo: resumoTrafego(resumo)}
+// linha: status < 0 = sem resposta (null); dur < 0 = sem duração (null); cl/id vazios = null; nomes =
+// os clordid de um webhook com vários retratos.
+func (t *trafego) linha(tipo, direcao string, status int, dur time.Duration, cl, id, resumo string, nomes ...string) {
+	l := LinhaTrafego{Tipo: tipo, Direcao: direcao, Resumo: resumoTrafego(resumo), ClOrdIDs: nomes}
 	if status >= 0 {
 		s := status
 		l.StatusHTTP = &s

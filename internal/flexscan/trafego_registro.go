@@ -56,8 +56,8 @@ func LinhasDoRegistro(evs []repo.EventoFIX) []LinhaTrafego {
 	type chave struct{ metodo, cl string }
 	pendentes := map[chave]repo.EventoFIX{}
 	var ls []LinhaTrafego
-	nova := func(em time.Time, tipo, direcao string, status int, dur time.Duration, cl, id, resumo string) {
-		l := LinhaTrafego{Tipo: tipo, Direcao: direcao, Resumo: resumoTrafego(resumo), em: em,
+	nova := func(em time.Time, tipo, direcao string, status int, dur time.Duration, cl, id, resumo string, nomes ...string) {
+		l := LinhaTrafego{Tipo: tipo, Direcao: direcao, Resumo: resumoTrafego(resumo), ClOrdIDs: nomes, em: em,
 			Em: em.In(relogio.Fuso).Format(formatoEmTrafego)}
 		if status >= 0 {
 			s := status
@@ -92,8 +92,8 @@ func LinhasDoRegistro(evs []repo.EventoFIX) []LinhaTrafego {
 				nova(e.Em, TrafegoWebhook, "REC", 200, -1, "", "", "forma desconhecida: "+err.Error())
 				continue
 			}
-			cl, id, resumo := resumoWebhook(es)
-			nova(e.Em, TrafegoWebhook, "REC", 200, -1, cl, id, resumo)
+			cl, id, resumo, nomes := resumoWebhook(es)
+			nova(e.Em, TrafegoWebhook, "REC", 200, -1, cl, id, resumo, nomes...)
 		case e.Direcao == "REC" && tipo == "PRECO":
 			resumo := e.Texto
 			if de, para, ok := strings.Cut(strings.TrimPrefix(e.Texto, "preço ajustado pela Flexscan: "), " -> "); ok {
