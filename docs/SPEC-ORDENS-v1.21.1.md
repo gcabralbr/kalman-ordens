@@ -50,6 +50,13 @@ ordem viva e o alerta (`CANCEL_STOP_REJEITADO` ou `RECUSA_FLEXSCAN`) saía na ho
 - **O que não muda:** o caminho do motor (não manda a saída, aguarda os fills do stop) e o texto do
   35=9.
 
+## 4. A nova tentativa de login no relógio do serviço
+
+O prazo entre logins que falharam (`FLEXSCAN_ESPERA_LOGIN_S`) era contado no relógio de parede. Os
+roteiros andam o relógio virtual: o roteiro 100 falhava de vez em quando (4 de 15 no `main`), porque
+a nova tentativa dependia da velocidade da máquina. O prazo passa a ser do relógio do serviço, que em
+produção é o de parede. Comportamento em produção igual.
+
 ## Testes
 
 - Roteiro 115:
@@ -60,3 +67,4 @@ ordem viva e o alerta (`CANCEL_STOP_REJEITADO` ou `RECUSA_FLEXSCAN`) saía na ho
   webhook.
 - A Flexscan falsa responde ao DELETE/PUT de ordem executada com o texto do simulador.
 - `TestMesmaOperacao`.
+- Roteiro 100: 0 falhas em 20 seguidas (eram 4 a 7 em 15).
