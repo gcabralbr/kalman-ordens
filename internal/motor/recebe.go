@@ -577,10 +577,10 @@ func (m *Motor) ordemEncerrada(op *operacao, o *ordem, motivo string) {
 		case !op.Estado.Saindo() && !op.Estado.Final() && op.posicao() != 0:
 			// 1014 encerrada sem pedido nosso (cancelada ou expirada pelo PnT): recria na hora, com o
 			// limite de tentativas (v1.1 P8)
-			causa := "1014 " + strings.ToLower(motivo) + " pelo PnT sem pedido nosso"
+			causa := "1014 " + strings.ToLower(motivo) + " pela " + op.corretora() + " sem pedido nosso"
 			if o.canceladaPorErro {
 				// cancelada por nós porque ficou em erro (F14): proteção ausente, mesma regra
-				causa = "1014 em estado de erro no PnT, cancelada"
+				causa = "1014 em estado de erro na " + op.corretora() + ", cancelada"
 			}
 			slog.Warn("1014 encerrada com posição aberta: recriando", "op", op.OperacaoID, "motivo", causa, "clordid", o.ClOrdAtual)
 			m.mudar(op, dominio.PosicionadaSemProtecao)
@@ -688,8 +688,8 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 			// v1.3 I1: a ordem já está terminal no PnT (HML 14/10: [IS-72], o fill veio 100 ms
 			// depois). Repreço suspenso; espera o fill ou o 39=4; sem eles, mass status.
 			o.recusaTerminalEm, o.recusaTerminal39 = m.agora(), st
-			m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("replace da saída rejeitado com a ordem terminal no PnT (39=%s) (%s): %s; repreço suspenso, aguardando o fill ou o 39=4 por %s",
-				st, texto, o.ClOrdAtual, m.p.EsperaFillPosRecusa))
+			m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("replace da saída rejeitado com a ordem terminal na %s (39=%s) (%s): %s; repreço suspenso, aguardando o fill ou o 39=4 por %s",
+				op.corretora(), st, texto, o.ClOrdAtual, m.p.EsperaFillPosRecusa))
 			m.salvarOrdem(o)
 			m.salvarOp(op)
 			return
@@ -716,7 +716,7 @@ func (m *Motor) cancelProtecaoEmErroRejeitado(op *operacao, o *ordem, msg pnt.Me
 	if msg.Texto(37) == "NONE" || strings.Contains(msg.Texto(58), "Robot Order not found") {
 		o.Estado = dominio.Desconhecida
 		m.salvarOrdem(o)
-		m.recriarProtecaoAusente(op, "1014 em erro: cancel rejeitado, ordem não encontrada no PnT "+texto)
+		m.recriarProtecaoAusente(op, "1014 em erro: cancel rejeitado, ordem não encontrada na "+op.corretora()+" "+texto)
 		return
 	}
 	m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("cancel da 1014 em erro rejeitado %s: %s; mass status para decidir", texto, o.ClOrdAtual), op.OperacaoID)
@@ -734,7 +734,7 @@ func (m *Motor) recriarProtecaoAusente(op *operacao, causa string) {
 	if op.Estado.Saindo() || op.Estado.Final() || op.posicao() == 0 {
 		return
 	}
-	slog.Warn("1014 ausente no PnT com posição aberta: recriando", "op", op.OperacaoID, "motivo", causa)
+	slog.Warn("1014 ausente na corretora com posição aberta: recriando", "corretora", op.corretora(), "op", op.OperacaoID, "motivo", causa)
 	m.mudar(op, dominio.PosicionadaSemProtecao)
 	op.semProtecaoDesde = m.agora()
 	m.falhaProtecao(op, causa)
@@ -752,7 +752,7 @@ func (m *Motor) decidirProtecaoEmErro(op *operacao, o *ordem) {
 			texto = " (" + o.erroTexto + ")"
 		}
 		m.al.Emitir("PROTECAO_EM_ERRO_PRESA", chaveOp("PROTECAO_EM_ERRO_PRESA", op),
-			fmt.Sprintf("1014 %s continua em estado de erro no PnT%s e o cancel foi rejeitado: não recriada (pode reativar sozinha), posição %d mantida; entradas bloqueadas, decisão humana, operação %d", o.ClOrdAtual, texto, op.posicao(), op.OperacaoID), op.OperacaoID)
+			fmt.Sprintf("1014 %s continua em estado de erro na %s%s e o cancel foi rejeitado: não recriada (pode reativar sozinha), posição %d mantida; entradas bloqueadas, decisão humana, operação %d", o.ClOrdAtual, op.corretora(), texto, op.posicao(), op.OperacaoID), op.OperacaoID)
 		m.ativarParada("BLOQUEAR", "auto", fmt.Sprintf("1014 em erro sem cancel possível, operação %d", op.OperacaoID))
 	default:
 		m.al.Resolver(chaveOp("PROTECAO_EM_ERRO", op))

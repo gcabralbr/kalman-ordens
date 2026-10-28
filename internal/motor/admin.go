@@ -111,7 +111,7 @@ func (m *Motor) acaoOperacao(acao, modulo string, id int64, a AcaoAdmin) (Respos
 		}
 		m.acaoRegistrada(op, acao, a)
 		m.cancelar(e)
-		return Resposta{"aceito": true, "codigo": "CANCELANDO", "motivo": "cancelamento da entrada enviado ao PnT",
+		return Resposta{"aceito": true, "codigo": "CANCELANDO", "motivo": "cancelamento da entrada enviado a " + op.corretora(),
 			"modulo": op.Modulo, "operacao_id": op.OperacaoID, "acao": acao, "situacao": "CANCELANDO"}, nil
 	}
 	return nil, simples("CAMPO_INVALIDO", "ação desconhecida")

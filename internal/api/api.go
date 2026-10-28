@@ -20,6 +20,7 @@ import (
 // Handler monta as rotas. espera = quanto o POST /ordens espera o motor antes do 503.
 func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 	mux := http.NewServeMux()
+	lat := novasLatencias()
 	mux.HandleFunc("POST /ordens", func(w http.ResponseWriter, r *http.Request) {
 		corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))
 		var p motor.Pedido
@@ -27,6 +28,9 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		if err := decodificar(corpo, &p); err != nil {
 			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()}
 		} else {
+			if p.Papel == "ENTRADA" || p.Papel == "SAIDA" {
+				rotular(w, p.Papel)
+			}
 			select {
 			case resp = <-m.PedirAssincrono(p):
 			case <-time.After(espera):
@@ -318,33 +322,44 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		metricas.Escrever(w)
 	})
 	mux.HandleFunc("GET /saude", func(w http.ResponseWriter, r *http.Request) {
-		escrever(w, http.StatusOK, m.Saude())
+		resp := m.Saude()
+		resp["http"] = lat.resumo(time.Now()) // v1.22: latência dos pedidos do gestor
+		escrever(w, http.StatusOK, resp)
 	})
 	if os.Getenv("DEBUG_PPROF") == "1" {
 		// perfil de CPU (diagnóstico, teste de carga); o HTTP inteiro só escuta em 127.0.0.1
 		mux.HandleFunc("GET /debug/pprof/", pprof.Index)
 		mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
 	}
-	return medirHTTP(mux)
+	return medirHTTP(mux, lat)
 }
 
-// medirHTTP: duração de cada requisição por rota (o padrão do mux) e status (http_segundos).
-func medirHTTP(mux *http.ServeMux) http.Handler {
+// medirHTTP: duração de cada requisição por rota (o padrão do mux) e status (http_segundos); as
+// rotas dos pedidos do gestor também na latência do /saude (v1.22).
+func medirHTTP(mux *http.ServeMux, lat *latencias) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t0 := time.Now()
 		sw := &comStatus{ResponseWriter: w, status: http.StatusOK}
 		mux.ServeHTTP(sw, r)
+		d := time.Since(t0)
 		rota := r.Pattern
 		if rota == "" {
 			rota = "desconhecida"
 		}
-		metricas.HTTP.Observar(time.Since(t0).Seconds(), rota, strconv.Itoa(sw.status))
+		metricas.HTTP.Observar(d.Seconds(), rota, strconv.Itoa(sw.status))
+		if rotulo, ok := rotulosLatencia[rota]; ok {
+			if sw.rotulo != "" {
+				rotulo = sw.rotulo
+			}
+			lat.observar(rotulo, d, sw.status, time.Now())
+		}
 	})
 }
 
 type comStatus struct {
 	http.ResponseWriter
 	status int
+	rotulo string // v1.22: o papel do POST /ordens
 }
 
 func (c *comStatus) WriteHeader(s int) { c.status = s; c.ResponseWriter.WriteHeader(s) }

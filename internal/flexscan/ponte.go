@@ -44,7 +44,8 @@ type Config struct {
 	Trabalhadores       int
 	Confirma            time.Duration // FLEXSCAN_CONFIRMA_S: janela da consulta ativa depois de uma ação
 	Consulta            time.Duration // FLEXSCAN_CONSULTA_S: consulta periódica das vivas
-	AtrasoWebhook       time.Duration // FLEXSCAN_WEBHOOK_ATRASO_S
+	AtrasoWebhook       time.Duration // FLEXSCAN_WEBHOOK_ATRASO_S (sem uso desde a v1.22: EsperaWebhook)
+	EsperaWebhook       time.Duration // v1.22: FLEXSCAN_WEBHOOK_ESPERA_S, o webhook de uma ordem depois da ação ou da mudança (0 = não espera)
 	ConfirmarFill       bool          // FLEXSCAN_CONFIRMAR_FILL
 	Webhook             bool          // o receptor está ligado (sem ele, só consulta e nada de alerta de atraso)
 	RenovarAntes        time.Duration // FLEXSCAN_RENOVAR_ANTES_MIN
@@ -153,6 +154,9 @@ type ordemP struct {
 	proxPeriodica                        time.Time
 	consultaNaFila                       bool
 	incerta                              bool // POST sem resposta: procurada pelo name
+	// v1.22 (webhook_espera.go): a espera pelo webhook da ordem (relógio do serviço; zero = nenhuma)
+	whEsperaDesde, whUltimo         time.Time
+	whEsperaMotivo, whEsperaDetalhe string
 }
 
 func (o *ordemP) chave() string { return o.nome }
@@ -181,16 +185,18 @@ type Ponte struct {
 	emCurso  int
 	sinal    chan struct{}
 
-	logado      atomic.Bool
-	jaLogou     bool
-	definitivo  bool      // login com erro definitivo: não tenta sozinho
-	proxLogin   time.Time // relógio do serviço (o virtual nos roteiros)
-	logando     bool
-	renovando   bool
-	ultimoErro  string
-	webhooks    int64
-	ultWebhook  time.Time
-	atrasoAtivo bool
+	logado     atomic.Bool
+	jaLogou    bool
+	definitivo bool      // login com erro definitivo: não tenta sozinho
+	proxLogin  time.Time // relógio do serviço (o virtual nos roteiros)
+	logando    bool
+	renovando  bool
+	ultimoErro string
+	webhooks   int64
+	ultWebhook time.Time
+	// v1.22 (webhook_espera.go): faltas seguidas de webhook e os alertas ativos
+	whFaltas              int
+	whAtrasado, whCritico bool
 
 	// v1.21: tráfego, último login e o cadastro do webhook
 	traf              *trafego
@@ -316,7 +322,8 @@ func (p *Ponte) Saude() map[string]any {
 	}
 	return map[string]any{"token_expira": exp, "webhooks_recebidos": p.webhooks, "ultimo_webhook": ult,
 		"ordens_acompanhadas": len(p.ordens), "ordens_vivas": vivas, "ultimo_erro": p.ultimoErro, "receptor": p.cfg.Webhook,
-		"webhook_cadastrado": cad, "webhook_conferido_em": confEm, "webhook_recadastrado_em": recadEm, "ultimo_login": ultLogin}
+		"webhook_cadastrado": cad, "webhook_conferido_em": confEm, "webhook_recadastrado_em": recadEm, "ultimo_login": ultLogin,
+		"webhook_faltas_seguidas": p.whFaltas}
 }
 
 // ---------------------------------------------------------------- sessão (login e token)
@@ -413,6 +420,7 @@ func (p *Ponte) Tick() {
 	if !p.logado.Load() {
 		return
 	}
+	p.conferirEsperas(agora)
 	p.mu.Lock()
 	if p.cfg.WebhookURL != "" && !p.conferindoWebhook && (p.proxConfWebhook.IsZero() || !agora.Before(p.proxConfWebhook)) {
 		p.conferindoWebhook = true
@@ -664,6 +672,7 @@ func numeroJSON(d decimal.Decimal) any {
 
 func (p *Ponte) post(ctx context.Context, o *ordemP, corpo map[string]any) {
 	p.registrarEnvio("POST", "/orders", o.nome, "", corpo)
+	enviadoEm := p.rel.Agora()
 	t0 := time.Now()
 	r := p.cli.pedir(ctx, http.MethodPost, "/orders", corpo)
 	dur := time.Since(t0)
@@ -692,6 +701,7 @@ func (p *Ponte) post(ctx context.Context, o *ordemP, corpo map[string]any) {
 			p.ordens[a.ID] = o
 		}
 		msgs = append(msgs, p.er(o, "A", "A", nil))
+		p.esperarWebhookLocked(o, enviadoEm, esperaAcao, "POST")
 		if p.cfg.PrimeiraConsulta > 0 {
 			// v1.21: a primeira consulta sai no Tick, depois da espera (o 404 logo depois do 202)
 			// a periódica também espera (a ordem nova nasce com ela vencida: era o segundo 404)
@@ -798,6 +808,7 @@ func (p *Ponte) executarPedido(ctx context.Context, o *ordemP, pd *pendencia) {
 
 	caminho := "/orders/" + url.PathEscape(id)
 	var r Resposta
+	enviadoEm := p.rel.Agora()
 	if pd.tipo == 'F' {
 		p.registrarEnvio("DELETE", caminho, pd.cl, id, nil)
 		t0 := time.Now()
@@ -830,6 +841,9 @@ func (p *Ponte) executarPedido(ctx context.Context, o *ordemP, pd *pendencia) {
 	switch {
 	case r.Status == http.StatusAccepted || r.Incerta():
 		// 202 ou "não sei": a consulta ativa decide (efeito visto → ER; sem efeito em Confirma → 35=9)
+		if r.Status == http.StatusAccepted {
+			p.esperarWebhookLocked(o, enviadoEm, esperaAcao, map[byte]string{'F': "DELETE", 'G': "PUT"}[pd.tipo])
+		}
 		p.iniciarAtivaLocked(o)
 		p.mu.Unlock()
 		p.consultar(ctx, o, "ativa")
@@ -1108,17 +1122,10 @@ func (p *Ponte) fundirLocked(o *ordemP, e Estado, origem string) ([]pnt.Mensagem
 	if o.pend == nil && !o.ativaDesde.IsZero() && (o.fase != FasePendente) && o.aceitaEntregue {
 		o.ativaDesde = time.Time{}
 	}
-	// 6. atraso do webhook: a consulta periódica viu uma mudança espontânea que ele não trouxe
-	if espontanea && len(msgs) > 0 {
-		switch {
-		case origem == "periodica" && p.cfg.Webhook:
-			p.atrasoAtivo = true
-			nome := o.nome
-			av = append(av, func(p *Ponte) {
-				p.ouv.Alertar("FLEXSCAN_WEBHOOK_ATRASADO", "FLEXSCAN_WEBHOOK_ATRASADO",
-					fmt.Sprintf("[flexscan] a consulta periódica viu uma mudança de %s que o webhook não trouxe", nome))
-			})
-		}
+	// 6. atraso do webhook (v1.22): a consulta periódica viu uma mudança espontânea que ele não
+	// trouxe; o webhook dela tem FLEXSCAN_WEBHOOK_ESPERA_S para chegar (webhook_espera.go)
+	if espontanea && len(msgs) > 0 && origem == "periodica" {
+		p.esperarWebhookLocked(o, p.rel.Agora(), esperaMudanca, resumoEstado(e))
 	}
 	return msgs, av
 }
@@ -1461,6 +1468,7 @@ func (p *Ponte) ReceberWebhook(corpo []byte, origem string) error {
 		p.mu.Unlock()
 		return err
 	}
+	p.webhookChegou()
 	p.enfileirar(prioProtecao, "", func(ctx context.Context) { p.aplicarWebhook(es) })
 	return nil
 }
@@ -1497,11 +1505,7 @@ func (p *Ponte) aplicarWebhook(es []Estado) {
 		if o.fase == FaseDesconhecida {
 			continue // a consulta em curso decide
 		}
-		if p.atrasoAtivo && (e.Exec > o.exec || (e.Fase.Terminal() && !o.fase.Terminal())) {
-			// o webhook voltou a trazer uma mudança antes da consulta
-			p.atrasoAtivo = false
-			av = append(av, func(p *Ponte) { p.ouv.Resolver("FLEXSCAN_WEBHOOK_ATRASADO") })
-		}
+		p.webhookDaOrdemLocked(o, p.rel.Agora())
 		m, a := p.fundirLocked(o, e, "webhook")
 		msgs = append(msgs, m...)
 		av = append(av, a...)

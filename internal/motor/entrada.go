@@ -153,7 +153,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 		op.EncerrouEntrada = true
 		if rp != nil && !rp.entregue {
 			// a resposta ainda não saiu (mesma volta): vira a recusa de sempre
-			nova := m.recusar(p, simples("ENVIO_FALHOU", "a ordem não saiu para o PnT"))
+			nova := m.recusar(p, simples("ENVIO_FALHOU", "a ordem não saiu para a "+op.corretora()))
 			for k := range rp.r {
 				delete(rp.r, k)
 			}
@@ -164,7 +164,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 			op.RespostaEntrada = string(b)
 		} else {
 			// já respondida (esperava a taxa): o gestor sabe pelo evento
-			m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("entrada %s não saiu para o PnT (sessão caiu antes do envio)", o.ClOrdAtual), op.OperacaoID)
+			m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("entrada %s não saiu para a %s (sessão caiu antes do envio)", o.ClOrdAtual, op.corretora()), op.OperacaoID)
 			m.publicar("ENTRADA_ENCERRADA", op, map[string]any{"qtd_final": 0, "preco_medio": 0, "motivo": "REJEITADA"})
 		}
 		m.salvarOp(op)
@@ -519,7 +519,7 @@ func (m *Motor) enviarNova(op *operacao, o *ordem, aoFalhar func(), aoEnviar ...
 // expirarNaFila (v1.10 P5): a entrada esperou a taxa mais que ENTRADA_TTL_FILA_S — o sinal
 // envelheceu; descartada sem ir ao PnT: ENTRADA_ENCERRADA motivo=EXPIRADA_NA_FILA.
 func (m *Motor) expirarNaFila(op *operacao, o *ordem) {
-	slog.Warn("entrada expirada na fila da taxa (não foi ao PnT)", "clordid", o.ClOrdAtual, "op", op.OperacaoID, "ttl", m.p.TTLFilaEntrada)
+	slog.Warn("entrada expirada na fila da taxa (não foi à corretora)", "clordid", o.ClOrdAtual, "op", op.OperacaoID, "ttl", m.p.TTLFilaEntrada)
 	o.Estado = dominio.FalhaEnvio
 	o.MotivoRejeicao = "EXPIRADA_NA_FILA"
 	m.salvarOrdem(o)

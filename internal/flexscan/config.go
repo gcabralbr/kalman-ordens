@@ -32,5 +32,7 @@ func ConfigDe(c config.Config) Config {
 		PrimeiraConsulta: time.Duration(c.Inteiro("FLEXSCAN_PRIMEIRA_CONSULTA_MS", 200)) * time.Millisecond,
 		WebhookURL:       c.Texto("FLEXSCAN_WEBHOOK_URL", ""),
 		ConfereWebhook:   time.Duration(c.Inteiro("FLEXSCAN_WEBHOOK_CONFERIR_MIN", 10)) * time.Minute,
+		// v1.22
+		EsperaWebhook: c.Segundos("FLEXSCAN_WEBHOOK_ESPERA_S", 5),
 	}
 }

@@ -230,7 +230,7 @@ func (m *Motor) fecharVolta() {
 		} else if err != nil {
 			// o que não gravou fica para a próxima volta; o envio segue (proteção não espera o banco)
 			slog.Error("gravação do lote falhou", "erro", err, "linhas", l.Linhas())
-			m.al.Emitir("ERRO_INTERNO", "BANCO_LOTE", "gravação no banco falhou (o envio ao PnT seguiu; nova tentativa na próxima volta): "+cortarTexto(err.Error(), 300), 0)
+			m.al.Emitir("ERRO_INTERNO", "BANCO_LOTE", "gravação no banco falhou (o envio à corretora seguiu; nova tentativa na próxima volta): "+cortarTexto(err.Error(), 300), 0)
 			m.devolverAoLote(l)
 		} else {
 			m.al.Resolver("BANCO_LOTE")
@@ -383,7 +383,7 @@ func (m *Motor) isolarLote(l *repo.Lote) {
 			resto.Pedidos = append(resto.Pedidos, x.lote.Pedidos...)
 		}
 		slog.Error("gravação do lote falhou", "erro", err, "linhas", resto.Linhas())
-		m.al.Emitir("ERRO_INTERNO", "BANCO_LOTE", "gravação no banco falhou (o envio ao PnT seguiu; nova tentativa na próxima volta): "+cortarTexto(err.Error(), 300), 0)
+		m.al.Emitir("ERRO_INTERNO", "BANCO_LOTE", "gravação no banco falhou (o envio à corretora seguiu; nova tentativa na próxima volta): "+cortarTexto(err.Error(), 300), 0)
 		m.devolverAoLote(resto)
 		return
 	}

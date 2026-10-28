@@ -33,6 +33,7 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `CONCILIACAO` | resultado da conciliação do logon (ordens KM, ignoradas, divergências, posição); o mass status vazio (35=j 380=101 "No orders found.") é só registrado (v1.3 E2) | não |
 | `MASS_STATUS_REJEITADO` | mass status rejeitado por motivo diferente de 380=4; entradas bloqueadas | sim |
 | `DESCONHECIDA` | ordem viva na tabela e ausente no mass status | não |
+| `ORDEM_RECONSTITUIDA` | (SPEC v1.22 §1.1) a conciliação achou na corretora uma ordem KM sem linha no banco (a 1014 ou a saída saiu e o processo caiu antes da gravação) e a reconstituiu pela operação do ClOrdID; conferir | sim |
 | `DIVERGENTE` | inconsistência de posição ou de ordem não resolvida; BLOQUEAR | sim |
 | `SEM_CONFIRMACAO` | ordem em ENVIANDO sem nenhuma resposta do PnT em `PRAZO_CONFIRMACAO_S` | sim |
 | `PENDENTE_39A` | ordem em 39=A por mais de 3 s | não |
@@ -73,7 +74,8 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `RESOLVIDO` | um alerta crítico deixou de valer | não |
 | `FLEXSCAN_LOGIN` | (SPEC-FLEXSCAN-v1) login na Flexscan falhou: sem resposta ou recusado (a ponte tenta a cada `FLEXSCAN_ESPERA_LOGIN_S`), ou erro definitivo (senha bloqueada/inválida/expirada, usuário inativo, MFA: não tenta sozinho); entradas da Flexscan recusadas (`SEM_SESSAO`); resolve no login | sim |
 | `FLEXSCAN_PERMISSAO` | (SPEC-FLEXSCAN-v1) 403 numa ordem da Flexscan (permissão do usuário de API) | sim |
-| `FLEXSCAN_WEBHOOK_ATRASADO` | (SPEC-FLEXSCAN-v1) a consulta periódica viu uma mudança espontânea (fill, stop executado, cancelamento) que o webhook não trouxe; resolve quando um webhook traz a próxima | não |
+| `FLEXSCAN_WEBHOOK_ATRASADO` | (SPEC v1.22 §2) nenhum webhook da ordem em `FLEXSCAN_WEBHOOK_ESPERA_S` (5) depois de um POST/PUT/DELETE nosso com 202 ou de uma mudança espontânea vista pela consulta periódica: uma falta; resolve com o próximo webhook (de qualquer ordem) | não |
+| `FLEXSCAN_WEBHOOK_SEM_CHEGAR` | (SPEC v1.22 §2) 3 faltas seguidas de webhook: só a consulta segura as execuções; a conferência do cadastro roda na hora; resolve com o próximo webhook | sim |
 | `FLEXSCAN_WEBHOOK_INVALIDO` | (SPEC-FLEXSCAN-v1) webhook com o segredo certo e corpo de forma desconhecida: gravado, respondido 200, consulta das vivas | não |
 | `FLEXSCAN_WEBHOOK_AUSENTE` | (SPEC v1.21) a conferência do cadastro (`GET /webhooks`, na partida e a cada `FLEXSCAN_WEBHOOK_CONFERIR_MIN`) não achou a `FLEXSCAN_WEBHOOK_URL` com `order.all` e `algo.changed` (v1.21.1: somados entre os cadastros da URL; ausente ou incompleto): o serviço recadastra só os gatilhos que faltam (só a nossa, sem apagar outras) e diz no texto se o recadastro deu certo; só a consulta segura as execuções enquanto faltar; resolve na conferência que achar | sim |
 | `FLEXSCAN_WEBHOOK_INCOERENTE` | (SPEC-FLEXSCAN-v1) retrato do webhook que não bate com a ordem (ClOrdID, conta, símbolo, lado, usuário, quantidade): descartado (forjado ou bug) | sim |

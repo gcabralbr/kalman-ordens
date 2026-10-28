@@ -91,6 +91,7 @@ resposta aceito=true situacao=ENVIADO preco_stop_corretora=129510 preco_limite_c
 flx_recebe PUT id=$P1 stopPrice=129800 price=129700
 evento PROTECAO_AJUSTADA operacao_id=11501 preco_stop=129800 stop_origem=TRSP
 flx_trafego tipo=PUT clordid=KM-P-11501-2 status_http=202 operacao_id=11501 resumo=~129800 = 1
+saude http.STOP.n=1 http.STOP.p50_ms=* http.STOP.max_dia_em=* http.ENTRADA.n=1
 
 # o token vence: a consulta periódica toma 401 e o login seguinte é o "401"
 flx_token_expira
@@ -136,9 +137,9 @@ resposta _lista.0.operacao_id=11501 _lista.0.conector=FLEXSCAN
 
 # o contrato (SPEC v1.21 §4.1 e §4.2) tem a forma da resposta real: o exemplo que o Kalman lê
 http GET /flexscan/trafego?limite=2000
-contrato docs/SPEC-ORDENS-v1.21.md 4.1
+contrato docs/SPEC-ORDENS-v1.22.md 5.1
 http GET /saude
-contrato docs/SPEC-ORDENS-v1.21.md 4.2 flexscan
+contrato docs/SPEC-ORDENS-v1.22.md 5.2 flexscan
 
 # --- restart (28/10): o tráfego do dia volta do kalmanordemevento, no mesmo formato e uma vez só
 # (o processo é novo); as consultas pela mesma regra (só a 404 e as que mudaram o estado); o login
@@ -161,7 +162,7 @@ flx_trafego tipo=LOGIN resumo=~partida = 2
 flx_trafego tipo=LOGIN resumo=~401 = 1
 flx_trafego tipo=WEBHOOK status_http=404 = 0
 http GET /flexscan/trafego?limite=2000
-contrato docs/SPEC-ORDENS-v1.21.md 4.1
+contrato docs/SPEC-ORDENS-v1.22.md 5.1
 saude posicao=0 divergente=false parada=null
 flx_nada
 nada

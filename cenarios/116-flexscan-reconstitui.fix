@@ -14,6 +14,8 @@ banco_descarta
 preco bid=130100 ask=130105 preco=130100
 saida 2601 V SINAL_OPOSTO uid=8
 resposta aceito=true
+# a resposta saiu sem esperar o banco; a latência por rota no /saude (v1.22 §3)
+saude http.SAIDA.n=* http.SAIDA.p50_ms=* http.SAIDA.max_ms=* http.SAIDA.max_dia_ms=* http.SAIDA.max_dia_em=*
 flx_recebe DELETE id=$FP
 flx_recebe POST name=KM-S-2601-1 id=>S1
 flx_executa $S1 preco=130100

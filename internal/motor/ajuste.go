@@ -151,7 +151,7 @@ func (m *Motor) ajustarStop(id int64, a AjusteStop) (Resposta, *recusa) {
 	case abs64(stop-p.Stop) < m.p.AjusteDegrauMin:
 		situacao = AjusteIgnorado
 	}
-	slog.Info("ajuste da proteção", "op", op.OperacaoID, "modulo", op.Modulo, "stop", stop, "limite", lim, "no_pnt", p.Stop, "situacao", situacao, "origem", origem)
+	slog.Info("ajuste da proteção", "op", op.OperacaoID, "modulo", op.Modulo, "stop", stop, "limite", lim, "na_corretora", p.Stop, "situacao", situacao, "origem", origem)
 	if situacao != AjusteIgnorado {
 		m.ajustarProtecao(op)
 	}
@@ -184,7 +184,7 @@ func (m *Motor) ajusteRecusado(op *operacao, p *ordem, pedido int64, texto strin
 	op.StopAjustado, op.StopAjustadoOrigem = p.Stop, op.StopOrigem
 	op.protecaoDesatualizada = false
 	m.salvarOp(op)
-	slog.Warn("ajuste da proteção recusado pelo PnT", "op", op.OperacaoID, "pedido", pedido, "mantido", p.Stop, "texto", texto)
+	slog.Warn("ajuste da proteção recusado pela corretora", "corretora", op.corretora(), "op", op.OperacaoID, "pedido", pedido, "mantido", p.Stop, "texto", texto)
 	m.publicar("PROTECAO_AJUSTE_RECUSADO", op, map[string]any{"motivo": texto, "preco_stop_pedido": pedido,
 		"preco_stop": p.Stop, "preco_limite": p.StopLim, "qtd": p.Qtd})
 }

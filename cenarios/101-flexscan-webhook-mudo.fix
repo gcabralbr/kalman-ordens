@@ -1,29 +1,58 @@
-cenario 101 Flexscan: webhook mudo — a consulta periódica pega o stop executado (FLEXSCAN_WEBHOOK_ATRASADO); o próximo webhook resolve
+cenario 101 Flexscan: webhook mudo (v1.22) — POST/PUT/DELETE com 202 ou mudança espontânea vista pela consulta sem o webhook da ordem em 5 s: FLEXSCAN_WEBHOOK_ATRASADO (não crítico) e uma falta; 3 faltas seguidas: FLEXSCAN_WEBHOOK_SEM_CHEGAR (crítico) e a conferência do cadastro na hora; um webhook resolve e zera
 hora 2026-10-23 11:20:00
-# SPEC-FLEXSCAN-v1 §2 item 6: as ordens vivas são consultadas a cada FLEXSCAN_CONSULTA_S (5 s). Uma
-# mudança espontânea vista primeiro pela consulta é o webhook atrasado (ou perdido).
+# SPEC-ORDENS v1.22 §2 (era a SPEC-FLEXSCAN-v1 §2 item 6: a mudança espontânea alertava na hora).
+# As ordens vivas são consultadas a cada FLEXSCAN_CONSULTA_S (5 s).
 config FLEXSCAN_URL=falso
+config FLEXSCAN_WEBHOOK_URL=https://kalman.exemplo/flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl
 config LIMITE_INTERVALO_ENTRADAS_S=0
 config LIMITE_ENTRADAS_MIN=10
 usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
 habilita 8 conectores=flexscan
 
 executa INICIO
+alerta FLEXSCAN_WEBHOOK_AUSENTE
+alerta RESOLVIDO
+# o COMPRADO_FLX manda o webhook da entrada e não o da proteção: o POST da KM-P fica esperando
 executa COMPRADO_FLX OP=2601
+saude flexscan.webhook_faltas_seguidas=0
+sem_alerta FLEXSCAN_WEBHOOK_ATRASADO
+avanca 5s
+# falta 1: o POST da proteção sem webhook
+alerta FLEXSCAN_WEBHOOK_ATRASADO
+saude flexscan.webhook_faltas_seguidas=1
 
-# a B3 executa o stop; o webhook não chega
+# falta 2: o PUT do TRSP sem webhook
+stop 2601 preco=129800 uid=8
+resposta aceito=true
+flx_recebe PUT id=$FP stopPrice=129800 price=129700
+avanca 5s
+saude flexscan.webhook_faltas_seguidas=2
+alerta FLEXSCAN_WEBHOOK_ATRASADO
+sem_alerta FLEXSCAN_WEBHOOK_SEM_CHEGAR
+
+# falta 3: a B3 executa o stop; a consulta periódica pega (o fill sai), o webhook não chega em 5 s
 preco bid=129400 ask=129405 preco=129400
 flx_executa $FP preco=129410
 avanca 5s
 evento SAIDA_EXECUTADA operacao_id=2601 qtd=1 preco=129410 origem=STOP_SERVIDOR
 evento ZERADA operacao_id=2601 origem=STOP_SERVIDOR
+saude posicao=0 flexscan.webhook_faltas_seguidas=2
+avanca 5s
+saude flexscan.webhook_faltas_seguidas=3
 alerta FLEXSCAN_WEBHOOK_ATRASADO
-saude posicao=0
+alerta FLEXSCAN_WEBHOOK_SEM_CHEGAR
+# a conferência do cadastro rodou na hora (a de partida + esta)
+flx_trafego tipo=WEBHOOK_CADASTRO resumo=~presente = 2
 
-# a próxima mudança espontânea chega pelo webhook: nada de atraso (o alerta não é crítico: não
-# repete nem gera RESOLVIDO)
+# um webhook de qualquer ordem resolve e zera
 preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
 executa COMPRADO_FLX OP=2602
-avanca 10s
+alerta RESOLVIDO
+saude flexscan.webhook_faltas_seguidas=0
+
+# o webhook da proteção da 2602 chega: a espera dela fecha, sem falta
+flx_webhook $FP
+avanca 6s
+saude flexscan.webhook_faltas_seguidas=0
 sem_alerta FLEXSCAN_WEBHOOK_ATRASADO
 flx_nada

@@ -236,14 +236,14 @@ func (m *Motor) tratarErros(op *operacao, agora time.Time) {
 		case dominio.Protecao:
 			o.canceladaPorErro = true
 			m.al.Emitir("PROTECAO_EM_ERRO", chaveOp("PROTECAO_EM_ERRO", op),
-				fmt.Sprintf("1014 %s em estado de erro no PnT%s há %s sem reativação: cancelando e recriando, operação %d", o.ClOrdAtual, texto, m.p.EsperaErro, op.OperacaoID), op.OperacaoID)
+				fmt.Sprintf("1014 %s em estado de erro na %s%s há %s sem reativação: cancelando e recriando, operação %d", o.ClOrdAtual, op.corretora(), texto, m.p.EsperaErro, op.OperacaoID), op.OperacaoID)
 		case dominio.Entrada:
 			m.al.Emitir("ENTRADA_EM_ERRO", "",
-				fmt.Sprintf("entrada %s em estado de erro no PnT%s há %s sem reativação: cancelando, operação %d", o.ClOrdAtual, texto, m.p.EsperaErro, op.OperacaoID), op.OperacaoID)
+				fmt.Sprintf("entrada %s em estado de erro na %s%s há %s sem reativação: cancelando, operação %d", o.ClOrdAtual, op.corretora(), texto, m.p.EsperaErro, op.OperacaoID), op.OperacaoID)
 		case dominio.Saida:
 			op.continuarRepreco = true
 			m.al.Emitir("SAIDA_EM_ERRO", "",
-				fmt.Sprintf("saída %s em estado de erro no PnT%s há %s sem reativação: cancelando; a saída segue com o próximo repreço, operação %d", o.ClOrdAtual, texto, m.p.EsperaErro, op.OperacaoID), op.OperacaoID)
+				fmt.Sprintf("saída %s em estado de erro na %s%s há %s sem reativação: cancelando; a saída segue com o próximo repreço, operação %d", o.ClOrdAtual, op.corretora(), texto, m.p.EsperaErro, op.OperacaoID), op.OperacaoID)
 		}
 		m.salvarOp(op)
 		m.cancelar(o)

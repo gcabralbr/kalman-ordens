@@ -295,7 +295,7 @@ func (m *Motor) esperarFimDaSaida(op *operacao, s *ordem, agora time.Time) {
 		return
 	}
 	s.saidaNoMass = true
-	slog.Warn("saída com replace recusado (ordem terminal no PnT) sem fill nem 39=4: mass status",
+	slog.Warn("saída com replace recusado (ordem terminal na corretora) sem fill nem 39=4: mass status",
 		"op", op.OperacaoID, "clordid", s.ClOrdAtual, "39", s.recusaTerminal39, "espera", m.p.EsperaFillPosRecusa)
 	if !m.conciliando {
 		m.conciliando = true
@@ -416,7 +416,7 @@ func (m *Motor) cancelar(o *ordem) {
 		// no PnT; encerra aqui
 		o.Estado = dominio.Cancelada
 		m.salvarOrdem(o)
-		slog.Info("ordem retirada da fila de envio (nunca foi ao PnT)", "clordid", o.ClOrdAtual)
+		slog.Info("ordem retirada da fila de envio (nunca foi à corretora)", "clordid", o.ClOrdAtual)
 		if o.Papel == dominio.Entrada {
 			m.encerrarEntrada(op, "CANCELADA", true)
 		} else {

@@ -228,7 +228,7 @@ func (m *Motor) conciliar() {
 		if o == nil {
 			divergencias++
 			m.registrarRecebidaEm(nil, *r, chegou)
-			m.al.Emitir("DESCONHECIDA", "", fmt.Sprintf("ordem KM no PnT sem registro: 11=%s 37=%s", r.Texto(11), r.Texto(37)), 0)
+			m.al.Emitir("DESCONHECIDA", "", fmt.Sprintf("ordem KM na corretora sem registro (operacao desconhecida ou encerrada): 11=%s 37=%s", r.Texto(11), r.Texto(37)), 0)
 			continue
 		}
 		vistas[o] = true
@@ -288,8 +288,8 @@ func (m *Motor) conciliar() {
 			}
 			o.saidaSemFill = true
 			m.al.Emitir("SAIDA_SEM_FILL", chaveOp("SAIDA_SEM_FILL", op),
-				fmt.Sprintf("saída %s: o PnT recusou o replace dizendo que a ordem está terminal (39=%s), mas não veio fill nem 39=4 e o mass status não confirma (%s); posição %d, saída suspensa, decisão humana, operação %d",
-					o.ClOrdAtual, o.recusaTerminal39, map[bool]string{true: "a ordem aparece viva", false: "a ordem não aparece"}[vistas[o]], op.posicao(), op.OperacaoID), op.OperacaoID)
+				fmt.Sprintf("saída %s: a %s recusou o replace dizendo que a ordem está terminal (39=%s), mas não veio fill nem 39=4 e o mass status não confirma (%s); posição %d, saída suspensa, decisão humana, operação %d",
+					o.ClOrdAtual, op.corretora(), o.recusaTerminal39, map[bool]string{true: "a ordem aparece viva", false: "a ordem não aparece"}[vistas[o]], op.posicao(), op.OperacaoID), op.OperacaoID)
 		}
 	}
 	// posição ≠ 0 sem 1014 viva → cria a 1014 (7.2.4)
