@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/quickfixgo/quickfix"
@@ -253,6 +254,9 @@ func (m *Motor) fecharVolta() {
 
 // montarLote: só o que mudou desde a última gravação (comparado com a cópia gravada).
 func (m *Motor) montarLote() *repo.Lote {
+	for i := range m.v.eventos {
+		m.v.eventos[i].Ambiente = m.amb // v1.26 (0015): o evento é do ambiente da instância
+	}
 	l := &repo.Lote{Eventos: m.v.eventos, Publicados: m.v.publicados, Estados: m.v.estados, Sessao: m.v.sessao}
 	m.v.eventos, m.v.publicados, m.v.estados, m.v.sessao = nil, nil, nil, nil
 	m.v.muPedidos.Lock()
@@ -665,7 +669,25 @@ func (m *Motor) ultimoSinalMass() time.Time {
 
 // ---------------------------------------------------------------- IDs
 
-func (m *Motor) novoIDOperacao() int64 { m.proxOpID++; return m.proxOpID }
-func (m *Motor) novoIDOrdem() int64    { m.proxOrdemID++; return m.proxOrdemID }
+func (m *Motor) novoIDOperacao() int64 { return m.ids.op.Add(1) }
+func (m *Motor) novoIDOrdem() int64    { return m.ids.ordem.Add(1) }
+
+// contadorIDs (v1.26): os IDs de operação e de ordem, comuns às instâncias dos ambientes (o banco é
+// um só). Cada instância sobe o contador ao maior gravado na partida.
+type contadorIDs struct{ op, ordem atomic.Int64 }
+
+func (c *contadorIDs) subir(op, ordem int64) {
+	for _, x := range []struct {
+		v *atomic.Int64
+		n int64
+	}{{&c.op, op}, {&c.ordem, ordem}} {
+		for {
+			atual := x.v.Load()
+			if x.n <= atual || x.v.CompareAndSwap(atual, x.n) {
+				break
+			}
+		}
+	}
+}
 
 var _ = fmt.Sprint

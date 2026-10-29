@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strconv"
 
+	"gammaquant.com.br/kalman-ordens/internal/alerta"
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/usuario"
 )
 
 // SPEC-AMBIENTES-v1: o ambiente do login do usuário no GQ (SIMULADOR × REAL) vem em cada ordem e
-// escolhe a coluna do GQ; a máquina é o teto (config.Ambientes). Na v1.25 os conectores são um
-// conjunto só, o do ambiente da máquina (o SIMULADOR, ou o REAL na equivalência PRODUCAO): a
-// configuração não deixa permitir outro (os conectores por ambiente chegam na v1.26).
+// escolhe a coluna do GQ; a máquina é o teto (config.Ambientes). v1.26: cada ambiente é uma
+// instância do motor com os seus conectores (servico.go); m.amb é o desta.
 
 // ambienteDoPedido (§1.3, §4.1 itens 1 e 2): o campo, ou o AMBIENTE_PADRAO da transição.
 func (m *Motor) ambienteDoPedido(bruto string) (string, *recusa) {
@@ -38,6 +38,10 @@ func (m *Motor) tetoAmbiente(amb string, uid int) *recusa {
 		}
 		return simples("AMBIENTE_NAO_PERMITIDO", texto)
 	}
+	if amb != m.amb {
+		// o roteador manda cada ambiente à sua instância; aqui só por defeito
+		return simples("AMBIENTE_NAO_PERMITIDO", fmt.Sprintf("%s sem instancia nesta maquina", amb))
+	}
 	if amb == dominio.AmbienteReal && !m.p.Amb.UIDReal(uid) {
 		m.al.Emitir("REAL_UID_NAO_PERMITIDO", "REAL_UID_NAO_PERMITIDO:"+strconv.Itoa(uid), fmt.Sprintf("entrada REAL do uid %d recusada: fora de REAL_UIDS", uid), 0)
 		return simples("REAL_UID_NAO_PERMITIDO", fmt.Sprintf("uid %d fora de REAL_UIDS nesta maquina", uid))
@@ -51,13 +55,19 @@ func (m *Motor) regras(amb string) usuario.Regras {
 		PnTNoSimulador: m.p.Amb.PnTNoSimulador(), RealContas: m.p.Amb.RealContas, RealContasTodas: m.p.Amb.RealContasTodas}
 }
 
-// ambienteConectores: o ambiente dos conectores configurados (v1.25: um conjunto só).
-func (m *Motor) ambienteConectores() string {
-	if m.p.Amb.Legado == "PRODUCAO" {
-		return dominio.AmbienteReal
-	}
-	return dominio.AmbienteSimulador
+// ambienteConectores: o ambiente dos conectores desta instância (v1.26: um motor por ambiente).
+func (m *Motor) ambienteConectores() string { return m.amb }
+
+// Ambiente: o ambiente desta instância.
+func (m *Motor) Ambiente() string { return m.amb }
+
+// comPrefixo: o texto do alerta da instância REAL leva o ambiente (o Telegram é um só).
+type comPrefixo struct {
+	n       alerta.Notificador
+	prefixo string
 }
+
+func (c comPrefixo) Notificar(codigo, texto string) { c.n.Notificar(codigo, c.prefixo+texto) }
 
 // conferirAmbientePedido (§1.2): a saída e o ajuste do stop usam o ambiente gravado; um pedido com
 // outro é executado assim mesmo (recusar a saída deixaria a posição aberta), com o crítico.

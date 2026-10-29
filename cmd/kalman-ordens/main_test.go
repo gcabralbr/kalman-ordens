@@ -55,7 +55,7 @@ func TestServirDePontaAPonta(t *testing.T) {
 	limpo.Fechar()
 	var saidaCLI bytes.Buffer
 	cfgCLI := config.Novo(map[string]string{"DB_DSN": dsn, "ACUSUARIO_TABELA": "acusuario_teste", "ORDENS_AMBIENTE": "HML", "ORDENS_CONTAS_HML": "12345"})
-	if err := cliUsuario(cfgCLI, []string{"habilitar", "-uid", "7", "-motivo", "fumaça"}, &saidaCLI); err != nil {
+	if err := cliUsuario(cfgCLI, []string{"habilitar", "-uid", "7", "-motivo", "fumaça", "-conectores", "pnt"}, &saidaCLI); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(saidaCLI.String(), "conector=PNT corretora=85 conta=12345") {

@@ -152,6 +152,8 @@ protegida (capturas `FE` e `FP`). O `avanca` também move a ponte (consulta ativ
 | `flx_webhooks limpa` / `falha=STATUS metodo=GET\|POST` / `cadastra url=U [triggers=a,b]` / `n=N [url=U]` | (v1.21) o cadastro de webhooks da falsa: some; a próxima chamada com o método responde STATUS; um cadastro feito por fora; confere quantos há (com essa URL) |
 | `flx_nao_achada 250ms` | (v1.21) o GET da ordem responde 404 "Order not found" até esse tempo depois do POST (`0` desliga), como o apisim de 27/10 |
 | `contrato ARQUIVO SECAO [caminho]` | a última resposta HTTP (ou o `caminho` dentro dela, ex.: `flexscan`) tem a forma do primeiro bloco ```json depois de `### SECAO` no ARQUIVO (relativo à raiz): as mesmas chaves nos dois sentidos, cada item das listas, o tipo JSON quando os dois lados não são null |
+| `flx_ambiente SIMULADOR\|REAL` | (v1.26) os verbos `flx_` seguintes valem para a Flexscan falsa, a ponte e o webhook do ambiente (o REAL existe com `config REAL_FLEXSCAN_URL=falso`, uma segunda falsa; `flx_trafego` lê o `?ambiente=`); o padrão é o SIMULADOR |
+| `flx_webhook_em SIMULADOR\|REAL ID...` | (v1.26) os retratos da falsa do alvo (`flx_ambiente`) entregues na rota do webhook do outro ambiente (a ponte de lá não conhece a ordem) |
 | `flx_trafego campo=valor ... = N` | (v1.21) quantas linhas do `GET /flexscan/trafego` casam (texto; `null`; `*` = presente; `~x` = contém); toda chamada falha se um token da falsa, a senha, o segredo ou a `FLEXSCAN_WEBHOOK_URL` aparecerem no corpo |
 
 Nos roteiros, `FLEXSCAN_PRIMEIRA_CONSULTA_MS` é 0 (a consulta do POST na hora, como antes da v1.21); o 115 liga os 200 ms. Sem `FLEXSCAN_WEBHOOK_URL`, não há conferência do cadastro.

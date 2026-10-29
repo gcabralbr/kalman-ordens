@@ -135,15 +135,15 @@ resposta _status=200 mensagens.#=0 ultimo_seq=* saude.logado=true saude.consulta
 http GET /operacoes?dia=2026-10-28
 resposta _lista.0.operacao_id=11501 _lista.0.conector=FLEXSCAN
 
-# o contrato (SPEC v1.24 §4.1, v1.22 §5.2) tem a forma da resposta real: o exemplo que o Kalman lê
+# o contrato (SPEC-AMBIENTES-v1 §10.1, v1.22 §5.2) tem a forma da resposta real: o exemplo que o Kalman lê
 http GET /flexscan/trafego?limite=2000
-contrato docs/SPEC-ORDENS-v1.24.md 4.1
+contrato docs/SPEC-AMBIENTES-v1.md 10.1
 http GET /saude
 contrato docs/SPEC-ORDENS-v1.22.md 5.2 flexscan
 # v1.23: o dia inteiro do registro (seq 1..N, sem saude); dia sem tráfego vazio; dia inválido 400
 http GET /flexscan/trafego?dia=2026-10-28
-contrato docs/SPEC-ORDENS-v1.24.md 4.2
-resposta _status=200 dia=2026-10-28 cortado=false mensagens.0.seq=1 ultimo_seq=* eventos=*
+contrato docs/SPEC-AMBIENTES-v1.md 10.2
+resposta _status=200 dia=2026-10-28 cortado=false mensagens.0.seq=1 ultimo_seq=* eventos=* ambiente=SIMULADOR
 http GET /flexscan/trafego?dia=2026-10-20
 resposta _status=200 mensagens.#=0 ultimo_seq=0
 http GET /flexscan/trafego?dia=28/10/2026
@@ -170,7 +170,7 @@ flx_trafego tipo=LOGIN resumo=~partida = 2
 flx_trafego tipo=LOGIN resumo=~401 = 1
 flx_trafego tipo=WEBHOOK status_http=404 = 0
 http GET /flexscan/trafego?limite=2000
-contrato docs/SPEC-ORDENS-v1.24.md 4.1
+contrato docs/SPEC-AMBIENTES-v1.md 10.1
 saude posicao=0 divergente=false parada=null
 flx_nada
 nada

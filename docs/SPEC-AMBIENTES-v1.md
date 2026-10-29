@@ -1,7 +1,7 @@
 # SPEC kalman-ordens — ambientes SIMULADOR e REAL por ordem (desenho, 29/10/2026)
 
-**Estado: aprovada em 29/10, com as decisões do §7.3.** Passo 1 (v1.25) em implementação. Base: v1.24
-(`96c5575139c1`, instalada na .53 em 29/10).
+**Estado: aprovada em 29/10, com as decisões do §7.3.** Passo 1 (v1.25, `9a78923e7e03`) instalado na
+.53 em 29/10; passo 2 (v1.26, §10) em implementação.
 
 ## 0. A mudança
 
@@ -403,6 +403,10 @@ Cada passo é um pacote, com o fluxo de sempre:
 - **Na equivalência `ORDENS_AMBIENTE=PRODUCAO`,** a habilitação lida é a do REAL. Uma máquina que rode
   com ela precisa de `usuario habilitar -ambiente REAL`. Nenhuma roda hoje.
 
+**O que a v1.26 (passo 2) entrega:** o §10. Ficam para depois: a carga de 190 entradas metade em
+cada ambiente (§6) e o roteiro com o PnT no REAL das falsas (os roteiros do PnT continuam na
+equivalência HML, que é o caso da .53 até o passo 4).
+
 **O que não muda na transição:**
 - os roteiros de hoje;
 - o `POST /ordens` sem `ambiente` na .53 até o passo 3;
@@ -430,3 +434,137 @@ lugar (o motor assume uma sessão FIX e uma ponte), multiplicado por dois.
 **Do lado do serviço, de 4 a 5 dias úteis até o REAL de teste na .53**, se as decisões do §7.3 não
 segurarem. O caminho crítico costuma ser externo: as credenciais da Flexscan de produção (D4) e a
 mudança do Kalman (passo 3).
+
+## 10. Passo 2 (v1.26): os conectores por ambiente
+
+### 10.0 O que a v1.26 entrega
+
+**Uma instância do motor por ambiente permitido** (`motor.Servico` na frente da API):
+- cada instância tem os seus conectores, a posição, a parada, a conciliação da partida, o disjuntor,
+  os contadores de limite (entradas do dia e por minuto, perda do dia, recusas para parada), o cache
+  de habilitação e o estado gravado (a parada e a zeragem do REAL ficam em `REAL:parada`,
+  `REAL:zeragem_feita`, `REAL:sinal_k:<modulo>`; as do SIMULADOR, nas chaves de antes);
+- as instâncias compartilham o processo, o banco (com um contador único de IDs de operação e de
+  ordem), a API e a fonte de preço (as URLs iguais são uma fonte só).
+
+**O roteamento:**
+- a entrada e o sinal vão à instância do `ambiente` do pedido (sem o campo, o `AMBIENTE_PADRAO`);
+  ambiente ausente, inválido ou sem instância vai à principal (o SIMULADOR), que recusa com o código
+  do §4.1;
+- a entrada repetida de uma operação já recebida vai à instância dona: com outro ambiente,
+  `AMBIENTE_DIVERGENTE`, agora de ponta a ponta (a verificação subiu para logo depois do ambiente);
+- a saída, o stop, o `GET /ordens/{id}` e as ações do admin vão à instância dona da operação;
+- `POST /parada` e `POST /retomar` aceitam `"ambiente"`; sem ele valem para todas as instâncias.
+  Com mais de uma instância, a resposta é a da primeira com o bloco `"ambientes"` de cada uma, e
+  `aceito` só se todas aceitaram.
+
+**A configuração (`config.Visao`):**
+- fora da equivalência, o REAL lê as chaves do conector só das `REAL_`, nunca das sem prefixo:
+  `REAL_FLEXSCAN_URL`, `_USUARIO`, `_SENHA`, `_WEBHOOK_SEGREDO`, `_WEBHOOK_PREFIXO` (padrão
+  `/flexscan/webhook-real/`), `_WEBHOOK_URL`, `_ESTADO_LOGIN` (padrão
+  `/var/lib/kalman-ordens/flexscan-login-real.json`); `REAL_FIX_SENDER_COMP_ID`, `_TARGET_COMP_ID`,
+  `_HOST`, `_PORTA`, `_USUARIO`, `_SENHA`, `_DIR` (padrão `/var/lib/kalman-ordens/fix-real`),
+  `_INICIO`, `_FIM`, `_RESET_ON_LOGON`;
+- com recuo para a sem prefixo: `ORDENS_BOLSA`, `ORDENS_SENDER_LOCATION`, `FLEXSCAN_BOLSA`,
+  `PRECOS_URL_FLEXSCAN`, `PRECOS_SAUDE_URL_FLEXSCAN`, `PRECOS_URL_PNT`, `PRECOS_SAUDE_URL_PNT`;
+- o PnT do REAL existe com `REAL_FIX_HOST` (e `REAL_PNT_DESLIGADO=1` o desliga);
+- os limites do REAL são os `REAL_LIMITE_*` do §3.1; os outros ajustes são compartilhados;
+- no SIMULADOR, as chaves `FIX_*` são ignoradas (aviso no journal) e a sessão FIX nunca sobe: uma
+  entrada de uid habilitado só no PnT é recusada com `CONECTOR_AMBIENTE`;
+- o REAL em `AMBIENTES_PERMITIDOS` passa a subir quando há conector REAL (`REAL_FLEXSCAN_URL`, ou
+  `REAL_FIX_HOST` sem `REAL_PNT_DESLIGADO`); sem nenhum, não sobe;
+- **na equivalência `ORDENS_AMBIENTE` (a .53 hoje), nada muda:** uma instância só, com a
+  configuração inteira.
+
+**O webhook:** o listener continua um só (`FLEXSCAN_WEBHOOK_ENDERECO`), com uma rota por ambiente
+pelo prefixo; o segredo de cada um está no caminho. Prefixos iguais, ou um contendo o outro, não
+sobem. A ponte de um ambiente só conhece as ordens dele.
+
+**O banco (migração 0015):** `ambiente` no `kalmanordemevento` (o da instância que trocou a
+mensagem), e a chave única do fill passa a `(orderid37, execid, ambiente)`: as duas Flexscan
+numeram as ordens cada uma a seu modo. A recarga do tráfego, a contagem de envios da partida e as
+chaves de fill do dia são por ambiente.
+
+**O que a API mostra:**
+- `/saude`: os campos de hoje são os da principal (o SIMULADOR); `"ambientes"` traz o bloco de cada
+  instância (sessão, Flexscan, posição, parada, limites, alertas);
+- `/flexscan/trafego?ambiente=` e `/flexscan/trafego?dia=...&ambiente=`: sem o parâmetro, o
+  SIMULADOR; a resposta diz o `ambiente` (§10.1, §10.2);
+- `/sessao/ao-vivo?ambiente=` e `/pnt/ordens?ambiente=`: sem o parâmetro, a instância com a sessão
+  FIX (o REAL; na equivalência HML, a única);
+- os alertas da instância REAL levam `[REAL] ` no texto do Telegram; todo evento publicado leva o
+  `ambiente` (o da operação; sem operação, o da instância).
+
+**Testes:** o roteiro 119 (os dois ambientes ao mesmo tempo, duas Flexscan falsas: `flx_ambiente`
+escolhe a dos verbos `flx_`); os de sempre continuam na equivalência HML.
+
+### 10.1 `GET /flexscan/trafego` (v1.26)
+
+O contrato da v1.24 §4.1, com o `ambiente` da ponte que respondeu.
+
+```json
+{
+  "ambiente": "SIMULADOR",
+  "mensagens": [
+    {"seq": 812, "em": "2026-10-27T09:37:40.794-03:00", "tipo": "POST", "direcao": "ENV",
+     "status_http": 202, "duracao_ms": 61, "clordid": "KM-TESTE-E-991027001-1",
+     "flexscan_id": "80b78b76-3ce7-4c15-acb8-461c865597fb", "operacao_id": 991027001,
+     "modulo": "TESTE", "uid": 5725, "resumo": "C 1 WINZ26 limite 179130 conta S-1117150",
+     "nao_registrada": false, "ip": null},
+    {"seq": 814, "em": "2026-10-27T09:42:41.120-03:00", "tipo": "WEBHOOK", "direcao": "REC",
+     "status_http": 200, "duracao_ms": null, "clordid": "KM-TESTE-P-991027001-1",
+     "flexscan_id": "9a0a6ca1-...", "operacao_id": 991027001, "modulo": "TESTE", "uid": 5725,
+     "resumo": "1 retrato: KM-TESTE-P-991027001-1 estado 5 exec 0/1",
+     "nao_registrada": false, "ip": "177.71.196.212"}
+  ],
+  "ultimo_seq": 814,
+  "saude": {
+    "logado": true, "token_expira": "2026-10-27T19:20:21-03:00", "receptor": true,
+    "webhooks_recebidos": 7, "ultimo_webhook": "2026-10-27T09:45:59-03:00", "ultimo_erro": "",
+    "ordens_acompanhadas": 6, "ordens_vivas": 0,
+    "webhook_cadastrado": true, "webhook_conferido_em": "2026-10-27T09:52:40-03:00",
+    "webhook_recadastrado_em": null, "webhook_faltas_seguidas": 0,
+    "ultimo_login": {"em": "2026-10-27T09:20:21.004-03:00", "motivo": "partida", "resultado": "OK"},
+    "boot": "2026-10-27T09:20:20.512-03:00", "dia": "2026-10-27", "recarregadas": 0, "msgs_min": 12, "consultas_min": 40,
+    "webhook_ips": {"177.71.196.212": 7},
+    "latencia_post_p50_ms": 58, "latencia_post_max_ms": 140
+  }
+}
+```
+
+### 10.2 `GET /flexscan/trafego?dia=AAAA-MM-DD` (v1.26)
+
+```json
+{
+  "ambiente": "SIMULADOR",
+  "dia": "2026-10-27",
+  "mensagens": [
+    {"seq": 812, "em": "2026-10-27T09:37:40.794-03:00", "tipo": "POST", "direcao": "ENV",
+     "status_http": 202, "duracao_ms": 61, "clordid": "KM-TESTE-E-991027001-1",
+     "flexscan_id": "80b78b76-3ce7-4c15-acb8-461c865597fb", "operacao_id": 991027001,
+     "modulo": "TESTE", "uid": 5725, "resumo": "C 1 WINZ26 limite 179130 conta S-1117150",
+     "nao_registrada": false, "ip": null},
+    {"seq": 814, "em": "2026-10-27T09:42:41.120-03:00", "tipo": "WEBHOOK", "direcao": "REC",
+     "status_http": 200, "duracao_ms": null, "clordid": "KM-TESTE-P-991027001-1",
+     "flexscan_id": "9a0a6ca1-...", "operacao_id": 991027001, "modulo": "TESTE", "uid": 5725,
+     "resumo": "1 retrato: KM-TESTE-P-991027001-1 estado 5 exec 0/1",
+     "nao_registrada": false, "ip": "177.71.196.212"}
+  ],
+  "ultimo_seq": 814, "eventos": 1630, "cortado": false
+}
+```
+
+### 10.3 `POST /parada` com as duas instâncias
+
+Sem `ambiente`, as duas param; `ambientes` traz a resposta de cada uma. Com `{"ambiente":"REAL"}`,
+só o REAL (a resposta é a dele, com o mesmo bloco).
+
+```json
+{"aceito": true, "codigo": "PARADA_ATIVA", "motivo": "parada BLOQUEAR ativa", "ambiente": "SIMULADOR",
+ "parada": {"modo": "BLOQUEAR", "origem": "admin", "motivo": "teste", "por": 12, "desde": "2026-10-30T10:05:00-03:00"},
+ "ambientes": {
+   "SIMULADOR": {"aceito": true, "codigo": "PARADA_ATIVA", "motivo": "parada BLOQUEAR ativa", "ambiente": "SIMULADOR",
+                 "parada": {"modo": "BLOQUEAR", "origem": "admin", "motivo": "teste", "por": 12, "desde": "2026-10-30T10:05:00-03:00"}},
+   "REAL":      {"aceito": true, "codigo": "PARADA_ATIVA", "motivo": "parada BLOQUEAR ativa", "ambiente": "REAL",
+                 "parada": {"modo": "BLOQUEAR", "origem": "admin", "motivo": "teste", "por": 12, "desde": "2026-10-30T10:05:00-03:00"}}}}
+```

@@ -27,14 +27,16 @@ type EventoFIX struct {
 	ClOrdID   string
 	OrderID   string
 	ExecID    string // único por OrderID quando os dois estão presentes (v1.3 H1)
-	LastQty   *int
-	LastPx    *decimal.Decimal
-	CumQty    *int
-	AvgPx     *decimal.Decimal
-	Texto     string
-	Codigo    string
-	Bruta     string
-	Em        time.Time
+	// Ambiente (v1.26, 0015): o da instância que trocou a mensagem; vazio = SIMULADOR
+	Ambiente string
+	LastQty  *int
+	LastPx   *decimal.Decimal
+	CumQty   *int
+	AvgPx    *decimal.Decimal
+	Texto    string
+	Codigo   string
+	Bruta    string
+	Em       time.Time
 }
 
 // Publicado é um evento para o gestor (GET /eventos).
@@ -57,7 +59,7 @@ type Repositorio interface {
 	// RegistrarEvento devolve novo=false se o par (OrderID, ExecID) já existe (fill repetido na
 	// mesma ordem). O mesmo ExecID em outra ordem é outro evento (v1.3 H1).
 	RegistrarEvento(EventoFIX) (novo bool, err error)
-	EnviosDesde(t time.Time) (int, error)
+	EnviosDesde(t time.Time, ambiente string) (int, error)
 	// Publicar: modulo vazio = KALMAN (eventos do serviço, alertas sem operação).
 	Publicar(tipo, modulo string, operacaoID int64, dados []byte, em time.Time) (int64, error)
 	// Publicados: modulo vazio = todos.
@@ -84,7 +86,7 @@ type Repositorio interface {
 	EventosFIXDasOrdens(ordemIDs []int64) ([]EventoFIX, error)
 	// EventosFlexscanEntre (28/10): os eventos da ponte Flexscan (msgtype FLX-*) em [de, ate), os
 	// limite mais recentes, em ordem; o tráfego da aba "Flexscan ao vivo" recarregado na partida.
-	EventosFlexscanEntre(de, ate time.Time, limite int) ([]EventoFIX, error)
+	EventosFlexscanEntre(de, ate time.Time, limite int, ambiente string) ([]EventoFIX, error)
 	PublicadosDaOperacao(modulo string, operacaoID int64) ([]Publicado, error)
 	// PublicadosEntre: [de, ate); tipo vazio = todos.
 	PublicadosEntre(de, ate time.Time, tipo string) ([]Publicado, error)
@@ -100,7 +102,7 @@ type Repositorio interface {
 	// atribuídos por ele (a partir de MaioresIDs); a deduplicação de fill é dele (ChavesFillDoDia).
 	GravarLote(*Lote) error
 	MaioresIDs() (operacao, ordem int64, err error)
-	ChavesFillDoDia(de, ate time.Time) (map[string]bool, error)
+	ChavesFillDoDia(de, ate time.Time, ambiente string) (map[string]bool, error)
 	// ConfigUsuarios: a configuração de vários uids de uma vez (cache do motor); uid sem linha não vem.
 	ConfigUsuarios(uids []int) (map[int][2]string, error)
 	// OperacoesExistentes: dos operacao_id dados, os que já existem no módulo (qualquer dia) —
@@ -299,7 +301,7 @@ func (m *Memoria) RegistrarEvento(e EventoFIX) (bool, error) {
 	defer m.mu.Unlock()
 	// como a chave única (orderid37, execid) do MariaDB: vazio em qualquer dos dois não conflita
 	if e.ExecID != "" && e.OrderID != "" {
-		chave := e.OrderID + "\x00" + e.ExecID
+		chave := e.OrderID + "\x00" + e.ExecID + "\x00" + dominio.AmbienteDe(e.Ambiente)
 		if m.execIDs[chave] {
 			return false, nil
 		}
@@ -311,12 +313,12 @@ func (m *Memoria) RegistrarEvento(e EventoFIX) (bool, error) {
 	return true, nil
 }
 
-func (m *Memoria) EnviosDesde(t time.Time) (int, error) {
+func (m *Memoria) EnviosDesde(t time.Time, amb string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	n := 0
 	for _, e := range m.eventos {
-		if e.Direcao == "ENV" && (e.MsgType == "D" || e.MsgType == "F" || e.MsgType == "G") && !e.Em.Before(t) {
+		if dominio.AmbienteDe(e.Ambiente) == dominio.AmbienteDe(amb) && e.Direcao == "ENV" && (e.MsgType == "D" || e.MsgType == "F" || e.MsgType == "G") && !e.Em.Before(t) {
 			n++
 		}
 	}
@@ -388,12 +390,12 @@ func (m *Memoria) Eventos() []EventoFIX {
 	return append([]EventoFIX(nil), m.eventos...)
 }
 
-func (m *Memoria) EventosFlexscanEntre(de, ate time.Time, limite int) ([]EventoFIX, error) {
+func (m *Memoria) EventosFlexscanEntre(de, ate time.Time, limite int, amb string) ([]EventoFIX, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var es []EventoFIX
 	for _, e := range m.eventos {
-		if strings.HasPrefix(e.MsgType, "FLX-") && !e.Em.Before(de) && e.Em.Before(ate) {
+		if dominio.AmbienteDe(e.Ambiente) == dominio.AmbienteDe(amb) && strings.HasPrefix(e.MsgType, "FLX-") && !e.Em.Before(de) && e.Em.Before(ate) {
 			es = append(es, e)
 		}
 	}

@@ -305,9 +305,9 @@ func (r *MariaDB) RegistrarEvento(e EventoFIX) (bool, error) {
 		ordem = e.OrdemID
 	}
 	_, err := r.db.Exec(`INSERT INTO kalmanordemevento (ordem_id, modulo, direcao, msgtype, exectype, ordstatus, clordid, orderid37,
-		execid, lastqty, lastpx, cumqty, avgpx, texto, codigo, fix_raw, em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		execid, lastqty, lastpx, cumqty, avgpx, texto, codigo, fix_raw, em, ambiente) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		ordem, modulo(e.Modulo), e.Direcao, cortar(e.MsgType, 20), nulo(e.ExecType), nulo(e.OrdStatus), nulo(cortar(e.ClOrdID, 60)), nulo(e.OrderID),
-		nulo(e.ExecID), lq, lp, cq, ap, nulo(cortar(e.Texto, 1000)), nulo(cortar(e.Codigo, 20)), nulo(e.Bruta), utc(e.Em))
+		nulo(e.ExecID), lq, lp, cq, ap, nulo(cortar(e.Texto, 1000)), nulo(cortar(e.Codigo, 20)), nulo(e.Bruta), utc(e.Em), dominio.AmbienteDe(e.Ambiente))
 	if err != nil {
 		var me *mysql.MySQLError
 		if errors.As(err, &me) && me.Number == 1062 {
@@ -318,9 +318,10 @@ func (r *MariaDB) RegistrarEvento(e EventoFIX) (bool, error) {
 	return true, nil
 }
 
-func (r *MariaDB) EnviosDesde(t time.Time) (int, error) {
+func (r *MariaDB) EnviosDesde(t time.Time, amb string) (int, error) {
 	var n int
-	err := r.db.QueryRow(`SELECT COUNT(*) FROM kalmanordemevento WHERE direcao='ENV' AND msgtype IN ('D','F','G') AND em >= ?`, t.UTC()).Scan(&n)
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM kalmanordemevento WHERE direcao='ENV' AND msgtype IN ('D','F','G') AND em >= ? AND ambiente = ?`,
+		t.UTC(), dominio.AmbienteDe(amb)).Scan(&n)
 	return n, err
 }
 

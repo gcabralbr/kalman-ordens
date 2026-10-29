@@ -64,7 +64,10 @@ type Falha struct {
 type Falso struct {
 	srv     *httptest.Server
 	Usuario string
-	Senha   string
+	// PrefixoID (v1.26): o começo dos ids das ordens (vazio = 00000000-0000-4000-8000-); duas falsas
+	// com prefixos diferentes não repetem id (a do REAL nos roteiros dos dois ambientes)
+	PrefixoID string
+	Senha     string
 
 	mu        sync.Mutex
 	ordens    map[string]*Ordem
@@ -264,7 +267,7 @@ func (f *Falso) post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.seq++
-	id := fmt.Sprintf("00000000-0000-4000-8000-%012d", f.seq)
+	id := fmt.Sprintf("%s%012d", f.prefixoID(), f.seq)
 	o := &Ordem{ID: id, Nome: nome, Conta: fmt.Sprint(c["account"]), Simbolo: fmt.Sprint(c["symbol"]), Lado: fmt.Sprint(c["side"]), Tipo: ot,
 		Qtd: atoi(c["qtty"]), Preco: atoi64(c["price"]), Stop: atoi64(c["stopPrice"]), Status: "0", Transact: f.agora(), Enviada: f.agora()}
 	o.Texto = fmt.Sprintf("Ordem aceita, %d@%d", o.Qtd, o.Preco)
@@ -385,7 +388,7 @@ func (f *Falso) Criar(o Ordem) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.seq++
-	o.ID = fmt.Sprintf("00000000-0000-4000-8000-%012d", f.seq)
+	o.ID = fmt.Sprintf("%s%012d", f.prefixoID(), f.seq)
 	if o.Status == "" {
 		o.Status = "0"
 	}
@@ -674,4 +677,11 @@ func (f *Falso) Tokens() []string {
 		ts = append(ts, t)
 	}
 	return ts
+}
+
+func (f *Falso) prefixoID() string {
+	if f.PrefixoID == "" {
+		return "00000000-0000-4000-8000-"
+	}
+	return f.PrefixoID
 }

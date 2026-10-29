@@ -30,6 +30,10 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if r != nil {
 		return nil, r
 	}
+	// §1.2: a operação já recebida em outro ambiente (o roteador manda a entrada à instância dona)
+	if op := m.operacaoDo(p); op != nil && dominio.AmbienteDe(op.Ambiente) != amb {
+		return nil, simples("AMBIENTE_DIVERGENTE", fmt.Sprintf("operação já recebida no %s", dominio.AmbienteDe(op.Ambiente)))
+	}
 	if p.UID == nil {
 		return nil, simples("UID_NAO_HABILITADO", "uid ausente")
 	}
@@ -56,12 +60,13 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	// PNT_DESLIGADO: o uid só habilitado no PnT nem chega à conta (sem CONTA_AMBIENTE); com os dois
 	// conectores, a escolha do GQ decide depois da conta
 	if m.p.PnTDesligado && !slices.Contains(hab.Conectores, dominio.ConectorFlexscan) {
+		if m.amb == dominio.AmbienteSimulador && !m.p.Amb.PnTNoSimulador() {
+			// v1.26: no SIMULADOR o PnT não existe (não é que esteja desligado)
+			return nil, simples("CONECTOR_AMBIENTE", "o PnT só opera no REAL (a HML do PnT é D-1)")
+		}
 		return nil, conectorDesligado()
 	}
 	if op := m.operacaoDo(p); op != nil {
-		if dominio.AmbienteDe(op.Ambiente) != amb {
-			return nil, simples("AMBIENTE_DIVERGENTE", fmt.Sprintf("operação já recebida no %s", dominio.AmbienteDe(op.Ambiente)))
-		}
 		// a idempotência (repetido) já tratou o reenvio; aqui só chega operação sem pedido guardado
 		return nil, simples("DUPLICADA", "operação já recebida")
 	}
@@ -129,6 +134,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	m.aoVivo.Associar(op.Modulo, op.OperacaoID, op.UID)
 	m.ops = append(m.ops, op)
 	m.porOp[chaveOperacao{op.Modulo, op.OperacaoID}] = op
+	m.donos.Store(chaveOperacao{op.Modulo, op.OperacaoID}, m.amb)
 
 	var ref decimal.Decimal
 	if lado == dominio.Compra {

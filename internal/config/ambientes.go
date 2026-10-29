@@ -123,9 +123,12 @@ func (c Config) LerAmbientes() (a Ambientes, avisos []string, err error) {
 	if a.Real.QtdOrdem <= 0 || a.Real.EntradasDia <= 0 || a.Real.PerdaDiaPts <= 0 || a.Real.PosicaoMax <= 0 || a.Real.EntradasMin <= 0 {
 		return a, nil, fmt.Errorf("limites REAL: todos maiores que zero (%+v)", a.Real)
 	}
-	// v1.25: os conectores ainda são um conjunto só, o do SIMULADOR; os do REAL (chaves REAL_)
-	// chegam na v1.26 (SPEC-AMBIENTES-v1 §8, passo 2)
-	return a, nil, fmt.Errorf("REAL em AMBIENTES_PERMITIDOS: nenhum conector REAL configurado (os conectores por ambiente chegam na v1.26)")
+	// v1.26: os conectores do REAL são os das chaves REAL_ (Visao); sem nenhum, o REAL não teria por
+	// onde mandar ordem
+	if c.Texto("REAL_FLEXSCAN_URL", "") == "" && (c.Texto("REAL_FIX_HOST", "") == "" || c.Bool("REAL_PNT_DESLIGADO", false)) {
+		return a, nil, fmt.Errorf("REAL em AMBIENTES_PERMITIDOS sem conector REAL: REAL_FLEXSCAN_URL ou REAL_FIX_HOST (SPEC-AMBIENTES-v1 §2.1)")
+	}
+	return a, nil, nil
 }
 
 // avisosReal: as chaves REAL_* preenchidas numa máquina sem o REAL permitido ficam ignoradas.

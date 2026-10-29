@@ -51,13 +51,20 @@ func (n *notificador) Notificar(codigo, texto string) {
 }
 
 type servico struct {
-	motor    *motor.Motor
-	sessao   *pnt.Sessao
-	http     http.Handler
-	baseEnv  int64              // falso.EnviadasApp() ao subir
-	baseRec  int64              // falso.RecebidasApp() ao subir
-	ponte    *flexscan.Ponte    // SPEC-FLEXSCAN-v1: com config FLEXSCAN_URL=falso
-	receptor *flexscan.Receptor // a rota do webhook (chamada direto, sem listener)
+	motor *motor.Motor // a instância com a sessão FIX (ou a principal)
+	// v1.26: as instâncias por ambiente (SIMULADOR antes do REAL) e as pontes e rotas de webhook de
+	// cada uma; ponte e receptor são as do alvo dos verbos flx_ (flx_ambiente)
+	motores    []*motor.Motor
+	pontes     map[string]*flexscan.Ponte
+	receptores map[string]*flexscan.Receptor
+	caminhos   map[string]string // o caminho do webhook (prefixo + segredo) por ambiente
+	caminho    string
+	sessao     *pnt.Sessao
+	http       http.Handler
+	baseEnv    int64              // falso.EnviadasApp() ao subir
+	baseRec    int64              // falso.RecebidasApp() ao subir
+	ponte      *flexscan.Ponte    // SPEC-FLEXSCAN-v1: com config FLEXSCAN_URL=falso
+	receptor   *flexscan.Receptor // a rota do webhook (chamada direto, sem listener)
 }
 
 // SegredoWebhookRoteiro: o FLEXSCAN_WEBHOOK_SEGREDO dos roteiros (o teste de máscara procura por ele
@@ -79,7 +86,9 @@ type Executor struct {
 	notif       *notificador
 	pnt         *falso.Falso
 	svc         *servico
-	flx         *flxfalso.Falso // a Flexscan falsa (só com config FLEXSCAN_URL=falso)
+	flx         *flxfalso.Falso            // a Flexscan falsa do alvo dos verbos flx_ (config FLEXSCAN_URL=falso)
+	flxs        map[string]*flxfalso.Falso // v1.26: por ambiente (REAL_FLEXSCAN_URL=falso: a do REAL)
+	alvoFlx     string
 	cfg         config.Config
 	capturas    map[string]string
 	resposta    map[string]any
@@ -197,6 +206,25 @@ func (e *Executor) preparar() error {
 		}
 		e.flx.EsperaTimeout(600 * time.Millisecond)
 	}
+	e.flxs, e.alvoFlx = map[string]*flxfalso.Falso{}, dominio.AmbienteSimulador
+	if e.flx != nil {
+		e.flxs[dominio.AmbienteSimulador] = e.flx
+	}
+	if v["REAL_FLEXSCAN_URL"] == "falso" {
+		// v1.26: a Flexscan falsa do REAL (outra instância, outro usuário, outro segredo de webhook)
+		f := flxfalso.Novo("flx_roteiro_real", SenhaFlexscanRoteiro+"-real", e.rel.Agora)
+		f.EsperaTimeout(600 * time.Millisecond)
+		f.PrefixoID = "00000000-0000-4000-9000-"
+		e.flxs[dominio.AmbienteReal] = f
+		v["REAL_FLEXSCAN_URL"], v["REAL_FLEXSCAN_USUARIO"], v["REAL_FLEXSCAN_SENHA"] = f.URL(), "flx_roteiro_real", SenhaFlexscanRoteiro+"-real"
+		for k, x := range map[string]string{"FLEXSCAN_WEBHOOK_ENDERECO": "roteiro", "REAL_FLEXSCAN_WEBHOOK_SEGREDO": SegredoWebhookRoteiro + "-real",
+			"REAL_FLEXSCAN_ESTADO_LOGIN": filepath.Join(e.dir, "flexscan-login-real.json"), "FLEXSCAN_TIMEOUT_MS": "300", "FLEXSCAN_REQ_POR_S": "0",
+			"FLEXSCAN_LOGIN_MAX": "50", "FLEXSCAN_PRIMEIRA_CONSULTA_MS": "0"} {
+			if v[k] == "" {
+				v[k] = x
+			}
+		}
+	}
 	e.cfg = config.Novo(v)
 	for _, p := range e.c.Preparo {
 		if err := e.usuario(p); err != nil {
@@ -262,8 +290,40 @@ func (e *Executor) usuario(p roteiro.Passo) error {
 	return fmt.Errorf("verbo %s", p.Verbo)
 }
 
+// instancias: as instâncias do motor como o servir as monta (v1.26): na equivalência
+// ORDENS_AMBIENTE, uma, com a configuração inteira; senão uma por ambiente permitido, cada uma com a
+// sua visão (config.Visao).
+func (e *Executor) instancias() ([]*motor.Motor, []config.Config, error) {
+	amb, _, err := e.cfg.LerAmbientes()
+	if err != nil {
+		return nil, nil, err
+	}
+	if amb.Legado != "" {
+		return []*motor.Motor{motor.Novo(e.cfg, e.rel, e.repo, e.preco, e.notif)}, []config.Config{e.cfg}, nil
+	}
+	var ms []*motor.Motor
+	var cs []config.Config
+	for _, a := range amb.Lista() {
+		v, _ := e.cfg.Visao(amb, a)
+		ms, cs = append(ms, motor.NovoNoAmbiente(a, v, e.rel, e.repo, e.preco, e.notif)), append(cs, v)
+	}
+	return ms, cs, nil
+}
+
 func (e *Executor) subir() error {
-	m := motor.Novo(e.cfg, e.rel, e.repo, e.preco, e.notif)
+	ms, cs, err := e.instancias()
+	if err != nil {
+		return err
+	}
+	// a sessão FIX é da instância que tem o PnT (na equivalência HML, a única; fora dela, o REAL com
+	// REAL_FIX_HOST); sem nenhuma, fica na principal, que a ignora (PNT_DESLIGADO)
+	m := ms[0]
+	for i, c := range cs {
+		if !c.Bool("PNT_DESLIGADO", false) {
+			m = ms[i]
+			break
+		}
+	}
 	s, err := pnt.NovaSessao(pnt.ConfigSessao{
 		SenderCompID: "KALMAN", Host: "127.0.0.1", Porta: e.pnt.Porta(), Dir: filepath.Join(e.dir, "fix"),
 		Inicio: "00:00:00", Fim: "00:00:00", HeartBtInt: 5, SemLogArquivo: true,
@@ -276,42 +336,102 @@ func (e *Executor) subir() error {
 		return err
 	}
 	m.Usar(s)
-	var ponte *flexscan.Ponte
-	var rec *flexscan.Receptor
-	if e.flx != nil {
-		ponte = flexscan.Nova(flexscan.ConfigDe(e.cfg), m.OuvinteFlexscan(), e.rel)
-		m.UsarFlexscan(ponte)
-		if rec, err = flexscan.NovoReceptor(ponte, e.cfg.Texto("FLEXSCAN_WEBHOOK_PREFIXO", "/flexscan/webhook/"), e.cfg.Texto("FLEXSCAN_WEBHOOK_SEGREDO", "")); err != nil {
+	svc := &servico{motor: m, motores: ms, sessao: s, pontes: map[string]*flexscan.Ponte{}, receptores: map[string]*flexscan.Receptor{},
+		caminhos: map[string]string{}}
+	for i, mi := range ms {
+		amb, c := mi.Ambiente(), cs[i]
+		if e.flxs[amb] == nil || c.Texto("FLEXSCAN_URL", "") == "" {
+			continue
+		}
+		ponte := flexscan.Nova(flexscan.ConfigDe(c), mi.OuvinteFlexscan(), e.rel)
+		mi.UsarFlexscan(ponte)
+		prefixo := c.Texto("FLEXSCAN_WEBHOOK_PREFIXO", "/flexscan/webhook/")
+		rec, err := flexscan.NovoReceptor(ponte, prefixo, c.Texto("FLEXSCAN_WEBHOOK_SEGREDO", ""))
+		if err != nil {
 			return err
 		}
+		svc.pontes[amb], svc.receptores[amb], svc.caminhos[amb] = ponte, rec, prefixo+c.Texto("FLEXSCAN_WEBHOOK_SEGREDO", "")
 	}
-	if err := m.Iniciar(); err != nil {
+	sv := motor.NovoServico(ms...)
+	if err := sv.Iniciar(); err != nil {
 		return err
 	}
 	e.logonsMotor = 0
-	e.svc = &servico{motor: m, sessao: s, http: api.Handler(m, e.cfg.Segundos("HTTP_ESPERA_S", 5)), baseEnv: e.pnt.EnviadasApp() + e.pnt.Reentregas(), baseRec: e.pnt.RecebidasApp(),
-		ponte: ponte, receptor: rec}
+	svc.http, svc.baseEnv, svc.baseRec = api.Handler(sv, e.cfg.Segundos("HTTP_ESPERA_S", 5)), e.pnt.EnviadasApp()+e.pnt.Reentregas(), e.pnt.RecebidasApp()
+	e.svc = svc
+	e.mirarFlexscan(e.alvoFlx)
 	if err := s.Iniciar(); err != nil {
 		return err
 	}
-	if ponte != nil {
-		ponte.Iniciar()
-		if !esperarAte(5*time.Second, ponte.Logado) {
-			return fmt.Errorf("a ponte Flexscan não logou na Flexscan falsa")
+	for _, amb := range []string{dominio.AmbienteSimulador, dominio.AmbienteReal} {
+		if ponte := svc.pontes[amb]; ponte != nil {
+			ponte.Iniciar()
+			if !esperarAte(5*time.Second, ponte.Logado) {
+				return fmt.Errorf("a ponte Flexscan do %s não logou na Flexscan falsa", amb)
+			}
 		}
 	}
 	return nil
+}
+
+// mirarFlexscan (flx_ambiente): os verbos flx_ passam a valer para a Flexscan falsa, a ponte e o
+// webhook do ambiente.
+func (e *Executor) mirarFlexscan(amb string) {
+	e.alvoFlx, e.flx = amb, e.flxs[amb]
+	if e.svc != nil {
+		e.svc.ponte, e.svc.receptor, e.svc.caminho = e.svc.pontes[amb], e.svc.receptores[amb], e.svc.caminhos[amb]
+	}
+}
+
+// processadas e tick: todas as instâncias.
+func (s *servico) processadas() int64 {
+	var n int64
+	for _, m := range s.motores {
+		n += m.Processadas()
+	}
+	return n
+}
+
+func (s *servico) tick() {
+	for _, m := range s.motores {
+		m.Tick()
+	}
+	for _, amb := range []string{dominio.AmbienteSimulador, dominio.AmbienteReal} {
+		if p := s.pontes[amb]; p != nil {
+			p.Tick()
+		}
+	}
+}
+
+// pontesOcupadas e entregues: as pontes de todos os ambientes.
+func (s *servico) pontesOcupadas() bool {
+	for _, p := range s.pontes {
+		if p.Ocupada() {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *servico) entregues() int64 {
+	var n int64
+	for _, p := range s.pontes {
+		n += p.Entregues()
+	}
+	return n
 }
 
 func (e *Executor) descer() {
 	if e.svc == nil {
 		return
 	}
-	if e.svc.ponte != nil {
-		e.svc.ponte.Parar()
+	for _, p := range e.svc.pontes {
+		p.Parar()
 	}
 	e.svc.sessao.Parar()
-	e.svc.motor.Parar()
+	for _, m := range e.svc.motores {
+		m.Parar()
+	}
 	e.svc = nil
 }
 
@@ -325,8 +445,8 @@ func (e *Executor) encerrar() {
 	if e.pnt != nil {
 		e.pnt.Parar()
 	}
-	if e.flx != nil {
-		e.flx.Parar()
+	for _, f := range e.flxs {
+		f.Parar()
 	}
 	if m, ok := e.falha.Repositorio.(*repo.MariaDB); ok {
 		m.Fechar()
@@ -340,21 +460,19 @@ func (e *Executor) ocioso() {
 		return // motor_lento: nada anda até motor_normal
 	}
 	fim := time.Now().Add(3 * time.Second)
-	pnte := e.svc.ponte
+	semPonte := len(e.svc.pontes) == 0
 	for time.Now().Before(fim) {
-		proc := e.svc.motor.Processadas()
+		proc := e.svc.processadas()
 		var pntParte, flxParte int64
 		if e.pnt.Logado() {
 			pntParte = e.pnt.EnviadasApp() + e.pnt.Reentregas() - e.svc.baseEnv
 		}
-		if pnte != nil {
-			flxParte = pnte.Entregues() // os ERs sintéticos da ponte também contam no Processadas
-		}
-		dentro := proc >= pntParte+flxParte || (pnte == nil && !e.pnt.Logado())
+		flxParte = e.svc.entregues() // os ERs sintéticos das pontes também contam no Processadas
+		dentro := proc >= pntParte+flxParte || (semPonte && !e.pnt.Logado())
 		fora := e.pnt.RecebidasApp()-e.svc.baseRec >= e.svc.sessao.Enviadas()
-		quieta := pnte == nil || !pnte.Ocupada()
+		quieta := !e.svc.pontesOcupadas()
 		if dentro && fora && quieta {
-			if e.svc.motor.Processadas() == proc && (pnte == nil || (!pnte.Ocupada() && pnte.Entregues() == flxParte)) {
+			if e.svc.processadas() == proc && !e.svc.pontesOcupadas() && e.svc.entregues() == flxParte {
 				return
 			}
 		}
@@ -380,10 +498,7 @@ func (e *Executor) passo(p roteiro.Passo) error {
 				e.svc.motor.TickAssincrono()
 				continue
 			}
-			e.svc.motor.Tick()
-			if e.svc.ponte != nil {
-				e.svc.ponte.Tick()
-			}
+			e.svc.tick()
 			e.ocioso()
 		}
 		return nil
@@ -564,7 +679,9 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		}
 		// o roteiro mudou o banco por fora (como a CLI): o cache do motor relê (v1.10 B)
 		if e.svc != nil && e.travado == nil {
-			e.svc.motor.InvalidarUsuarios()
+			for _, m := range e.svc.motores {
+				m.InvalidarUsuarios()
+			}
 		}
 		e.ocioso()
 		return nil

@@ -19,7 +19,7 @@ import (
 )
 
 // Handler monta as rotas. espera = quanto o POST /ordens espera o motor antes do 503.
-func Handler(m *motor.Motor, espera time.Duration) http.Handler {
+func Handler(m *motor.Servico, espera time.Duration) http.Handler {
 	mux := http.NewServeMux()
 	lat := novasLatencias()
 	mux.HandleFunc("POST /ordens", func(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +152,16 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 				return
 			}
 		}
-		escrever(w, http.StatusOK, m.ConsultarAoVivo(desde, limite))
+		amb, ok := ambienteDaQuery(w, q.Get("ambiente"), "")
+		if !ok {
+			return
+		}
+		resp, ok := m.ConsultarAoVivo(amb, desde, limite)
+		if !ok {
+			escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "ambiente invalido ou sem instancia nesta maquina"})
+			return
+		}
+		escrever(w, http.StatusOK, resp)
 	})
 	// tráfego da ponte Flexscan (v1.21, a aba "Flexscan ao vivo" do admin): da memória, sem a fila
 	mux.HandleFunc("GET /flexscan/trafego", func(w http.ResponseWriter, r *http.Request) {
@@ -172,9 +181,13 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 				return
 			}
 		}
+		amb, ok := ambienteDaQuery(w, q.Get("ambiente"), "")
+		if !ok {
+			return
+		}
 		// v1.23: ?dia=AAAA-MM-DD — o dia inteiro, do registro (desde e limite não valem)
 		if dia := q.Get("dia"); dia != "" {
-			resp, ok, err := m.TrafegoFlexscanDoDia(dia)
+			resp, ok, err := m.TrafegoFlexscanDoDia(amb, dia)
 			switch {
 			case !ok:
 				escrever(w, http.StatusNotFound, motor.Resposta{"erro": "flexscan nao configurada"})
@@ -187,7 +200,7 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 			}
 			return
 		}
-		resp, ok := m.TrafegoFlexscan(desde, limite)
+		resp, ok := m.TrafegoFlexscan(amb, desde, limite)
 		if !ok {
 			escrever(w, http.StatusNotFound, motor.Resposta{"erro": "flexscan nao configurada"})
 			return
@@ -222,12 +235,13 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		var b struct {
 			Modo, Origem, Motivo string
 			Por                  *int
+			Ambiente             string // v1.26 (§2.2): vazio = todas as instâncias
 		}
 		status, resp := http.StatusOK, motor.Resposta(nil)
 		if err := json.Unmarshal(corpo, &b); err != nil {
 			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()}
 		} else {
-			resp = m.AtivarParada(b.Modo, b.Origem, b.Motivo, valor(b.Por))
+			resp = m.AtivarParada(b.Ambiente, b.Modo, b.Origem, b.Motivo, valor(b.Por))
 		}
 		m.RegistrarPedidoHTTP("PARADA", "", 0, 0, "", corpo, status, resp)
 		escrever(w, status, resp)
@@ -237,9 +251,10 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 		var b struct {
 			Origem, Motivo string
 			Por            *int
+			Ambiente       string
 		}
 		_ = json.Unmarshal(corpo, &b)
-		resp := m.Retomar(b.Origem, b.Motivo, valor(b.Por))
+		resp := m.Retomar(b.Ambiente, b.Origem, b.Motivo, valor(b.Por))
 		m.RegistrarPedidoHTTP("RETOMAR", "", 0, 0, "", corpo, http.StatusOK, resp)
 		escrever(w, http.StatusOK, resp)
 	})
@@ -332,7 +347,7 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 	// ordens no PnT (v1.7 C): um 35=AF por conta, só leitura; intervalo mínimo com cache
 	mux.HandleFunc("GET /pnt/ordens", func(w http.ResponseWriter, r *http.Request) {
 		select {
-		case resp := <-m.ConsultarPnTAssincrono():
+		case resp := <-m.ConsultarPnTAssincrono(r.URL.Query().Get("ambiente")):
 			if resp["erro"] != nil {
 				escrever(w, http.StatusServiceUnavailable, resp)
 				return

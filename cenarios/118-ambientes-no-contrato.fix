@@ -15,7 +15,14 @@ habilita 8 conectores=flexscan
 usuario 9 hml {"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}
 habilita 9 conectores=flexscan
 
-executa INICIO
+# v1.26: fora da equivalência, a instância do SIMULADOR não tem a sessão FIX (o PnT só no REAL): a
+# sessão do falso loga e o motor não a usa (como no 114)
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+saude sessao_logada=false pnt_desligado=true conciliando=false posicao=0 parada=null divergente=false flexscan.logado=true
+saude ambientes.SIMULADOR.posicao=0 ambientes.SIMULADOR.flexscan.logado=true
 
 # --- o ambiente: ausente (sem AMBIENTE_PADRAO), inválido, REAL fora do teto da máquina
 entrada 11801 C uid=8

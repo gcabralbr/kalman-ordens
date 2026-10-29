@@ -46,8 +46,8 @@ func (m *Medido) SalvarOrdem(o *dominio.Ordem) error {
 func (m *Medido) RegistrarEvento(e EventoFIX) (bool, error) {
 	return medir("RegistrarEvento", func() (bool, error) { return m.Base.RegistrarEvento(e) })
 }
-func (m *Medido) EnviosDesde(t time.Time) (int, error) {
-	return medir("EnviosDesde", func() (int, error) { return m.Base.EnviosDesde(t) })
+func (m *Medido) EnviosDesde(t time.Time, amb string) (int, error) {
+	return medir("EnviosDesde", func() (int, error) { return m.Base.EnviosDesde(t, amb) })
 }
 func (m *Medido) Publicar(tipo, mod string, op int64, dados []byte, em time.Time) (int64, error) {
 	return medir("Publicar", func() (int64, error) { return m.Base.Publicar(tipo, mod, op, dados, em) })
@@ -112,8 +112,8 @@ func (m *Medido) DiaDaOperacao(mod string, id int64) (string, bool, error) {
 func (m *Medido) EventosFIXDasOrdens(ids []int64) ([]EventoFIX, error) {
 	return medir("EventosFIXDasOrdens", func() ([]EventoFIX, error) { return m.Base.EventosFIXDasOrdens(ids) })
 }
-func (m *Medido) EventosFlexscanEntre(de, ate time.Time, limite int) ([]EventoFIX, error) {
-	return medir("EventosFlexscanEntre", func() ([]EventoFIX, error) { return m.Base.EventosFlexscanEntre(de, ate, limite) })
+func (m *Medido) EventosFlexscanEntre(de, ate time.Time, limite int, amb string) ([]EventoFIX, error) {
+	return medir("EventosFlexscanEntre", func() ([]EventoFIX, error) { return m.Base.EventosFlexscanEntre(de, ate, limite, amb) })
 }
 func (m *Medido) PublicadosDaOperacao(mod string, id int64) ([]Publicado, error) {
 	return medir("PublicadosDaOperacao", func() ([]Publicado, error) { return m.Base.PublicadosDaOperacao(mod, id) })
@@ -159,8 +159,8 @@ func (m *Medido) MaioresIDs() (int64, int64, error) {
 	})
 	return a, b, err
 }
-func (m *Medido) ChavesFillDoDia(de, ate time.Time) (map[string]bool, error) {
-	return medir("ChavesFillDoDia", func() (map[string]bool, error) { return m.Base.ChavesFillDoDia(de, ate) })
+func (m *Medido) ChavesFillDoDia(de, ate time.Time, amb string) (map[string]bool, error) {
+	return medir("ChavesFillDoDia", func() (map[string]bool, error) { return m.Base.ChavesFillDoDia(de, ate, amb) })
 }
 func (m *Medido) OperacoesExistentes(mod string, ids []int64) (map[int64]bool, error) {
 	return medir("OperacoesExistentes", func() (map[int64]bool, error) { return m.Base.OperacoesExistentes(mod, ids) })

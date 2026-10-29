@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+
+	"gammaquant.com.br/kalman-ordens/internal/dominio"
 )
 
 func (r *MariaDB) RegistrarSessao(e EventoSessao) error {
@@ -206,7 +208,7 @@ func (r *MariaDB) Expurgar(antes time.Time, lote int, simular bool) (map[string]
 	return n, nil
 }
 
-func (r *MariaDB) EventosFlexscanEntre(de, ate time.Time, limite int) ([]EventoFIX, error) {
-	return r.eventosFIX(`id IN (SELECT id FROM (SELECT id FROM kalmanordemevento WHERE em >= ? AND em < ? AND msgtype LIKE 'FLX-%'
-		ORDER BY id DESC LIMIT ?) ultimos)`, de.UTC(), ate.UTC(), limite)
+func (r *MariaDB) EventosFlexscanEntre(de, ate time.Time, limite int, amb string) ([]EventoFIX, error) {
+	return r.eventosFIX(`id IN (SELECT id FROM (SELECT id FROM kalmanordemevento WHERE em >= ? AND em < ? AND msgtype LIKE 'FLX-%' AND ambiente = ?
+		ORDER BY id DESC LIMIT ?) ultimos)`, de.UTC(), ate.UTC(), dominio.AmbienteDe(amb), limite)
 }

@@ -29,12 +29,9 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/alerta"
 	"gammaquant.com.br/kalman-ordens/internal/api"
 	"gammaquant.com.br/kalman-ordens/internal/config"
-	"gammaquant.com.br/kalman-ordens/internal/flexscan"
 	"gammaquant.com.br/kalman-ordens/internal/motor"
-	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
-	"gammaquant.com.br/kalman-ordens/pnt"
 )
 
 // versao é o commit do build (scripts/build.sh: -ldflags "-X main.versao=...").
@@ -127,13 +124,7 @@ func obrigatorias(cfg config.Config, chaves ...string) error {
 func servir(ctx context.Context, cfg config.Config) error {
 	motor.Versao = versao
 	slog.Info("kalman-ordens subindo", "versao", versao)
-	// PNT_DESLIGADO (28/10): sem sessão FIX nem fonte do PnT; só a Flexscan
-	pntDesligado := cfg.Bool("PNT_DESLIGADO", false)
-	if pntDesligado {
-		if err := obrigatorias(cfg, "DB_DSN", "FLEXSCAN_URL"); err != nil {
-			return fmt.Errorf("PNT_DESLIGADO: %w", err)
-		}
-	} else if err := obrigatorias(cfg, "DB_DSN", "FIX_SENDER_COMP_ID", "FIX_HOST", "FIX_PORTA", "ORDENS_CONTAS_HML"); err != nil {
+	if err := obrigatorias(cfg, "DB_DSN"); err != nil {
 		return err
 	}
 	// SPEC-AMBIENTES-v1 §3: o teto da máquina (AMBIENTES_PERMITIDOS, ou a equivalência
@@ -160,6 +151,11 @@ func servir(ctx context.Context, cfg config.Config) error {
 	}
 	endereco := cfg.Texto("HTTP_ENDERECO", "127.0.0.1:9092")
 	if err := soLoopback(endereco); err != nil {
+		return err
+	}
+	// v1.26: as instâncias por ambiente, com os conectores conferidos antes do banco
+	plano, err := planejarInstancias(cfg, amb)
+	if err != nil {
 		return err
 	}
 
@@ -201,110 +197,52 @@ func servir(ctx context.Context, cfg config.Config) error {
 	defer tg.Parar()
 
 	rel := relogio.Real{}
-	// fonte de preço por conector (SPEC-FLEXSCAN-v1): PRECOS_URL é o padrão; PRECOS_URL_<CONECTOR>
-	// só onde difere (HML: PnT → 9096, o book D-1 da HML do PnT; Flexscan → 9090, o D0 do simulador)
-	urlPnT := cfg.Texto("PRECOS_URL_PNT", cfg.Texto("PRECOS_URL", "http://172.16.110.51:9090"))
-	saudePnT := cfg.Texto("PRECOS_SAUDE_URL_PNT", cfg.Texto("PRECOS_SAUDE_URL", "")) // HML: o /saude do pnt-md-hml (motivo do FONTE_DEGRADADA)
-	if pntDesligado {
-		// a fonte única é a da Flexscan (o FONTE_DEGRADADA e o MERCADO_TRAVADO são dela)
-		urlPnT = cfg.Texto("PRECOS_URL_FLEXSCAN", cfg.Texto("PRECOS_URL", "http://172.16.110.51:9090"))
-		saudePnT = cfg.Texto("PRECOS_SAUDE_URL_FLEXSCAN", "")
+	insts, err := montarInstancias(plano, cfg, amb, rel, r, tg)
+	if err != nil {
+		return err
 	}
-	pr := preco.NovaHTTP(urlPnT, cfg.Texto("PRECOS_ATIVO", "WINFUT"), rel)
-	pr.ComSaude(saudePnT)
-	pr.Iniciar(200 * time.Millisecond)
-	defer pr.Parar()
-
-	m := motor.Novo(cfg, rel, r, pr, tg)
-	m.DefinirURLsPrecos(urlPnT, "")
+	defer func() {
+		for _, f := range insts.fontes {
+			f.Parar()
+		}
+	}()
+	sv := insts.servico
 	// a janela do FONTE_DEGRADADA só vale em dia de pregão (24/10): sem os feriados, vale seg–sex
-	if n, err := m.ConferirFeriados(); err != nil {
+	if n, err := sv.Motores()[0].ConferirFeriados(); err != nil {
 		slog.Warn("feriados ilegíveis: o FONTE_DEGRADADA vale de seg a sex, inclusive feriados", "arquivo", cfg.Texto("FERIADOS_ARQ", "/var/lib/kalman/feriados.json"), "erro", err)
 	} else {
 		slog.Info("feriados", "dias", n)
 	}
-	flxCfg := flexscan.ConfigDe(cfg)
-	var ponte *flexscan.Ponte
 	var srvWebhook *http.Server
-	if flxCfg.URL != "" {
-		if flxCfg.Usuario == "" || flxCfg.Senha == "" {
-			return fmt.Errorf("FLEXSCAN_URL sem FLEXSCAN_USUARIO/FLEXSCAN_SENHA")
+	if len(insts.receptores) > 0 {
+		end := cfg.Texto("FLEXSCAN_WEBHOOK_ENDERECO", "")
+		if end == endereco {
+			return fmt.Errorf("FLEXSCAN_WEBHOOK_ENDERECO igual ao HTTP_ENDERECO: o webhook tem listener próprio")
 		}
-		if u := cfg.Texto("PRECOS_URL_FLEXSCAN", cfg.Texto("PRECOS_URL", "http://172.16.110.51:9090")); u != urlPnT {
-			pf := preco.NovaHTTP(u, cfg.Texto("PRECOS_ATIVO", "WINFUT"), rel)
-			pf.ComSaude(cfg.Texto("PRECOS_SAUDE_URL_FLEXSCAN", ""))
-			pf.Iniciar(200 * time.Millisecond)
-			defer pf.Parar()
-			m.UsarPrecosFlexscan(pf)
-			m.DefinirURLsPrecos(urlPnT, u)
-		}
-		ponte = flexscan.Nova(flxCfg, m.OuvinteFlexscan(), rel)
-		m.UsarFlexscan(ponte)
-		if end := cfg.Texto("FLEXSCAN_WEBHOOK_ENDERECO", ""); end != "" {
-			if end == endereco {
-				return fmt.Errorf("FLEXSCAN_WEBHOOK_ENDERECO igual ao HTTP_ENDERECO: o webhook tem listener próprio")
-			}
-			if err := ipExplicito(end); err != nil {
-				return err
-			}
-			rec, err := flexscan.NovoReceptor(ponte, cfg.Texto("FLEXSCAN_WEBHOOK_PREFIXO", "/flexscan/webhook/"), cfg.Texto("FLEXSCAN_WEBHOOK_SEGREDO", ""))
-			if err != nil {
-				return err
-			}
-			// só a rota do webhook: o mux do admin nunca é servido fora do loopback (SPEC §5.1)
-			srvWebhook = &http.Server{Addr: end, Handler: rec, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
-				WriteTimeout: 10 * time.Second, MaxHeaderBytes: 8 << 10}
-			lw, err := net.Listen("tcp", end)
-			if err != nil {
-				return fmt.Errorf("FLEXSCAN_WEBHOOK_ENDERECO %q: %w", end, err)
-			}
-			go func() {
-				if err := srvWebhook.Serve(lw); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					slog.Error("webhook flexscan", "erro", err)
-				}
-			}()
-		} else {
-			slog.Warn("flexscan sem receptor de webhook (FLEXSCAN_WEBHOOK_ENDERECO vazio): só a consulta")
-		}
-	}
-	var s *pnt.Sessao
-	if !pntDesligado {
-		s, err = pnt.NovaSessao(pnt.ConfigSessao{
-			SenderCompID: cfg.Texto("FIX_SENDER_COMP_ID", ""),
-			TargetCompID: cfg.Texto("FIX_TARGET_COMP_ID", "PNT_DSA"),
-			Host:         cfg.Texto("FIX_HOST", ""),
-			Porta:        cfg.Inteiro("FIX_PORTA", 0),
-			Usuario:      cfg.Texto("FIX_USUARIO", ""),
-			Senha:        cfg.Texto("FIX_SENHA", ""),
-			Dir:          cfg.Texto("FIX_DIR", "/var/lib/kalman-ordens/fix"),
-			Inicio:       cfg.Texto("FIX_INICIO", "08:30:00"),
-			Fim:          cfg.Texto("FIX_FIM", "17:55:00"),
-			HeartBtInt:   cfg.Inteiro("FIX_HEARTBEAT", 30),
-			ReconexaoS:   cfg.Inteiro("FIX_RECONEXAO_S", 5),
-			// espera crescente depois de logon recusado ou store ilegível (SPEC v1.3 B1, D1)
-			ReconexaoMaxS: cfg.Inteiro("FIX_RECONEXAO_MAX_S", 60),
-			// envio liberado só depois do reenvio que o PnT pede logo após o logon (v1.3 A2)
-			SincroniaMs:  cfg.Inteiro("FIX_SINCRONIA_MS", 500),
-			ResetOnLogon: cfg.Bool("FIX_RESET_ON_LOGON", false),
-			// fsync do store FIX a cada mensagem (padrão: sim); ver docs/CARGA-2026-10-15.md seção 7
-			SemSyncStore: !cfg.Bool("FIX_STORE_SYNC", true),
-			// monitor ao vivo (GET /sessao/ao-vivo): cada mensagem do fio, em memória
-			Espelho: m.AoVivo().Registrar,
-		}, m)
-		if err != nil {
+		if err := ipExplicito(end); err != nil {
 			return err
 		}
-		m.Usar(s)
-	} else {
-		slog.Warn("PNT_DESLIGADO: sem sessão FIX nem fonte do PnT; entradas de uid com conector PNT recusadas (CONECTOR_DESLIGADO)", "fonte", urlPnT)
+		// só as rotas do webhook (uma por ambiente, pelo prefixo): o mux do admin nunca é servido
+		// fora do loopback (SPEC §5.1)
+		srvWebhook = &http.Server{Addr: end, Handler: insts.receptores, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
+			WriteTimeout: 10 * time.Second, MaxHeaderBytes: 8 << 10}
+		lw, err := net.Listen("tcp", end)
+		if err != nil {
+			return fmt.Errorf("FLEXSCAN_WEBHOOK_ENDERECO %q: %w", end, err)
+		}
+		go func() {
+			if err := srvWebhook.Serve(lw); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("webhook flexscan", "erro", err)
+			}
+		}()
 	}
 	// Parte 7.3: estado do dia carregado antes de logar.
-	if err := m.Iniciar(); err != nil {
+	if err := sv.Iniciar(); err != nil {
 		return err
 	}
-	defer m.Parar()
+	defer sv.Parar()
 
-	srv := &http.Server{Addr: endereco, Handler: api.Handler(m, cfg.Segundos("HTTP_ESPERA_S", 5)), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: endereco, Handler: api.Handler(sv, cfg.Segundos("HTTP_ESPERA_S", 5)), ReadHeaderTimeout: 5 * time.Second}
 	ln, err := net.Listen("tcp", endereco)
 	if err != nil {
 		return err
@@ -315,14 +253,16 @@ func servir(ctx context.Context, cfg config.Config) error {
 		}
 	}()
 
-	if s != nil {
-		if err := s.Iniciar(); err != nil {
-			return err
+	for _, in := range insts.lista {
+		if in.sessao != nil {
+			if err := in.sessao.Iniciar(); err != nil {
+				return err
+			}
 		}
-	}
-	if ponte != nil {
-		ponte.Iniciar()
-		slog.Info("flexscan: conector ligado", "url", flxCfg.URL, "usuario", flxCfg.Usuario, "webhook", srvWebhook != nil)
+		if in.ponte != nil {
+			in.ponte.Iniciar()
+			slog.Info("flexscan: conector ligado", "ambiente", in.amb, "url", in.flx.URL, "usuario", in.flx.Usuario, "webhook", in.webhook)
+		}
 	}
 
 	fim := make(chan struct{})
@@ -334,37 +274,42 @@ func servir(ctx context.Context, cfg config.Config) error {
 			case <-fim:
 				return
 			case <-t.C:
-				m.Tick()
-				if ponte != nil {
-					ponte.Tick()
+				sv.Tick()
+				for _, in := range insts.lista {
+					if in.ponte != nil {
+						in.ponte.Tick()
+					}
 				}
 			}
 		}
 	}()
 
 	pronto(endereco)
-	fix := cfg.Texto("FIX_HOST", "") + ":" + cfg.Texto("FIX_PORTA", "")
-	if pntDesligado {
-		fix = "desligado"
+	var resumo []string
+	for _, in := range insts.lista {
+		resumo = append(resumo, in.resumo())
 	}
-	slog.Info("kalman-ordens no ar", "versao", versao, "http", endereco, "fix", fix,
-		"ambientes", amb.Lista(), "pnt_desligado", pntDesligado)
+	slog.Info("kalman-ordens no ar", "versao", versao, "http", endereco, "ambientes", amb.Lista(), "instancias", resumo)
 
 	<-ctx.Done()
 	// Parar o processo NÃO cancela a 1014: a posição continua protegida no PnT (Parte 6).
 	slog.Info("desligando: logout FIX, nada é cancelado no PnT")
 	close(fim)
-	if ponte != nil {
-		// as ordens da Flexscan ficam na bolsa (a stop-limite é da B3)
-		ponte.Parar()
+	for _, in := range insts.lista {
+		if in.ponte != nil {
+			// as ordens da Flexscan ficam na bolsa (a stop-limite é da B3)
+			in.ponte.Parar()
+		}
 	}
 	if srvWebhook != nil {
 		ctxW, cancelW := context.WithTimeout(context.Background(), 2*time.Second)
 		_ = srvWebhook.Shutdown(ctxW)
 		cancelW()
 	}
-	if s != nil {
-		s.Parar()
+	for _, in := range insts.lista {
+		if in.sessao != nil {
+			in.sessao.Parar()
+		}
 	}
 	ctxFim, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

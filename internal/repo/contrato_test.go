@@ -144,11 +144,30 @@ func TestContrato(t *testing.T) {
 					t.Fatalf("evento sem execid: %v %v", novo, err)
 				}
 			}
-			if n, _ := r.EnviosDesde(em); n != 2 {
+			if n, _ := r.EnviosDesde(em, ""); n != 2 {
 				t.Fatalf("EnviosDesde = %d", n)
 			}
-			if n, _ := r.EnviosDesde(em.Add(500 * time.Millisecond)); n != 1 {
+			if n, _ := r.EnviosDesde(em.Add(500*time.Millisecond), dominio.AmbienteSimulador); n != 1 {
 				t.Fatalf("EnviosDesde corte = %d", n)
+			}
+			// v1.26 (0015): o evento é do ambiente da instância; o mesmo (37, 17) no REAL é outro
+			// evento, e as contagens e as chaves de fill são por ambiente
+			real := ev
+			real.Ambiente = dominio.AmbienteReal
+			if novo, err := r.RegistrarEvento(real); !novo || err != nil {
+				t.Fatalf("mesmo (37, 17) no REAL recusado: %v %v", novo, err)
+			}
+			if novo, _ := r.RegistrarEvento(real); novo {
+				t.Fatal("fill repetido no REAL aceito")
+			}
+			if novo, err := r.RegistrarEvento(EventoFIX{Direcao: "ENV", MsgType: "D", Em: em, Ambiente: dominio.AmbienteReal}); !novo || err != nil {
+				t.Fatalf("envio REAL: %v %v", novo, err)
+			}
+			if n, _ := r.EnviosDesde(em, dominio.AmbienteReal); n != 1 {
+				t.Fatalf("EnviosDesde REAL = %d", n)
+			}
+			if n, _ := r.EnviosDesde(em, ""); n != 2 {
+				t.Fatalf("EnviosDesde SIMULADOR com o REAL gravado = %d", n)
 			}
 
 			for i := 0; i < 3; i++ {
@@ -556,9 +575,12 @@ func TestContratoLote(t *testing.T) {
 			if a, b, _ := r.MaioresIDs(); a != 41 || b != 90 {
 				t.Fatalf("MaioresIDs: %d %d", a, b)
 			}
-			k, err := r.ChavesFillDoDia(em.Add(-time.Hour), em.Add(time.Hour))
+			k, err := r.ChavesFillDoDia(em.Add(-time.Hour), em.Add(time.Hour), "")
 			if err != nil || !k[ChaveFill("dsa.1", "x1")] || len(k) != 1 {
 				t.Fatalf("chaves de fill: %v %v", k, err)
+			}
+			if k, err := r.ChavesFillDoDia(em.Add(-time.Hour), em.Add(time.Hour), dominio.AmbienteReal); err != nil || len(k) != 0 {
+				t.Fatalf("chaves de fill do REAL: %v %v", k, err)
 			}
 			// a operação nova com a chave única de outra: erro (nunca atualiza a outra linha)
 			outra := op

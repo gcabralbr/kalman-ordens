@@ -123,12 +123,12 @@ func (m *Memoria) MaioresIDs() (int64, int64, error) {
 	return m.proxOp, m.proxOrdem, nil
 }
 
-func (m *Memoria) ChavesFillDoDia(de, ate time.Time) (map[string]bool, error) {
+func (m *Memoria) ChavesFillDoDia(de, ate time.Time, amb string) (map[string]bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r := map[string]bool{}
 	for _, e := range m.eventos {
-		if e.OrderID != "" && e.ExecID != "" && !e.Em.Before(de) && e.Em.Before(ate) {
+		if dominio.AmbienteDe(e.Ambiente) == dominio.AmbienteDe(amb) && e.OrderID != "" && e.ExecID != "" && !e.Em.Before(de) && e.Em.Before(ate) {
 			r[ChaveFill(e.OrderID, e.ExecID)] = true
 		}
 	}

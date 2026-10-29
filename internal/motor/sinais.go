@@ -599,7 +599,7 @@ func (m *Motor) proximoK(modulo string) int64 {
 	chave := "sinal_k:" + modulo
 	k, ok := m.sinalK[modulo]
 	if !ok {
-		if v, achou, err := m.repo.LerEstado(chave); err == nil && achou {
+		if v, achou, err := m.repo.LerEstado(m.chaveEstado(chave)); err == nil && achou {
 			k, _ = strconv.ParseInt(v, 10, 64)
 		}
 	}

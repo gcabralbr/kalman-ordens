@@ -360,6 +360,11 @@ type Parada struct {
 
 // Motor.
 type Motor struct {
+	// amb (SPEC-AMBIENTES-v1 §2, v1.26): o ambiente desta instância; os conectores, a posição, a
+	// parada e os limites são dele. Os IDs são atribuídos num contador comum às instâncias.
+	amb    string
+	ids    *contadorIDs
+	donos  *sync.Map // chaveOperacao → ambiente da instância dona (comum às instâncias; servico.go)
 	p      config.Parametros
 	rel    relogio.Relogio
 	repo   repo.Repositorio
@@ -387,10 +392,8 @@ type Motor struct {
 	voltaAgendada  bool
 	tokens         float64
 	tokensEm       time.Time
-	chegadas       sync.Map     // ClOrdID → chegada à sessão (relógio do motor)
-	chegadaMass    atomic.Int64 // última resposta de mass status chegada à sessão (UnixNano, relógio do motor)
-	proxOpID       int64
-	proxOrdemID    int64
+	chegadas       sync.Map        // ClOrdID → chegada à sessão (relógio do motor)
+	chegadaMass    atomic.Int64    // última resposta de mass status chegada à sessão (UnixNano, relógio do motor)
 	execVistos     map[string]bool // fills (37, 17) já aplicados hoje
 	usuarios       *cacheUsuarios
 	respostaAtual  *respostaPendente
@@ -471,10 +474,25 @@ type Motor struct {
 	ultimaConsultaEm time.Time
 }
 
-// Novo cria o motor (não inicia).
+// Novo cria o motor de um ambiente só (não inicia): o dos conectores da configuração (o REAL na
+// equivalência ORDENS_AMBIENTE=PRODUCAO; senão o SIMULADOR).
 func Novo(c config.Config, rel relogio.Relogio, r repo.Repositorio, f preco.Fonte, n alerta.Notificador) *Motor {
+	amb := dominio.AmbienteSimulador
+	if a, _, _ := c.LerAmbientes(); a.Legado == config.LegadoProducao {
+		amb = dominio.AmbienteReal
+	}
+	return NovoNoAmbiente(amb, c, rel, r, f, n)
+}
+
+// NovoNoAmbiente cria a instância do ambiente (não inicia). c é a visão do ambiente
+// (config.Visao). Fora da equivalência, o texto dos alertas do REAL leva "[REAL] ".
+func NovoNoAmbiente(amb string, c config.Config, rel relogio.Relogio, r repo.Repositorio, f preco.Fonte, n alerta.Notificador) *Motor {
 	p := c.Parametros()
+	if amb == dominio.AmbienteReal && p.Amb.Legado == "" && n != nil {
+		n = comPrefixo{n, "[REAL] "}
+	}
 	m := &Motor{
+		amb: amb, ids: &contadorIDs{}, donos: &sync.Map{},
 		p: p, rel: rel, repo: repo.Medir(r), precos: f,
 		ultimos: map[string]ultimoPreco{}, massReqIDs: map[string]bool{},
 		p0: make(chan func(), capFilaP0), p1: make(chan func(), capFilaP1), p2: make(chan func(), capFilaP2),
@@ -560,7 +578,7 @@ func (m *Motor) recarregarTrafegoFlexscan() {
 	de, ate, err := Dia(m.dia)
 	if err == nil {
 		var evs []repo.EventoFIX
-		if evs, err = m.repo.EventosFlexscanEntre(de, ate, 4*flexscan.CapacidadeTrafego); err == nil {
+		if evs, err = m.repo.EventosFlexscanEntre(de, ate, 4*flexscan.CapacidadeTrafego, m.amb); err == nil {
 			slog.Info("flexscan: tráfego do dia recarregado", "eventos", len(evs), "linhas", t.CarregarTrafego(evs))
 			return
 		}
@@ -790,6 +808,12 @@ func (m *Motor) repetido(p Pedido) (Resposta, bool) {
 	if pedido == "" {
 		return nil, false
 	}
+	if p.Papel == "ENTRADA" {
+		// §1.2: a entrada repetida com outro ambiente é AMBIENTE_DIVERGENTE (antes do conteúdo)
+		if amb, r := m.ambienteDoPedido(p.Ambiente); r == nil && amb != dominio.AmbienteDe(op.Ambiente) {
+			return m.recusar(p, simples("AMBIENTE_DIVERGENTE", fmt.Sprintf("operação já recebida no %s", dominio.AmbienteDe(op.Ambiente)))), true
+		}
+	}
 	if pedido != impressao(p) {
 		m.al.Emitir("DUPLICADA_DIFERENTE", "", fmt.Sprintf("%s repetida com conteúdo diferente: operação %d (%s)", p.Papel, op.OperacaoID, op.Modulo), op.OperacaoID)
 		return m.recusar(p, simples("DUPLICADA", "operação já recebida com outro conteúdo")), true
@@ -985,10 +1009,14 @@ func (m *Motor) carregarDia() error {
 		return err
 	}
 	for i := range ops {
+		if dominio.AmbienteDe(ops[i].Ambiente) != m.amb {
+			continue // v1.26: a operação do outro ambiente é da outra instância
+		}
 		op := &operacao{Operacao: ops[i], persistida: true, gravada: ops[i].Copia()}
 		m.aoVivo.Associar(op.Modulo, op.OperacaoID, op.UID)
 		m.ops = append(m.ops, op)
 		m.porOp[chaveOperacao{op.Modulo, op.OperacaoID}] = op
+		m.donos.Store(chaveOperacao{op.Modulo, op.OperacaoID}, m.amb)
 		if op.Estado == dominio.PosicionadaSemProtecao {
 			op.semProtecaoDesde = m.agora()
 		}
@@ -1002,13 +1030,13 @@ func (m *Motor) carregarDia() error {
 		m.indexar(op, o)
 	}
 	m.recontarReplaces()
-	if v, ok, _ := m.repo.LerEstado("parada"); ok && v != "" {
+	if v, ok, _ := m.repo.LerEstado(m.chaveEstado("parada")); ok && v != "" {
 		var p Parada
 		if json.Unmarshal([]byte(v), &p) == nil {
 			m.parada = &p
 		}
 	}
-	if v, ok, _ := m.repo.LerEstado("zeragem_feita"); ok && v == m.dia {
+	if v, ok, _ := m.repo.LerEstado(m.chaveEstado("zeragem_feita")); ok && v == m.dia {
 		m.zeragemFeita = true
 	}
 	m.entradasHoje = len(m.ops)
@@ -1031,7 +1059,7 @@ func (m *Motor) carregarDia() error {
 	for _, op := range ordenadas {
 		m.registrarEntradaUID(op)
 	}
-	if n, err := m.repo.EnviosDesde(umMinuto); err == nil {
+	if n, err := m.repo.EnviosDesde(umMinuto, m.amb); err == nil {
 		for i := 0; i < n; i++ {
 			m.enviosRec = append(m.enviosRec, m.agora())
 		}
@@ -1042,12 +1070,12 @@ func (m *Motor) carregarDia() error {
 	if err != nil {
 		return err
 	}
-	m.proxOpID, m.proxOrdemID = maxOp, maxOrdem
+	m.ids.subir(maxOp, maxOrdem)
 	de, err := time.ParseInLocation("2006-01-02", m.dia, relogio.Fuso)
 	if err != nil {
 		return err
 	}
-	if m.execVistos, err = m.repo.ChavesFillDoDia(de, de.AddDate(0, 0, 1)); err != nil {
+	if m.execVistos, err = m.repo.ChavesFillDoDia(de, de.AddDate(0, 0, 1), m.amb); err != nil {
 		return err
 	}
 	slog.Info("dia carregado", "dia", m.dia, "operacoes", len(m.ops), "posicao", m.posicaoTotal(), "parada", m.parada, "fills_vistos", len(m.execVistos))
@@ -1096,7 +1124,16 @@ func (m *Motor) salvarOrdem(o *ordem) { m.v.ordensSujas[o] = true }
 
 // gravarEstado: kalmanordemestado, no lote da volta.
 func (m *Motor) gravarEstado(k, v string) {
-	m.v.estados = append(m.v.estados, repo.EstadoNovo{Chave: k, Valor: v, Em: m.agora()})
+	m.v.estados = append(m.v.estados, repo.EstadoNovo{Chave: m.chaveEstado(k), Valor: v, Em: m.agora()})
+}
+
+// chaveEstado (v1.26): o estado gravado (parada, zeragem, contador de sinais) é da instância; o do
+// REAL leva o prefixo "REAL:" (fora da equivalência), e o do SIMULADOR fica com as chaves de antes.
+func (m *Motor) chaveEstado(k string) string {
+	if m.amb == dominio.AmbienteReal && m.p.Amb.Legado == "" {
+		return "REAL:" + k
+	}
+	return k
 }
 
 func (m *Motor) mudar(op *operacao, e dominio.EstadoOperacao) {
@@ -1118,6 +1155,8 @@ func (m *Motor) publicar(tipo string, op *operacao, dados map[string]any) {
 		d["operacao_id"] = op.OperacaoID
 		d["uid"] = op.UID
 		d["ambiente"] = dominio.AmbienteDe(op.Ambiente)
+	} else {
+		d["ambiente"] = m.amb // v1.26: o evento sem operação (parada, alerta) é da instância
 	}
 	for k, v := range dados {
 		if t, ok := v.(string); ok {
@@ -1373,7 +1412,7 @@ func (m *Motor) TrafegoFlexscanDoDia(dia string) (map[string]any, bool, error) {
 	if err != nil {
 		return nil, true, err
 	}
-	evs, err := m.repo.EventosFlexscanEntre(de, ate, LimiteEventosDiaFlexscan)
+	evs, err := m.repo.EventosFlexscanEntre(de, ate, LimiteEventosDiaFlexscan, m.amb)
 	if err != nil {
 		return nil, true, err
 	}

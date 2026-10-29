@@ -36,7 +36,7 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 	motivo := fs.String("motivo", "", "motivo (obrigatório em habilitar e desabilitar)")
 	posMax := fs.Int("posicao-max", 0, "limite de posição do uid (0 = só o global; sem a flag, mantém o atual)")
 	qtdMax := fs.Int("qtd-max", 0, "limite de quantidade por ordem do uid (0 = só o global; sem a flag, mantém o atual)")
-	conectores := fs.String("conectores", "", "conectores permitidos ao uid: pnt, flexscan ou pnt,flexscan (com mais de um, o GQ escolhe pelo Robo.Conector; sem a flag, mantém o atual; linha nova: pnt)")
+	conectores := fs.String("conectores", "", "conectores permitidos ao uid: pnt, flexscan ou pnt,flexscan (com mais de um, o GQ escolhe pelo Robo.Conector; sem a flag, mantém o atual; obrigatória na linha nova)")
 	ambFlag := fs.String("ambiente", dominio.AmbienteSimulador, "ambiente da habilitação: SIMULADOR ou REAL")
 	arqEnv := fs.String("env", "/etc/kalman-ordens/service.env", "service.env, se DB_DSN não estiver no ambiente")
 	if err := fs.Parse(args); err != nil {
@@ -85,12 +85,13 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 			return fmt.Errorf("usuario %s exige -motivo", acao)
 		}
 		// sem a flag, o limite fica o atual (v1.8 H3; antes zerava); linha nova: 0 = só o global
-		atual, _, err := r.Habilitacao(*uid, amb)
+		atual, existe, err := r.Habilitacao(*uid, amb)
 		if err != nil {
 			return err
 		}
 		pm, qm, cs := atual.PosicaoMax, atual.QtdMaxOrdem, atual.Conectores
 		var errCs error
+		comConectores := false
 		fs.Visit(func(f *flag.Flag) {
 			switch f.Name {
 			case "posicao-max":
@@ -99,10 +100,16 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 				qm = *qtdMax
 			case "conectores":
 				cs, errCs = dominio.LerConectores(*conectores)
+				comConectores = true
 			}
 		})
 		if errCs != nil {
 			return fmt.Errorf("-conectores: %w", errCs)
+		}
+		if !existe && !comConectores && acao == "habilitar" {
+			// v1.26 (29/10): a linha nova nascia PNT sem ninguém pedir (a do REAL do 5725, que é
+			// Flexscan); o conector é escolha explícita
+			return fmt.Errorf("uid %d sem habilitação no %s: a linha nova exige -conectores (pnt, flexscan ou pnt,flexscan; o do %s do uid)", *uid, amb, usuario.Campo(amb))
 		}
 		h := dominio.Habilitacao{UID: *uid, Ambiente: amb, Habilitado: acao == "habilitar", PosicaoMax: pm, QtdMaxOrdem: qm, Conectores: cs,
 			Por: quem(), Motivo: *motivo, Em: time.Now()}
@@ -188,7 +195,12 @@ func conferirUsuario(r *repo.MariaDB, cfg config.Config, uid int, saida io.Write
 			return err
 		}
 		permitido := teto.Permitidos[amb] && (amb != dominio.AmbienteReal || teto.UIDReal(uid))
-		fmt.Fprintf(saida, "uid=%d ambiente=%s habilitado=%v conectores=%s permitido_nesta_maquina=%v\n", uid, amb, ok && h.Habilitado, h.ConectoresTexto(), permitido)
+		conectores := strings.ToLower(h.ConectoresTexto())
+		if !ok {
+			// sem linha não há conector habilitado (o PNT do ConectoresTexto é o padrão de linha vazia)
+			conectores = "sem_linha"
+		}
+		fmt.Fprintf(saida, "uid=%d ambiente=%s habilitado=%v conectores=%s permitido_nesta_maquina=%v\n", uid, amb, ok && h.Habilitado, conectores, permitido)
 		if !achou {
 			fmt.Fprintf(saida, "%s: uid sem linha em acusuario → entradas recusadas (CONFIG_USUARIO_INVALIDA)\n", usuario.Campo(amb))
 			continue
@@ -197,15 +209,24 @@ func conferirUsuario(r *repo.MariaDB, cfg config.Config, uid int, saida io.Write
 		if amb == dominio.AmbienteReal {
 			texto = prd
 		}
+		// a visão do ambiente (v1.26: no REAL, o conector Flexscan é o das REAL_FLEXSCAN_*)
+		v, _ := cfg.Visao(teto, amb)
 		rg := usuario.Regras{Ambiente: amb, ContasHML: usuario.Lista(cfg.Texto("ORDENS_CONTAS_HML", "")),
-			ContasHMLFlx: usuario.Lista(cfg.Texto("FLEXSCAN_CONTAS_HML", "")), Flexscan: cfg.Texto("FLEXSCAN_URL", "") != "",
+			ContasHMLFlx: usuario.Lista(cfg.Texto("FLEXSCAN_CONTAS_HML", "")), Flexscan: v.Texto("FLEXSCAN_URL", "") != "",
 			PnTNoSimulador: teto.PnTNoSimulador(), RealContas: teto.RealContas, RealContasTodas: teto.RealContasTodas}
-		res, f := usuario.ResolverCom(rg, texto, h.Conectores)
+		cs := h.Conectores
+		if !ok {
+			cs = []string{dominio.ConectorPnT, dominio.ConectorFlexscan} // sem linha: o que o GQ aponta
+		}
+		res, f := usuario.ResolverCom(rg, texto, cs)
 		switch {
 		case f.Paper():
 			fmt.Fprintf(saida, "%s: paper (simulador interno do GQ): nenhuma ordem vai ao serviço\n", usuario.Campo(amb))
 		case f != nil:
-			fmt.Fprintf(saida, "%s, conectores habilitados %s: entradas recusadas (%s): %s\n", usuario.Campo(amb), strings.ToLower(h.ConectoresTexto()), f.Codigo, f.Motivo)
+			fmt.Fprintf(saida, "%s, conectores habilitados %s: entradas recusadas (%s): %s\n", usuario.Campo(amb), conectores, f.Codigo, f.Motivo)
+		case !ok:
+			fmt.Fprintf(saida, "%s: o GQ aponta conector=%s corretora=%d conta=%s (%s); sem habilitação: habilitar com -ambiente %s -conectores %s\n",
+				usuario.Campo(amb), res.Conector, res.Destino, res.Conta, res.OrigemConta, amb, strings.ToLower(res.Conector))
 		default:
 			fmt.Fprintf(saida, "%s: conector=%s corretora=%d conta=%s (%s)\n", usuario.Campo(amb), res.Conector, res.Destino, res.Conta, res.OrigemConta)
 		}

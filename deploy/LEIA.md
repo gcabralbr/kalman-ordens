@@ -568,6 +568,45 @@ Desligar a Flexscan sem tirar o binário: apagar `FLEXSCAN_URL` do `service.env`
 habilitados na Flexscan passam a `CONECTOR_NAO_CONFIGURADO`; as ordens que estiverem na Flexscan ficam
 lá — zerar antes).
 
+### 1.17 Os dois ambientes: SIMULADOR e REAL (SPEC-AMBIENTES-v1, v1.25 e v1.26)
+
+O ambiente do login no GQ escolhe a coluna (`usutxtconfig` no SIMULADOR, `usutxtconfigprd` no REAL),
+e a habilitação é por (uid, ambiente). **Habilitar o SIMULADOR nunca habilita o REAL**, e a linha
+nova sempre leva o conector escrito (v1.26: sem `-conectores` a CLI recusa; antes a linha nascia
+`PNT` sem ninguém pedir).
+
+```bash
+# conferir as duas colunas e as duas habilitações; "conectores=sem_linha" = o uid não tem a do
+# ambiente, e a linha seguinte diz o conector que o GQ aponta e o comando para habilitar
+sudo /opt/kalman-ordens/kalman-ordens usuario conferir -uid 5725
+
+# habilitar o REAL de um uid (passo 4 da SPEC): o conector é o do usutxtconfigprd dele
+# (Robo.Conector; o 5725 é FLEXSCAN), 1 contrato
+sudo /opt/kalman-ordens/kalman-ordens usuario habilitar -uid 5725 -ambiente REAL -conectores flexscan \
+     -posicao-max 1 -qtd-max 1 -motivo "REAL de teste na .53 (passo 4)"
+
+# desligar só o REAL (a do SIMULADOR continua)
+sudo /opt/kalman-ordens/kalman-ordens usuario desabilitar -uid 5725 -ambiente REAL -motivo "fim do teste"
+
+# uma linha REAL que já exista com o conector errado: habilitar de novo com o -conectores certo
+# (sem a flag, o conector gravado fica)
+```
+
+A habilitação só não basta: a máquina é o teto. O REAL só vale com `AMBIENTES_PERMITIDOS=SIM,REAL`, o
+uid em `REAL_UIDS`, a conta em `REAL_CONTAS`, os três `REAL_LIMITE_*` obrigatórios e um conector REAL
+(`REAL_FLEXSCAN_URL` com `REAL_FLEXSCAN_USUARIO`/`_SENHA`, ou `REAL_FIX_*`), sem o
+`ORDENS_AMBIENTE` (as duas juntas não sobem). O `deploy/service.env.example` tem o bloco. Na .53, até
+o passo 4: `ORDENS_AMBIENTE=HML`, só o SIMULADOR, listas REAL vazias.
+
+Com os dois ambientes (v1.26):
+- uma instância do motor por ambiente: posição, parada, conciliação e limites separados;
+- o webhook do REAL tem rota própria no mesmo listener (`REAL_FLEXSCAN_WEBHOOK_PREFIXO`, padrão
+  `/flexscan/webhook-real/`, e `REAL_FLEXSCAN_WEBHOOK_SEGREDO`). O nginx repassa os dois caminhos, e o
+  cadastro do webhook na Flexscan de produção usa a `REAL_FLEXSCAN_WEBHOOK_URL`;
+- `parar`/`zerar`/`retomar` pela CLI valem para os dois. Só um: `curl -s -XPOST 127.0.0.1:9092/parada
+  -d '{"modo":"BLOQUEAR","origem":"cli","motivo":"...","ambiente":"REAL"}'`;
+- `curl -s 127.0.0.1:9092/saude | jq '.ambientes.REAL'`: o bloco do REAL.
+
 ### 1.11 Emergência KHML (instância HML do Kalman, módulo `KHML`)
 
 A tela de admin da principal fala com o módulo `KALMAN`; para uma operação da KHML

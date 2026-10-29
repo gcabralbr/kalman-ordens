@@ -11,12 +11,22 @@ import (
 	"strings"
 	"time"
 
+	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/flexscan/falso"
 	"gammaquant.com.br/kalman-ordens/internal/roteiro"
 )
 
 // Verbos da Flexscan falsa (SPEC-FLEXSCAN-v1 §10; cenarios/FORMATO.md, seção Flexscan).
 func (e *Executor) flexscan(p roteiro.Passo) error {
+	if p.Verbo == "flx_ambiente" {
+		amb, err := dominio.LerAmbiente(p.Args[0])
+		if err != nil || e.flxs[amb] == nil {
+			return fmt.Errorf("flx_ambiente %s: sem a Flexscan falsa desse ambiente (REAL: config REAL_FLEXSCAN_URL=falso)", p.Args[0])
+		}
+		e.ocioso()
+		e.mirarFlexscan(amb)
+		return nil
+	}
 	if e.flx == nil {
 		return fmt.Errorf("%s sem a Flexscan falsa (config FLEXSCAN_URL=falso)", p.Verbo)
 	}
@@ -69,6 +79,17 @@ func (e *Executor) flexscan(p roteiro.Passo) error {
 	case "flx_webhook":
 		// a lista de retratos das ordens, na ordem dada
 		return e.flxWebhook(e.flx.CorpoWebhook(args...), http.StatusOK)
+	case "flx_webhook_em":
+		// v1.26: os retratos da falsa do alvo entregues na rota do webhook de outro ambiente
+		amb, err := dominio.LerAmbiente(args[0])
+		if err != nil || e.svc.receptores[amb] == nil {
+			return fmt.Errorf("flx_webhook_em %s: sem o webhook desse ambiente", args[0])
+		}
+		alvo := e.svc.receptor
+		caminho := e.svc.caminho
+		e.svc.receptor, e.svc.caminho = e.svc.receptores[amb], e.svc.caminhos[amb]
+		defer func() { e.svc.receptor, e.svc.caminho = alvo, caminho }()
+		return e.flxWebhook(e.flx.CorpoWebhook(args[1:]...), http.StatusOK)
 	case "flx_webhook_corpo":
 		return e.flxWebhook([]byte(args[0]), http.StatusOK)
 	case "flx_webhook_http":
@@ -233,7 +254,7 @@ func (e *Executor) flexscan(p roteiro.Passo) error {
 }
 
 func (e *Executor) flxWebhook(corpo []byte, esperado int) error {
-	req := httptest.NewRequest(http.MethodPost, "/flexscan/webhook/"+SegredoWebhookRoteiro, bytes.NewReader(corpo))
+	req := httptest.NewRequest(http.MethodPost, e.svc.caminho, bytes.NewReader(corpo))
 	req.Header.Set("X-Real-IP", "177.71.196.212")
 	w := httptest.NewRecorder()
 	e.svc.receptor.ServeHTTP(w, req)
@@ -375,9 +396,9 @@ func (e *Executor) flxTrafego(args []string) error {
 	esperado := args[len(args)-1]
 	e.ocioso()
 	rec := httptest.NewRecorder()
-	e.svc.http.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/flexscan/trafego?limite=2000", nil))
+	e.svc.http.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/flexscan/trafego?limite=2000&ambiente="+e.alvoFlx, nil))
 	corpo := rec.Body.String()
-	segredos := append(e.flx.Tokens(), SenhaFlexscanRoteiro, SegredoWebhookRoteiro)
+	segredos := append(e.flx.Tokens(), SenhaFlexscanRoteiro, SegredoWebhookRoteiro, SenhaFlexscanRoteiro+"-real", SegredoWebhookRoteiro+"-real")
 	if u := e.cfg.Texto("FLEXSCAN_WEBHOOK_URL", ""); u != "" {
 		segredos = append(segredos, u)
 	}
