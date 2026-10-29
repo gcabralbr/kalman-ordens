@@ -51,9 +51,9 @@ const ajuda = `uso: kalman-ordens <comando> [opções]
   quarentena listar                             linhas que o banco recusou por erro de dado (v1.13), pendentes
   quarentena resolver -id N -por UID -motivo X  marca a linha como revisada; sem pendentes, retomar libera
   expurgar [-meses N] [-simular]                apaga o que passou da retenção (timer mensal; EXPURGO_DB_DSN)
-  parar   -motivo X               parada BLOQUEAR (HTTP local)
-  zerar   -motivo X               parada ZERAR (HTTP local)
-  retomar -motivo X               retira a parada (sempre manual)
+  parar   -motivo X [-ambiente A] parada BLOQUEAR (HTTP local; sem -ambiente, os dois)
+  zerar   -motivo X [-ambiente A] parada ZERAR (HTTP local)
+  retomar -motivo X [-ambiente A] retira a parada (sempre manual)
   saude                           GET /saude
   teste-posicao -conta C [-espera S]   bancada da HML: RequestForPositions (35=AN) pela sessão do serviço; imprime a resposta crua
   versao                          commit embutido no binário
@@ -359,6 +359,7 @@ func soLoopback(endereco string) error {
 func cli(cfg config.Config, cmd string, args []string) error {
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 	motivo := fs.String("motivo", "", "motivo (obrigatório em parar, zerar e retomar)")
+	amb := fs.String("ambiente", "", "SIMULADOR ou REAL: só a instância desse ambiente (v1.26); vazio = todas")
 	endereco := fs.String("endereco", cfg.Texto("HTTP_ENDERECO", "127.0.0.1:9092"), "HTTP local do serviço")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -375,6 +376,9 @@ func cli(cfg config.Config, cmd string, args []string) error {
 			return fmt.Errorf("%s exige -motivo", cmd)
 		}
 		caminho, corpo := "/parada", map[string]string{"origem": "cli", "motivo": *motivo}
+		if *amb != "" {
+			corpo["ambiente"] = *amb
+		}
 		switch cmd {
 		case "parar":
 			corpo["modo"] = "BLOQUEAR"

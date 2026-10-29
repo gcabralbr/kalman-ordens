@@ -1009,9 +1009,11 @@ func (m *Motor) carregarDia() error {
 		return err
 	}
 	for i := range ops {
-		if dominio.AmbienteDe(ops[i].Ambiente) != m.amb {
+		if m.p.Amb.Legado == "" && dominio.AmbienteDe(ops[i].Ambiente) != m.amb {
 			continue // v1.26: a operação do outro ambiente é da outra instância
 		}
+		// na equivalência ORDENS_AMBIENTE a instância é uma só e carrega tudo (no PRODUCAO, as
+		// operações gravadas antes da 0014 são SIMULADOR e a posição delas não pode ficar órfã)
 		op := &operacao{Operacao: ops[i], persistida: true, gravada: ops[i].Copia()}
 		m.aoVivo.Associar(op.Modulo, op.OperacaoID, op.UID)
 		m.ops = append(m.ops, op)

@@ -603,8 +603,8 @@ Com os dois ambientes (v1.26):
 - o webhook do REAL tem rota própria no mesmo listener (`REAL_FLEXSCAN_WEBHOOK_PREFIXO`, padrão
   `/flexscan/webhook-real/`, e `REAL_FLEXSCAN_WEBHOOK_SEGREDO`). O nginx repassa os dois caminhos, e o
   cadastro do webhook na Flexscan de produção usa a `REAL_FLEXSCAN_WEBHOOK_URL`;
-- `parar`/`zerar`/`retomar` pela CLI valem para os dois. Só um: `curl -s -XPOST 127.0.0.1:9092/parada
-  -d '{"modo":"BLOQUEAR","origem":"cli","motivo":"...","ambiente":"REAL"}'`;
+- `parar`/`zerar`/`retomar` pela CLI valem para os dois; só um: `-ambiente REAL` (ex.:
+  `kalman-ordens parar -ambiente REAL -motivo "..."`);
 - `curl -s 127.0.0.1:9092/saude | jq '.ambientes.REAL'`: o bloco do REAL.
 
 ### 1.11 Emergência KHML (instância HML do Kalman, módulo `KHML`)
