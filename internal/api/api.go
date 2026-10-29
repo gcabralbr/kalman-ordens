@@ -167,6 +167,21 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 				return
 			}
 		}
+		// v1.23: ?dia=AAAA-MM-DD — o dia inteiro, do registro (desde e limite não valem)
+		if dia := q.Get("dia"); dia != "" {
+			resp, ok, err := m.TrafegoFlexscanDoDia(dia)
+			switch {
+			case !ok:
+				escrever(w, http.StatusNotFound, motor.Resposta{"erro": "flexscan nao configurada"})
+			case errors.Is(err, motor.ErrDia):
+				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "dia invalido (AAAA-MM-DD)"})
+			case err != nil:
+				escrever(w, http.StatusInternalServerError, motor.Resposta{"erro": err.Error()})
+			default:
+				escrever(w, http.StatusOK, resp)
+			}
+			return
+		}
 		resp, ok := m.TrafegoFlexscan(desde, limite)
 		if !ok {
 			escrever(w, http.StatusNotFound, motor.Resposta{"erro": "flexscan nao configurada"})

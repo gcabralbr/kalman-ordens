@@ -15,6 +15,10 @@ import (
 // para o GET /flexscan/trafego (a aba "Flexscan ao vivo" do admin). Nada vai ao banco: o registro
 // completo continua no kalmanordemevento. Sem segredo: o resumo é montado aqui, dos campos de
 // negócio; token, senha, segredo do webhook e corpo cru nunca entram.
+//
+// Virada do dia (v1.23): o buffer é do dia corrente (relogio.Fuso). A cada linha nova, recarga e
+// consulta, as linhas de antes da meia-noite saem (o banco guarda tudo; o dia passado sai pelo
+// ?dia=) e recarregadas volta a zero. O seq continua a numeração (não volta a 1).
 
 // CapacidadeTrafego: as últimas 2.000 linhas. LimitePadraoTrafego: o ?limite= ausente.
 const (
@@ -69,10 +73,36 @@ type trafego struct {
 	consultas []time.Time // as do último minuto, inclusive as que não viram linha
 	// linhas recarregadas do kalmanordemevento na partida (as trocas do dia antes do restart)
 	recarregadas int
+	dia          time.Time // a meia-noite do dia do buffer
 }
 
 func novoTrafego(rel relogio.Relogio) *trafego {
-	return &trafego{rel: rel, boot: rel.Agora()}
+	agora := rel.Agora()
+	return &trafego{rel: rel, boot: agora, dia: meiaNoite(agora)}
+}
+
+func meiaNoite(t time.Time) time.Time {
+	t = t.In(relogio.Fuso)
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, relogio.Fuso)
+}
+
+// virar (com t.mu): no dia novo, descarta as linhas de antes da meia-noite (as mais antigas estão no
+// começo) e zera recarregadas (as recarregadas são todas do dia da partida).
+func (t *trafego) virar(agora time.Time) {
+	hoje := meiaNoite(agora)
+	if !hoje.After(t.dia) {
+		return
+	}
+	t.dia = hoje
+	for t.n > 0 && t.buf[t.ini].em.Before(hoje) {
+		t.buf[t.ini] = LinhaTrafego{}
+		t.ini = (t.ini + 1) % CapacidadeTrafego
+		t.n--
+	}
+	if t.n == 0 {
+		t.ini = 0
+	}
+	t.recarregadas = 0
 }
 
 // linha: status < 0 = sem resposta (null); dur < 0 = sem duração (null); cl/id vazios = null; nomes =
@@ -99,6 +129,7 @@ func (t *trafego) linha(tipo, direcao string, status int, dur time.Duration, cl,
 	l.em = agora
 	l.Em = agora.In(relogio.Fuso).Format(formatoEmTrafego)
 	t.mu.Lock()
+	t.virar(agora)
 	t.seq++
 	l.Seq = t.seq
 	pos := (t.ini + t.n) % CapacidadeTrafego
@@ -137,6 +168,7 @@ func (t *trafego) Consultar(desde int64, limite int) ([]LinhaTrafego, int64, map
 	agora := t.rel.Agora()
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.virar(agora)
 	lista := make([]LinhaTrafego, 0, min(limite, t.n))
 	minuto := 0
 	var posts []int64
@@ -158,7 +190,7 @@ func (t *trafego) Consultar(desde int64, limite int) ([]LinhaTrafego, int64, map
 		sort.Slice(posts, func(i, j int) bool { return posts[i] < posts[j] })
 		p50, max = posts[(len(posts)-1)/2], posts[len(posts)-1]
 	}
-	return lista, t.seq, map[string]any{"boot": t.boot.In(relogio.Fuso).Format(formatoEmTrafego), "recarregadas": t.recarregadas, "msgs_min": minuto,
+	return lista, t.seq, map[string]any{"boot": t.boot.In(relogio.Fuso).Format(formatoEmTrafego), "dia": t.dia.Format("2006-01-02"), "recarregadas": t.recarregadas, "msgs_min": minuto,
 		"consultas_min": len(t.consultas), "latencia_post_p50_ms": p50, "latencia_post_max_ms": max}
 }
 

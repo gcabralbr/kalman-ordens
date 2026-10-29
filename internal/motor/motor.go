@@ -1326,6 +1326,13 @@ func (m *Motor) TrafegoFlexscan(desde int64, limite int) (map[string]any, bool) 
 		return nil, false
 	}
 	ls, ult, saude := t.Trafego(desde, limite)
+	preencherOperacao(ls, m.aoVivo.Dono)
+	return map[string]any{"mensagens": ls, "ultimo_seq": ult, "saude": saude}, true
+}
+
+// preencherOperacao: a operação e o módulo de cada linha, pelo ClOrdID (ou pelos retratos de um
+// webhook, se todos forem da mesma operação), e o dono pela função dada.
+func preencherOperacao(ls []flexscan.LinhaTrafego, dono func(string, int64) (int, bool)) {
 	for i := range ls {
 		var mod string
 		var op int64
@@ -1339,11 +1346,54 @@ func (m *Motor) TrafegoFlexscan(desde int64, limite int) (map[string]any, bool) 
 			continue
 		}
 		ls[i].OperacaoID, ls[i].Modulo = &op, &mod
-		if uid, ok := m.aoVivo.Dono(mod, op); ok {
+		if uid, ok := dono(mod, op); ok {
 			ls[i].UID = &uid
 		}
 	}
-	return map[string]any{"mensagens": ls, "ultimo_seq": ult, "saude": saude}, true
+}
+
+// LimiteEventosDiaFlexscan (v1.23): teto de eventos lidos para o tráfego de um dia (um pregão cheio
+// fica perto de 1.500); acima dele, as linhas mais recentes e "cortado": true.
+const LimiteEventosDiaFlexscan = 50000
+
+// TrafegoFlexscanDoDia (v1.23): o tráfego de um dia inteiro, do kalmanordemevento (o mesmo
+// LinhasDoRegistro da recarga na partida), para a aba "Flexscan ao vivo" ver ontem e datas passadas
+// — o buffer em memória só guarda as últimas 2.000 linhas desde a partida. As consultas que não
+// mudaram o estado nunca foram gravadas e não aparecem. seq = a ordem no dia (1..N); o dono vem das
+// operações do dia. ok=false: sem a Flexscan (404, como o ao vivo).
+func (m *Motor) TrafegoFlexscanDoDia(dia string) (map[string]any, bool, error) {
+	if m.flx == nil {
+		return nil, false, nil
+	}
+	de, ate, err := Dia(dia)
+	if err != nil {
+		return nil, true, err
+	}
+	evs, err := m.repo.EventosFlexscanEntre(de, ate, LimiteEventosDiaFlexscan)
+	if err != nil {
+		return nil, true, err
+	}
+	ops, _, err := m.repo.CarregarDia(dia)
+	if err != nil {
+		return nil, true, err
+	}
+	donos := map[string]int{}
+	for _, o := range ops {
+		donos[o.Modulo+"/"+strconv.FormatInt(o.OperacaoID, 10)] = o.UID
+	}
+	ls := flexscan.LinhasDoRegistro(evs)
+	for i := range ls {
+		ls[i].Seq = int64(i + 1)
+	}
+	preencherOperacao(ls, func(mod string, op int64) (int, bool) {
+		uid, ok := donos[mod+"/"+strconv.FormatInt(op, 10)]
+		return uid, ok
+	})
+	if ls == nil {
+		ls = []flexscan.LinhaTrafego{}
+	}
+	return map[string]any{"dia": dia, "mensagens": ls, "ultimo_seq": len(ls), "eventos": len(evs),
+		"cortado": len(evs) >= LimiteEventosDiaFlexscan}, true, nil
 }
 
 // mesmaOperacao (v1.21.1): a operação de um webhook com vários retratos, se todos forem dela.

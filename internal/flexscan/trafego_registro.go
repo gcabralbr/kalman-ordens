@@ -24,20 +24,27 @@ const (
 )
 
 // CarregarTrafego: as linhas do registro do dia, antes de qualquer linha ao vivo (chamado na partida,
-// antes do login). Devolve quantas entraram (no máximo a capacidade do buffer: as mais recentes).
+// antes do login). Devolve quantas entraram (no máximo a capacidade do buffer: as mais recentes; só
+// as do dia corrente).
 func (p *Ponte) CarregarTrafego(evs []repo.EventoFIX) int {
 	ls := LinhasDoRegistro(evs)
 	if len(ls) > CapacidadeTrafego {
 		ls = ls[len(ls)-CapacidadeTrafego:]
 	}
-	p.traf.carregar(ls)
-	return len(ls)
+	return p.traf.carregar(ls)
 }
 
-func (t *trafego) carregar(ls []LinhaTrafego) {
+// carregar: só as linhas do dia do buffer (v1.23: a de antes da meia-noite sairia na virada).
+func (t *trafego) carregar(ls []LinhaTrafego) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.virar(t.rel.Agora())
+	n := 0
 	for _, l := range ls {
+		if l.em.Before(t.dia) {
+			continue
+		}
+		n++
 		t.seq++
 		l.Seq = t.seq
 		pos := (t.ini + t.n) % CapacidadeTrafego
@@ -48,7 +55,8 @@ func (t *trafego) carregar(ls []LinhaTrafego) {
 		}
 		t.buf[pos] = l
 	}
-	t.recarregadas += len(ls)
+	t.recarregadas += n
+	return n
 }
 
 // LinhasDoRegistro converte os eventos da ponte (em ordem) nas linhas do tráfego.
