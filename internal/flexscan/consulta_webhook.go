@@ -10,20 +10,19 @@ import (
 
 // Consulta pedida pelo webhook (v1.24, 29/10 11:02:00, op 234413): o webhook da execução chegou
 // 94 ms depois do POST, e a consulta de confirmação, disparada por ele 11 ms depois, deu 404: a
-// API de consulta da Flexscan ainda não conhecia a ordem (a de 313 ms já achou).
-//   - A consulta disparada pelo webhook ("confirma", "webhook_invalido") respeita a mesma espera
-//     da primeira consulta depois do POST: não sai com o POST em curso nem antes de
-//     FLEXSCAN_PRIMEIRA_CONSULTA_MS desde o 202. Quem solta é o Tick.
+// API de consulta da Flexscan ainda não conhecia a ordem (a de 313 ms já achou). Em 28 e 29/10, dos
+// 9 webhooks finais antes dos 200 ms do 202, a consulta imediata achou a ordem em 8 (~12 ms depois).
+//   - A consulta disparada pelo webhook ("confirma", "webhook_invalido") sai na hora; só não sai
+//     com o POST em curso (o webhook antes do 202): aí o Tick a solta depois do 202.
 //   - Com o estado final (executada/cancelada) já trazido pelo webhook, o 404 até JanelaRegistro
 //     depois do 202 é "ainda não registrada": vai ao registro e ao tráfego marcado
-//     (nao_registrada, não conta como erro) e a consulta se repete: no próximo passo da consulta
-//     ativa ou, sem ele, em RepeteNaoRegistrada.
+//     (nao_registrada, não conta como erro) e a consulta se repete em RepeteNaoRegistrada.
 
 // JanelaRegistro: até quanto depois do 202 o 404 de uma ordem já final pelo webhook é "ainda não
 // registrada". RepeteNaoRegistrada: quando a consulta se repete.
 const (
 	JanelaRegistro      = 2 * time.Second
-	RepeteNaoRegistrada = 300 * time.Millisecond
+	RepeteNaoRegistrada = 100 * time.Millisecond
 )
 
 // PrefixoNaoRegistrada: o começo do texto gravado (kalmanordemevento) e do resumo do tráfego.
@@ -47,8 +46,7 @@ func (p *Ponte) soltarConsultaWebhookLocked(o *ordemP, agora time.Time) bool {
 		o.confirmar, o.confirmarApos = "", time.Time{}
 		return false
 	}
-	if o.postEmCurso || agora.Before(o.confirmarApos) ||
-		(!o.aceita202Em.IsZero() && agora.Before(o.aceita202Em.Add(p.cfg.PrimeiraConsulta))) {
+	if o.postEmCurso || agora.Before(o.confirmarApos) {
 		return false
 	}
 	origem, prio := o.confirmar, prioProtecao
@@ -72,8 +70,7 @@ func (p *Ponte) aindaNaoRegistrada(o *ordemP, id, origem string, r Resposta, dur
 	agora := p.rel.Agora()
 	p.mu.Lock()
 	sim := o.whFinal && !o.aceita202Em.IsZero() && agora.Before(o.aceita202Em.Add(JanelaRegistro))
-	if sim && (o.ativaDesde.IsZero() || o.passo >= len(o.passosDaJanela())) {
-		// sem passo da consulta ativa pela frente: a repetição é a do webhook
+	if sim {
 		repete := "confirma" // a ativa e a periódica se repetem como a do webhook
 		if origem == "webhook_invalido" {
 			repete = origem

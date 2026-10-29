@@ -58,6 +58,8 @@ type LinhaTrafego struct {
 	// NaoRegistrada (v1.24): o 404 de uma ordem que o webhook já deu como final, logo depois do 202
 	// (a consulta da Flexscan ainda não a conhece): não é erro, a consulta se repete.
 	NaoRegistrada bool `json:"nao_registrada"`
+	// IP (v1.24, FX-7): o IP de origem do WEBHOOK aceito (X-Real-IP do nginx); null nas outras.
+	IP *string `json:"ip"`
 	// ClOrdIDs (v1.21.1): os clordid dos retratos de um webhook com vários (ClOrdID fica null); quem
 	// consulta preenche a operação se todos forem da mesma.
 	ClOrdIDs []string `json:"-"`
@@ -112,6 +114,15 @@ func (t *trafego) virar(agora time.Time) {
 // os clordid de um webhook com vários retratos.
 func (t *trafego) linha(tipo, direcao string, status int, dur time.Duration, cl, id, resumo string, nomes ...string) {
 	t.anexar(LinhaTrafego{Tipo: tipo, Direcao: direcao, Resumo: resumoTrafego(resumo), ClOrdIDs: nomes}, status, dur, cl, id)
+}
+
+// webhook (v1.24): a linha do WEBHOOK aceito (200), com o IP de origem.
+func (t *trafego) webhook(ip, cl, id, resumo string, nomes ...string) {
+	l := LinhaTrafego{Tipo: TrafegoWebhook, Direcao: "REC", Resumo: resumoTrafego(resumo), ClOrdIDs: nomes}
+	if ip != "" {
+		l.IP = &ip
+	}
+	t.anexar(l, 200, -1, cl, id)
 }
 
 // linhaNaoRegistrada (v1.24): a CONSULTA 404 "ainda não registrada".
@@ -183,6 +194,7 @@ func (t *trafego) Consultar(desde int64, limite int) ([]LinhaTrafego, int64, map
 	lista := make([]LinhaTrafego, 0, min(limite, t.n))
 	minuto := 0
 	var posts []int64
+	ips := map[string]int{}
 	for i := 0; i < t.n; i++ {
 		l := t.buf[(t.ini+i)%CapacidadeTrafego]
 		if l.Seq > desde && len(lista) < limite {
@@ -194,6 +206,9 @@ func (t *trafego) Consultar(desde int64, limite int) ([]LinhaTrafego, int64, map
 		if l.Tipo == TrafegoPOST && l.DuracaoMs != nil {
 			posts = append(posts, *l.DuracaoMs)
 		}
+		if l.IP != nil {
+			ips[*l.IP]++
+		}
 	}
 	t.consultas = aparar(t.consultas, agora.Add(-time.Minute))
 	var p50, max any
@@ -202,7 +217,7 @@ func (t *trafego) Consultar(desde int64, limite int) ([]LinhaTrafego, int64, map
 		p50, max = posts[(len(posts)-1)/2], posts[len(posts)-1]
 	}
 	return lista, t.seq, map[string]any{"boot": t.boot.In(relogio.Fuso).Format(formatoEmTrafego), "dia": t.dia.Format("2006-01-02"), "recarregadas": t.recarregadas, "msgs_min": minuto,
-		"consultas_min": len(t.consultas), "latencia_post_p50_ms": p50, "latencia_post_max_ms": max}
+		"consultas_min": len(t.consultas), "webhook_ips": ips, "latencia_post_p50_ms": p50, "latencia_post_max_ms": max}
 }
 
 // resumoTrafego: ASCII, uma linha, até 200 caracteres.

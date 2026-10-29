@@ -98,10 +98,14 @@ func LinhasDoRegistro(evs []repo.EventoFIX) []LinhaTrafego {
 			es, err := LerWebhook([]byte(e.Bruta))
 			if err != nil {
 				nova(e.Em, TrafegoWebhook, "REC", 200, -1, "", "", "forma desconhecida: "+err.Error())
-				continue
+			} else {
+				cl, id, resumo, nomes := resumoWebhook(es)
+				nova(e.Em, TrafegoWebhook, "REC", 200, -1, cl, id, resumo, nomes...)
 			}
-			cl, id, resumo, nomes := resumoWebhook(es)
-			nova(e.Em, TrafegoWebhook, "REC", 200, -1, cl, id, resumo, nomes...)
+			// o IP de origem gravado desde a ponte (23/10: "origem <ip>")
+			if ip := strings.TrimSpace(strings.TrimPrefix(e.Texto, "origem ")); ip != "" && strings.HasPrefix(e.Texto, "origem ") {
+				ls[len(ls)-1].IP = &ip
+			}
 		case e.Direcao == "REC" && tipo == "PRECO":
 			resumo := e.Texto
 			if de, para, ok := strings.Cut(strings.TrimPrefix(e.Texto, "preço ajustado pela Flexscan: "), " -> "); ok {

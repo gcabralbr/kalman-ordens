@@ -1470,7 +1470,7 @@ func (p *Ponte) ReceberWebhook(corpo []byte, origem string) error {
 	p.mu.Unlock()
 	p.ouv.Registrar(repo.EventoFIX{Direcao: "REC", MsgType: "FLX-WH", Texto: "origem " + origem, Bruta: mascararCorpo(string(corpo))})
 	es, err := LerWebhook(corpo)
-	p.registrarWebhook(es, err)
+	p.registrarWebhook(es, err, origem)
 	if err != nil {
 		p.ouv.Alertar("FLEXSCAN_WEBHOOK_INVALIDO", "FLEXSCAN_WEBHOOK_INVALIDO", "[flexscan] webhook com forma desconhecida: "+err.Error())
 		p.mu.Lock()
@@ -1621,13 +1621,15 @@ func codigoTexto(c int) string {
 }
 
 // registrarWebhook (v1.21): a linha do tráfego de um webhook recebido (o receptor respondeu 200).
-func (p *Ponte) registrarWebhook(es []Estado, err error) {
+// ip (v1.24, FX-7): de onde veio (o X-Real-IP do nginx), para ver se a Flexscan chama sempre do
+// mesmo endereço antes de pôr o filtro de IP.
+func (p *Ponte) registrarWebhook(es []Estado, err error, ip string) {
 	if err != nil {
-		p.traf.linha(TrafegoWebhook, "REC", http.StatusOK, -1, "", "", "forma desconhecida: "+err.Error())
+		p.traf.webhook(ip, "", "", "forma desconhecida: "+err.Error())
 		return
 	}
 	cl, id, resumo, nomes := resumoWebhook(es)
-	p.traf.linha(TrafegoWebhook, "REC", http.StatusOK, -1, cl, id, resumo, nomes...)
+	p.traf.webhook(ip, cl, id, resumo, nomes...)
 }
 
 // resumoWebhook: os retratos de um webhook (o clordid e o id quando é uma ordem só; com vários, os
