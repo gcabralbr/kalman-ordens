@@ -1,6 +1,7 @@
 # SPEC kalman-ordens — ambientes SIMULADOR e REAL por ordem (desenho, 29/10/2026)
 
-**Estado: desenho, não implementado.** Base: v1.24 (`96c5575139c1`, instalada na .53 em 29/10).
+**Estado: aprovada em 29/10, com as decisões do §7.3.** Passo 1 (v1.25) em implementação. Base: v1.24
+(`96c5575139c1`, instalada na .53 em 29/10).
 
 ## 0. A mudança
 
@@ -15,7 +16,7 @@ conta:
 
 | ambiente do login | coluna do GQ | o que é |
 |---|---|---|
-| `SIMULADOR` | `usutxtconfig` | a conta de simulador na corretora (Flexscan apisim, PnT HML) |
+| `SIMULADOR` | `usutxtconfig` | o simulador interno do GQ (**paper**, nenhuma ordem vem ao serviço) ou um simulador externo na corretora (Flexscan apisim) |
 | `REAL` | `usutxtconfigprd` | a conta real |
 
 A máquina deixa de escolher a coluna e passa a ser só um **teto**:
@@ -27,8 +28,26 @@ A máquina deixa de escolher a coluna e passa a ser só um **teto**:
 já manda ao Kalman. O Kalman repassa o valor sem traduzir. Na configuração, `SIM` é aceito como
 abreviação de `SIMULADOR`.
 
-**O destino 9999** (o simulador interno do GQ) continua recusado nos dois ambientes
-(`DESTINO_INVALIDO`). O SIMULADOR deste serviço é a conta de simulador **na corretora**.
+### 0.1 SIMULADOR: paper ou simulador externo (D1)
+
+No SIMULADOR, quem decide entre paper e ordens é o `usutxtconfig` do usuário:
+
+| `usutxtconfig` | destino | o Kalman |
+|---|---|---|
+| `Robo.CORSeqId` 9999 **e** conta `QUANT` | **PAPER**, o simulador interno do GQ (o caso de todos os usuários comuns) | não manda ordem ao serviço |
+| aponta para um simulador externo (ex.: o 5725: `Robo.Conector` FLEXSCAN, `CORSeqId` 85, conta `S-1117150`) | o conector, a corretora e a conta | manda as ordens com `ambiente: SIMULADOR`, como hoje |
+
+- **A conta** é lida pela regra de hoje: `Futuros.CCONroContaFut` e, sem ela, `Robo.CCONroConta`.
+- **9999 com outra conta:** `CONFIG_USUARIO_INVALIDA` ("9999 sem a conta QUANT"). O paper só vale
+  com os dois.
+- **No REAL,** o 9999 continua `DESTINO_INVALIDO`.
+- **Ordem que chega para um destino PAPER** (o Kalman não deveria mandar): recusa `DESTINO_PAPER`,
+  sem alerta.
+- **O PnT não tem uso no SIMULADOR,** porque a HML do PnT é D-1. Ele só existe no REAL. O SIMULADOR
+  com o conector PNT é recusado com `CONECTOR_AMBIENTE` ("o PnT só opera no REAL").
+- **O serviço expõe o destino resolvido** por uid e ambiente (§4.3). O Kalman o consulta na ativação
+  do dia, para decidir se manda ordens e para mostrar na tela: "Simulador · paper", "Simulador ·
+  Flexscan" ou "REAL · Flexscan · Capital 715124".
 
 ## 1. O ambiente em cada ordem
 
@@ -81,7 +100,7 @@ instância separada.** Elas compartilham o processo, o banco, a API e a fonte de
 | | SIMULADOR | REAL |
 |---|---|---|
 | **Flexscan** | URL, usuário, senha, estado de login, webhook (segredo, URL pública, cadastro) | os mesmos, das chaves `REAL_` |
-| **PnT (FIX)** | host, porta, CompIDs, usuário, senha, `FIX_DIR` (store), janela | os mesmos, das chaves `REAL_` |
+| **PnT (FIX)** | — (sem uso: a HML do PnT é D-1) | host, porta, CompIDs, usuário, senha, `FIX_DIR` (store), janela |
 | **Contas** | a lista de contas de simulador do conector (a trava, §4) | `REAL_CONTAS` |
 | **Estado** | login, sessão, ordens acompanhadas, mass status, conciliação da partida, disjuntor | separados |
 
@@ -154,10 +173,10 @@ instância separada.** Elas compartilham o processo, o banco, a API e a fonte de
 
 | | .53 (DEV) | .51 (PROD) |
 |---|---|---|
-| `AMBIENTES_PERMITIDOS` | `SIM`. `SIM,REAL` só durante os testes de REAL, depois volta | `SIM,REAL`, ou `REAL` se o SIMULADOR não rodar na .51 |
+| `AMBIENTES_PERMITIDOS` | `SIM`. `SIM,REAL` só durante os testes de REAL, depois volta | `SIM,REAL` (D2): o SIMULADOR (paper para os comuns, simulador externo para quem tiver um) e o REAL |
 | `REAL_UIDS` | um uid de teste (ex.: `5725`) | `*`, e quem decide é a habilitação REAL de cada uid |
 | `REAL_CONTAS` | a conta real desse uid | `*`, com a trava cruzada (§4) |
-| `REAL_LIMITE_QTD_ORDEM` | `1` | o de produção (decisão do responsável) |
+| `REAL_LIMITE_QTD_ORDEM` | `1` | o de produção, informado pelo responsável antes do passo 5 (D3) |
 | `REAL_LIMITE_PERDA_DIA_PTS` / `REAL_LIMITE_ENTRADAS_DIA` | baixos (ex.: 300 / 10) | os de produção |
 
 ## 4. Validação da conta e da habilitação por ambiente
@@ -174,7 +193,7 @@ coluna continua não indo inteiro para log, recusa ou banco.
 | 3 | `ambiente` em `AMBIENTES_PERMITIDOS` | `AMBIENTE_NAO_PERMITIDO` ("REAL não permitido nesta máquina") | crítico, se for REAL |
 | 4 | REAL: uid em `REAL_UIDS` | `REAL_UID_NAO_PERMITIDO` | crítico |
 | 5 | habilitação do uid **naquele ambiente** | `UID_NAO_HABILITADO` (o motivo diz o ambiente) | — |
-| 6 | a coluna do ambiente: JSON, destino, conector da habilitação do ambiente, conta e formato da conta pelo conector | as de hoje (`CONFIG_USUARIO_INVALIDA`, `DESTINO_INVALIDO`, `CONECTOR_NAO_HABILITADO`, `CONECTOR_INDEFINIDO`, `CONTA_INVALIDA`), com o ambiente no motivo | as de hoje |
+| 6 | a coluna do ambiente: JSON, destino, conector da habilitação do ambiente, conta e formato da conta pelo conector; no SIMULADOR, o PAPER e o PnT (§0.1) | as de hoje (`CONFIG_USUARIO_INVALIDA`, `DESTINO_INVALIDO`, `CONECTOR_NAO_HABILITADO`, `CONECTOR_INDEFINIDO`, `CONTA_INVALIDA`), com o ambiente no motivo; `DESTINO_PAPER`; `CONECTOR_AMBIENTE` | as de hoje |
 | 7 | o conector configurado **naquele ambiente** | `CONECTOR_NAO_CONFIGURADO` (ex.: "FLEXSCAN no REAL sem REAL_FLEXSCAN_URL") | — |
 | 8 | **trava da conta:** SIMULADOR → a conta está na lista de simulador do conector. REAL → a conta **não** está em nenhuma lista de simulador **e** está em `REAL_CONTAS` (ou `*`) | `CONTA_AMBIENTE` (simulador × real); `REAL_CONTA_NAO_PERMITIDA` (fora da `REAL_CONTAS`) | crítico |
 | 9 | os limites do ambiente (máquina e habilitação) | as de hoje (`POSICAO_MAXIMA`, `ENTRADAS_POR_MINUTO`, `PERDA_DIARIA`...), com o ambiente no motivo | as de hoje |
@@ -196,6 +215,40 @@ conta real posta por engano no `usutxtconfig`, e a de simulador no `usutxtconfig
     uma), as duas habilitações e se esta máquina permite o REAL para esse uid e essa conta.
 - **API:** `GET/POST /usuarios/{uid}/habilitacao?ambiente=REAL`. Sem o parâmetro, o SIMULADOR.
 
+### 4.3 O destino resolvido: `GET /usuarios/{uid}/destino`
+
+**Para que serve:** o Kalman decide na ativação do dia se manda ordens e mostra na tela para onde
+elas vão.
+
+**Como responde:**
+- `?ambiente=SIMULADOR` ou `?ambiente=REAL`; sem o parâmetro, os dois.
+- Roda as verificações 3 a 8 do §4.1, sem limites e sem posição, e devolve o resultado em vez de
+  recusar.
+- Nunca lê nem devolve credencial. Do GQ, só o destino, o conector e a conta.
+- **A resposta é sempre 200.** Mesmo quando não dá para mandar ordem, ela traz `pode_enviar: false`
+  e o motivo. Uid sem linha no GQ: os dois ambientes com `CONFIG_USUARIO_INVALIDA`.
+
+```json
+{"uid": 5725, "ambientes": {
+  "SIMULADOR": {"destino": "CONECTOR", "conector": "FLEXSCAN", "corretora": "BTG", "corretora_codigo": 85,
+                "conta": "S-1117150", "habilitado": true, "permitido": true, "pode_enviar": true,
+                "codigo": null, "motivo": null, "rotulo": "Simulador · Flexscan"},
+  "REAL":      {"destino": null, "conector": null, "corretora": null, "corretora_codigo": null,
+                "conta": null, "habilitado": false, "permitido": false, "pode_enviar": false,
+                "codigo": "AMBIENTE_NAO_PERMITIDO", "motivo": "REAL nao permitido nesta maquina",
+                "rotulo": null}}}
+```
+
+**Os campos:**
+- **`destino`:**
+  - `PAPER`: o 9999 com a conta QUANT; `pode_enviar` falso, `rotulo` "Simulador · paper";
+  - `CONECTOR`: o conector, a corretora e a conta preenchidos;
+  - `null`: a configuração não resolve, e `codigo` e `motivo` dizem por quê.
+- **`permitido`:** a máquina aceita esse ambiente, esse uid e essa conta (§3).
+- **`habilitado`:** a habilitação do uid naquele ambiente (§4.2).
+- **`pode_enviar`:** destino `CONECTOR`, habilitado e permitido.
+- **`rotulo`:** o texto da tela. No REAL, "REAL · Flexscan · Capital 715124".
+
 ## 5. Recusas e alertas novos
 
 | código | tipo | quando |
@@ -207,6 +260,8 @@ conta real posta por engano no `usutxtconfig`, e a de simulador no `usutxtconfig
 | `REAL_CONTA_NAO_PERMITIDA` | recusa + crítico | conta fora de `REAL_CONTAS` |
 | `AMBIENTE_DIVERGENTE` | recusa | entrada repetida (mesmo `operacao_id`) com outro ambiente |
 | `AMBIENTE_PEDIDO_DIVERGENTE` | crítico (não recusa) | saída, stop ou ação com ambiente diferente do gravado: executa no gravado |
+| `DESTINO_PAPER` | recusa | entrada no SIMULADOR para um uid cujo destino é o paper (9999 com a conta QUANT) |
+| `CONECTOR_AMBIENTE` | recusa | o conector não opera nesse ambiente (o PnT no SIMULADOR) |
 
 Os textos seguem o padrão de hoje: em ASCII, e com o nome do conector e do ambiente
 ("[flexscan REAL] ...").
@@ -226,6 +281,10 @@ Os textos seguem o padrão de hoje: em ASCII, e com o nome do conector e do ambi
     - pedido sem `ambiente` com e sem `AMBIENTE_PADRAO`;
     - a entrada repetida com outro ambiente;
     - a saída com o ambiente errado executa no gravado e alerta;
+    - o paper: 9999 com a conta QUANT dá `DESTINO_PAPER`, e 9999 com outra conta dá
+      `CONFIG_USUARIO_INVALIDA`;
+    - o `GET /usuarios/{uid}/destino`: paper, simulador externo e REAL não permitido, contra o
+      contrato do §4.3;
   - **os dois ambientes ao mesmo tempo** (duas Flexscan falsas, dois PnT falsos):
     - o mesmo uid com posição no SIMULADOR e no REAL;
     - conciliação e restart por ambiente;
@@ -250,7 +309,7 @@ Os textos seguem o padrão de hoje: em ASCII, e com o nome do conector e do ambi
 
 ## 7. Contrato para o Kalman e o adpproxy
 
-### 7.1 adpproxy → Kalman (já existe; confirmar)
+### 7.1 adpproxy → Kalman (já existe; confirmado em 29/10)
 
 | header | valor | quando |
 |---|---|---|
@@ -258,8 +317,8 @@ Os textos seguem o padrão de hoje: em ASCII, e com o nome do conector e do ambi
 | `X-GQ-Ambiente` | `SIMULADOR` ou `REAL`, o ambiente do login no GQ | sempre, **inclusive na ativação do dia** |
 | `X-GQ-Segredo` | `KALMAN_ADPPROXY_SEGREDO` | sempre que for REAL (pode ir sempre) |
 
-Nada muda no adpproxy se ele já manda esses headers em todas as rotas. Falta confirmar que o valor é
-o ambiente do **login** (`&AmbienteLogin`), e não um padrão.
+Nada muda no adpproxy. O responsável confirmou em 29/10 que o `X-GQ-Ambiente` é o do login e que
+vai também na ativação do dia.
 
 ### 7.2 Kalman → kalman-ordens
 
@@ -286,30 +345,31 @@ diferente gera o alerta `AMBIENTE_PEDIDO_DIVERGENTE`.
 **Respostas:** `ambiente` na resposta do `POST /ordens`, no `GET /ordens/{id}`, em cada linha do
 `GET /operacoes` e em cada evento. As recusas novas são as do §5.
 
+**`GET /usuarios/{uid}/destino`** (§4.3): consultado na ativação do dia.
+- `pode_enviar` falso com `destino` PAPER: a sessão fica no paper.
+- `pode_enviar` verdadeiro: as ordens vão ao serviço com aquele `ambiente`.
+- O `rotulo` vai para a tela.
+
 **O que muda no Kalman:**
+- na ativação, decidir entre paper e ordens pelo `/usuarios/{uid}/destino`;
 - mandar `ambiente` em todo pedido;
 - filtrar as próprias telas por ele;
 - ler o `/saude` por ambiente (`ambientes.SIMULADOR` e `ambientes.REAL`);
 - passar `?ambiente=` no `/flexscan/trafego` e no `/sessao/ao-vivo`.
 
-### 7.3 Decisões em aberto (do responsável e do Kalman)
+### 7.3 Decisões (29/10)
 
-- **D1. A sessão SIMULADOR do Kalman deixa de ser só paper?**
-  - Hoje o SIMULADOR do Kalman é paper e só a sessão REAL manda ordem a este serviço. Por isso, na
-    .53, os testes com o 5725 na conta de simulador da Flexscan entram pela sessão **REAL** do
-    Kalman: isso só funciona porque a .53 lê o `usutxtconfig`.
-  - No desenho novo, essa ordem chegaria como REAL e seria recusada na .53.
-  - Para continuar testando no simulador da corretora, o Kalman precisa mandar ordens da sessão
-    SIMULADOR (ativada) a este serviço, com `ambiente: SIMULADOR`. O paper pode continuar para quem
-    não ativou.
-  - **Proposta:** a ativação do dia no SIMULADOR passa a mandar ordens ao serviço, como a do REAL.
-- **D2.** A .51 roda os dois ambientes (`SIM,REAL`) ou só o REAL?
-- **D3.** Os valores de produção de `REAL_LIMITE_QTD_ORDEM`, `REAL_LIMITE_PERDA_DIA_PTS` e
-  `REAL_LIMITE_ENTRADAS_DIA`.
-- **D4.** A Flexscan de produção:
-  - URL, usuário e senha do REAL;
-  - se o webhook de produção vem do mesmo IP (FX-7);
-  - se o cadastro do webhook é por usuário da API (um por ambiente).
+- **D1 (revisada):** no SIMULADOR, quem decide entre paper e ordens é o `usutxtconfig` (§0.1). O
+  9999 com a conta QUANT é paper. Um simulador externo manda as ordens com `ambiente: SIMULADOR`.
+  O serviço expõe o destino resolvido (§4.3), e o PnT só opera no REAL.
+- **D2:** a .51 roda os dois ambientes: o SIMULADOR (paper para os comuns, simulador externo para
+  quem tiver um) e o REAL.
+- **D3:** o responsável informa os limites REAL de produção antes do passo 5. As três chaves
+  continuam obrigatórias, e o serviço não sobe sem elas.
+- **D4:** a Flexscan de produção terá um usuário de API **dedicado ao kalman-ordens**, nunca usado
+  para logar no GQ. O GQ redefine os webhooks do usuário em que loga: foi o que apagou o nosso
+  cadastro no simulador. O responsável põe as credenciais direto no `service.env` da .51. O IP de
+  origem do webhook de produção será observado pelo tráfego (v1.24).
 
 ## 8. Plano de migração (a partir de hoje: .53 só SIMULADOR)
 
@@ -323,9 +383,9 @@ Cada passo é um pacote, com o fluxo de sempre:
 
 | passo | o quê | a .53 depois | depende de |
 |---|---|---|---|
-| **1. v1.25: ambiente no contrato e na operação** | migração 0014 (`ambiente` na operação e na habilitação); campo `ambiente` aceito; `AMBIENTES_PERMITIDOS`, `REAL_UIDS`, `REAL_CONTAS` e os limites REAL; a coluna do GQ pelo ambiente; as recusas do §5; `ORDENS_AMBIENTE=HML` equivalente; CLI e API da habilitação por ambiente | igual a hoje: `SIM` e o padrão SIMULADOR. Um pedido REAL é recusado (`AMBIENTE_NAO_PERMITIDO`) | este SPEC aprovado |
-| **2. v1.26: conectores por ambiente** | chaves `REAL_` (as sem prefixo continuam SIMULADOR); duas pontes Flexscan e duas sessões FIX; webhook por caminho; posição, conciliação, parada, disjuntor, `/saude`, tráfego e ao vivo por ambiente | igual (as chaves `REAL_` vazias) | passo 1 |
-| **3. Kalman manda `ambiente`** | o contrato do §7.2 no Kalman, com a decisão D1 | sai o `AMBIENTE_PADRAO` (sem o campo = recusa). Os testes no simulador da corretora entram pela sessão SIMULADOR | passo 1 (o Kalman pode começar a mandar o campo logo depois do passo 1) |
+| **1. v1.25: ambiente no contrato e na operação** | migração 0014 (`ambiente` na operação e na habilitação); campo `ambiente` aceito; `AMBIENTES_PERMITIDOS`, `REAL_UIDS`, `REAL_CONTAS` e os limites REAL; a coluna do GQ pelo ambiente; o PAPER (§0.1); o `GET /usuarios/{uid}/destino` (§4.3); as recusas do §5; `ORDENS_AMBIENTE=HML` equivalente; CLI e API da habilitação por ambiente. Os conectores de hoje são os do SIMULADOR, e o PnT continua aceito nele **só na equivalência** (`ORDENS_AMBIENTE=HML`, que os roteiros usam) | igual a hoje: `SIM` e o padrão SIMULADOR. Um pedido REAL é recusado (`AMBIENTE_NAO_PERMITIDO`) | este SPEC aprovado |
+| **2. v1.26: conectores por ambiente** | chaves `REAL_` (as sem prefixo continuam SIMULADOR); duas pontes Flexscan; a sessão FIX só no REAL (`CONECTOR_AMBIENTE` no SIMULADOR); webhook por caminho; posição, conciliação, parada, disjuntor, `/saude`, tráfego e ao vivo por ambiente; os roteiros do PnT passam a rodar no REAL das falsas | igual (as chaves `REAL_` vazias; o PnT já está desligado) | passo 1 |
+| **3. Kalman manda `ambiente`** | o contrato do §7.2 no Kalman: o destino na ativação (D1) e o `ambiente` em todo pedido | sai o `AMBIENTE_PADRAO` (sem o campo = recusa). Os testes no simulador da corretora entram pela sessão SIMULADOR | passo 1 (o Kalman pode começar a mandar o campo logo depois do passo 1) |
 | **4. REAL de teste na .53** | `AMBIENTES_PERMITIDOS=SIM,REAL`, um uid, uma conta, 1 contrato e as credenciais REAL; o ensaio do §6 no pregão, com o responsável | volta a `SIM` no fim do teste | passos 2 e 3; D4 |
 | **5. .51 (PROD)** | instalação, `service.env` de produção, habilitações REAL e os limites de produção; `ORDENS_AMBIENTE` removida (o serviço não sobe com ela) | — | passo 4; D2 e D3 |
 
