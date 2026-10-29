@@ -227,12 +227,12 @@ func (r *MariaDB) SalvarOperacao(o *dominio.Operacao) error {
 	pnl := o.PnL.String()
 	if o.ID == 0 {
 		o.Modulo = modulo(o.Modulo) // o padrão da coluna
-		res, err := r.db.Exec(`INSERT INTO kalmanordemoperacao (data, modulo, operacao_id, uid, conta, destino, conector, simbolo, lado, qtd_pedida,
+		res, err := r.db.Exec(`INSERT INTO kalmanordemoperacao (data, modulo, operacao_id, uid, conta, destino, conector, ambiente, simbolo, lado, qtd_pedida,
 			stop_pts, stop_ajustado, stop_origem, stop_ajustado_origem, estado, motivo_entrada, ts_decisao, motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts,
 			encerrou_entrada, contador_n, pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, sinal_entrada, sinal_saida,
 			criado_em, atualizado_em)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(o.Conta), o.Destino, dominio.ConectorDe(o.Conector), nulo(o.Simbolo), o.Lado.Letra(), o.QtdPedida, o.StopPts, nuloInt(o.StopAjustado),
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			o.Data, modulo(o.Modulo), o.OperacaoID, o.UID, nulo(o.Conta), o.Destino, dominio.ConectorDe(o.Conector), dominio.AmbienteDe(o.Ambiente), nulo(o.Simbolo), o.Lado.Letra(), o.QtdPedida, o.StopPts, nuloInt(o.StopAjustado),
 			nulo(cortar(o.StopOrigem, 20)), nulo(cortar(o.StopAjustadoOrigem, 20)), string(o.Estado),
 			nulo(o.MotivoEntrada), nulo(o.TsDecisao), nulo(o.MotivoSaida), nulo(o.OrigemSaida), utc(o.SaidaPedidaEm),
 			o.Divergente, pnl, o.EncerrouEntrada, string(cn), nulo(o.PedidoEntrada), nulo(o.RespostaEntrada),
@@ -373,7 +373,7 @@ func (r *MariaDB) GravarEstado(k, v string, em time.Time) error {
 }
 
 func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem, error) {
-	rows, err := r.db.Query(`SELECT id, data, modulo, operacao_id, uid, conta, destino, conector, simbolo, lado, qtd_pedida, stop_pts, stop_ajustado, stop_origem, stop_ajustado_origem, estado, motivo_entrada, ts_decisao,
+	rows, err := r.db.Query(`SELECT id, data, modulo, operacao_id, uid, conta, destino, conector, ambiente, simbolo, lado, qtd_pedida, stop_pts, stop_ajustado, stop_origem, stop_ajustado_origem, estado, motivo_entrada, ts_decisao,
 		motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts, encerrou_entrada, contador_n, pedido_entrada,
 		resposta_entrada, pedido_saida, resposta_saida, sinal_entrada, sinal_saida, criado_em FROM kalmanordemoperacao WHERE data=? ORDER BY id`, data)
 	if err != nil {
@@ -383,19 +383,19 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 	for rows.Next() {
 		var o dominio.Operacao
 		var d time.Time
-		var lado, estado, cn, conector string
+		var lado, estado, cn, conector, ambiente string
 		var me, ts, ms, os, pe, re, ps, rs, pnl, conta, simb, se, ss sql.NullString
 		var dest sql.NullInt64
 		var sp sql.NullTime
 		var sa sql.NullInt64
 		var so, sao sql.NullString
-		if err := rows.Scan(&o.ID, &d, &o.Modulo, &o.OperacaoID, &o.UID, &conta, &dest, &conector, &simb, &lado, &o.QtdPedida, &o.StopPts, &sa, &so, &sao, &estado, &me, &ts, &ms, &os,
+		if err := rows.Scan(&o.ID, &d, &o.Modulo, &o.OperacaoID, &o.UID, &conta, &dest, &conector, &ambiente, &simb, &lado, &o.QtdPedida, &o.StopPts, &sa, &so, &sao, &estado, &me, &ts, &ms, &os,
 			&sp, &o.Divergente, &pnl, &o.EncerrouEntrada, &cn, &pe, &re, &ps, &rs, &se, &ss, &o.CriadaEm); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
 		o.Data = d.Format("2006-01-02")
-		o.Conta, o.Destino, o.Simbolo, o.Conector = conta.String, int(dest.Int64), simb.String, conector
+		o.Conta, o.Destino, o.Simbolo, o.Conector, o.Ambiente = conta.String, int(dest.Int64), simb.String, conector, ambiente
 		o.StopAjustado = sa.Int64
 		o.StopOrigem, o.StopAjustadoOrigem = so.String, sao.String
 		o.Lado, _ = dominio.LadoDaLetra(lado)
@@ -448,11 +448,11 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 
 // ---------------------------------------------------------------- habilitação e usuários do GQ
 
-func (r *MariaDB) Habilitacao(uid int) (dominio.Habilitacao, bool, error) {
-	h := dominio.Habilitacao{UID: uid}
+func (r *MariaDB) Habilitacao(uid int, ambiente string) (dominio.Habilitacao, bool, error) {
+	h := dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteDe(ambiente)}
 	var cs string
 	err := r.db.QueryRow(`SELECT habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em
-		FROM kalmanordemusuario WHERE uid=?`, uid).Scan(&h.Habilitado, &h.PosicaoMax, &h.QtdMaxOrdem, &cs, &h.Por, &h.Motivo, &h.Em)
+		FROM kalmanordemusuario WHERE uid=? AND ambiente=?`, uid, h.Ambiente).Scan(&h.Habilitado, &h.PosicaoMax, &h.QtdMaxOrdem, &cs, &h.Por, &h.Motivo, &h.Em)
 	if errors.Is(err, sql.ErrNoRows) {
 		return h, false, nil
 	}
@@ -461,8 +461,8 @@ func (r *MariaDB) Habilitacao(uid int) (dominio.Habilitacao, bool, error) {
 }
 
 func (r *MariaDB) Habilitacoes() ([]dominio.Habilitacao, error) {
-	rows, err := r.db.Query(`SELECT uid, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em
-		FROM kalmanordemusuario ORDER BY uid`)
+	rows, err := r.db.Query(`SELECT uid, ambiente, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em
+		FROM kalmanordemusuario ORDER BY uid, ambiente DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +471,7 @@ func (r *MariaDB) Habilitacoes() ([]dominio.Habilitacao, error) {
 	for rows.Next() {
 		var h dominio.Habilitacao
 		var cs string
-		if err := rows.Scan(&h.UID, &h.Habilitado, &h.PosicaoMax, &h.QtdMaxOrdem, &cs, &h.Por, &h.Motivo, &h.Em); err != nil {
+		if err := rows.Scan(&h.UID, &h.Ambiente, &h.Habilitado, &h.PosicaoMax, &h.QtdMaxOrdem, &cs, &h.Por, &h.Motivo, &h.Em); err != nil {
 			return nil, err
 		}
 		h.Conectores = conectoresDoBanco(cs)
@@ -486,21 +486,21 @@ func (r *MariaDB) GravarHabilitacao(h dominio.Habilitacao) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO kalmanordemusuario (uid, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em)
-		VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE habilitado=VALUES(habilitado), posicao_max=VALUES(posicao_max),
+	if _, err := tx.Exec(`INSERT INTO kalmanordemusuario (uid, ambiente, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em)
+		VALUES (?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE habilitado=VALUES(habilitado), posicao_max=VALUES(posicao_max),
 		qtd_max_ordem=VALUES(qtd_max_ordem), conectores=VALUES(conectores), alterado_por=VALUES(alterado_por), motivo=VALUES(motivo), alterado_em=VALUES(alterado_em)`,
-		h.UID, h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, h.ConectoresTexto(), cortar(h.Por, 64), cortar(h.Motivo, 200), h.Em.UTC()); err != nil {
+		h.UID, dominio.AmbienteDe(h.Ambiente), h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, h.ConectoresTexto(), cortar(h.Por, 64), cortar(h.Motivo, 200), h.Em.UTC()); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT INTO kalmanordemusuariohist (uid, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em)
-		VALUES (?,?,?,?,?,?,?,?)`, h.UID, h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, h.ConectoresTexto(), cortar(h.Por, 64), cortar(h.Motivo, 200), h.Em.UTC()); err != nil {
+	if _, err := tx.Exec(`INSERT INTO kalmanordemusuariohist (uid, ambiente, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em)
+		VALUES (?,?,?,?,?,?,?,?,?)`, h.UID, dominio.AmbienteDe(h.Ambiente), h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, h.ConectoresTexto(), cortar(h.Por, 64), cortar(h.Motivo, 200), h.Em.UTC()); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (r *MariaDB) AlterarHabilitado(uid int, habilitado bool, por, motivo string, em time.Time) (dominio.Habilitacao, bool, error) {
-	antes := dominio.Habilitacao{UID: uid}
+func (r *MariaDB) AlterarHabilitado(uid int, ambiente string, habilitado bool, por, motivo string, em time.Time) (dominio.Habilitacao, bool, error) {
+	antes := dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteDe(ambiente)}
 	tx, err := r.db.Begin()
 	if err != nil {
 		return antes, false, err
@@ -508,7 +508,7 @@ func (r *MariaDB) AlterarHabilitado(uid int, habilitado bool, por, motivo string
 	defer tx.Rollback()
 	var cs string
 	err = tx.QueryRow(`SELECT habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em
-		FROM kalmanordemusuario WHERE uid=? FOR UPDATE`, uid).Scan(&antes.Habilitado, &antes.PosicaoMax, &antes.QtdMaxOrdem, &cs, &antes.Por, &antes.Motivo, &antes.Em)
+		FROM kalmanordemusuario WHERE uid=? AND ambiente=? FOR UPDATE`, uid, antes.Ambiente).Scan(&antes.Habilitado, &antes.PosicaoMax, &antes.QtdMaxOrdem, &cs, &antes.Por, &antes.Motivo, &antes.Em)
 	if errors.Is(err, sql.ErrNoRows) {
 		return antes, false, nil
 	}
@@ -519,12 +519,12 @@ func (r *MariaDB) AlterarHabilitado(uid int, habilitado bool, por, motivo string
 	if antes.Habilitado == habilitado {
 		return antes, true, nil
 	}
-	if _, err := tx.Exec(`UPDATE kalmanordemusuario SET habilitado=?, alterado_por=?, motivo=?, alterado_em=? WHERE uid=?`,
-		habilitado, cortar(por, 64), cortar(motivo, 200), em.UTC(), uid); err != nil {
+	if _, err := tx.Exec(`UPDATE kalmanordemusuario SET habilitado=?, alterado_por=?, motivo=?, alterado_em=? WHERE uid=? AND ambiente=?`,
+		habilitado, cortar(por, 64), cortar(motivo, 200), em.UTC(), uid, antes.Ambiente); err != nil {
 		return antes, true, err
 	}
-	if _, err := tx.Exec(`INSERT INTO kalmanordemusuariohist (uid, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em)
-		VALUES (?,?,?,?,?,?,?,?)`, uid, habilitado, antes.PosicaoMax, antes.QtdMaxOrdem, antes.ConectoresTexto(), cortar(por, 64), cortar(motivo, 200), em.UTC()); err != nil {
+	if _, err := tx.Exec(`INSERT INTO kalmanordemusuariohist (uid, ambiente, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em)
+		VALUES (?,?,?,?,?,?,?,?,?)`, uid, antes.Ambiente, habilitado, antes.PosicaoMax, antes.QtdMaxOrdem, antes.ConectoresTexto(), cortar(por, 64), cortar(motivo, 200), em.UTC()); err != nil {
 		return antes, true, err
 	}
 	return antes, true, tx.Commit()

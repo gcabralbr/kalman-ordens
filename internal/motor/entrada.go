@@ -25,7 +25,18 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if r := motivoLongo(p.Motivo, dominio.MaxMotivoEntrada); r != nil {
 		return nil, r
 	}
-	hab, r := m.verificarHabilitacao(p)
+	// SPEC-AMBIENTES-v1 §4.1: o ambiente (itens 1 e 2) e o teto da máquina (3 e 4) antes de tudo
+	amb, r := m.ambienteDoPedido(p.Ambiente)
+	if r != nil {
+		return nil, r
+	}
+	if p.UID == nil {
+		return nil, simples("UID_NAO_HABILITADO", "uid ausente")
+	}
+	if r := m.tetoAmbiente(amb, *p.UID); r != nil {
+		return nil, r
+	}
+	hab, r := m.verificarHabilitacao(p, amb)
 	if r != nil {
 		return nil, r
 	}
@@ -47,7 +58,10 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if m.p.PnTDesligado && !slices.Contains(hab.Conectores, dominio.ConectorFlexscan) {
 		return nil, conectorDesligado()
 	}
-	if m.operacaoDo(p) != nil {
+	if op := m.operacaoDo(p); op != nil {
+		if dominio.AmbienteDe(op.Ambiente) != amb {
+			return nil, simples("AMBIENTE_DIVERGENTE", fmt.Sprintf("operação já recebida no %s", dominio.AmbienteDe(op.Ambiente)))
+		}
 		// a idempotência (repetido) já tratou o reenvio; aqui só chega operação sem pedido guardado
 		return nil, simples("DUPLICADA", "operação já recebida")
 	}
@@ -70,7 +84,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 		return nil, simples("CONCILIANDO", "conciliação em andamento")
 	}
 	// conta e destino: lidos só aqui e congelados na operação (v1.2 U4)
-	conta, r := m.contaParaEntrada(*p.UID)
+	conta, r := m.contaParaEntrada(*p.UID, amb)
 	if r != nil {
 		return nil, r
 	}
@@ -106,7 +120,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 
 	agora := m.agora()
 	op := &operacao{Operacao: dominio.Operacao{
-		ID: m.novoIDOperacao(), Data: m.dia, Modulo: p.modulo(), OperacaoID: *p.OperacaoID, UID: *p.UID, Conta: conta.Conta, Destino: conta.Destino, Conector: conta.Conector, Simbolo: l.Ticker,
+		ID: m.novoIDOperacao(), Data: m.dia, Modulo: p.modulo(), OperacaoID: *p.OperacaoID, UID: *p.UID, Conta: conta.Conta, Destino: conta.Destino, Conector: conta.Conector, Ambiente: amb, Simbolo: l.Ticker,
 		Lado: lado, QtdPedida: *p.Qtd, StopPts: *p.StopPts,
 		Estado: dominio.Entrando, MotivoEntrada: p.Motivo, TsDecisao: p.TsDecisao, CriadaEm: agora,
 		ContadorN: map[string]int{},
@@ -175,7 +189,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 		enviar()
 	}
 	slog.Info("ENTRADA decidida", "clordid", o.ClOrdAtual, "preco", o.Preco, "conta", op.Conta, "simbolo", op.Simbolo)
-	return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "clordid": o.ClOrdAtual, "preco": o.Preco}, nil
+	return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "clordid": o.ClOrdAtual, "preco": o.Preco, "ambiente": amb}, nil
 }
 
 // lerPrecoDe: a leitura da fonte do conector; dentro de um sinal, a primeira do sinal (v1.10 §6),
@@ -200,26 +214,31 @@ func (m *Motor) lerPrecoDe(con string) preco.Leitura {
 // tabela de contratos do GQ; isto só barra um ticker absurdo.
 var reWIN = regexp.MustCompile(`^WIN[FGHJKMNQUVXZ][0-9]{2}$`)
 
-// verificarHabilitacao (v1.2 U5): a tabela kalmanordemusuario, lida a cada entrada. Escolher conta
-// no GQ não habilita ordem real.
-func (m *Motor) verificarHabilitacao(p Pedido) (dominio.Habilitacao, *recusa) {
+// verificarHabilitacao (v1.2 U5, SPEC-AMBIENTES-v1 §4.2): a tabela kalmanordemusuario, por (uid,
+// ambiente), lida a cada entrada. Escolher conta no GQ não habilita ordem real; habilitar o
+// SIMULADOR não habilita o REAL.
+func (m *Motor) verificarHabilitacao(p Pedido, amb string) (dominio.Habilitacao, *recusa) {
 	if p.UID == nil {
 		return dominio.Habilitacao{}, simples("UID_NAO_HABILITADO", "uid ausente")
 	}
-	h, ok, err := m.habilitacaoDo(*p.UID)
+	h, ok, err := m.habilitacaoDo(*p.UID, amb)
 	if err != nil {
 		m.al.Emitir("USUARIO_CONFIG", "", fmt.Sprintf("habilitação do uid %d ilegível: %v", *p.UID, err), 0)
 		return h, simples("CONFIG_USUARIO_INDISPONIVEL", "habilitação ilegível")
 	}
 	if !ok || !h.Habilitado {
-		return h, simples("UID_NAO_HABILITADO", fmt.Sprintf("uid %d não habilitado para ordens reais", *p.UID))
+		if len(m.p.Amb.Permitidos) == 1 {
+			return h, simples("UID_NAO_HABILITADO", fmt.Sprintf("uid %d não habilitado para ordens reais", *p.UID))
+		}
+		return h, simples("UID_NAO_HABILITADO", fmt.Sprintf("uid %d não habilitado no %s", *p.UID, amb))
 	}
 	return h, nil
 }
 
-// contaDoUsuario lê a configuração do usuário no GQ e resolve conta e destino no ambiente da
-// instância (v1.2 U1–U3). Não emite alerta: quem chama decide.
-func (m *Motor) contaDoUsuario(uid int) (usuario.Resolvido, *usuario.Falha) {
+// contaDoUsuario lê a configuração do usuário no GQ e resolve conta e destino no ambiente da ordem
+// (v1.2 U1–U3, SPEC-AMBIENTES-v1): SIMULADOR lê usutxtconfig, REAL lê usutxtconfigprd. Não emite
+// alerta: quem chama decide.
+func (m *Motor) contaDoUsuario(uid int, amb string) (usuario.Resolvido, *usuario.Falha) {
 	hml, prd, achou, err := m.configUsuarioDo(uid)
 	if err != nil {
 		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONFIG_USUARIO_INDISPONIVEL", Motivo: "acusuario ilegível: " + err.Error(), Alerta: "USUARIO_CONFIG"}
@@ -228,25 +247,27 @@ func (m *Motor) contaDoUsuario(uid int) (usuario.Resolvido, *usuario.Falha) {
 		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONFIG_USUARIO_INVALIDA", Motivo: fmt.Sprintf("uid %d sem linha em acusuario", uid), Alerta: "USUARIO_CONFIG"}
 	}
 	texto := hml
-	if m.p.Ambiente == usuario.Producao {
+	if amb == dominio.AmbienteReal {
 		texto = prd
 	}
-	// SPEC-FLEXSCAN-v1 §14.3: o GQ escolhe o conector (Robo.Conector) entre os da habilitação; a
-	// corretora (CORSeqId) não decide
-	h, _, err := m.habilitacaoDo(uid)
+	// SPEC-FLEXSCAN-v1 §14.3: o GQ escolhe o conector (Robo.Conector) entre os da habilitação do
+	// ambiente; a corretora (CORSeqId) não decide
+	h, _, err := m.habilitacaoDo(uid, amb)
 	if err != nil {
 		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONFIG_USUARIO_INDISPONIVEL", Motivo: "habilitação ilegível: " + err.Error(), Alerta: "USUARIO_CONFIG"}
 	}
-	return usuario.ResolverCom(usuario.Regras{Ambiente: m.p.Ambiente, ContasHML: m.p.ContasHML, ContasHMLFlx: m.p.ContasHMLFlx, Flexscan: m.p.Flexscan}, texto, h.Conectores)
+	return usuario.ResolverCom(m.regras(amb), texto, h.Conectores)
 }
 
 // contaParaEntrada: contaDoUsuario com os alertas da entrada. A trava cruzada (CONTA_AMBIENTE) é
 // crítica por uid e se resolve na próxima entrada válida do mesmo uid.
-func (m *Motor) contaParaEntrada(uid int) (usuario.Resolvido, *recusa) {
-	r, f := m.contaDoUsuario(uid)
+func (m *Motor) contaParaEntrada(uid int, amb string) (usuario.Resolvido, *recusa) {
+	r, f := m.contaDoUsuario(uid, amb)
 	chave := "CONTA_AMBIENTE:" + strconv.Itoa(uid)
+	chaveReal := "REAL_CONTA_NAO_PERMITIDA:" + strconv.Itoa(uid)
 	if f == nil {
 		m.al.Resolver(chave)
+		m.al.Resolver(chaveReal)
 		return r, nil
 	}
 	texto := fmt.Sprintf("entrada do uid %d recusada (%s): %s", uid, f.Codigo, f.Motivo)
@@ -255,6 +276,8 @@ func (m *Motor) contaParaEntrada(uid int) (usuario.Resolvido, *recusa) {
 		slog.Info("entrada recusada pela configuração do usuário", "uid", uid, "codigo", f.Codigo, "motivo", f.Motivo)
 	case "CONTA_AMBIENTE":
 		m.al.Emitir("CONTA_AMBIENTE", chave, texto, 0)
+	case "REAL_CONTA_NAO_PERMITIDA":
+		m.al.Emitir("REAL_CONTA_NAO_PERMITIDA", chaveReal, texto, 0)
 	default:
 		m.al.Emitir(f.Alerta, "", texto, 0)
 	}

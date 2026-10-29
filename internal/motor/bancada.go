@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
-	"gammaquant.com.br/kalman-ordens/internal/usuario"
 	"gammaquant.com.br/kalman-ordens/pnt"
 )
 
@@ -17,8 +17,8 @@ import (
 // BancadaPosicoes: manda um RequestForPositions (35=AN) da conta e devolve, depois de espera, toda
 // mensagem de aplicação que o PnT mandou nesse intervalo (AO, AP, j, 3...), crua.
 func (m *Motor) BancadaPosicoes(conta string, espera time.Duration) Resposta {
-	if m.p.Ambiente != usuario.HML {
-		return Resposta{"aceito": false, "codigo": "SO_HML", "motivo": "bancada so com ORDENS_AMBIENTE=HML"}
+	if m.p.Amb.Permitidos[dominio.AmbienteReal] {
+		return Resposta{"aceito": false, "codigo": "SO_HML", "motivo": "bancada so sem o REAL em AMBIENTES_PERMITIDOS"}
 	}
 	if conta == "" || strings.ContainsAny(conta, "|=\x01") {
 		return Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "conta obrigatoria"}

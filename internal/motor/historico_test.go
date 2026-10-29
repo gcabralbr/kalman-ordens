@@ -40,7 +40,7 @@ func TestStopOrigemDesconhecidaENula(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	l, err := OperacoesDoDia(r, "2026-10-27", 0, "")
+	l, err := OperacoesDoDia(r, "2026-10-27", 0, "", "")
 	if err != nil || len(l) != 2 {
 		t.Fatalf("OperacoesDoDia: %v %v", l, err)
 	}

@@ -57,7 +57,8 @@ func (m *Motor) saude() Resposta {
 		"divergente":           m.divergente,
 		"simbolo":              m.vigente,
 		"simbolo_divergente":   m.algumaDivergente(),
-		"ambiente":             m.p.Ambiente,
+		"ambiente":             m.p.Amb.Legado, // ORDENS_AMBIENTE (a equivalência da transição); vazio fora dela
+		"ambientes_permitidos": m.p.Amb.Lista(),
 		"idade_preco_ms":       idade,
 		"ordens_vivas":         vivas,
 		"alertas_criticos":     m.al.Ativos(),
@@ -109,7 +110,7 @@ func (m *Motor) descrever(op *operacao) Resposta {
 	pe, _ := op.medio(true)
 	ps, _ := op.medio(false)
 	return Resposta{"existe": true, "modulo": op.Modulo, "operacao_id": op.OperacaoID, "estado": op.Estado, "divergente": op.Divergente, "posicao": op.posicao(),
-		"uid": op.UID, "conta": op.Conta, "destino": op.Destino, "conector": op.conector(), "simbolo": op.Simbolo,
+		"uid": op.UID, "conta": op.Conta, "destino": op.Destino, "conector": op.conector(), "ambiente": dominio.AmbienteDe(op.Ambiente), "simbolo": op.Simbolo,
 		"preco_medio_entrada": pe, "preco_medio_saida": ps, "motivo_saida": op.MotivoSaida, "origem_saida": op.OrigemSaida,
 		"pnl_pts": op.PnL, "preco_stop_ajustado": op.StopAjustado, "stop_origem": op.stopOrigem(), "ordens": os, "sinal": sinalDe(op)}
 }

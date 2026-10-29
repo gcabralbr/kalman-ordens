@@ -4,6 +4,8 @@ hora 2026-10-13 10:10:00
 # ORDENS_CONTAS_HML → CONTA_AMBIENTE + alerta crítico (resolvido na próxima entrada válida do uid).
 # No logon, a conta de HML do uid habilitado também não entra no mass status: nenhum AF sai.
 config ORDENS_AMBIENTE=PRODUCAO
+# SPEC-AMBIENTES-v1: a equivalência PRODUCAO é o REAL; a habilitação é a do REAL
+habilita 7 ambiente=REAL
 usuario 7 prd {"Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
 
 preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms

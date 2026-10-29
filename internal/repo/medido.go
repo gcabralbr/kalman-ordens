@@ -76,10 +76,10 @@ func (m *Medido) CarregarDia(d string) ([]dominio.Operacao, []dominio.Ordem, err
 	})
 	return ops, ords, err
 }
-func (m *Medido) Habilitacao(uid int) (dominio.Habilitacao, bool, error) {
+func (m *Medido) Habilitacao(uid int, ambiente string) (dominio.Habilitacao, bool, error) {
 	var ok bool
 	h, err := medir("Habilitacao", func() (dominio.Habilitacao, error) {
-		h, o, err := m.Base.Habilitacao(uid)
+		h, o, err := m.Base.Habilitacao(uid, ambiente)
 		ok = o
 		return h, err
 	})
@@ -91,10 +91,10 @@ func (m *Medido) Habilitacoes() ([]dominio.Habilitacao, error) {
 func (m *Medido) GravarHabilitacao(h dominio.Habilitacao) error {
 	return medirErr("GravarHabilitacao", func() error { return m.Base.GravarHabilitacao(h) })
 }
-func (m *Medido) AlterarHabilitado(uid int, hab bool, por, motivo string, em time.Time) (dominio.Habilitacao, bool, error) {
+func (m *Medido) AlterarHabilitado(uid int, ambiente string, hab bool, por, motivo string, em time.Time) (dominio.Habilitacao, bool, error) {
 	var ok bool
 	h, err := medir("AlterarHabilitado", func() (dominio.Habilitacao, error) {
-		h, o, err := m.Base.AlterarHabilitado(uid, hab, por, motivo, em)
+		h, o, err := m.Base.AlterarHabilitado(uid, ambiente, hab, por, motivo, em)
 		ok = o
 		return h, err
 	})

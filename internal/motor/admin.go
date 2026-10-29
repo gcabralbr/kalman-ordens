@@ -462,32 +462,33 @@ type HabilitacaoAdmin struct {
 	Por        *int   `json:"por"`
 }
 
-// HabilitacaoDoUsuario: GET /usuarios/{uid}/habilitacao (direto do banco). Sem linha: existe e
-// habilitado false, o resto nulo.
+// HabilitacaoDoUsuario: GET /usuarios/{uid}/habilitacao?ambiente= (direto do banco; sem o
+// parâmetro, o SIMULADOR). Sem linha: existe e habilitado false, o resto nulo.
 func HabilitacaoDoUsuario(r interface {
-	Habilitacao(int) (dominio.Habilitacao, bool, error)
-}, uid int) (Resposta, error) {
-	h, ok, err := r.Habilitacao(uid)
+	Habilitacao(int, string) (dominio.Habilitacao, bool, error)
+}, uid int, amb string) (Resposta, error) {
+	amb = dominio.AmbienteDe(amb)
+	h, ok, err := r.Habilitacao(uid, amb)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return Resposta{"uid": uid, "existe": false, "habilitado": false, "posicao_max": nil, "qtd_max_ordem": nil,
+		return Resposta{"uid": uid, "ambiente": amb, "existe": false, "habilitado": false, "posicao_max": nil, "qtd_max_ordem": nil,
 			"conectores": nil, "por": nil, "motivo": nil, "em": nil}, nil
 	}
 	cs := h.Conectores
 	if len(cs) == 0 {
 		cs = dominio.ConectoresPadrao
 	}
-	return Resposta{"uid": uid, "existe": true, "habilitado": h.Habilitado, "posicao_max": h.PosicaoMax, "qtd_max_ordem": h.QtdMaxOrdem,
+	return Resposta{"uid": uid, "ambiente": amb, "existe": true, "habilitado": h.Habilitado, "posicao_max": h.PosicaoMax, "qtd_max_ordem": h.QtdMaxOrdem,
 		"conectores": cs, "por": h.Por, "motivo": h.Motivo, "em": emBROuNulo(h.Em)}, nil
 }
 
 // AlterarHabilitacaoAssincrono: POST /usuarios/{uid}/habilitacao, na fila do motor.
-func (m *Motor) AlterarHabilitacaoAssincrono(uid int, a HabilitacaoAdmin) <-chan Resposta {
+func (m *Motor) AlterarHabilitacaoAssincrono(uid int, amb string, a HabilitacaoAdmin) <-chan Resposta {
 	ch := make(chan Resposta, 1)
 	m.entrarPedido("HABILITACAO", func() {
-		r, rec := m.alterarHabilitacao(uid, a)
+		r, rec := m.alterarHabilitacao(uid, dominio.AmbienteDe(amb), a)
 		if rec != nil {
 			r = m.recusar(Pedido{UID: &uid, Papel: "HABILITACAO"}, rec)
 		}
@@ -500,7 +501,7 @@ func (m *Motor) AlterarHabilitacaoAssincrono(uid int, a HabilitacaoAdmin) <-chan
 // ("admin:<por>"), motivo e em, preservando os limites, com o histórico; a 1ª habilitação continua
 // só pela CLI. Efeito: só a ENTRADA confere a habilitação (verificarHabilitacao); posição, 1014,
 // saída e entrada pendente seguem.
-func (m *Motor) alterarHabilitacao(uid int, a HabilitacaoAdmin) (Resposta, *recusa) {
+func (m *Motor) alterarHabilitacao(uid int, amb string, a HabilitacaoAdmin) (Resposta, *recusa) {
 	if uid <= 0 {
 		return nil, simples("CAMPO_INVALIDO", "uid invalido")
 	}
@@ -511,7 +512,7 @@ func (m *Motor) alterarHabilitacao(uid int, a HabilitacaoAdmin) (Resposta, *recu
 		return nil, rec
 	}
 	hab := *a.Habilitado
-	antes, existia, err := m.repo.AlterarHabilitado(uid, hab, fmt.Sprintf("admin:%d", *a.Por), a.Motivo, m.agora())
+	antes, existia, err := m.repo.AlterarHabilitado(uid, amb, hab, fmt.Sprintf("admin:%d", *a.Por), a.Motivo, m.agora())
 	if err != nil {
 		slog.Error("alterar habilitação", "uid", uid, "erro", err)
 		return nil, simples("CONFIG_USUARIO_INDISPONIVEL", "habilitação ilegível no banco")
@@ -519,7 +520,7 @@ func (m *Motor) alterarHabilitacao(uid int, a HabilitacaoAdmin) (Resposta, *recu
 	m.invalidarUsuario(uid) // o cache relê do banco na próxima entrada do uid (v1.10 B)
 	switch {
 	case !existia && hab:
-		return nil, simples("SEM_HABILITACAO_PREVIA", fmt.Sprintf("uid %d nunca foi habilitado: a 1ª habilitação é pela CLI (kalman-ordens usuario habilitar)", uid))
+		return nil, simples("SEM_HABILITACAO_PREVIA", fmt.Sprintf("uid %d nunca foi habilitado no %s: a 1ª habilitação é pela CLI (kalman-ordens usuario habilitar)", uid, amb))
 	case !existia || (antes.Habilitado == hab && !hab):
 		return Resposta{"aceito": true, "codigo": "JA_BLOQUEADO", "motivo": fmt.Sprintf("uid %d ja nao estava habilitado", uid)}, nil
 	case antes.Habilitado == hab:
@@ -530,6 +531,6 @@ func (m *Motor) alterarHabilitacao(uid int, a HabilitacaoAdmin) (Resposta, *recu
 		acao, codigo, texto = "BLOQUEAR_USUARIO", "BLOQUEADO", "bloqueado: entradas novas recusadas; posição, 1014 e saídas seguem"
 	}
 	slog.Warn("habilitação alterada pelo admin", "uid", uid, "habilitado", hab, "por", *a.Por, "motivo", a.Motivo)
-	m.publicar("ADMIN_ACAO", nil, map[string]any{"acao": acao, "uid": uid, "motivo": a.Motivo, "por": *a.Por})
+	m.publicar("ADMIN_ACAO", nil, map[string]any{"acao": acao, "uid": uid, "ambiente": amb, "motivo": a.Motivo, "por": *a.Por})
 	return Resposta{"aceito": true, "codigo": codigo, "motivo": alerta.ASCII(fmt.Sprintf("uid %d %s", uid, texto))}, nil
 }

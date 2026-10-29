@@ -389,6 +389,20 @@ Cada passo é um pacote, com o fluxo de sempre:
 | **4. REAL de teste na .53** | `AMBIENTES_PERMITIDOS=SIM,REAL`, um uid, uma conta, 1 contrato e as credenciais REAL; o ensaio do §6 no pregão, com o responsável | volta a `SIM` no fim do teste | passos 2 e 3; D4 |
 | **5. .51 (PROD)** | instalação, `service.env` de produção, habilitações REAL e os limites de produção; `ORDENS_AMBIENTE` removida (o serviço não sobe com ela) | — | passo 4; D2 e D3 |
 
+**O que a v1.25 (passo 1) entrega e o que fica para a v1.26:**
+- Com os conectores ainda num conjunto só, o serviço **não sobe** com o REAL em
+  `AMBIENTES_PERMITIDOS`. Antes do passo 2, o REAL só existe na equivalência `ORDENS_AMBIENTE=PRODUCAO`.
+- **Prontos:**
+  - a leitura e a validação das chaves REAL;
+  - o `REAL_UIDS`, o `REAL_CONTAS` e a trava;
+  - a habilitação por ambiente;
+  - o `/usuarios/{uid}/destino`.
+- **Para a v1.26 (passo 2):**
+  - os contadores de limite por ambiente;
+  - o `AMBIENTE_DIVERGENTE` de ponta a ponta (exige os dois ambientes permitidos).
+- **Na equivalência `ORDENS_AMBIENTE=PRODUCAO`,** a habilitação lida é a do REAL. Uma máquina que rode
+  com ela precisa de `usuario habilitar -ambiente REAL`. Nenhuma roda hoje.
+
 **O que não muda na transição:**
 - os roteiros de hoje;
 - o `POST /ordens` sem `ambiente` na .53 até o passo 3;

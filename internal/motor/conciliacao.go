@@ -107,15 +107,17 @@ func (m *Motor) contasAdmin() []string {
 			add(op.Conta)
 		}
 	}
+	// os habilitados no ambiente dos conectores (v1.25: um conjunto só)
+	amb := m.ambienteConectores()
 	var uids []int
-	for uid, h := range m.usuarios.hab {
-		if h.Habilitado {
-			uids = append(uids, uid)
+	for k, h := range m.usuarios.hab {
+		if h.Habilitado && k.amb == amb {
+			uids = append(uids, k.uid)
 		}
 	}
 	sort.Ints(uids)
 	for _, uid := range uids {
-		if res, f := m.contaDoUsuario(uid); f == nil {
+		if res, f := m.contaDoUsuario(uid, amb); f == nil {
 			if res.Conector == dominio.ConectorPnT {
 				add(res.Conta)
 			}

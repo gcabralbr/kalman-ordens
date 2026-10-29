@@ -1,0 +1,83 @@
+cenario 118 Ambientes (v1.25, SPEC-AMBIENTES-v1): a máquina só com o SIMULADOR (AMBIENTES_PERMITIDOS=SIM, sem a equivalência ORDENS_AMBIENTE) — pedido sem ambiente, ambiente inválido, REAL recusado pela máquina (crítico); paper (9999 com a conta QUANT); o PnT só no REAL; o simulador externo (o 5725 na Flexscan) aceito com o ambiente gravado; saída e ajuste do stop com o ambiente errado executados no gravado (crítico); GET /usuarios/{uid}/destino contra o contrato; habilitação por ambiente
+hora 2026-10-29 10:00:00
+# O _comum liga a equivalência ORDENS_AMBIENTE=HML; aqui ela sai e vale o teto novo.
+config ORDENS_AMBIENTE=
+config AMBIENTES_PERMITIDOS=SIM
+config FLEXSCAN_URL=falso
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_RECUSAS_PARADA=50
+# o 5725 (uid 8): simulador externo no usutxtconfig, a Capital real no usutxtconfigprd
+usuario 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
+usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
+habilita 8 conectores=flexscan
+# um usuário comum: o simulador interno do GQ (paper)
+usuario 9 hml {"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}
+habilita 9 conectores=flexscan
+
+executa INICIO
+
+# --- o ambiente: ausente (sem AMBIENTE_PADRAO), inválido, REAL fora do teto da máquina
+entrada 11801 C uid=8
+resposta aceito=false codigo=AMBIENTE_AUSENTE
+entrada 11802 C uid=8 ambiente=XPTO
+resposta aceito=false codigo=AMBIENTE_INVALIDO
+entrada 11803 C uid=8 ambiente=REAL
+resposta aceito=false codigo=AMBIENTE_NAO_PERMITIDO
+alerta AMBIENTE_NAO_PERMITIDO
+# --- paper: nenhuma ordem vai ao serviço
+entrada 11804 C uid=9 ambiente=SIMULADOR
+resposta aceito=false codigo=DESTINO_PAPER
+# --- o PnT só opera no REAL (fora da equivalência HML)
+entrada 11805 C ambiente=SIMULADOR
+resposta aceito=false codigo=CONECTOR_AMBIENTE
+nada
+
+# --- o simulador externo: aceito, o ambiente vai na resposta, na operação e nos eventos
+entrada 11806 C uid=8 ambiente=SIMULADOR
+resposta aceito=true ambiente=SIMULADOR
+flx_recebe POST name=KM-E-11806-1 account=S-1117150 id=>E1
+flx_executa $E1 preco=130010
+flx_webhook $E1
+evento ENTRADA_EXECUTADA operacao_id=11806 ambiente=SIMULADOR
+flx_recebe POST name=KM-P-11806-1 ordType=4 id=>P1
+evento PROTEGIDA operacao_id=11806 ambiente=SIMULADOR
+http GET /ordens/11806
+resposta ambiente=SIMULADOR conta=S-1117150 conector=FLEXSCAN
+http GET /operacoes?dia=2026-10-29&ambiente=SIMULADOR
+resposta _lista.0.operacao_id=11806 _lista.0.ambiente=SIMULADOR
+# no REAL, só a entrada recusada pela máquina
+http GET /operacoes?dia=2026-10-29&ambiente=REAL
+resposta _lista.#=1 _lista.0.operacao_id=11803 _lista.0.estado=RECUSADA _lista.0.codigo=AMBIENTE_NAO_PERMITIDO _lista.0.ambiente=REAL
+http GET /operacoes?dia=2026-10-29&ambiente=X
+resposta _status=400
+
+# --- o ajuste do stop e a saída com o ambiente errado: executados no gravado, com o crítico
+stop 11806 preco=129800 uid=8 ambiente=REAL
+resposta aceito=true
+alerta AMBIENTE_PEDIDO_DIVERGENTE
+flx_recebe PUT id=$P1 stopPrice=129800
+evento PROTECAO_AJUSTADA operacao_id=11806
+saida 11806 V SINAL_OPOSTO uid=8 ambiente=REAL
+resposta aceito=true
+flx_recebe DELETE id=$P1
+flx_recebe POST name=KM-S-11806-1 account=S-1117150 id=>S1
+flx_executa $S1 preco=130000
+flx_webhook $S1
+evento ZERADA operacao_id=11806 ambiente=SIMULADOR
+
+# --- o destino resolvido (o Kalman consulta na ativação do dia), contra o contrato da SPEC
+http GET /usuarios/8/destino
+contrato docs/SPEC-AMBIENTES-v1.md 4.3
+resposta ambientes.SIMULADOR.destino=CONECTOR ambientes.SIMULADOR.conector=FLEXSCAN ambientes.SIMULADOR.corretora=BTG ambientes.SIMULADOR.conta=S-1117150 ambientes.SIMULADOR.pode_enviar=true "ambientes.SIMULADOR.rotulo=Simulador · Flexscan"
+resposta ambientes.REAL.destino=null ambientes.REAL.permitido=false ambientes.REAL.pode_enviar=false ambientes.REAL.codigo=AMBIENTE_NAO_PERMITIDO
+http GET /usuarios/9/destino?ambiente=SIMULADOR
+resposta ambientes.SIMULADOR.destino=PAPER ambientes.SIMULADOR.pode_enviar=false ambientes.SIMULADOR.codigo=null "ambientes.SIMULADOR.rotulo=Simulador · paper"
+http GET /usuarios/8/destino?ambiente=X
+resposta _status=400
+# a habilitação é por ambiente: a do REAL não existe
+http GET /usuarios/8/habilitacao?ambiente=REAL
+resposta existe=false habilitado=false ambiente=REAL
+http GET /usuarios/8/habilitacao
+resposta existe=true habilitado=true ambiente=SIMULADOR
+saude ambiente= ambientes_permitidos.0=SIMULADOR posicao=0

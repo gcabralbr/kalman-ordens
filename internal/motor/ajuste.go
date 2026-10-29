@@ -21,6 +21,8 @@ type AjusteStop struct {
 	StopPts   *int64   `json:"stop_pts,omitempty"`
 	// Origem (v1.19): quem moveu o stop (TRSP, STOP_MANUAL...); ausente = GESTOR
 	Origem string `json:"origem,omitempty"`
+	// Ambiente (SPEC-AMBIENTES-v1 §1.2): opcional; vale o gravado na operação, e um diferente alerta
+	Ambiente string `json:"ambiente,omitempty"`
 }
 
 // Origem da stop na corretora (v1.19). INICIAL: o stop_pts da entrada; GESTOR: ajuste sem origem.
@@ -98,6 +100,7 @@ func (m *Motor) ajustarStop(id int64, a AjusteStop) (Resposta, *recusa) {
 	if a.UID != nil && *a.UID != op.UID {
 		return nil, simples("CAMPO_INVALIDO", fmt.Sprintf("uid %d diferente do da operação (%d)", *a.UID, op.UID))
 	}
+	m.conferirAmbientePedido(op, a.Ambiente, "ajuste do stop")
 	if op.Estado.Saindo() || !op.SaidaPedidaEm.IsZero() || op.saidaAposEntrada {
 		return nil, simples("SEM_PROTECAO", "operação em saída")
 	}

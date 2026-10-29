@@ -52,7 +52,7 @@ func cliHistorico(cfg config.Config, args []string, saida io.Writer) error {
 		}
 		v, err = motor.HistoricoOperacao(r, *modulo, *id, *cru)
 	case "dia":
-		v, err = motor.OperacoesDoDia(r, *dia, *uid, *modulo)
+		v, err = motor.OperacoesDoDia(r, *dia, *uid, *modulo, "")
 	case "sessao":
 		v, err = motor.EventosDaSessao(r, *dia)
 	default:

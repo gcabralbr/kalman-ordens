@@ -166,7 +166,9 @@ func FixLegivel(bruta string) string {
 
 // OperacoesDoDia: GET /operacoes?dia=&uid=&modulo= (uid 0 e modulo vazio = todos), em ordem de
 // criação. preco_medio_* e zerada_em nulos quando não houve.
-func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]map[string]any, error) {
+// ambiente (SPEC-AMBIENTES-v1 §2.3): vazio = os dois; o pedido recusado sem o campo conta como
+// SIMULADOR (o padrão da transição).
+func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo, ambiente string) ([]map[string]any, error) {
 	de, ate, err := Dia(dia)
 	if err != nil {
 		return nil, err
@@ -197,7 +199,7 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 	existe := map[chave]bool{}
 	for _, d := range ops {
 		existe[chave{d.Modulo, d.OperacaoID}] = true
-		if (uid != 0 && d.UID != uid) || (modulo != "" && d.Modulo != modulo) {
+		if (uid != 0 && d.UID != uid) || (modulo != "" && d.Modulo != modulo) || (ambiente != "" && dominio.AmbienteDe(d.Ambiente) != ambiente) {
 			continue
 		}
 		op := operacaoGravada(d, ords)
@@ -206,7 +208,7 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 			"operacao_id": d.OperacaoID, "uid": d.UID, "modulo": d.Modulo, "estado": d.Estado, "lado": d.Lado.Letra(),
 			"qtd": d.QtdPedida, "preco_medio_entrada": medioOuNulo(op, true), "preco_medio_saida": medioOuNulo(op, false),
 			"pnl_pts": d.PnL, "motivo_saida": textoOuNulo(d.MotivoSaida), "origem_saida": textoOuNulo(d.OrigemSaida),
-			"stop_origem": op.stopOrigem(), "conector": dominio.ConectorDe(d.Conector), "criada_em": emBR(d.CriadaEm), "zerada_em": emBROuNulo(zerada[k]), "alertas_n": alertas[k],
+			"stop_origem": op.stopOrigem(), "conector": dominio.ConectorDe(d.Conector), "ambiente": dominio.AmbienteDe(d.Ambiente), "criada_em": emBR(d.CriadaEm), "zerada_em": emBROuNulo(zerada[k]), "alertas_n": alertas[k],
 			"sinal": sinalDe(op), "em": d.CriadaEm,
 		})
 	}
@@ -226,6 +228,7 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 		var c struct {
 			Lado     string            `json:"lado"`
 			Qtd      *int              `json:"qtd"`
+			Ambiente string            `json:"ambiente"`
 			Entradas []json.RawMessage `json:"entradas"`
 			Saidas   []json.RawMessage `json:"saidas"`
 		}
@@ -233,6 +236,13 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 		if p.Rota == RotaSinais && p.OperacaoID != 0 && len(c.Entradas)+len(c.Saidas) == 1 {
 			// a linha de um item: lado e qtd do item
 			_ = json.Unmarshal(append(c.Entradas, c.Saidas...)[0], &c)
+		}
+		ambPedido := dominio.AmbienteSimulador
+		if a, err := dominio.LerAmbiente(c.Ambiente); err == nil {
+			ambPedido = a
+		}
+		if ambiente != "" && ambPedido != ambiente {
+			continue
 		}
 		var resp struct {
 			Motivo string `json:"motivo"`
@@ -250,7 +260,7 @@ func OperacoesDoDia(r repo.Repositorio, dia string, uid int, modulo string) ([]m
 		}
 		lista = append(lista, map[string]any{
 			"operacao_id": opID, "uid": u, "modulo": p.Modulo, "estado": "RECUSADA", "lado": textoOuNulo(c.Lado), "qtd": qtd,
-			"preco_medio_entrada": nil, "preco_medio_saida": nil, "pnl_pts": nil, "motivo_saida": nil, "origem_saida": nil, "stop_origem": nil, "conector": nil,
+			"preco_medio_entrada": nil, "preco_medio_saida": nil, "pnl_pts": nil, "motivo_saida": nil, "origem_saida": nil, "stop_origem": nil, "conector": nil, "ambiente": ambPedido,
 			"criada_em": emBR(p.Em), "zerada_em": nil, "alertas_n": 0,
 			"rota": p.Rota, "papel": textoOuNulo(p.Papel), "http_status": p.HTTPStatus, "codigo": textoOuNulo(p.Codigo),
 			"motivo": textoOuNulo(resp.Motivo), "corpo": jsonOuTexto(p.Corpo),

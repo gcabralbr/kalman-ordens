@@ -148,9 +148,12 @@ type Operacao struct {
 	OperacaoID int64
 	UID        int
 	// Congelados na entrada (v1.2 U4, S1): proteção e saída usam estes, nunca releem.
-	Conta     string // Robo.CCONroConta do ambiente
-	Destino   int    // Robo.CORSeqId: a corretora (85 BTG, 88 Capital...), só registro e conferência
-	Conector  string // PNT ou FLEXSCAN, da habilitação na entrada (vazio = PNT, das operações antigas)
+	Conta    string // Robo.CCONroConta do ambiente
+	Destino  int    // Robo.CORSeqId: a corretora (85 BTG, 88 Capital...), só registro e conferência
+	Conector string // PNT ou FLEXSCAN, da habilitação na entrada (vazio = PNT, das operações antigas)
+	// Ambiente (SPEC-AMBIENTES-v1 §1.2): SIMULADOR ou REAL, o do login do usuário no GQ, gravado na
+	// entrada e fixo enquanto houver posição (vazio = SIMULADOR, das operações antigas)
+	Ambiente  string
 	Simbolo   string // contrato vigente na entrada
 	Lado      Lado   // da entrada
 	QtdPedida int
@@ -206,7 +209,9 @@ func (o Operacao) Copia() Operacao {
 // Habilitacao: quem pode mandar ordem real (v1.2 U5). Alterada só pela CLI.
 // PosicaoMax e QtdMaxOrdem: limites do uid (0 = só o global); valem junto com o global.
 type Habilitacao struct {
-	UID         int
+	UID int
+	// Ambiente (SPEC-AMBIENTES-v1 §4.2): a habilitação é por (uid, ambiente); vazio = SIMULADOR
+	Ambiente    string
 	Habilitado  bool
 	PosicaoMax  int
 	QtdMaxOrdem int
@@ -248,6 +253,32 @@ const (
 	DestinoBTG     = 85
 	DestinoCapital = 88
 )
+
+// Ambientes do login do usuário no GQ (SPEC-AMBIENTES-v1): a coluna do GQ lida, o conector e a
+// conta vêm do ambiente de cada ordem.
+const (
+	AmbienteSimulador = "SIMULADOR"
+	AmbienteReal      = "REAL"
+)
+
+// AmbienteDe: o ambiente gravado (vazio, das operações e habilitações anteriores à 0014, = SIMULADOR).
+func AmbienteDe(a string) string {
+	if a == "" {
+		return AmbienteSimulador
+	}
+	return a
+}
+
+// LerAmbiente: SIMULADOR (ou SIM) e REAL, sem diferenciar maiúsculas; outro valor = erro.
+func LerAmbiente(s string) (string, error) {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "SIMULADOR", "SIM":
+		return AmbienteSimulador, nil
+	case "REAL":
+		return AmbienteReal, nil
+	}
+	return "", fmt.Errorf("ambiente %q (SIMULADOR ou REAL)", s)
+}
 
 // ConectorDe: o conector gravado (vazio, das operações anteriores ao conector, = PnT).
 func ConectorDe(c string) string {

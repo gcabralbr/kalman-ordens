@@ -176,7 +176,7 @@ func TestCacheUsuarios(t *testing.T) {
 	m, _, mem, rel := novoMotorTeste(t, map[string]string{"CACHE_USUARIOS_S": "30"})
 	hab := func() bool {
 		var h dominio.Habilitacao
-		m.Fazer(func() { h, _, _ = m.habilitacaoDo(7) })
+		m.Fazer(func() { h, _, _ = m.habilitacaoDo(7, "") })
 		return h.Habilitado
 	}
 	if !hab() {
@@ -198,7 +198,7 @@ func TestCacheUsuarios(t *testing.T) {
 	}
 	// a rota do admin: invalida na hora
 	_ = mem.GravarHabilitacao(dominio.Habilitacao{UID: 7, Habilitado: true, Por: "cli", Em: time.Now()})
-	r := <-m.AlterarHabilitacaoAssincrono(7, HabilitacaoAdmin{Habilitado: ptr(false), Motivo: "x", Por: ptr(1)})
+	r := <-m.AlterarHabilitacaoAssincrono(7, "", HabilitacaoAdmin{Habilitado: ptr(false), Motivo: "x", Por: ptr(1)})
 	if r["codigo"] != "BLOQUEADO" || hab() {
 		t.Fatalf("admin: %v, habilitado=%v", r, hab())
 	}

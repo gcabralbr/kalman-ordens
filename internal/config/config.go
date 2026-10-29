@@ -113,9 +113,9 @@ func (c Config) Bool(k string, padrao bool) bool {
 // Parametros são os valores que o motor usa, já lidos.
 type Parametros struct {
 	Bolsa, SenderLocationID string
-	// v1.2: conta, destino e símbolo vêm da operação. O ambiente escolhe a coluna do GQ
-	// (HML: usutxtconfig; PRODUCAO: usutxtconfigprd); ContasHML é a trava cruzada.
-	Ambiente     string
+	// SPEC-AMBIENTES-v1: o ambiente de cada ordem escolhe a coluna do GQ; a máquina é o teto (Amb).
+	// ContasHML e ContasHMLFlx: as contas de simulador de cada conector (a trava, §4.1 item 8).
+	Amb          Ambientes
 	ContasHML    []string
 	ConfereConta time.Duration
 	// SPEC-FLEXSCAN-v1: o conector Flexscan existe (FLEXSCAN_URL) e as contas de HML dele
@@ -184,7 +184,6 @@ func (c Config) Parametros() Parametros {
 	p := Parametros{
 		Bolsa:            c.Texto("ORDENS_BOLSA", "BVMF"),
 		SenderLocationID: c.Texto("ORDENS_SENDER_LOCATION", ""),
-		Ambiente:         c.Texto("ORDENS_AMBIENTE", ""),
 		ContasHML:        listaContas(c.Texto("ORDENS_CONTAS_HML", "")),
 		ConfereConta:     c.Segundos("CONFERE_CONTA_S", 60),
 		Flexscan:         c.Texto("FLEXSCAN_URL", "") != "",
@@ -256,6 +255,7 @@ func (c Config) Parametros() Parametros {
 		JanelaFim:            c.Hora("JANELA_FIM", "14:00:00"),
 		HoraZeragem:          c.Hora("HORA_ZERAGEM", "14:30:00"),
 	}
+	p.Amb, _, _ = c.LerAmbientes() // o erro impede a subida antes (cmd: conferirConfig)
 	p.FonteJanelaInicio, p.FonteJanelaFim = c.Intervalo("FONTE_JANELA", "09:00-18:25")
 	p.FonteDegradada = c.Segundos("FONTE_DEGRADADA_S", 30)
 	p.FeriadosArq = c.Texto("FERIADOS_ARQ", "/var/lib/kalman/feriados.json")

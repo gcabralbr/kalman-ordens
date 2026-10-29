@@ -52,6 +52,9 @@ type Pedido struct {
 	StopPts    *int64 `json:"stop_pts"`
 	Motivo     string `json:"motivo"`
 	TsDecisao  string `json:"ts_decisao"`
+	// Ambiente (SPEC-AMBIENTES-v1 §1): SIMULADOR ou REAL, o do login do usuário no GQ. Na entrada
+	// escolhe a coluna do GQ e fica gravado na operação; na saída vale o gravado.
+	Ambiente string `json:"ambiente,omitempty"`
 }
 
 // Resposta é um objeto JSON.
@@ -1114,6 +1117,7 @@ func (m *Motor) publicar(tipo string, op *operacao, dados map[string]any) {
 		d["modulo"] = op.Modulo
 		d["operacao_id"] = op.OperacaoID
 		d["uid"] = op.UID
+		d["ambiente"] = dominio.AmbienteDe(op.Ambiente)
 	}
 	for k, v := range dados {
 		if t, ok := v.(string); ok {

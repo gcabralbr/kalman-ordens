@@ -13,8 +13,8 @@ import (
 // no banco: o efeito dela chega em até 30 s. O que não está no cache (uid novo) é lido na hora e
 // guardado, inclusive "sem linha".
 type cacheUsuarios struct {
-	hab          map[int]dominio.Habilitacao
-	semHab       map[int]bool
+	hab          map[chaveHab]dominio.Habilitacao
+	semHab       map[chaveHab]bool
 	cfg          map[int][2]string // uid → {usutxtconfig, usutxtconfigprd}
 	semCfg       map[int]bool
 	carregadoEm  time.Time
@@ -22,22 +22,30 @@ type cacheUsuarios struct {
 	versao       int // cada invalidação sobe; uma recarga que começou antes é descartada
 }
 
+// chaveHab: a habilitação é por (uid, ambiente) (SPEC-AMBIENTES-v1 §4.2).
+type chaveHab struct {
+	uid int
+	amb string
+}
+
 func novoCacheUsuarios() *cacheUsuarios {
-	return &cacheUsuarios{hab: map[int]dominio.Habilitacao{}, semHab: map[int]bool{}, cfg: map[int][2]string{}, semCfg: map[int]bool{}}
+	return &cacheUsuarios{hab: map[chaveHab]dominio.Habilitacao{}, semHab: map[chaveHab]bool{}, cfg: map[int][2]string{}, semCfg: map[int]bool{}}
 }
 
 // lerUsuarios: todas as habilitações e a configuração do GQ dos habilitados (fora da goroutine
 // do motor na recarga).
-func (m *Motor) lerUsuarios() (map[int]dominio.Habilitacao, map[int][2]string, error) {
+func (m *Motor) lerUsuarios() (map[chaveHab]dominio.Habilitacao, map[int][2]string, error) {
 	hs, err := m.repo.Habilitacoes()
 	if err != nil {
 		return nil, nil, err
 	}
-	hab := map[int]dominio.Habilitacao{}
+	hab := map[chaveHab]dominio.Habilitacao{}
 	var uids []int
+	vistos := map[int]bool{}
 	for _, h := range hs {
-		hab[h.UID] = h
-		if h.Habilitado {
+		hab[chaveHab{h.UID, dominio.AmbienteDe(h.Ambiente)}] = h
+		if h.Habilitado && !vistos[h.UID] {
+			vistos[h.UID] = true
 			uids = append(uids, h.UID)
 		}
 	}
@@ -48,10 +56,10 @@ func (m *Motor) lerUsuarios() (map[int]dominio.Habilitacao, map[int][2]string, e
 	return hab, cfg, nil
 }
 
-func (m *Motor) aplicarUsuarios(hab map[int]dominio.Habilitacao, cfg map[int][2]string) {
+func (m *Motor) aplicarUsuarios(hab map[chaveHab]dominio.Habilitacao, cfg map[int][2]string) {
 	c := m.usuarios
 	c.hab, c.cfg = hab, cfg
-	c.semHab, c.semCfg = map[int]bool{}, map[int]bool{}
+	c.semHab, c.semCfg = map[chaveHab]bool{}, map[int]bool{}
 	c.carregadoEm = m.agora()
 }
 
@@ -98,11 +106,13 @@ func (m *Motor) invalidarUsuario(uid int) {
 	c := m.usuarios
 	c.versao++
 	if uid == 0 {
-		c.hab, c.semHab, c.cfg, c.semCfg = map[int]dominio.Habilitacao{}, map[int]bool{}, map[int][2]string{}, map[int]bool{}
+		c.hab, c.semHab, c.cfg, c.semCfg = map[chaveHab]dominio.Habilitacao{}, map[chaveHab]bool{}, map[int][2]string{}, map[int]bool{}
 		return
 	}
-	delete(c.hab, uid)
-	delete(c.semHab, uid)
+	for _, amb := range []string{dominio.AmbienteSimulador, dominio.AmbienteReal} {
+		delete(c.hab, chaveHab{uid, amb})
+		delete(c.semHab, chaveHab{uid, amb})
+	}
 	delete(c.cfg, uid)
 	delete(c.semCfg, uid)
 }
@@ -110,23 +120,24 @@ func (m *Motor) invalidarUsuario(uid int) {
 // InvalidarUsuarios: o executor de roteiros muda o banco por fora (usuario, habilita) e avisa.
 func (m *Motor) InvalidarUsuarios() { m.Fazer(func() { m.invalidarUsuario(0) }) }
 
-// habilitacaoDo: do cache; sem entrada, lê do banco e guarda.
-func (m *Motor) habilitacaoDo(uid int) (dominio.Habilitacao, bool, error) {
+// habilitacaoDo: do cache; sem entrada, lê do banco e guarda. Por (uid, ambiente).
+func (m *Motor) habilitacaoDo(uid int, amb string) (dominio.Habilitacao, bool, error) {
 	c := m.usuarios
-	if h, ok := c.hab[uid]; ok {
+	k := chaveHab{uid, dominio.AmbienteDe(amb)}
+	if h, ok := c.hab[k]; ok {
 		return h, true, nil
 	}
-	if c.semHab[uid] {
-		return dominio.Habilitacao{UID: uid}, false, nil
+	if c.semHab[k] {
+		return dominio.Habilitacao{UID: uid, Ambiente: k.amb}, false, nil
 	}
-	h, ok, err := m.repo.Habilitacao(uid)
+	h, ok, err := m.repo.Habilitacao(uid, k.amb)
 	if err != nil {
 		return h, ok, err
 	}
 	if ok {
-		c.hab[uid] = h
+		c.hab[k] = h
 	} else {
-		c.semHab[uid] = true
+		c.semHab[k] = true
 	}
 	return h, ok, nil
 }

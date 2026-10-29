@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"gammaquant.com.br/kalman-ordens/internal/dominio"
 )
 
 // Exemplo real (HML, usuário 1450), com o resto do JSON que o serviço ignora.
@@ -20,7 +22,9 @@ func TestResolver(t *testing.T) {
 		{"conta real em PRODUCAO", Producao, `{"Robo":{"CORSeqId":85,"CCONroConta":"1234567"}}`, "1234567", ""},
 		{"conta real em HML", HML, `{"Robo":{"CORSeqId":85,"CCONroConta":"1234567"}}`, "", "CONTA_AMBIENTE"},
 		{"Capital pelo PnT (a corretora não decide o caminho)", HML, `{"Robo":{"CORSeqId":88,"CCONroConta":"99999"}}`, "99999", ""},
-		{"simulador do GQ", HML, `{"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}`, "", "DESTINO_INVALIDO"},
+		// SPEC-AMBIENTES-v1 §0.1: no SIMULADOR, 9999 com a conta QUANT é o paper; no REAL, inválido
+		{"simulador do GQ (paper)", HML, `{"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}`, "", "DESTINO_PAPER"},
+		{"simulador do GQ no REAL", Producao, `{"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}`, "", "DESTINO_INVALIDO"},
 		{"destino desconhecido", HML, `{"Robo":{"CORSeqId":7,"CCONroConta":"99999"}}`, "", "DESTINO_INVALIDO"},
 		{"conta não numérica", HML, `{"Robo":{"CORSeqId":85,"CCONroConta":"QUANT"}}`, "", "CONTA_INVALIDA"},
 		{"conta ausente", HML, `{"Robo":{"CORSeqId":85}}`, "", "CONTA_INVALIDA"},
@@ -93,7 +97,7 @@ func TestResolverFlexscan(t *testing.T) {
 			t.Fatalf("conta Flexscan %q: %v", conta, f)
 		}
 	}
-	if _, f := ResolverCom(hml, `{"Robo":{"CORSeqId":9999,"CCONroConta":"S-1117150"}}`, []string{"FLEXSCAN"}); f == nil || f.Codigo != "DESTINO_INVALIDO" {
+	if _, f := ResolverCom(hml, `{"Robo":{"CORSeqId":9999,"CCONroConta":"S-1117150"}}`, []string{"FLEXSCAN"}); f == nil || f.Codigo != "CONFIG_USUARIO_INVALIDA" {
 		t.Fatalf("simulador do GQ pela Flexscan: %v", f)
 	}
 	if got := Lido(btg); got != `CORSeqId=85 Conector=- CCONroConta="S-1117150"` {
@@ -178,5 +182,52 @@ func TestConectorEscolhidoPeloGQ(t *testing.T) {
 		case c.codigo != "" && (f == nil || f.Codigo != c.codigo):
 			t.Errorf("GQ %q, habilitados %v: esperava %s, veio %v", c.gq, c.habilitados, c.codigo, f)
 		}
+	}
+}
+
+// SPEC-AMBIENTES-v1 §0.1 e §4.1: a coluna é a do ambiente da ordem; o paper (9999 + QUANT) só no
+// SIMULADOR; o PnT só no REAL (salvo na equivalência HML); a trava nos dois sentidos e REAL_CONTAS.
+func TestResolverAmbientes(t *testing.T) {
+	sim := Regras{Ambiente: dominio.AmbienteSimulador, ContasHML: []string{"99999"}, ContasHMLFlx: []string{"S-1117150"}, Flexscan: true}
+	real := Regras{Ambiente: dominio.AmbienteReal, ContasHML: []string{"99999"}, ContasHMLFlx: []string{"S-1117150"}, Flexscan: true,
+		RealContas: []string{"715124"}}
+	flx := []string{"FLEXSCAN"}
+	casos := []struct {
+		nome   string
+		rg     Regras
+		texto  string
+		hab    []string
+		codigo string
+		conta  string
+	}{
+		{"simulador externo (o 5725)", sim, `{"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}`, flx, "", "S-1117150"},
+		{"paper", sim, `{"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}`, nil, "DESTINO_PAPER", ""},
+		{"paper com a conta de futuros", sim, `{"Robo":{"CORSeqId":9999,"CCONroConta":"x"},"Futuros":{"CCONroContaFut":"QUANT"}}`, nil, "DESTINO_PAPER", ""},
+		{"9999 sem QUANT", sim, `{"Robo":{"CORSeqId":9999,"CCONroConta":"S-1117150"}}`, flx, "CONFIG_USUARIO_INVALIDA", ""},
+		{"PnT no SIMULADOR", sim, `{"Robo":{"CORSeqId":85,"CCONroConta":"99999"}}`, nil, "CONECTOR_AMBIENTE", ""},
+		{"conta real no SIMULADOR", sim, `{"Robo":{"CORSeqId":88,"CCONroConta":"715124"}}`, flx, "CONTA_AMBIENTE", ""},
+		{"REAL na Capital", real, `{"Robo":{"CORSeqId":88,"CCONroConta":"715124"}}`, flx, "", "715124"},
+		{"conta de simulador no REAL", real, `{"Robo":{"CORSeqId":85,"CCONroConta":"S-1117150"}}`, flx, "CONTA_AMBIENTE", ""},
+		{"conta de simulador do outro conector no REAL", real, `{"Robo":{"CORSeqId":85,"CCONroConta":"99999"}}`, flx, "CONTA_AMBIENTE", ""},
+		{"fora de REAL_CONTAS", real, `{"Robo":{"CORSeqId":88,"CCONroConta":"715999"}}`, flx, "REAL_CONTA_NAO_PERMITIDA", ""},
+		{"PnT no REAL", Regras{Ambiente: dominio.AmbienteReal, RealContasTodas: true}, `{"Robo":{"CORSeqId":85,"CCONroConta":"123"}}`, nil, "", "123"},
+		{"9999 no REAL", real, `{"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}`, nil, "DESTINO_INVALIDO", ""},
+		{"ambiente inválido", Regras{Ambiente: "X"}, `{"Robo":{"CORSeqId":85,"CCONroConta":"1"}}`, nil, "CONTA_AMBIENTE", ""},
+	}
+	for _, c := range casos {
+		r, f := ResolverCom(c.rg, c.texto, c.hab)
+		got := ""
+		if f != nil {
+			got = f.Codigo
+		}
+		if got != c.codigo || (c.codigo == "" && r.Conta != c.conta) {
+			t.Errorf("%s: esperava %q (conta %q), veio %q %+v %v", c.nome, c.codigo, c.conta, got, r, f)
+		}
+		if c.codigo == "DESTINO_PAPER" && (!f.Paper() || f.Alerta != "") {
+			t.Errorf("%s: o paper não é erro de configuração: %+v", c.nome, f)
+		}
+	}
+	if _, f := ResolverCom(real, `{"Robo":{"CORSeqId":88,"CCONroConta":"715999"}}`, flx); f.Alerta != "REAL_CONTA_NAO_PERMITIDA" {
+		t.Errorf("REAL_CONTA_NAO_PERMITIDA sem alerta: %+v", f)
 	}
 }

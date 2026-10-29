@@ -34,7 +34,6 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/preco"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
-	"gammaquant.com.br/kalman-ordens/internal/usuario"
 	"gammaquant.com.br/kalman-ordens/pnt"
 )
 
@@ -131,15 +130,23 @@ func servir(ctx context.Context, cfg config.Config) error {
 	// PNT_DESLIGADO (28/10): sem sessão FIX nem fonte do PnT; só a Flexscan
 	pntDesligado := cfg.Bool("PNT_DESLIGADO", false)
 	if pntDesligado {
-		if err := obrigatorias(cfg, "DB_DSN", "ORDENS_AMBIENTE", "FLEXSCAN_URL"); err != nil {
+		if err := obrigatorias(cfg, "DB_DSN", "FLEXSCAN_URL"); err != nil {
 			return fmt.Errorf("PNT_DESLIGADO: %w", err)
 		}
-	} else if err := obrigatorias(cfg, "DB_DSN", "FIX_SENDER_COMP_ID", "FIX_HOST", "FIX_PORTA", "ORDENS_AMBIENTE", "ORDENS_CONTAS_HML"); err != nil {
+	} else if err := obrigatorias(cfg, "DB_DSN", "FIX_SENDER_COMP_ID", "FIX_HOST", "FIX_PORTA", "ORDENS_CONTAS_HML"); err != nil {
 		return err
 	}
-	if a := cfg.Texto("ORDENS_AMBIENTE", ""); a != usuario.HML && a != usuario.Producao {
-		return fmt.Errorf("ORDENS_AMBIENTE=%q: HML ou PRODUCAO", a)
+	// SPEC-AMBIENTES-v1 §3: o teto da máquina (AMBIENTES_PERMITIDOS, ou a equivalência
+	// ORDENS_AMBIENTE da transição); incoerente = não sobe
+	amb, avisos, err := cfg.LerAmbientes()
+	if err != nil {
+		return err
 	}
+	for _, a := range avisos {
+		slog.Warn("configuração", "aviso", a)
+	}
+	slog.Info("ambientes", "permitidos", amb.Lista(), "padrao", amb.Padrao, "ordens_ambiente", amb.Legado,
+		"real_uids", amb.RealUIDs, "real_uids_todos", amb.RealUIDsTodos, "real_contas", amb.RealContas, "real_contas_todas", amb.RealContasTodas)
 	// v1.2: conta, símbolo e uid vêm da operação e da tabela de habilitação; um service.env antigo
 	// não pode ficar valendo em silêncio
 	var removidas []string
@@ -184,7 +191,7 @@ func servir(ctx context.Context, cfg config.Config) error {
 				uids = append(uids, h.UID)
 			}
 		}
-		slog.Info("habilitação", "ambiente", cfg.Texto("ORDENS_AMBIENTE", ""), "contas_hml", cfg.Texto("ORDENS_CONTAS_HML", ""), "uids_habilitados", uids)
+		slog.Info("habilitação", "ambientes", amb.Lista(), "contas_hml", cfg.Texto("ORDENS_CONTAS_HML", ""), "uids_habilitados", uids)
 	}
 
 	tg := alerta.NovoTelegram(cfg.Texto("TELEGRAM_TOKEN", ""), cfg.Texto("TELEGRAM_CHAT", ""))
@@ -341,7 +348,7 @@ func servir(ctx context.Context, cfg config.Config) error {
 		fix = "desligado"
 	}
 	slog.Info("kalman-ordens no ar", "versao", versao, "http", endereco, "fix", fix,
-		"ambiente", cfg.Texto("ORDENS_AMBIENTE", ""), "pnt_desligado", pntDesligado)
+		"ambientes", amb.Lista(), "pnt_desligado", pntDesligado)
 
 	<-ctx.Done()
 	// Parar o processo NÃO cancela a 1014: a posição continua protegida no PnT (Parte 6).

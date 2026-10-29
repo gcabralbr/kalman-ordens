@@ -51,6 +51,20 @@ type PedidoSinal struct {
 	Partes    *int              `json:"partes"`
 	Entradas  []json.RawMessage `json:"entradas"`
 	Saidas    []json.RawMessage `json:"saidas"`
+	// Ambiente (SPEC-AMBIENTES-v1 §7.2): o de todos os itens; um POST por ambiente
+	Ambiente string `json:"ambiente,omitempty"`
+}
+
+// ambienteChave: o ambiente da chave do sinal, (modulo, ambiente, sinal_id): o mesmo sinal_id pode
+// ir nos dois ambientes. Sem o campo, o padrão da transição; inválido, como veio (os itens recusam).
+func (p PedidoSinal) ambienteChave(padrao string) string {
+	if p.Ambiente == "" {
+		return padrao
+	}
+	if a, err := dominio.LerAmbiente(p.Ambiente); err == nil {
+		return a
+	}
+	return p.Ambiente
 }
 
 func (p PedidoSinal) modulo() string {
@@ -80,7 +94,7 @@ type itemSaida struct {
 
 var reSinalID = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
 
-type chaveSinal struct{ modulo, id string }
+type chaveSinal struct{ modulo, ambiente, id string }
 
 // sinal: o estado de um sinal_id no motor (em memória; o que fica no banco é a rajada de cada
 // operação e o contador k).
@@ -124,7 +138,7 @@ func (m *Motor) SinalAssincrono(p PedidoSinal) <-chan Resposta {
 	if len(p.Saidas) > 0 {
 		origem, rotulo = "http_saida", "SINAL_SAIDA"
 	}
-	k := chaveSinal{p.modulo(), p.SinalID}
+	k := chaveSinal{p.modulo(), p.ambienteChave(m.p.Amb.Padrao), p.SinalID}
 	m.partesNaFila(k, 1)
 	t0 := time.Now()
 	m.entrar(origem, func() {
@@ -228,7 +242,7 @@ func (m *Motor) pedirSinal(p PedidoSinal, origem string, fim func(Resposta)) {
 		fim(recusaLote(p, "LIMITE_LOTE", fmt.Sprintf("%d itens na parte; maximo %d", len(p.Entradas)+len(p.Saidas), m.p.SinalMaxItensParte)))
 		return
 	}
-	k := chaveSinal{p.modulo(), p.SinalID}
+	k := chaveSinal{p.modulo(), p.ambienteChave(m.p.Amb.Padrao), p.SinalID}
 	imp := impressaoSinal(p)
 	s := m.sinais[k]
 	if s != nil {
@@ -435,7 +449,7 @@ func valorPtr[T int | int64](p *T) T {
 // sinal). Campo desconhecido ou de tipo errado → erro (CAMPO_INVALIDO só no item); o Pedido volta
 // com o que deu para ler (operacao_id e uid para a resposta e o registro).
 func pedidoDoItem(papel string, raw json.RawMessage, s PedidoSinal) (Pedido, error) {
-	p := Pedido{Modulo: s.Modulo, Papel: papel, TsDecisao: s.TsDecisao}
+	p := Pedido{Modulo: s.Modulo, Papel: papel, TsDecisao: s.TsDecisao, Ambiente: s.Ambiente}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if papel == "ENTRADA" {

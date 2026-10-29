@@ -265,7 +265,7 @@ func TestContratoV12(t *testing.T) {
 				t.Fatalf("congelados: %+v / %+v", ops[0], ords[0])
 			}
 
-			if _, ok, err := r.Habilitacao(1450); ok || err != nil {
+			if _, ok, err := r.Habilitacao(1450, ""); ok || err != nil {
 				t.Fatalf("uid sem habilitação: %v %v", ok, err)
 			}
 			for _, h := range []dominio.Habilitacao{
@@ -277,7 +277,7 @@ func TestContratoV12(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			h, ok, err := r.Habilitacao(1450)
+			h, ok, err := r.Habilitacao(1450, "")
 			if err != nil || !ok || h.Habilitado || h.Motivo != "fim da F1" || !h.Em.Equal(em.Add(time.Hour)) {
 				t.Fatalf("habilitação atual: %+v %v %v", h, ok, err)
 			}
@@ -453,17 +453,17 @@ func TestContratoAlterarHabilitado(t *testing.T) {
 				}
 				return -1
 			}
-			if _, ok, err := r.AlterarHabilitado(7, false, "admin:1", "x", em); ok || err != nil {
+			if _, ok, err := r.AlterarHabilitado(7, "", false, "admin:1", "x", em); ok || err != nil {
 				t.Fatalf("sem linha: ok=%v err=%v", ok, err)
 			}
 			if err := r.GravarHabilitacao(dominio.Habilitacao{UID: 7, Habilitado: true, PosicaoMax: 2, QtdMaxOrdem: 3, Por: "george", Motivo: "F1", Em: em}); err != nil {
 				t.Fatal(err)
 			}
-			antes, ok, err := r.AlterarHabilitado(7, false, "admin:1450", "inadimplencia", em.Add(time.Minute))
+			antes, ok, err := r.AlterarHabilitado(7, "", false, "admin:1450", "inadimplencia", em.Add(time.Minute))
 			if err != nil || !ok || !antes.Habilitado || antes.PosicaoMax != 2 || antes.Por != "george" {
 				t.Fatalf("antes: %+v ok=%v err=%v", antes, ok, err)
 			}
-			h, _, _ := r.Habilitacao(7)
+			h, _, _ := r.Habilitacao(7, "")
 			if h.Habilitado || h.PosicaoMax != 2 || h.QtdMaxOrdem != 3 || h.Por != "admin:1450" || h.Motivo != "inadimplencia" || !h.Em.Equal(em.Add(time.Minute)) {
 				t.Fatalf("depois: %+v", h)
 			}
@@ -471,10 +471,10 @@ func TestContratoAlterarHabilitado(t *testing.T) {
 				t.Fatalf("histórico: %d linhas, esperava 2", n)
 			}
 			// já bloqueado: nada muda, nada no histórico
-			if antes, ok, _ := r.AlterarHabilitado(7, false, "admin:9", "de novo", em.Add(2*time.Minute)); !ok || antes.Habilitado {
+			if antes, ok, _ := r.AlterarHabilitado(7, "", false, "admin:9", "de novo", em.Add(2*time.Minute)); !ok || antes.Habilitado {
 				t.Fatalf("já bloqueado: %+v", antes)
 			}
-			if h, _, _ := r.Habilitacao(7); h.Por != "admin:1450" || hist() != 2 {
+			if h, _, _ := r.Habilitacao(7, ""); h.Por != "admin:1450" || hist() != 2 {
 				t.Fatalf("já bloqueado não devia gravar: %+v, histórico %d", h, hist())
 			}
 		})
@@ -596,5 +596,68 @@ func TestCortarPorCaractere(t *testing.T) {
 		if got := cortar(c.s, c.n); got != c.quer {
 			t.Errorf("cortar(%q, %d) = %q, quer %q", c.s, c.n, got, c.quer)
 		}
+	}
+}
+
+// SPEC-AMBIENTES-v1 (0014): a operação grava o ambiente (SalvarOperacao e o lote; vazio =
+// SIMULADOR) e a habilitação é por (uid, ambiente): a do REAL é outra linha, com o próprio
+// histórico, e habilitar ou desabilitar um ambiente não mexe no outro.
+func TestContratoAmbiente(t *testing.T) {
+	for nome, novo := range backends(t) {
+		t.Run(nome, func(t *testing.T) {
+			r := novo(t)
+			em := time.Date(2026, 10, 29, 13, 0, 0, 0, time.UTC)
+			sim := &dominio.Operacao{Data: "2026-10-29", OperacaoID: 1, UID: 5725, Conta: "S-1117150", Destino: 85, Conector: dominio.ConectorFlexscan,
+				Simbolo: "WINZ26", Lado: dominio.Compra, QtdPedida: 1, StopPts: 500, Estado: dominio.Entrando, CriadaEm: em, ContadorN: map[string]int{}}
+			if err := r.SalvarOperacao(sim); err != nil {
+				t.Fatal(err)
+			}
+			real := dominio.Operacao{Data: "2026-10-29", OperacaoID: 2, UID: 5725, Conta: "715124", Destino: 88, Conector: dominio.ConectorFlexscan,
+				Ambiente: dominio.AmbienteReal, Simbolo: "WINZ26", Lado: dominio.Venda, QtdPedida: 1, StopPts: 500, Estado: dominio.Entrando,
+				CriadaEm: em, ContadorN: map[string]int{}}
+			l := &Lote{}
+			l.NovasOperacoes = append(l.NovasOperacoes, real)
+			if err := r.GravarLote(l); err != nil {
+				t.Fatal(err)
+			}
+			ops, _, err := r.CarregarDia("2026-10-29")
+			if err != nil || len(ops) != 2 {
+				t.Fatalf("%v %d", err, len(ops))
+			}
+			amb := map[int64]string{}
+			for _, o := range ops {
+				amb[o.OperacaoID] = o.Ambiente
+			}
+			if amb[1] != dominio.AmbienteSimulador || amb[2] != dominio.AmbienteReal {
+				t.Fatalf("ambientes gravados: %v", amb)
+			}
+
+			for _, h := range []dominio.Habilitacao{
+				{UID: 5725, Habilitado: true, Conectores: []string{dominio.ConectorFlexscan}, Por: "george", Motivo: "sim", Em: em},
+				{UID: 5725, Ambiente: dominio.AmbienteReal, Habilitado: true, PosicaoMax: 1, QtdMaxOrdem: 1,
+					Conectores: []string{dominio.ConectorFlexscan}, Por: "george", Motivo: "real de teste", Em: em},
+			} {
+				if err := r.GravarHabilitacao(h); err != nil {
+					t.Fatal(err)
+				}
+			}
+			s, okS, _ := r.Habilitacao(5725, dominio.AmbienteSimulador)
+			rl, okR, _ := r.Habilitacao(5725, dominio.AmbienteReal)
+			if !okS || !okR || s.Motivo != "sim" || rl.Motivo != "real de teste" || rl.PosicaoMax != 1 || rl.Ambiente != dominio.AmbienteReal {
+				t.Fatalf("por ambiente: %+v %v / %+v %v", s, okS, rl, okR)
+			}
+			if _, existia, err := r.AlterarHabilitado(5725, dominio.AmbienteReal, false, "admin:1", "fim do teste", em.Add(time.Hour)); !existia || err != nil {
+				t.Fatalf("alterar o REAL: %v %v", existia, err)
+			}
+			s, _, _ = r.Habilitacao(5725, "")
+			rl, _, _ = r.Habilitacao(5725, dominio.AmbienteReal)
+			if !s.Habilitado || rl.Habilitado {
+				t.Fatalf("desabilitar o REAL mexeu no SIMULADOR: %+v / %+v", s, rl)
+			}
+			hs, err := r.Habilitacoes()
+			if err != nil || len(hs) != 2 || hs[0].Ambiente != dominio.AmbienteSimulador || hs[1].Ambiente != dominio.AmbienteReal {
+				t.Fatalf("habilitações: %+v %v", hs, err)
+			}
+		})
 	}
 }

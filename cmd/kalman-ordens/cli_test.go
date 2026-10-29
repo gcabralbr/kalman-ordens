@@ -330,7 +330,7 @@ func TestUsuarioHabilitarPreservaLimites(t *testing.T) {
 	}
 	confere := func(uid int, hab bool, pm, qm int) {
 		t.Helper()
-		h, ok, err := r.Habilitacao(uid)
+		h, ok, err := r.Habilitacao(uid, "")
 		if err != nil || !ok || h.Habilitado != hab || h.PosicaoMax != pm || h.QtdMaxOrdem != qm {
 			t.Fatalf("uid %d: %+v ok=%v err=%v, esperava habilitado=%v posicao_max=%d qtd_max=%d", uid, h, ok, err, hab, pm, qm)
 		}

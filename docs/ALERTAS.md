@@ -63,7 +63,11 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `SIMBOLO_DIVERGENTE_COM_POSICAO` | posição aberta num contrato que deixou de ser o vigente (por operação); a 1014 continua, a saída usa o símbolo da posição; resolve ao zerar ou se o ticker voltar | sim |
 | `SIMBOLO_INVALIDO` | o ticker do marketdata não é um contrato de WIN: entrada recusada | não |
 | `USUARIO_CONFIG` | configuração do usuário no GQ inutilizável na entrada: JSON inválido, sem `Robo`, uid sem linha em `acusuario`, corretora desconhecida ou o simulador do GQ, conta fora da regra do conector, `acusuario` ou habilitação ilegíveis | não |
-| `CONTA_AMBIENTE` | trava cruzada: conta fora de `ORDENS_CONTAS_HML` numa instância HML, ou conta da lista numa instância PRODUCAO; por uid, resolvido na próxima entrada válida dele | sim |
+| `CONTA_AMBIENTE` | trava da conta por ambiente (SPEC-AMBIENTES-v1 §4.1): no SIMULADOR, conta fora da lista de simulador do conector (`ORDENS_CONTAS_HML`, `FLEXSCAN_CONTAS_HML`); no REAL, conta de qualquer lista de simulador; por uid, resolvido na próxima entrada válida dele | sim |
+| `AMBIENTE_NAO_PERMITIDO` | (SPEC-AMBIENTES-v1 §3) entrada REAL numa máquina sem o REAL em `AMBIENTES_PERMITIDOS` (o SIMULADOR fora dela é só recusa) | sim |
+| `REAL_UID_NAO_PERMITIDO` | (SPEC-AMBIENTES-v1 §3) entrada REAL de uid fora de `REAL_UIDS` | sim |
+| `REAL_CONTA_NAO_PERMITIDA` | (SPEC-AMBIENTES-v1 §3) entrada REAL com a conta do `usutxtconfigprd` fora de `REAL_CONTAS` | sim |
+| `AMBIENTE_PEDIDO_DIVERGENTE` | (SPEC-AMBIENTES-v1 §1.2) saída ou ajuste do stop com `ambiente` diferente do gravado na operação: executado no gravado (nunca recusa a saída); por operação | sim |
 | `CONTA_ALTERADA_COM_POSICAO` | a conta/destino do usuário no GQ mudou com posição aberta; a posição segue pela conta gravada na entrada; resolve ao zerar ou se voltar | sim |
 | `SAIDA_DIVERGENTE_NAO_EXECUTOU` | saída com ticker divergente não executou no timeout: não repete, decisão humana | sim |
 | `SAIDA_BLOQUEADA_PRECO_ANTIGO` | saída com ticker divergente e último preço do símbolo certo com mais de 60 s: não enviada, 1014 fica | sim |
@@ -89,14 +93,22 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 |---|---|---|---|
 | `UID_NAO_HABILITADO` | ENTRADA de uid sem habilitação ativa em `kalmanordemusuario` (só a CLI altera) | não | — |
 | `CONFIG_USUARIO_INDISPONIVEL` | `acusuario` ou a habilitação ilegíveis (banco) | não | `USUARIO_CONFIG` |
-| `CONFIG_USUARIO_INVALIDA` | JSON do ambiente inválido, sem `Robo.CORSeqId`, ou uid sem linha em `acusuario` | não | `USUARIO_CONFIG` |
+| `CONFIG_USUARIO_INVALIDA` | JSON do ambiente inválido, sem `Robo.CORSeqId`, uid sem linha em `acusuario`, ou 9999 sem a conta QUANT no SIMULADOR | não | `USUARIO_CONFIG` |
 | `CONECTOR_NAO_HABILITADO` | (SPEC-FLEXSCAN-v1 §14.3) o `Robo.Conector` do GQ não está entre os `conectores` da habilitação do uid | não | — |
 | `CONECTOR_INDEFINIDO` | (SPEC-FLEXSCAN-v1 §14.3) o GQ não traz `Robo.Conector` e a habilitação tem mais de um conector | não | — |
 | `CONECTOR_DESLIGADO` | (SPEC v1.19.1) `PNT_DESLIGADO=1` e o uid só habilitado no PnT (logo depois da habilitação, antes da conta), ou habilitado nos dois e o GQ escolhe o PnT | não | — |
 | `CONECTOR_NAO_CONFIGURADO` | (SPEC-FLEXSCAN-v1 §14) o conector da habilitação é FLEXSCAN e a instância não tem `FLEXSCAN_URL` | não | — |
-| `DESTINO_INVALIDO` | `Robo.CORSeqId` (a corretora) = 9999 (simulador do GQ) ou fora das conhecidas (85 BTG, 88 Capital); a corretora não decide o conector | não | `USUARIO_CONFIG` |
+| `DESTINO_INVALIDO` | `Robo.CORSeqId` (a corretora) fora das conhecidas (85 BTG, 88 Capital), ou 9999 (simulador do GQ) no REAL; a corretora não decide o conector | não | `USUARIO_CONFIG` |
+| `DESTINO_PAPER` | (SPEC-AMBIENTES-v1 §0.1) entrada no SIMULADOR de uid cujo destino é o paper (9999 com a conta QUANT): o Kalman não manda ordem ao serviço | não | — |
+| `CONECTOR_AMBIENTE` | (SPEC-AMBIENTES-v1 §0.1) o conector não opera no ambiente: o PnT no SIMULADOR (fora da equivalência `ORDENS_AMBIENTE=HML`) | não | — |
+| `AMBIENTE_AUSENTE` | (SPEC-AMBIENTES-v1 §1.3) pedido sem `ambiente` e sem `AMBIENTE_PADRAO` | não | — |
+| `AMBIENTE_INVALIDO` | `ambiente` diferente de `SIMULADOR` e `REAL` | não | — |
+| `AMBIENTE_NAO_PERMITIDO` | o ambiente fora de `AMBIENTES_PERMITIDOS` | não | `AMBIENTE_NAO_PERMITIDO` (crítico), se REAL |
+| `REAL_UID_NAO_PERMITIDO` | REAL com uid fora de `REAL_UIDS` | não | `REAL_UID_NAO_PERMITIDO` (crítico) |
+| `REAL_CONTA_NAO_PERMITIDA` | REAL com a conta fora de `REAL_CONTAS` | não | `REAL_CONTA_NAO_PERMITIDA` (crítico) |
+| `AMBIENTE_DIVERGENTE` | entrada repetida (mesmo `operacao_id`) com outro ambiente | não | — |
 | `CONTA_INVALIDA` | `Robo.CCONroConta` ausente; pela regra do conector da habilitação: PnT só dígitos (o simulador usa `QUANT`); Flexscan até 20 letras, dígitos e hífen | não | `USUARIO_CONFIG` |
-| `CONTA_AMBIENTE` | trava cruzada (`ORDENS_AMBIENTE` × `ORDENS_CONTAS_HML`; pela Flexscan, `FLEXSCAN_CONTAS_HML`) | não | `CONTA_AMBIENTE` (crítico) |
+| `CONTA_AMBIENTE` | trava da conta por ambiente (SPEC-AMBIENTES-v1 §4.1 item 8) | não | `CONTA_AMBIENTE` (crítico) |
 | `SIMBOLO_INVALIDO` | ticker do marketdata não é contrato de WIN | não | `SIMBOLO_INVALIDO` |
 | `CAMPO_INVALIDO` | campo ausente ou inválido; SAIDA com uid diferente do da operação | não | — |
 | `SEM_STOP` | ENTRADA sem `stop_pts` | não | — |

@@ -67,15 +67,16 @@ type Repositorio interface {
 	// CarregarDia: operações e ordens do dia, em ordem de criação.
 	CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem, error)
 
-	// Habilitação por uid (v1.2 U5): lida a cada entrada, gravada só pela CLI (e pelos roteiros).
-	Habilitacao(uid int) (dominio.Habilitacao, bool, error)
+	// Habilitação por (uid, ambiente) (v1.2 U5, SPEC-AMBIENTES-v1 §4.2): lida a cada entrada, gravada
+	// só pela CLI (e pelos roteiros). Ambiente vazio = SIMULADOR.
+	Habilitacao(uid int, ambiente string) (dominio.Habilitacao, bool, error)
 	Habilitacoes() ([]dominio.Habilitacao, error)
 	// GravarHabilitacao substitui a atual e acrescenta ao histórico.
 	GravarHabilitacao(dominio.Habilitacao) error
 	// AlterarHabilitado (v1.8 H2, admin): troca só habilitado, por, motivo e em, preservando os
 	// limites, com o histórico; atômico. Sem linha, ou já no valor pedido, não grava nada.
 	// Devolve a habilitação de antes e se havia linha.
-	AlterarHabilitado(uid int, habilitado bool, por, motivo string, em time.Time) (antes dominio.Habilitacao, existia bool, err error)
+	AlterarHabilitado(uid int, ambiente string, habilitado bool, por, motivo string, em time.Time) (antes dominio.Habilitacao, existia bool, err error)
 
 	// Histórico (v1.5 R): consultas de qualquer dia, para a tela de admin e a CLI.
 	// DiaDaOperacao: o dia (pregão) da operação (modulo vazio = KALMAN).
@@ -136,7 +137,7 @@ type Memoria struct {
 	estado     map[string]string
 	proxOp     int64
 	proxOrdem  int64
-	habil      map[int]dominio.Habilitacao
+	habil      map[chaveHabil]dominio.Habilitacao
 	hist       []dominio.Habilitacao
 	usuarios   map[int]*[2]string // uid → {usutxtconfig, usutxtconfigprd}
 	sessao     []EventoSessao
@@ -146,13 +147,22 @@ type Memoria struct {
 }
 
 func NovaMemoria() *Memoria {
-	return &Memoria{execIDs: map[string]bool{}, estado: map[string]string{}, habil: map[int]dominio.Habilitacao{}, usuarios: map[int]*[2]string{}}
+	return &Memoria{execIDs: map[string]bool{}, estado: map[string]string{}, habil: map[chaveHabil]dominio.Habilitacao{}, usuarios: map[int]*[2]string{}}
 }
 
-func (m *Memoria) Habilitacao(uid int) (dominio.Habilitacao, bool, error) {
+// chaveHabil: a habilitação é por (uid, ambiente).
+type chaveHabil struct {
+	uid      int
+	ambiente string
+}
+
+func (m *Memoria) Habilitacao(uid int, ambiente string) (dominio.Habilitacao, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	h, ok := m.habil[uid]
+	h, ok := m.habil[chaveHabil{uid, dominio.AmbienteDe(ambiente)}]
+	if !ok {
+		h = dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteDe(ambiente)}
+	}
 	return h, ok, nil
 }
 
@@ -163,28 +173,35 @@ func (m *Memoria) Habilitacoes() ([]dominio.Habilitacao, error) {
 	for _, h := range m.habil {
 		r = append(r, h)
 	}
-	sort.Slice(r, func(i, j int) bool { return r[i].UID < r[j].UID })
+	sort.Slice(r, func(i, j int) bool {
+		if r[i].UID != r[j].UID {
+			return r[i].UID < r[j].UID
+		}
+		return r[i].Ambiente > r[j].Ambiente // SIMULADOR antes do REAL
+	})
 	return r, nil
 }
 
 func (m *Memoria) GravarHabilitacao(h dominio.Habilitacao) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.habil[h.UID] = h
+	h.Ambiente = dominio.AmbienteDe(h.Ambiente)
+	m.habil[chaveHabil{h.UID, h.Ambiente}] = h
 	m.hist = append(m.hist, h)
 	return nil
 }
 
-func (m *Memoria) AlterarHabilitado(uid int, habilitado bool, por, motivo string, em time.Time) (dominio.Habilitacao, bool, error) {
+func (m *Memoria) AlterarHabilitado(uid int, ambiente string, habilitado bool, por, motivo string, em time.Time) (dominio.Habilitacao, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	antes, ok := m.habil[uid]
+	k := chaveHabil{uid, dominio.AmbienteDe(ambiente)}
+	antes, ok := m.habil[k]
 	if !ok || antes.Habilitado == habilitado {
 		return antes, ok, nil
 	}
 	h := antes
 	h.Habilitado, h.Por, h.Motivo, h.Em = habilitado, por, motivo, em
-	m.habil[uid] = h
+	m.habil[k] = h
 	m.hist = append(m.hist, h)
 	return antes, true, nil
 }
@@ -349,7 +366,9 @@ func (m *Memoria) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 	var ops []dominio.Operacao
 	for _, o := range m.ops {
 		if o.Data == data {
-			ops = append(ops, o.Copia())
+			c := o.Copia()
+			c.Ambiente = dominio.AmbienteDe(c.Ambiente) // o padrão da coluna (0014)
+			ops = append(ops, c)
 		}
 	}
 	var ords []dominio.Ordem

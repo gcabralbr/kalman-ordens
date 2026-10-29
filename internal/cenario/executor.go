@@ -228,6 +228,14 @@ func (e *Executor) usuario(p roteiro.Passo) error {
 		h := dominio.Habilitacao{UID: uid, Habilitado: p.Verbo == "habilita", Por: "roteiro", Motivo: p.Origem, Em: e.rel.Agora()}
 		for _, a := range p.Args[1:] {
 			k, v, _ := strings.Cut(a, "=")
+			if k == "ambiente" {
+				amb, err := dominio.LerAmbiente(v)
+				if err != nil {
+					return err
+				}
+				h.Ambiente = amb
+				continue
+			}
 			if k == "conectores" {
 				cs, err := dominio.LerConectores(v)
 				if err != nil {
@@ -246,7 +254,7 @@ func (e *Executor) usuario(p roteiro.Passo) error {
 			case "qtd_max":
 				h.QtdMaxOrdem = n
 			default:
-				return fmt.Errorf("habilita UID [posicao_max=N] [qtd_max=N] [conectores=pnt,flexscan]: %s", a)
+				return fmt.Errorf("habilita UID [ambiente=SIMULADOR|REAL] [posicao_max=N] [qtd_max=N] [conectores=pnt,flexscan]: %s", a)
 			}
 		}
 		return e.repo.GravarHabilitacao(h)
@@ -781,6 +789,8 @@ func (e *Executor) pedido(p roteiro.Passo) error {
 			b["uid"], _ = strconv.Atoi(v)
 		case "modulo":
 			b["modulo"] = v
+		case "ambiente":
+			b["ambiente"] = v
 		}
 	}
 	j, _ := json.Marshal(b)
@@ -856,6 +866,8 @@ func (e *Executor) ajusteStop(p roteiro.Passo) error {
 			b["modulo"] = v
 		case "origem":
 			b["origem"] = v
+		case "ambiente":
+			b["ambiente"] = v
 		default:
 			return fmt.Errorf("stop: argumento %q", a)
 		}

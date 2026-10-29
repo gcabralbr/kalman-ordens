@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/motor"
 )
@@ -116,7 +117,11 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 			}
 			uid = n
 		}
-		l, err := motor.OperacoesDoDia(m.Repo(), q.Get("dia"), uid, q.Get("modulo"))
+		amb, ok := ambienteDaQuery(w, q.Get("ambiente"), "")
+		if !ok {
+			return
+		}
+		l, err := motor.OperacoesDoDia(m.Repo(), q.Get("dia"), uid, q.Get("modulo"), amb)
 		responderHistorico(w, l, err)
 	})
 	mux.HandleFunc("GET /operacoes/{id}/historico", func(w http.ResponseWriter, r *http.Request) {
@@ -271,22 +276,51 @@ func Handler(m *motor.Motor, espera time.Duration) http.Handler {
 			escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "uid invalido"})
 			return
 		}
-		h, err := motor.HabilitacaoDoUsuario(m.Repo(), uid)
+		amb, ok := ambienteDaQuery(w, r.URL.Query().Get("ambiente"), dominio.AmbienteSimulador)
+		if !ok {
+			return
+		}
+		h, err := motor.HabilitacaoDoUsuario(m.Repo(), uid, amb)
 		responderHistorico(w, h, err)
+	})
+	// SPEC-AMBIENTES-v1 §4.3: o destino resolvido por ambiente (paper, ou conector, corretora e
+	// conta), para o Kalman decidir na ativação do dia; sem ?ambiente=, os dois. Sempre 200.
+	mux.HandleFunc("GET /usuarios/{uid}/destino", func(w http.ResponseWriter, r *http.Request) {
+		uid, err := strconv.Atoi(r.PathValue("uid"))
+		if err != nil || uid <= 0 {
+			escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "uid invalido"})
+			return
+		}
+		amb, ok := ambienteDaQuery(w, r.URL.Query().Get("ambiente"), "")
+		if !ok {
+			return
+		}
+		ambs := []string{dominio.AmbienteSimulador, dominio.AmbienteReal}
+		if amb != "" {
+			ambs = []string{amb}
+		}
+		d, err := m.DestinoDoUsuario(uid, ambs)
+		responderHistorico(w, d, err)
 	})
 	mux.HandleFunc("POST /usuarios/{uid}/habilitacao", func(w http.ResponseWriter, r *http.Request) {
 		corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))
 		var a motor.HabilitacaoAdmin
 		uid, errUID := strconv.Atoi(r.PathValue("uid"))
+		amb, errAmb := dominio.LerAmbiente(r.URL.Query().Get("ambiente"))
+		if r.URL.Query().Get("ambiente") == "" {
+			amb, errAmb = dominio.AmbienteSimulador, nil
+		}
 		status, resp := http.StatusOK, motor.Resposta(nil)
 		switch err := decodificar(corpo, &a); {
 		case errUID != nil || uid <= 0:
 			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "uid invalido"}
+		case errAmb != nil:
+			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "AMBIENTE_INVALIDO", "motivo": "ambiente invalido (SIMULADOR ou REAL)"}
 		case err != nil:
 			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()}
 		default:
 			select {
-			case resp = <-m.AlterarHabilitacaoAssincrono(uid, a):
+			case resp = <-m.AlterarHabilitacaoAssincrono(uid, amb, a):
 			case <-time.After(espera):
 				status, resp = http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "RESULTADO_DESCONHECIDO",
 					"motivo": "o motor nao respondeu a tempo; consultar GET /usuarios/{uid}/habilitacao"}
@@ -420,4 +454,17 @@ func escrever(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// ambienteDaQuery: o ?ambiente= (SIMULADOR ou REAL); vazio = padrao. Inválido: 400 e ok falso.
+func ambienteDaQuery(w http.ResponseWriter, v, padrao string) (string, bool) {
+	if v == "" {
+		return padrao, true
+	}
+	a, err := dominio.LerAmbiente(v)
+	if err != nil {
+		escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "ambiente invalido (SIMULADOR ou REAL)"})
+		return "", false
+	}
+	return a, true
 }

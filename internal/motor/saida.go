@@ -39,6 +39,7 @@ func (m *Motor) pedirSaida(p Pedido) (Resposta, *recusa) {
 	if *p.UID != op.UID {
 		return nil, simples("CAMPO_INVALIDO", fmt.Sprintf("uid %d diferente do da operação (%d)", *p.UID, op.UID))
 	}
+	m.conferirAmbientePedido(op, p.Ambiente, "saida")
 	m.conferirConta(op)
 	if !op.SaidaPedidaEm.IsZero() || op.saidaAposEntrada {
 		// saída já iniciada pelo serviço (stop, parada, zeragem...): o pedido do gestor é aceito
@@ -501,7 +502,7 @@ func (m *Motor) conferirConta(op *operacao) {
 	if op.Conta == "" || op.Estado.Final() || op.posicao() == 0 {
 		return
 	}
-	r, f := m.contaDoUsuario(op.UID)
+	r, f := m.contaDoUsuario(op.UID, dominio.AmbienteDe(op.Ambiente))
 	if f != nil && f.Codigo == "CONFIG_USUARIO_INDISPONIVEL" {
 		return
 	}
