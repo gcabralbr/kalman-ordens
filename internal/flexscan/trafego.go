@@ -55,6 +55,9 @@ type LinhaTrafego struct {
 	Modulo     *string `json:"modulo"`
 	UID        *int    `json:"uid"`
 	Resumo     string  `json:"resumo"`
+	// NaoRegistrada (v1.24): o 404 de uma ordem que o webhook já deu como final, logo depois do 202
+	// (a consulta da Flexscan ainda não a conhece): não é erro, a consulta se repete.
+	NaoRegistrada bool `json:"nao_registrada"`
 	// ClOrdIDs (v1.21.1): os clordid dos retratos de um webhook com vários (ClOrdID fica null); quem
 	// consulta preenche a operação se todos forem da mesma.
 	ClOrdIDs []string `json:"-"`
@@ -108,7 +111,15 @@ func (t *trafego) virar(agora time.Time) {
 // linha: status < 0 = sem resposta (null); dur < 0 = sem duração (null); cl/id vazios = null; nomes =
 // os clordid de um webhook com vários retratos.
 func (t *trafego) linha(tipo, direcao string, status int, dur time.Duration, cl, id, resumo string, nomes ...string) {
-	l := LinhaTrafego{Tipo: tipo, Direcao: direcao, Resumo: resumoTrafego(resumo), ClOrdIDs: nomes}
+	t.anexar(LinhaTrafego{Tipo: tipo, Direcao: direcao, Resumo: resumoTrafego(resumo), ClOrdIDs: nomes}, status, dur, cl, id)
+}
+
+// linhaNaoRegistrada (v1.24): a CONSULTA 404 "ainda não registrada".
+func (t *trafego) linhaNaoRegistrada(status int, dur time.Duration, cl, id, resumo string) {
+	t.anexar(LinhaTrafego{Tipo: TrafegoConsulta, Direcao: "ENV", Resumo: resumoTrafego(resumo), NaoRegistrada: true}, status, dur, cl, id)
+}
+
+func (t *trafego) anexar(l LinhaTrafego, status int, dur time.Duration, cl, id string) {
 	if status >= 0 {
 		s := status
 		l.StatusHTTP = &s

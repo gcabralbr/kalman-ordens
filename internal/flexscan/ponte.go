@@ -157,6 +157,13 @@ type ordemP struct {
 	// v1.22 (webhook_espera.go): a espera pelo webhook da ordem (relógio do serviço; zero = nenhuma)
 	whEsperaDesde, whUltimo         time.Time
 	whEsperaMotivo, whEsperaDetalhe string
+	// v1.24 (consulta_webhook.go): o POST em curso, a hora do 202, a consulta pedida pelo webhook à
+	// espera de sair (origem; "" = nenhuma) e o estado final já trazido pelo webhook
+	postEmCurso   bool
+	aceita202Em   time.Time
+	confirmar     string
+	confirmarApos time.Time
+	whFinal       bool
 }
 
 func (o *ordemP) chave() string { return o.nome }
@@ -433,6 +440,9 @@ func (p *Ponte) Tick() {
 		if o.consultaNaFila {
 			continue
 		}
+		if o.confirmar != "" && p.soltarConsultaWebhookLocked(o, agora) {
+			continue
+		}
 		if !o.ativaDesde.IsZero() {
 			if ps := o.passosDaJanela(); o.passo < len(ps) && !agora.Before(o.ativaDesde.Add(ps[o.passo])) {
 				o.passo++
@@ -640,7 +650,7 @@ func prioDoNome(nome string) int {
 
 func (p *Ponte) novaOrdem(g func(int) string) {
 	nome := g(11)
-	o := &ordemP{nome: nome, conta: g(1), simbolo: g(55), lado: g(54), clAtual: nome, fase: FasePendente}
+	o := &ordemP{nome: nome, conta: g(1), simbolo: g(55), lado: g(54), clAtual: nome, fase: FasePendente, postEmCurso: true}
 	o.qtd, _ = strconv.Atoi(g(38))
 	corpo := map[string]any{"symbol": o.simbolo, "side": o.lado, "qtty": o.qtd, "account": o.conta, "exchange": p.cfg.Bolsa,
 		"timeInForce": "0", "name": nome}
@@ -686,8 +696,10 @@ func (p *Ponte) post(ctx context.Context, o *ordemP, corpo map[string]any) {
 	p.traf.linha(TrafegoPOST, "ENV", statusDe(r), duracaoDe(r, dur), o.nome, criada.ID, comResposta(resumoOrdem(corpo), r))
 	var msgs []pnt.Mensagem
 	p.mu.Lock()
+	o.postEmCurso = false
 	switch {
 	case r.Status == http.StatusAccepted:
+		o.aceita202Em = p.rel.Agora()
 		var a struct {
 			ID string `json:"id"`
 		}
@@ -905,6 +917,9 @@ func (p *Ponte) consultar(ctx context.Context, o *ordemP, origem string) {
 	r := p.cli.pedir(ctx, http.MethodGet, "/orders/"+url.PathEscape(id), nil)
 	dur := time.Since(t0)
 	p.traf.consulta()
+	if r.Status == http.StatusNotFound && p.aindaNaoRegistrada(o, id, origem, r, dur) {
+		return
+	}
 	if r.Status != http.StatusOK {
 		// v1.21: a consulta só vira linha do tráfego quando não é 200 ou quando muda o estado
 		p.traf.linha(TrafegoConsulta, "ENV", statusDe(r), duracaoDe(r, dur), o.nome, id, comResposta(origem, r))
@@ -963,6 +978,9 @@ func (p *Ponte) fundirLocked(o *ordemP, e Estado, origem string) ([]pnt.Mensagem
 		o.id = e.ID
 		p.ordens[e.ID] = o
 	}
+	if e.Fonte == "webhook" && (e.Fase == FaseExecutada || e.Fase == FaseCancelada) {
+		o.whFinal = true
+	}
 	if o.conta == "" {
 		o.conta, o.simbolo, o.lado, o.tipo, o.qtd = e.Conta, e.Simbolo, e.Lado, e.Tipo, e.Qtd
 	}
@@ -974,10 +992,9 @@ func (p *Ponte) fundirLocked(o *ordemP, e Estado, origem string) ([]pnt.Mensagem
 	// 1. executado só sobe
 	if e.Exec > o.exec {
 		if e.Fonte == "webhook" && p.cfg.ConfirmarFill && o.tipo == "2" && o.pend == nil {
-			// fill espontâneo de limite pelo webhook: o que vale é a consulta (SPEC §5.2 item 6)
-			oo := o
-			o.consultaNaFila = true
-			p.enfileirarLocked(prioProtecao, "", func(ctx context.Context) { p.consultar(ctx, oo, "confirma") })
+			// fill espontâneo de limite pelo webhook: o que vale é a consulta (SPEC §5.2 item 6), que
+			// respeita a espera desde o 202 (v1.24)
+			p.consultaDoWebhookLocked(o, "confirma")
 			return nil, nil
 		}
 		if o.pend == nil && o.ativaDesde.IsZero() {
@@ -1094,8 +1111,7 @@ func (p *Ponte) fundirLocked(o *ordemP, e Estado, origem string) ([]pnt.Mensagem
 		case FaseExecutada:
 			if o.exec < o.qtd && e.Fonte == "webhook" {
 				// FINISHED sem a quantidade toda: a consulta decide
-				oo := o
-				p.enfileirarLocked(prioProtecao, "", func(ctx context.Context) { p.consultar(ctx, oo, "confirma") })
+				p.consultaDoWebhookLocked(o, "confirma")
 				return msgs, av
 			}
 		}
@@ -1460,9 +1476,7 @@ func (p *Ponte) ReceberWebhook(corpo []byte, origem string) error {
 		p.mu.Lock()
 		for _, o := range p.ordens {
 			if !o.fase.Terminal() && !o.consultaNaFila {
-				oo := o
-				o.consultaNaFila = true
-				p.enfileirarLocked(prioConsulta, o.chave(), func(ctx context.Context) { p.consultar(ctx, oo, "webhook_invalido") })
+				p.consultaDoWebhookLocked(o, "webhook_invalido")
 			}
 		}
 		p.mu.Unlock()

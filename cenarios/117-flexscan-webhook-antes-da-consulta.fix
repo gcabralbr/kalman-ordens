@@ -1,0 +1,69 @@
+cenario 117 Flexscan: o webhook final chega antes de a consulta conhecer a ordem (29/10 11:02:00, op 234413) — a consulta pedida pelo webhook respeita a espera desde o 202; o 404 até 2 s depois do 202 de uma ordem já final pelo webhook é "ainda não registrada" (registro e tráfego com nao_registrada=true, sem erro) e se repete; depois de 2 s, o 404 volta a ser erro
+hora 2026-10-29 11:00:00
+# SPEC-ORDENS v1.24. Em 29/10: POST 202 em 48 ms, o webhook EXECUTADA 94 ms depois do POST, a consulta
+# de confirmação 11 ms depois dele (404) e a agendada aos 313 ms (achou).
+config FLEXSCAN_URL=falso
+config FLEXSCAN_PRIMEIRA_CONSULTA_MS=200
+config LIMITE_POSICAO_MAX=2
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_INTERVALO_UID_S=0
+config LIMITE_ENTRADAS_MIN_UID=0
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+executa INICIO
+
+# --- a consulta do webhook espera os 200 ms desde o 202; a de 200 ms ainda dá 404: não registrada
+flx_nao_achada 250ms
+entrada 11701 V uid=8
+resposta aceito=true
+flx_recebe POST name=KM-E-11701-1 id=>E1
+flx_executa $E1 preco=172695
+flx_webhook $E1
+avanca 100ms
+flx_trafego tipo=CONSULTA clordid=KM-E-11701-1 = 0
+sem_evento ENTRADA_EXECUTADA
+avanca 100ms
+flx_trafego tipo=CONSULTA clordid=KM-E-11701-1 status_http=404 nao_registrada=true resumo="~ainda nao registrada" = 1
+flx_trafego tipo=CONSULTA clordid=KM-E-11701-1 status_http=404 nao_registrada=false = 0
+avanca 400ms
+evento ENTRADA_EXECUTADA operacao_id=11701 preco=172695
+flx_trafego tipo=CONSULTA clordid=KM-E-11701-1 status_http=404 = 1
+flx_recebe POST name=KM-P-11701-1 ordType=4 id=>P1
+avanca 1s
+evento PROTEGIDA operacao_id=11701
+# a proteção (sem webhook final) toma o 404 de sempre: erro
+flx_trafego tipo=CONSULTA clordid=KM-P-11701-1 status_http=404 nao_registrada=false = 1
+flx_nao_achada 0
+
+# --- o restart traz a linha marcada do registro
+reinicia_servico
+aguarda_logon
+avanca 3s
+flx_trafego tipo=CONSULTA clordid=KM-E-11701-1 status_http=404 nao_registrada=true = 1
+
+# --- a consulta não acha a ordem por 3 s: "não registrada" até os 2 s do 202, erro depois
+flx_nao_achada 3s
+entrada 11702 V uid=8
+resposta aceito=true
+flx_recebe POST name=KM-E-11702-1 id=>E2
+flx_executa $E2 preco=172700
+flx_webhook $E2
+# a do webhook aos 200 ms e os passos da ativa aos 500, 800 e 1400 ms: não registrada (uma consulta
+# por vez, sem repetir a do webhook); o passo dos 2600 ms já é erro; a periódica (5 s) acha
+avanca 2500ms
+flx_trafego tipo=CONSULTA clordid=KM-E-11702-1 status_http=404 nao_registrada=true = 4
+flx_trafego tipo=CONSULTA clordid=KM-E-11702-1 status_http=404 nao_registrada=false = 0
+avanca 200ms
+flx_trafego tipo=CONSULTA clordid=KM-E-11702-1 status_http=404 nao_registrada=false = 1
+sem_evento ENTRADA_EXECUTADA operacao_id=11702
+avanca 2500ms
+# no meio, o timeout da entrada pede o cancel; a periódica acha a ordem executada e o fill vale
+flx_recebe DELETE id=$E2
+evento ENTRADA_EXECUTADA operacao_id=11702 preco=172700
+flx_nao_achada 0
+flx_recebe POST name=KM-P-11702-1 ordType=4 id=>P2
+avanca 1s
+evento PROTEGIDA operacao_id=11702
+flx_trafego tipo=CONSULTA clordid=KM-E-11702-1 status_http=200 = 1
+flx_nada

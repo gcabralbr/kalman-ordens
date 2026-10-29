@@ -124,6 +124,7 @@ func LinhasDoRegistro(evs []repo.EventoFIX) []LinhaTrafego {
 			metodo, texto, _ := strings.Cut(e.Texto, " ")
 			if metodo == "GET" {
 				nova(e.Em, TrafegoConsulta, "ENV", status, -1, e.ClOrdID, e.OrderID, comTexto("consulta", status, texto))
+				ls[len(ls)-1].NaoRegistrada = strings.HasPrefix(texto, PrefixoNaoRegistrada)
 				continue
 			}
 			env, ok := pendentes[chave{metodo, e.ClOrdID}]

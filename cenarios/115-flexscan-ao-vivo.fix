@@ -112,6 +112,8 @@ flx_recebe DELETE id=$P1
 flx_recebe POST name=KM-S-11501-1 id=>S1
 flx_executa $S1 preco=130100
 flx_webhook $S1
+# v1.24: a consulta que confirma o fill do webhook sai 200 ms depois do 202
+avanca 300ms
 evento ZERADA operacao_id=11501 origem=GESTOR
 flx_trafego tipo=DELETE clordid=KM-P-11501-3 status_http=202 operacao_id=11501 = 1
 # v1.21.1: um webhook com vários retratos da mesma operação (28/10 09:01:45, entrada executada + stop
@@ -135,14 +137,14 @@ resposta _status=200 mensagens.#=0 ultimo_seq=* saude.logado=true saude.consulta
 http GET /operacoes?dia=2026-10-28
 resposta _lista.0.operacao_id=11501 _lista.0.conector=FLEXSCAN
 
-# o contrato (SPEC v1.23 §3.1, v1.22 §5.2) tem a forma da resposta real: o exemplo que o Kalman lê
+# o contrato (SPEC v1.24 §3.1, v1.22 §5.2) tem a forma da resposta real: o exemplo que o Kalman lê
 http GET /flexscan/trafego?limite=2000
-contrato docs/SPEC-ORDENS-v1.23.md 3.1
+contrato docs/SPEC-ORDENS-v1.24.md 3.1
 http GET /saude
 contrato docs/SPEC-ORDENS-v1.22.md 5.2 flexscan
 # v1.23: o dia inteiro do registro (seq 1..N, sem saude); dia sem tráfego vazio; dia inválido 400
 http GET /flexscan/trafego?dia=2026-10-28
-contrato docs/SPEC-ORDENS-v1.23.md 3.2
+contrato docs/SPEC-ORDENS-v1.24.md 3.2
 resposta _status=200 dia=2026-10-28 cortado=false mensagens.0.seq=1 ultimo_seq=* eventos=*
 http GET /flexscan/trafego?dia=2026-10-20
 resposta _status=200 mensagens.#=0 ultimo_seq=0
@@ -170,7 +172,7 @@ flx_trafego tipo=LOGIN resumo=~partida = 2
 flx_trafego tipo=LOGIN resumo=~401 = 1
 flx_trafego tipo=WEBHOOK status_http=404 = 0
 http GET /flexscan/trafego?limite=2000
-contrato docs/SPEC-ORDENS-v1.23.md 3.1
+contrato docs/SPEC-ORDENS-v1.24.md 3.1
 saude posicao=0 divergente=false parada=null
 flx_nada
 nada
