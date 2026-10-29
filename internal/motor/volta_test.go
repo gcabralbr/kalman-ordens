@@ -307,8 +307,14 @@ func TestSinalEnvioNoFechamento(t *testing.T) {
 		return p
 	}
 	r := m.Sinal(parte(1, 11, 12))
-	if r["fechado"] != false || len(reg.lista()) == 0 {
+	if r["fechado"] != false {
 		t.Fatalf("parte 1: %v", r)
+	}
+	// v1.22: a parte sem envio responde antes da gravação do lote; espera o commit
+	for ate := time.Now().Add(2 * time.Second); len(reg.lista()) == 0; time.Sleep(time.Millisecond) {
+		if time.Now().After(ate) {
+			t.Fatalf("parte 1 sem commit: %v", r)
+		}
 	}
 	for _, s := range reg.lista() {
 		if strings.HasPrefix(s, "envio") {
