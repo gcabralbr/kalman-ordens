@@ -25,8 +25,13 @@ Sem `REAL_FLEXSCAN_CORRETORAS`, nada muda: o REAL tem a ponte única de sempre (
 - O listener do webhook (`FLEXSCAN_WEBHOOK_ENDERECO`) é um só, com uma rota por corretora; um
   prefixo não pode conter o outro.
 - O serviço não sobe com a configuração errada. O erro diz a chave que falta ou que conflita.
-- O serviço conhece as corretoras 85 (BTG) e 88 (Capital). Uma corretora nova no GQ é uma linha no
-  código (`internal/usuario`).
+- **Nenhuma corretora fixa no código para o REAL por corretora** (ajuste de 30/10):
+  - qualquer `CORSeqId` declarado em `REAL_FLEXSCAN_CORRETORAS` vale como corretora conhecida, e o
+    nome dela é o NOME declarado (no `/destino`, no rótulo "REAL · Flexscan · XP 7001" e nos alertas);
+  - corretora nova é uma linha no `service.env` mais as chaves dela, sem binário novo;
+  - 85 (BTG) e 88 (Capital) continuam conhecidas sem declaração (o SIMULADOR da .53 e a ponte única);
+  - um `CORSeqId` nem declarado nem desses dois dá `DESTINO_INVALIDO`, com a lista das conhecidas e a
+    indicação de `REAL_FLEXSCAN_CORRETORAS`.
 
 ## 2. Comportamento
 
@@ -74,5 +79,6 @@ Sem `REAL_FLEXSCAN_CORRETORAS`, nada muda: o REAL tem a ponte única de sempre (
   - o restart;
   - o tráfego por corretora;
   - a BTG fora do ar sem afetar a CMC.
-- **Roteiro 126:** a corretora sem guarda-chuva.
+- **Roteiro 125** também cobre uma corretora 77:XP, só declarada no `service.env`.
+- **Roteiro 126:** a corretora sem guarda-chuva e um `CORSeqId` não declarado.
 - **`TestInstanciasPorCorretora`:** a montagem e os erros de configuração.

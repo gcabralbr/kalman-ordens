@@ -2,15 +2,17 @@ cenario 125 O REAL por corretora (v1.30, SPEC-AMBIENTES-v1 D4 revisada, passo 2b
 hora 2026-10-30 10:00:00
 config ORDENS_AMBIENTE=
 config AMBIENTES_PERMITIDOS=REAL
-config REAL_FLEXSCAN_CORRETORAS=88:CMC,85:BTG
+config REAL_FLEXSCAN_CORRETORAS=88:CMC,85:BTG,77:XP
 config REAL_FLEXSCAN_CMC_URL=falso
 config REAL_FLEXSCAN_BTG_URL=falso
+config REAL_FLEXSCAN_XP_URL=falso
+config REAL_FLEXSCAN_XP_CONTAS=7001
 config REAL_FLEXSCAN_CMC_CONTAS=715124
 config REAL_FLEXSCAN_BTG_CONTAS=9001,9002
 config REAL_UIDS=*
 config REAL_CONTAS=*
 config REAL_LIMITE_QTD_ORDEM=1
-config REAL_LIMITE_POSICAO_MAX=2
+config REAL_LIMITE_POSICAO_MAX=3
 config REAL_LIMITE_PERDA_DIA_PTS=3000
 config REAL_LIMITE_ENTRADAS_DIA=10
 config REAL_LIMITE_ENTRADAS_MIN=10
@@ -20,6 +22,9 @@ config LIMITE_INTERVALO_ENTRADAS_S=0
 usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
 usuario 9 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"9001"}}
 usuario 11 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715999"}}
+# uid 10: a corretora 77, que o serviço só conhece por estar declarada em REAL_FLEXSCAN_CORRETORAS
+usuario 10 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":77,"CCONroConta":"7001"}}
+habilita 10 ambiente=REAL conectores=flexscan
 habilita 8 ambiente=REAL conectores=flexscan
 habilita 9 ambiente=REAL conectores=flexscan
 habilita 11 ambiente=REAL conectores=flexscan
@@ -89,7 +94,7 @@ http GET /flexscan/trafego?ambiente=REAL&corretora=CMC&limite=1
 resposta _status=200 corretora=CMC ambiente=REAL
 http GET /flexscan/trafego?ambiente=REAL
 resposta _status=400
-http GET /flexscan/trafego?ambiente=REAL&corretora=XP
+http GET /flexscan/trafego?ambiente=REAL&corretora=ZZ
 resposta _status=400
 flx_trafego tipo=POST clordid=KM-E-12504-1 = 1
 flx_trafego tipo=POST clordid=KM-E-12503-1 = 0
@@ -107,3 +112,11 @@ resposta ambientes.REAL.canal=FORA ambientes.REAL.codigo=SEM_SESSAO
 avanca 30s
 evento ALERTA codigo=CONECTOR_FORA_COM_POSICAO texto="~o conector Flexscan BTG esta fora do ar"
 evento SUSPENSA operacao_id=12504
+
+# --- a corretora 77 (XP): só uma linha no service.env, sem binário novo; segue com a BTG fora do ar
+http GET /usuarios/10/destino?ambiente=REAL
+resposta ambientes.REAL.pode_enviar=true ambientes.REAL.corretora=XP ambientes.REAL.corretora_codigo=77 "ambientes.REAL.rotulo=REAL · Flexscan · XP 7001"
+entrada 12505 C uid=10 ambiente=REAL
+resposta aceito=true
+flx_ambiente REAL:XP
+flx_recebe POST name=KM-E-12505-1 account=7001

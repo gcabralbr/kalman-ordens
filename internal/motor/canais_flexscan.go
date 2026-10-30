@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
+	"gammaquant.com.br/kalman-ordens/internal/usuario"
 )
 
 // v1.30 (SPEC-AMBIENTES-v1 D4 revisada, passo 2b): a instância tem uma ponte Flexscan só (a de
@@ -170,4 +171,22 @@ func (m *Motor) marcarVivasFlexscan() {
 		}
 		mv.MarcarVivas(vivas)
 	}
+}
+
+// corretorasDeclaradas (v1.30): as de REAL_FLEXSCAN_CORRETORAS (CORSeqId → NOME); qualquer CORSeqId
+// declarado ali vale, além das de sempre (85 BTG, 88 Capital): corretora nova sem binário novo.
+func (m *Motor) corretorasDeclaradas() map[int]string {
+	if !m.porCorretora() {
+		return nil
+	}
+	r := map[int]string{}
+	for _, c := range m.flxs {
+		r[c.codigo] = c.nome
+	}
+	return r
+}
+
+// nomeCorretora: o nome nos textos e no /destino (as de sempre; depois, as declaradas).
+func (m *Motor) nomeCorretora(destino int) string {
+	return usuario.NomeCorretora(destino, m.corretorasDeclaradas())
 }

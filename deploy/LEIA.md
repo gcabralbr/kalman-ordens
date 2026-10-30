@@ -700,6 +700,8 @@ O que muda para o operador:
   - Uma conta fora da lista é recusada (`CONTA_FORA_DA_CORRETORA`), e o `/destino` mostra o motivo.
   - Uma conta não pode estar em duas listas.
 - **Corretora sem guarda-chuva:** os usuários dela recebem `CORRETORA_SEM_CREDENCIAL`.
+- **Corretora nova:** é uma entrada a mais em `REAL_FLEXSCAN_CORRETORAS` (ex.: `77:XP`) e as chaves
+  `REAL_FLEXSCAN_XP_*`, mais o restart, sem binário novo. O `CORSeqId` declarado passa a valer no GQ.
 - **Uma operação aberta segue pela corretora da entrada**, mesmo se o usuário mudar de corretora no GQ.
 - **Uma corretora fora do ar** suspende só as operações dela (§1.18).
 

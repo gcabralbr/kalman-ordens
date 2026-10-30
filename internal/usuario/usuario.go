@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
@@ -35,11 +36,39 @@ const (
 	ContaPaper = "QUANT"
 )
 
-// corretoras conhecidas; outra entra aqui quando for usada (um CORSeqId errado no GQ não vira ordem)
+// corretoras de sempre (um CORSeqId errado no GQ não vira ordem); v1.30: as declaradas em
+// REAL_FLEXSCAN_CORRETORAS também valem (Regras.Corretoras), sem binário novo
 var corretoras = map[int]string{DestinoBTG: "BTG", DestinoCapital: "Capital"}
 
 // Corretora: o nome da corretora (85 BTG, 88 Capital); "" se desconhecida.
 func Corretora(destino int) string { return corretoras[destino] }
+
+// NomeCorretora: o nome pelas de sempre e, depois, pelas declaradas (CORSeqId → NOME).
+func NomeCorretora(destino int, declaradas map[int]string) string {
+	if n := corretoras[destino]; n != "" {
+		return n
+	}
+	return declaradas[destino]
+}
+
+// listaCorretoras: as conhecidas, para o texto da recusa ("85 BTG, 88 Capital, 77 XP").
+func listaCorretoras(declaradas map[int]string) string {
+	var cs []int
+	for c := range corretoras {
+		cs = append(cs, c)
+	}
+	for c := range declaradas {
+		if corretoras[c] == "" {
+			cs = append(cs, c)
+		}
+	}
+	sort.Ints(cs)
+	var r []string
+	for _, c := range cs {
+		r = append(r, fmt.Sprintf("%d %s", c, NomeCorretora(c, declaradas)))
+	}
+	return strings.Join(r, ", ")
+}
 
 // Resolvido: conta, destino e conector de uma entrada.
 type Resolvido struct {
@@ -58,6 +87,8 @@ type Regras struct {
 	Flexscan     bool     // FLEXSCAN_URL preenchida
 	// o PnT no SIMULADOR: só na equivalência ORDENS_AMBIENTE=HML (a HML do PnT é D-1)
 	PnTNoSimulador bool
+	// v1.30: as corretoras declaradas em REAL_FLEXSCAN_CORRETORAS (CORSeqId → NOME), além das de sempre
+	Corretoras map[int]string
 	// REAL_CONTAS: lista ou todas (*)
 	RealContas      []string
 	RealContasTodas bool
@@ -144,7 +175,7 @@ func ResolverCom(rg Regras, texto string, habilitados []string) (Resolvido, *Fal
 	}
 	switch {
 	case destino == DestinoGQ && ambiente == dominio.AmbienteReal:
-		return Resolvido{}, &Falha{"DESTINO_INVALIDO", fmt.Sprintf("%s: Robo.CORSeqId %d é o simulador do GQ; no REAL, só uma corretora (85 BTG, 88 Capital)", campo, destino), "USUARIO_CONFIG"}
+		return Resolvido{}, &Falha{"DESTINO_INVALIDO", fmt.Sprintf("%s: Robo.CORSeqId %d é o simulador do GQ; no REAL, só uma corretora (%s)", campo, destino, listaCorretoras(rg.Corretoras)), "USUARIO_CONFIG"}
 	case destino == DestinoGQ:
 		conta, _, f := cfg.conta(campo)
 		switch {
@@ -154,8 +185,8 @@ func ResolverCom(rg Regras, texto string, habilitados []string) (Resolvido, *Fal
 			return Resolvido{Conta: conta, Destino: destino}, &Falha{"DESTINO_PAPER", fmt.Sprintf("%s: simulador interno do GQ (9999, conta %s): paper, nenhuma ordem vai ao serviço", campo, ContaPaper), ""}
 		}
 		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", fmt.Sprintf("%s: Robo.CORSeqId 9999 (simulador do GQ) sem a conta %s (conta %q)", campo, ContaPaper, conta), "USUARIO_CONFIG"}
-	case corretoras[destino] == "":
-		return Resolvido{}, &Falha{"DESTINO_INVALIDO", fmt.Sprintf("%s: Robo.CORSeqId %d não é uma corretora conhecida (85 BTG, 88 Capital)", campo, destino), "USUARIO_CONFIG"}
+	case NomeCorretora(destino, rg.Corretoras) == "":
+		return Resolvido{}, &Falha{"DESTINO_INVALIDO", fmt.Sprintf("%s: Robo.CORSeqId %d não é uma corretora conhecida (%s; outra entra em REAL_FLEXSCAN_CORRETORAS)", campo, destino, listaCorretoras(rg.Corretoras)), "USUARIO_CONFIG"}
 	}
 	// o conector: o GQ escolhe (Robo.Conector, gerado pelo GX desde 23/10) entre os da habilitação
 	if len(habilitados) == 0 {

@@ -58,7 +58,8 @@ func (m *Motor) teto(amb string, uid int, alertar bool) *recusa {
 // regras: a resolução da coluna do GQ no ambiente da ordem.
 func (m *Motor) regras(amb string) usuario.Regras {
 	return usuario.Regras{Ambiente: amb, ContasHML: m.p.ContasHML, ContasHMLFlx: m.p.ContasHMLFlx, Flexscan: m.p.Flexscan,
-		PnTNoSimulador: m.p.Amb.PnTNoSimulador(), RealContas: m.p.Amb.RealContas, RealContasTodas: m.p.Amb.RealContasTodas}
+		PnTNoSimulador: m.p.Amb.PnTNoSimulador(), RealContas: m.p.Amb.RealContas, RealContasTodas: m.p.Amb.RealContasTodas,
+		Corretoras: m.corretorasDeclaradas()}
 }
 
 // ambienteConectores: o ambiente dos conectores desta instância (v1.26: um motor por ambiente).
@@ -160,8 +161,8 @@ func (m *Motor) destinoDaEntrada(uid int, amb string) map[string]any {
 	case f != nil:
 		falhar(simples(f.Codigo, f.Motivo))
 	default:
-		d["destino"], d["conector"], d["corretora"], d["corretora_codigo"], d["conta"] = "CONECTOR", res.Conector, usuario.Corretora(res.Destino), res.Destino, res.Conta
-		d["rotulo"] = rotuloDestino(amb, res)
+		d["destino"], d["conector"], d["corretora"], d["corretora_codigo"], d["conta"] = "CONECTOR", res.Conector, m.nomeCorretora(res.Destino), res.Destino, res.Conta
+		d["rotulo"] = m.rotuloDestino(amb, res)
 		// o conector da coluna desligado nesta instância (item 7)
 		if res.Conector == dominio.ConectorPnT && m.p.PnTDesligado {
 			falhar(conectorDesligado())
@@ -190,7 +191,7 @@ func (m *Motor) destinoDaEntrada(uid int, amb string) map[string]any {
 			case f2 == nil || f2.Codigo == "CONTA_AMBIENTE":
 				d["destino"] = "CONECTOR"
 				if f2 == nil {
-					d["conector"], d["corretora"], d["corretora_codigo"], d["conta"] = r2.Conector, usuario.Corretora(r2.Destino), r2.Destino, r2.Conta
+					d["conector"], d["corretora"], d["corretora_codigo"], d["conta"] = r2.Conector, m.nomeCorretora(r2.Destino), r2.Destino, r2.Conta
 				}
 				d["motivo"] = "no SIMULADOR todo usuario e paper: esta maquina nao roda o SIMULADOR e o simulador da Flexscan e so para os testes da .53; ponha o destino do usuario no paper do GQ"
 			}
@@ -208,10 +209,10 @@ func destinoIndisponivel(err error) map[string]any {
 }
 
 // rotuloDestino: o texto da tela do Kalman ("Simulador · Flexscan", "REAL · Flexscan · Capital 715124").
-func rotuloDestino(amb string, res usuario.Resolvido) string {
+func (m *Motor) rotuloDestino(amb string, res usuario.Resolvido) string {
 	con := map[string]string{dominio.ConectorFlexscan: "Flexscan", dominio.ConectorPnT: "PnT"}[res.Conector]
 	if amb == dominio.AmbienteReal {
-		return fmt.Sprintf("REAL · %s · %s %s", con, usuario.Corretora(res.Destino), res.Conta)
+		return fmt.Sprintf("REAL · %s · %s %s", con, m.nomeCorretora(res.Destino), res.Conta)
 	}
 	return "Simulador · " + con
 }

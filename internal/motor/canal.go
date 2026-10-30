@@ -8,7 +8,6 @@ import (
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
-	"gammaquant.com.br/kalman-ordens/internal/usuario"
 )
 
 // O conector da operação fora do ar no meio dela (SPEC-ORDENS v1.28 §3, 30/10). A operação usa
@@ -169,7 +168,7 @@ func (m *Motor) suspender(op *operacao, motivo string, desde time.Time) {
 // resumoParaMao: o que o usuário precisa para agir à mão (o evento SUSPENSA e o /saude).
 func (m *Motor) resumoParaMao(op *operacao) map[string]any {
 	pos := op.posicao()
-	d := map[string]any{"conector": op.conector(), "corretora": usuario.Corretora(op.Destino), "corretora_codigo": op.Destino,
+	d := map[string]any{"conector": op.conector(), "corretora": m.nomeCorretora(op.Destino), "corretora_codigo": op.Destino,
 		"conta": op.Conta, "simbolo": op.Simbolo, "posicao": pos, "lado": nil, "qtd": abs(pos), "preco_medio": nil, "stop": nil}
 	if pos != 0 {
 		d["lado"] = map[bool]string{true: "C", false: "V"}[pos > 0]
@@ -187,7 +186,7 @@ func (m *Motor) resumoParaMao(op *operacao) map[string]any {
 func (m *Motor) textoCanalFora(op *operacao, motivo string, desde time.Time) string {
 	var b strings.Builder
 	pos := op.posicao()
-	corretora := usuario.Corretora(op.Destino)
+	corretora := m.nomeCorretora(op.Destino)
 	if corretora == "" {
 		corretora = fmt.Sprintf("corretora %d", op.Destino)
 	}

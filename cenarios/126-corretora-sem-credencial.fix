@@ -14,6 +14,9 @@ usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124
 usuario 9 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"9001"}}
 habilita 8 ambiente=REAL conectores=flexscan
 habilita 9 ambiente=REAL conectores=flexscan
+# uid 10: CORSeqId 77, não declarado em REAL_FLEXSCAN_CORRETORAS nem das de sempre
+usuario 10 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":77,"CCONroConta":"7001"}}
+habilita 10 ambiente=REAL conectores=flexscan
 
 preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
 aguarda_logon
@@ -25,6 +28,8 @@ entrada 12601 C uid=9 ambiente=REAL
 resposta aceito=false codigo=CORRETORA_SEM_CREDENCIAL
 flx_ambiente REAL:CMC
 flx_nada
+http GET /usuarios/10/destino?ambiente=REAL
+resposta ambientes.REAL.codigo=DESTINO_INVALIDO "ambientes.REAL.motivo=~outra entra em REAL_FLEXSCAN_CORRETORAS"
 http GET /usuarios/8/destino?ambiente=REAL
 resposta ambientes.REAL.pode_enviar=true
 entrada 12602 C uid=8 ambiente=REAL
