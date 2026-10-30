@@ -13,8 +13,11 @@ import (
 // (5) sem ele: FLEXSCAN_WEBHOOK_ATRASADO (não crítico) e uma falta. faltasCriticas faltas seguidas:
 // FLEXSCAN_WEBHOOK_SEM_CHEGAR (crítico) e a conferência do cadastro roda na hora. Um webhook de
 // qualquer ordem zera as faltas e resolve os dois alertas. Sem o receptor ligado, nada disso.
+// v1.29: as faltas seguidas são FLEXSCAN_WEBHOOK_FALTAS_N (3); e uma mudança espontânea sem webhook
+// já pede a conferência na hora (no máximo uma por intervaloConfEvento; a das faltas seguidas, sempre).
 
-const faltasCriticas = 3
+// intervaloConfEvento: entre duas conferências pedidas por indício de webhook faltando.
+const intervaloConfEvento = time.Minute
 
 // Motivos da espera (vão no texto do alerta).
 const (
@@ -74,9 +77,12 @@ func (p *Ponte) conferirEsperas(agora time.Time) {
 		av = append(av, func(p *Ponte) {
 			p.ouv.Alertar("FLEXSCAN_WEBHOOK_ATRASADO", "FLEXSCAN_WEBHOOK_ATRASADO", "[flexscan] "+texto)
 		})
-		if faltas >= faltasCriticas && !p.whCritico {
+		if o.whEsperaMotivo == esperaMudanca {
+			p.pedirConferenciaLocked(agora, "mudanca sem webhook", true)
+		}
+		if faltas >= p.cfg.FaltasWebhook && !p.whCritico {
 			p.whCritico = true
-			p.proxConfWebhook = time.Time{} // a conferência do cadastro no próximo Tick
+			p.pedirConferenciaLocked(agora, fmt.Sprintf("%d esperas sem webhook", faltas), false)
 			av = append(av, func(p *Ponte) {
 				p.ouv.Alertar("FLEXSCAN_WEBHOOK_SEM_CHEGAR", "FLEXSCAN_WEBHOOK_SEM_CHEGAR",
 					fmt.Sprintf("[flexscan] %d esperas seguidas sem webhook (a ultima: %s): so a consulta segura as execucoes; conferindo o cadastro do webhook agora", faltas, texto))
@@ -86,5 +92,17 @@ func (p *Ponte) conferirEsperas(agora time.Time) {
 	p.mu.Unlock()
 	for _, f := range av {
 		f(p)
+	}
+}
+
+// pedirConferenciaLocked (v1.29): a conferência do cadastro no próximo Tick, por indício de webhook
+// faltando; a da mudança sem webhook (espacar) no máximo uma por intervaloConfEvento; a das faltas
+// seguidas, sempre.
+func (p *Ponte) pedirConferenciaLocked(agora time.Time, por string, espacar bool) {
+	if p.cfg.WebhookURL == "" || (espacar && !p.ultConfWebhook.IsZero() && agora.Sub(p.ultConfWebhook) < intervaloConfEvento) {
+		return
+	}
+	if p.conferirPor == "" {
+		p.conferirPor = por
 	}
 }

@@ -69,9 +69,15 @@ type Config struct {
 	DiaDePregao func(time.Time) bool
 	// v1.28 §3: FLEXSCAN_SEM_RESPOSTA_N pedidos seguidos sem resposta = sem sessão (0 = não derruba)
 	SemRespostaMax int
+	// v1.29: FLEXSCAN_WEBHOOK_FALTAS_N esperas seguidas sem webhook = FLEXSCAN_WEBHOOK_SEM_CHEGAR e a
+	// conferência na hora (0 = o padrão, 3)
+	FaltasWebhook int
 }
 
 func (c *Config) padroes() {
+	if c.FaltasWebhook <= 0 {
+		c.FaltasWebhook = 3
+	}
 	if c.Agenda == nil {
 		a := AgendaSempre
 		c.Agenda = &a
@@ -106,9 +112,7 @@ func (c *Config) padroes() {
 	if c.EsperaLogin <= 0 {
 		c.EsperaLogin = 30 * time.Second
 	}
-	if c.ConfereWebhook <= 0 {
-		c.ConfereWebhook = 10 * time.Minute
-	}
+	// v1.29: ConfereWebhook 0 = sem a conferência periódica (por evento: abertura, login, webhook faltando)
 }
 
 // passosPost (v1.21): a consulta ativa do POST começa depois da espera, com os mesmos intervalos.
@@ -221,8 +225,11 @@ type Ponte struct {
 	webhookCad        *bool
 	webhookConfEm     time.Time
 	webhookRecadEm    time.Time
-	proxConfWebhook   time.Time // relógio do serviço; zero = conferir no próximo Tick logado
+	proxConfWebhook   time.Time // relógio do serviço: a próxima periódica (só com ConfereWebhook > 0)
 	conferindoWebhook bool
+	// v1.29: a conferência pedida por um evento (o motivo; vazio = nenhuma) e a hora da última
+	conferirPor    string
+	ultConfWebhook time.Time
 
 	// v1.28 (agenda.go): o motor tem operação viva neste conector; a ponte dorme (token vencido fora
 	// da janela, sem alerta); o dia da renovação e o da conferência da abertura já feitas
@@ -284,6 +291,8 @@ func (p *Ponte) registrarLogin(motivo string, err error, dur time.Duration) {
 	p.mu.Lock()
 	p.ultLogin = map[string]any{"em": agora.In(relogio.Fuso).Format(formatoEmTrafego), "motivo": motivo, "resultado": resultado}
 	if err == nil {
+		// v1.29: depois de cada login, a conferência do cadastro do webhook
+		p.conferirPor = "login " + motivo
 		// v1.28: acordou; o login de hoje a partir da abertura vale pela renovação da abertura
 		p.dormindo, p.acordada = false, false
 		if a := p.cfg.Agenda; a.devida(a.inicioDoDia(), agora, pregao) {
@@ -600,15 +609,22 @@ func (p *Ponte) Tick() {
 	p.conferirEsperas(agora)
 	p.mu.Lock()
 	if p.cfg.WebhookURL != "" && !p.conferindoWebhook {
-		// a conferência obrigatória da abertura (uma por dia de pregão), ou a periódica
+		// v1.29: por evento — a da abertura (uma por dia de pregão), a pedida (depois de cada login,
+		// ou com indício de webhook faltando) e, só com FLEXSCAN_WEBHOOK_CONFERIR_MIN > 0, a periódica
 		a := p.cfg.Agenda
 		abertura := a.devida(a.ConferirAbertura, agora, pregao) && p.diaConfAbertura != diaDe(agora)
-		if abertura || p.proxConfWebhook.IsZero() || !agora.Before(p.proxConfWebhook) {
+		periodica := p.cfg.ConfereWebhook > 0 && !agora.Before(p.proxConfWebhook)
+		if abertura || periodica || p.conferirPor != "" {
 			if abertura {
 				p.diaConfAbertura = diaDe(agora)
 			}
+			slog.Info("flexscan: conferência do webhook", "por", map[bool]string{true: "abertura", false: map[bool]string{true: p.conferirPor, false: "periodica"}[p.conferirPor != ""]}[abertura])
+			p.conferirPor = ""
 			p.conferindoWebhook = true
-			p.proxConfWebhook = agora.Add(p.cfg.ConfereWebhook)
+			p.ultConfWebhook = agora
+			if p.cfg.ConfereWebhook > 0 {
+				p.proxConfWebhook = agora.Add(p.cfg.ConfereWebhook)
+			}
 			p.enfileirarLocked(prioConsulta, "", p.conferirWebhook)
 		}
 	}

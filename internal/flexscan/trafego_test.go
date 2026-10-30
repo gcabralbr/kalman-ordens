@@ -40,9 +40,10 @@ func TestTrafegoBufferDesdeLimite(t *testing.T) {
 	}
 }
 
-// A conferência do cadastro do webhook: 10 min por padrão, FLEXSCAN_WEBHOOK_CONFERIR_MIN muda.
+// A conferência periódica do cadastro do webhook: desligada por padrão desde a v1.29 (a conferência é
+// por evento); FLEXSCAN_WEBHOOK_CONFERIR_MIN liga.
 func TestConferenciaWebhookPadrao(t *testing.T) {
-	if c := ConfigDe(config.Novo(map[string]string{})); c.ConfereWebhook != 10*time.Minute {
+	if c := ConfigDe(config.Novo(map[string]string{})); c.ConfereWebhook != 0 || c.FaltasWebhook != 3 {
 		t.Fatalf("padrão: %s", c.ConfereWebhook)
 	}
 	if c := ConfigDe(config.Novo(map[string]string{"FLEXSCAN_WEBHOOK_CONFERIR_MIN": "3"})); c.ConfereWebhook != 3*time.Minute {
@@ -50,8 +51,8 @@ func TestConferenciaWebhookPadrao(t *testing.T) {
 	}
 	var c Config
 	c.padroes()
-	if c.ConfereWebhook != 10*time.Minute {
-		t.Fatalf("padroes: %s", c.ConfereWebhook)
+	if c.ConfereWebhook != 0 || c.FaltasWebhook != 3 {
+		t.Fatalf("padroes: %s %d", c.ConfereWebhook, c.FaltasWebhook)
 	}
 }
 

@@ -32,6 +32,7 @@ dois está errado e a correção é discutida, não contornada no código.
 | `hora AAAA-MM-DD HH:MM:SS` | hora inicial do relógio do serviço (America/Sao_Paulo) |
 | `config CHAVE=valor` | sobrescreve a configuração do serviço (mesmas chaves do service.env) |
 | `usuario UID hml\|prd JSON` | a configuração do usuário no GQ (`usutxtconfig` / `usutxtconfigprd`; o JSON é o resto da linha, cru); `usuario UID ausente` apaga a linha. No `_comum.fix` e no cabeçalho vale antes de o serviço subir; no corpo, na hora |
+| `gq UID hml\|prd JSON` | (v1.29) como `usuario`, só no corpo, mas sem avisar o serviço: o GQ gravou e o cache do motor só vê na recarga (`CACHE_USUARIOS_S`) ou no `/destino` |
 | `habilita UID [posicao_max=N] [qtd_max=N]` / `desabilita UID` | a habilitação do uid (o que a CLI faria); mesma regra de quando vale |
 
 ## Relógio e preço

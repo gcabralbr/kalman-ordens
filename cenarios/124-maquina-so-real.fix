@@ -1,0 +1,36 @@
+cenario 124 A máquina só com o REAL (a .51, v1.29, SPEC-AMBIENTES D2 revisada): no SIMULADOR todo usuário é paper — o /destino mostra o paper como paper e recusa com clareza a configuração de SIMULADOR que aponta para um conector; o REAL segue normal
+hora 2026-10-30 10:00:00
+config ORDENS_AMBIENTE=
+config AMBIENTES_PERMITIDOS=REAL
+config REAL_FLEXSCAN_URL=falso
+config REAL_UIDS=8
+config REAL_CONTAS=715124
+config REAL_LIMITE_QTD_ORDEM=1
+config REAL_LIMITE_PERDA_DIA_PTS=300
+config REAL_LIMITE_ENTRADAS_DIA=10
+# uid 8: a configuração de SIMULADOR aponta para a Flexscan (o simulador dela); a de REAL, a Capital
+usuario 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
+usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
+habilita 8 ambiente=REAL conectores=flexscan
+# uid 9: o paper do GQ no SIMULADOR
+usuario 9 hml {"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+saude ambientes_permitidos.0=REAL ambientes_permitidos.#=1
+
+http GET /usuarios/8/destino
+resposta ambientes.SIMULADOR.codigo=AMBIENTE_NAO_PERMITIDO ambientes.SIMULADOR.pode_enviar=false "ambientes.SIMULADOR.motivo=~no SIMULADOR todo usuario e paper" ambientes.SIMULADOR.destino=CONECTOR
+resposta ambientes.REAL.pode_enviar=true ambientes.REAL.conta=715124 ambientes.REAL.canal=NO_AR
+http GET /usuarios/9/destino?ambiente=SIMULADOR
+resposta ambientes.SIMULADOR.destino=PAPER ambientes.SIMULADOR.codigo=DESTINO_PAPER ambientes.SIMULADOR.pode_enviar=false
+
+# a entrada no SIMULADOR é recusada pela máquina; a do REAL vai à Flexscan de produção, na Capital
+entrada 12401 C uid=8 ambiente=SIMULADOR
+resposta aceito=false codigo=AMBIENTE_NAO_PERMITIDO
+entrada 12402 C uid=8 ambiente=REAL
+resposta aceito=true ambiente=REAL
+flx_ambiente REAL
+flx_recebe POST name=KM-E-12402-1 account=715124

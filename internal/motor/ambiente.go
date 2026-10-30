@@ -96,6 +96,14 @@ func (m *Motor) conferirAmbientePedido(op *operacao, bruto, oque string) {
 func (m *Motor) DestinoDoUsuario(uid int, ambientes []string) (Resposta, error) {
 	r := map[string]any{}
 	m.Fazer(func() {
+		// v1.29: a configuração atual (habilitação e GQ), sem o cache: o /destino só é chamado ao abrir
+		// a tela e ao ligar "Enviar ordens"; o que leu atualiza o cache da entrada
+		if err := m.lerUsuarioAgora(uid); err != nil {
+			for _, amb := range ambientes {
+				r[amb] = destinoIndisponivel(err)
+			}
+			return
+		}
 		for _, amb := range ambientes {
 			r[amb] = m.destinoDaEntrada(uid, amb)
 		}
@@ -165,8 +173,35 @@ func (m *Motor) destinoDaEntrada(uid int, amb string) map[string]any {
 			falhar(simples("SEM_SESSAO", fmt.Sprintf("conector %s sem sessão: %s", nomeConector(res.Conector), motivo)))
 		}
 	}
+	// v1.29 (SPEC-AMBIENTES D2 revisada): no SIMULADOR todo usuário é paper; a máquina que não roda o
+	// SIMULADOR (a .51, só REAL) mostra o paper como paper e recusa com clareza a configuração de
+	// SIMULADOR que aponta para um conector
+	if amb == dominio.AmbienteSimulador && !m.p.Amb.Permitidos[amb] {
+		if hml, _, achou, e := m.configUsuarioDo(uid); e == nil && achou {
+			// só para classificar a coluna: sem a trava das contas de simulador (esta máquina não as tem)
+			rg := usuario.Regras{Ambiente: amb, Flexscan: true, PnTNoSimulador: true}
+			r2, f2 := usuario.ResolverCom(rg, hml, []string{dominio.ConectorPnT, dominio.ConectorFlexscan})
+			switch {
+			case f2.Paper():
+				d["destino"], d["rotulo"], d["codigo"], d["motivo"] = "PAPER", "Simulador · paper", f2.Codigo, f2.Motivo
+			case f2 == nil || f2.Codigo == "CONTA_AMBIENTE":
+				d["destino"] = "CONECTOR"
+				if f2 == nil {
+					d["conector"], d["corretora"], d["corretora_codigo"], d["conta"] = r2.Conector, usuario.Corretora(r2.Destino), r2.Destino, r2.Conta
+				}
+				d["motivo"] = "no SIMULADOR todo usuario e paper: esta maquina nao roda o SIMULADOR e o simulador da Flexscan e so para os testes da .53; ponha o destino do usuario no paper do GQ"
+			}
+		}
+	}
 	d["pode_enviar"] = d["destino"] == "CONECTOR" && d["codigo"] == nil
 	return d
+}
+
+// destinoIndisponivel: a configuração do usuário não pôde ser lida (banco).
+func destinoIndisponivel(err error) map[string]any {
+	return map[string]any{"destino": nil, "conector": nil, "corretora": nil, "corretora_codigo": nil, "conta": nil,
+		"habilitado": false, "permitido": false, "pode_enviar": false, "codigo": "CONFIG_USUARIO_INDISPONIVEL",
+		"motivo": "configuracao do usuario ilegivel: " + err.Error(), "rotulo": nil, "canal": nil}
 }
 
 // rotuloDestino: o texto da tela do Kalman ("Simulador · Flexscan", "REAL · Flexscan · Capital 715124").

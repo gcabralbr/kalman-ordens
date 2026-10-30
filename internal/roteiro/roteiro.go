@@ -55,7 +55,7 @@ var verbos = map[string]int{
 	"entrada":           -1, "saida": -1, "stop": -1, "http": -1, "http_async": -1, "http_aguarda": 0, "metrica": -1, "resposta": -1, "saude": -1,
 	"evento": -1, "sem_evento": -1, "conta_eventos": -1, "alerta": 1, "sem_alerta": 1,
 	"aguarda_logon": -1, "derruba_sessao": 0, "reinicia_servico": 0, "banco_erro_dado": -1, "banco_descarta": 0, "quarentena_resolver": -1, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
-	"usuario": -1, "habilita": -1, "desabilita": 1,
+	"usuario": -1, "habilita": -1, "desabilita": 1, "gq": -1,
 	"pnt_recusa_logon": 1, "pnt_aceita_logon": 0, "aguarda_recusas": 1, "pnt_espera_seq": 1, "pnt_esquece": 1,
 	"corrompe_store": 0, "descarta": -1, "sinal": -1,
 	// SPEC-FLEXSCAN-v1: a Flexscan falsa (config FLEXSCAN_URL=falso)
@@ -331,6 +331,16 @@ func (l *leitor) expandir(ls []linha, params map[string]string, capturas map[str
 			return nil, fmt.Errorf("%s: verbo desconhecido %q", ln.origem, verbo)
 		}
 		p := Passo{Origem: ln.origem, Verbo: verbo}
+		if verbo == "gq" {
+			// v1.29: gq UID hml|prd JSON — o GQ grava a configuração sem avisar o serviço
+			pp, err := passoUsuario(texto, ln.origem)
+			if err != nil {
+				return nil, err
+			}
+			pp.Verbo = "gq"
+			r = append(r, pp)
+			continue
+		}
 		if verbosDePreparo[verbo] {
 			pp, err := passoPreparo(texto, ln.origem, toks)
 			if err != nil {

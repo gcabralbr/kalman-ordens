@@ -1,0 +1,41 @@
+cenario 123 O /destino lê a configuração atual do GQ, sem o cache (v1.29): o GQ troca o destino sem avisar o serviço (a recarga do cache é de hora em hora aqui) e o /destino já mostra a troca; o que ele leu passa a valer para a entrada
+hora 2026-10-30 10:00:00
+config ORDENS_AMBIENTE=
+config AMBIENTES_PERMITIDOS=SIM
+config FLEXSCAN_URL=falso
+config CACHE_USUARIOS_S=3600
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+usuario 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+http GET /usuarios/8/destino?ambiente=SIMULADOR
+resposta ambientes.SIMULADOR.destino=CONECTOR ambientes.SIMULADOR.conta=S-1117150 ambientes.SIMULADOR.pode_enviar=true ambientes.SIMULADOR.canal=NO_AR
+
+# o GQ põe o uid 8 no paper, sem avisar o serviço: o /destino mostra na hora
+gq 8 hml {"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}
+http GET /usuarios/8/destino?ambiente=SIMULADOR
+resposta ambientes.SIMULADOR.destino=PAPER ambientes.SIMULADOR.codigo=DESTINO_PAPER ambientes.SIMULADOR.pode_enviar=false
+# a entrada usa o que o /destino leu
+entrada 12301 C uid=8 ambiente=SIMULADOR
+resposta aceito=false codigo=DESTINO_PAPER
+flx_nada
+
+# e de volta à Flexscan, numa conta fora da trava do SIMULADOR: o /destino e a entrada dão o mesmo código
+gq 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-2222222"}}
+http GET /usuarios/8/destino?ambiente=SIMULADOR
+resposta ambientes.SIMULADOR.codigo=CONTA_AMBIENTE ambientes.SIMULADOR.pode_enviar=false
+entrada 12302 C uid=8 ambiente=SIMULADOR
+resposta aceito=false codigo=CONTA_AMBIENTE
+alerta CONTA_AMBIENTE
+# a conta de volta: aceita, na conta do GQ
+gq 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
+http GET /usuarios/8/destino?ambiente=SIMULADOR
+resposta ambientes.SIMULADOR.pode_enviar=true
+entrada 12303 C uid=8 ambiente=SIMULADOR
+resposta aceito=true
+flx_recebe POST name=KM-E-12303-1 account=S-1117150

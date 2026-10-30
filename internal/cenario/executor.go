@@ -242,7 +242,7 @@ func (e *Executor) usuario(p roteiro.Passo) error {
 		return fmt.Errorf("uid %q", p.Args[0])
 	}
 	switch p.Verbo {
-	case "usuario":
+	case "usuario", "gq":
 		u, ok := e.falha.Repositorio.(repo.UsuariosDeTeste)
 		if !ok {
 			return fmt.Errorf("o backend não aceita usuários de teste")
@@ -673,6 +673,14 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return e.contrato(p.Args)
 	case "sinal":
 		return e.sinal(p)
+	case "gq":
+		// v1.29: o GQ grava a configuração do usuário por fora, sem avisar: o cache do motor só a vê
+		// na recarga (CACHE_USUARIOS_S) ou no /destino
+		if err := e.usuario(p); err != nil {
+			return err
+		}
+		e.ocioso()
+		return nil
 	case "usuario", "habilita", "desabilita":
 		if err := e.usuario(p); err != nil {
 			return err

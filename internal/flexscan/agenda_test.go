@@ -177,3 +177,57 @@ func TestAgendaPartidaForaDaJanela(t *testing.T) {
 		t.Fatalf("fora da janela, só o login da partida: %+v", ls)
 	}
 }
+
+// v1.29: sem a periódica (FLEXSCAN_WEBHOOK_CONFERIR_MIN=0, o padrão), a conferência do webhook é por
+// evento: depois de cada login e na abertura; nada entre eles.
+func TestConferenciaPorEvento(t *testing.T) {
+	rel := relogio.NovoControlado(time.Date(2026, 10, 29, 18, 0, 0, 0, relogio.Fuso)) // quinta
+	f := falso.Novo("flx_evento", "senha-evento", rel.Agora)
+	defer f.Parar()
+	f.CadastrarWebhook("https://kalman.exemplo/flexscan/webhook/segredo", "order.all", "algo.changed")
+	ag, _ := LerAgenda("08:00-18:30", "08:15", "08:30")
+	p := Nova(Config{URL: f.URL(), Usuario: "flx_evento", Senha: "senha-evento", Timeout: time.Second, Agenda: &ag,
+		WebhookURL: "https://kalman.exemplo/flexscan/webhook/segredo", RenovarAntes: 30 * time.Minute}, &ouvinteTeste{}, rel)
+	p.Iniciar()
+	defer p.Parar()
+	esperar(t, p.Logado)
+	var visto int64
+	conferencias := func() (n int, logins []string) {
+		esperar(t, func() bool { return !p.Ocupada() })
+		ls, ult, _ := p.Trafego(visto, 10000)
+		visto = ult
+		for _, l := range ls {
+			switch {
+			case l.Tipo == TrafegoWebhookCadastro && strings.HasPrefix(l.Resumo, "conferencia"):
+				n++
+			case l.Tipo == TrafegoLogin:
+				logins = append(logins, strings.Fields(l.Resumo)[0])
+			}
+		}
+		return
+	}
+	ate := func(dias, h, m int) {
+		alvo := time.Date(2026, 10, 29+dias, h, m, 0, 0, relogio.Fuso)
+		for rel.Agora().Before(alvo) {
+			rel.Avancar(time.Minute)
+			p.Tick()
+			esperar(t, func() bool { return !p.Ocupada() })
+		}
+	}
+	ate(0, 18, 29)
+	if n, l := conferencias(); n != 1 || fmt.Sprint(l) != "[partida]" {
+		t.Fatalf("18:00–18:29: %d conferência(s), logins %v; esperava a do login da partida", n, l)
+	}
+	ate(0, 23, 59)
+	if n, _ := conferencias(); n != 0 {
+		t.Fatalf("noite: %d", n)
+	}
+	ate(1, 8, 29)
+	if n, l := conferencias(); n != 1 || fmt.Sprint(l) != "[reconexao]" {
+		t.Fatalf("00:00–08:29: %d conferência(s), logins %v; esperava a do login das 08:00", n, l)
+	}
+	ate(1, 12, 0)
+	if n, _ := conferencias(); n != 1 {
+		t.Fatalf("08:30–12:00: %d conferência(s); esperava só a da abertura", n)
+	}
+}

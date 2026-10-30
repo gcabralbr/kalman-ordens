@@ -31,12 +31,14 @@ func ConfigDe(c config.Config) Config {
 		// v1.21
 		PrimeiraConsulta: time.Duration(c.Inteiro("FLEXSCAN_PRIMEIRA_CONSULTA_MS", 200)) * time.Millisecond,
 		WebhookURL:       c.Texto("FLEXSCAN_WEBHOOK_URL", ""),
-		ConfereWebhook:   time.Duration(c.Inteiro("FLEXSCAN_WEBHOOK_CONFERIR_MIN", 10)) * time.Minute,
+		// v1.29: 0 = sem a periódica (a conferência é por evento: abertura, login, webhook faltando)
+		ConfereWebhook: time.Duration(c.Inteiro("FLEXSCAN_WEBHOOK_CONFERIR_MIN", 0)) * time.Minute,
 		// v1.22
 		EsperaWebhook: c.Segundos("FLEXSCAN_WEBHOOK_ESPERA_S", 5),
 		// v1.28: a agenda (o erro de formato é conferido na partida, AgendaDe)
 		Agenda:         agendaOuSempre(AgendaDe(c)),
 		SemRespostaMax: c.Inteiro("FLEXSCAN_SEM_RESPOSTA_N", 3),
+		FaltasWebhook:  c.Inteiro("FLEXSCAN_WEBHOOK_FALTAS_N", 3),
 	}
 }
 

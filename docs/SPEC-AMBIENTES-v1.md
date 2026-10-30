@@ -181,7 +181,7 @@ instância separada.** Elas compartilham o processo, o banco, a API e a fonte de
 
 | | .53 (DEV) | .51 (PROD) |
 |---|---|---|
-| `AMBIENTES_PERMITIDOS` | `SIM`. `SIM,REAL` só durante os testes de REAL, depois volta | `SIM,REAL` (D2): o SIMULADOR (paper para os comuns, simulador externo para quem tiver um) e o REAL |
+| `AMBIENTES_PERMITIDOS` | `SIM`. `SIM,REAL` só durante os testes de REAL, depois volta | `REAL` (D2 revisada, 30/10): só a instância REAL; no SIMULADOR todo usuário é paper, e o paper não passa pelo serviço |
 | `REAL_UIDS` | um uid de teste (ex.: `5725`) | `*`, e quem decide é a habilitação REAL de cada uid |
 | `REAL_CONTAS` | a conta real desse uid | `*`, com a trava cruzada (§4) |
 | `REAL_LIMITE_QTD_ORDEM` | `1` | o de produção, informado pelo responsável antes do passo 5 (D3) |
@@ -391,14 +391,39 @@ ambientes e não há o que desempatar.
 - **D1 (revisada):** no SIMULADOR, quem decide entre paper e ordens é o `usutxtconfig` (§0.1). O
   9999 com a conta QUANT é paper. Um simulador externo manda as ordens com `ambiente: SIMULADOR`.
   O serviço expõe o destino resolvido (§4.3), e o PnT só opera no REAL.
-- **D2:** a .51 roda os dois ambientes: o SIMULADOR (paper para os comuns, simulador externo para
-  quem tiver um) e o REAL.
+- **D2 (revisada em 30/10):**
+  - O simulador da Flexscan serve só aos testes do responsável na .53.
+  - **Todo usuário em SIMULADOR é paper**, e o paper não passa pelo serviço.
+  - **A .51 roda só a instância REAL** (`AMBIENTES_PERMITIDOS=REAL`).
+  - Na máquina que não roda o SIMULADOR, o `/destino` (v1.29) responde assim:
+    - um usuário paper aparece como paper (`DESTINO_PAPER`);
+    - uma configuração de SIMULADOR que aponta para um conector recebe uma recusa clara:
+      `AMBIENTE_NAO_PERMITIDO`, com o motivo "no SIMULADOR todo usuario e paper: esta maquina nao
+      roda o SIMULADOR e o simulador da Flexscan e so para os testes da .53; ponha o destino do
+      usuario no paper do GQ" (roteiro 124).
+  - A entrada do SIMULADOR nessa máquina é recusada pelo teto (`AMBIENTE_NAO_PERMITIDO`).
 - **D3:** o responsável informa os limites REAL de produção antes do passo 5. As três chaves
   continuam obrigatórias, e o serviço não sobe sem elas.
-- **D4:** a Flexscan de produção terá um usuário de API **dedicado ao kalman-ordens**, nunca usado
-  para logar no GQ. O GQ redefine os webhooks do usuário em que loga: foi o que apagou o nosso
-  cadastro no simulador. O responsável põe as credenciais direto no `service.env` da .51. O IP de
-  origem do webhook de produção será observado pelo tráfego (v1.24).
+- **D4 (revisada em 30/10):** na produção, a Flexscan usa um usuário **guarda-chuva por corretora**
+  (ex.: `cmc_...`, `btg_...`), com a conta do cliente em cada ordem (`account`).
+  - **As credenciais REAL são escolhidas pela corretora da operação:** o `Robo.CORSeqId` gravado na
+    entrada (`destino`) aponta as credenciais.
+  - **Cada corretora tem o seu login, token, cadastro do webhook (com a rota e o segredo dela),
+    tráfego e conciliação.** A conciliação pergunta as contas das operações daquela corretora com as
+    credenciais dela.
+  - **O kalman-ordens usa guarda-chuvas próprios** (ex.: `cmc_kalman`), nunca os do GX. O GQ redefine
+    os webhooks do usuário em que loga: foi o que apagou o nosso cadastro no simulador.
+  - O responsável põe as credenciais direto no `service.env` da .51. O IP de origem do webhook de
+    produção será observado pelo tráfego (v1.24).
+  - **Implementação:** o passo 2b do §8, que ainda não foi feito. Hoje o REAL tem uma credencial
+    Flexscan só (`REAL_FLEXSCAN_*`).
+- **D5 (30/10): a .53 nunca usa um guarda-chuva de produção que a .51 também usa.** O cadastro do
+  webhook da .53 tomaria o da .51, e o mesmo vale para o GQ. No teste REAL na .53 (passo 4), uma de
+  duas:
+  - **um usuário de teste separado** (outro guarda-chuva da mesma corretora);
+  - **ou a .53 sem cadastrar webhook:** `REAL_FLEXSCAN_WEBHOOK_URL` vazia, e então não confere nem
+    recadastra. Com `REAL_FLEXSCAN_WEBHOOK_ENDERECO` vazio, sem receptor: só a consulta (os fills
+    pela consulta periódica de 5 s).
 
 ## 8. Plano de migração (a partir de hoje: .53 só SIMULADOR)
 
@@ -415,8 +440,9 @@ Cada passo é um pacote, com o fluxo de sempre:
 | **1. v1.25: ambiente no contrato e na operação** | migração 0014 (`ambiente` na operação e na habilitação); campo `ambiente` aceito; `AMBIENTES_PERMITIDOS`, `REAL_UIDS`, `REAL_CONTAS` e os limites REAL; a coluna do GQ pelo ambiente; o PAPER (§0.1); o `GET /usuarios/{uid}/destino` (§4.3); as recusas do §5; `ORDENS_AMBIENTE=HML` equivalente; CLI e API da habilitação por ambiente. Os conectores de hoje são os do SIMULADOR, e o PnT continua aceito nele **só na equivalência** (`ORDENS_AMBIENTE=HML`, que os roteiros usam) | igual a hoje: `SIM` e o padrão SIMULADOR. Um pedido REAL é recusado (`AMBIENTE_NAO_PERMITIDO`) | este SPEC aprovado |
 | **2. v1.26: conectores por ambiente** | chaves `REAL_` (as sem prefixo continuam SIMULADOR); duas pontes Flexscan; a sessão FIX só no REAL (`CONECTOR_AMBIENTE` no SIMULADOR); webhook por caminho; posição, conciliação, parada, disjuntor, `/saude`, tráfego e ao vivo por ambiente; os roteiros do PnT passam a rodar no REAL das falsas | igual (as chaves `REAL_` vazias; o PnT já está desligado) | passo 1 |
 | **3. Kalman manda `ambiente`** | o contrato do §7.2 no Kalman: o destino na ativação (D1) e o `ambiente` em todo pedido | sai o `AMBIENTE_PADRAO` (sem o campo = recusa). Os testes no simulador da corretora entram pela sessão SIMULADOR | passo 1 (o Kalman pode começar a mandar o campo logo depois do passo 1) |
-| **4. REAL de teste na .53** | `AMBIENTES_PERMITIDOS=SIM,REAL`, um uid, uma conta, 1 contrato e as credenciais REAL; o ensaio do §6 no pregão, com o responsável | volta a `SIM` no fim do teste | passos 2 e 3; D4 |
-| **5. .51 (PROD)** | instalação, `service.env` de produção, habilitações REAL e os limites de produção; `ORDENS_AMBIENTE` removida (o serviço não sobe com ela) | — | passo 4; D2 e D3 |
+| **2b. Credenciais REAL por corretora (D4 revisada)** | no REAL, uma ponte Flexscan por corretora: `REAL_FLEXSCAN_CORRETORAS` (ex.: `88:CMC,85:BTG`) e as chaves `REAL_FLEXSCAN_<NOME>_URL/_USUARIO/_SENHA/_WEBHOOK_SEGREDO/_WEBHOOK_PREFIXO/_WEBHOOK_URL/_ESTADO_LOGIN`; a entrada escolhe a ponte pelo `CORSeqId` (corretora sem credencial: recusa `CORRETORA_SEM_CREDENCIAL`, também no `/destino`); saída, stop, conciliação e restart pela corretora gravada; o webhook com uma rota por corretora; `/saude`, tráfego e `canais` por corretora | igual | este SPEC revisado e aprovado |
+| **4. REAL de teste na .53** | `AMBIENTES_PERMITIDOS=SIM,REAL`, um uid, uma conta, 1 contrato e as credenciais REAL de um usuário de teste próprio (D5), ou sem cadastrar webhook; o ensaio do §6 no pregão, com o responsável | volta a `SIM` no fim do teste | passos 2, 2b e 3; D4 e D5 |
+| **5. .51 (PROD)** | instalação, `service.env` de produção (`AMBIENTES_PERMITIDOS=REAL`, D2 revisada; os guarda-chuvas próprios por corretora, D4), habilitações REAL e os limites de produção; `ORDENS_AMBIENTE` removida (o serviço não sobe com ela) | — | passo 4; D2, D3 e D4 |
 
 **O que a v1.25 (passo 1) entrega e o que fica para a v1.26:**
 - Com os conectores ainda num conjunto só, o serviço **não sobe** com o REAL em

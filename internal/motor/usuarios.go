@@ -162,3 +162,39 @@ func (m *Motor) configUsuarioDo(uid int) (string, string, bool, error) {
 	}
 	return hml, prd, achou, nil
 }
+
+// lerUsuarioAgora (v1.29): a habilitação (os dois ambientes) e a configuração do GQ do uid lidas do
+// banco agora, e o cache atualizado com elas (o /destino). Erro: o cache fica como estava.
+func (m *Motor) lerUsuarioAgora(uid int) error {
+	hab := map[chaveHab]dominio.Habilitacao{}
+	sem := map[chaveHab]bool{}
+	for _, amb := range []string{dominio.AmbienteSimulador, dominio.AmbienteReal} {
+		h, ok, err := m.repo.Habilitacao(uid, amb)
+		if err != nil {
+			return err
+		}
+		if ok {
+			hab[chaveHab{uid, amb}] = h
+		} else {
+			sem[chaveHab{uid, amb}] = true
+		}
+	}
+	hml, prd, achou, err := m.repo.ConfigUsuario(uid)
+	if err != nil {
+		return err
+	}
+	m.invalidarUsuario(uid)
+	c := m.usuarios
+	for k, h := range hab {
+		c.hab[k] = h
+	}
+	for k := range sem {
+		c.semHab[k] = true
+	}
+	if achou {
+		c.cfg[uid] = [2]string{hml, prd}
+	} else {
+		c.semCfg[uid] = true
+	}
+	return nil
+}
