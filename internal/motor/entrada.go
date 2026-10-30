@@ -57,14 +57,9 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if p.StopPts == nil || *p.StopPts <= 0 {
 		return nil, simples("SEM_STOP", "stop_pts ausente na ENTRADA: sem stop, não há ordem")
 	}
-	// PNT_DESLIGADO: o uid só habilitado no PnT nem chega à conta (sem CONTA_AMBIENTE); com os dois
-	// conectores, a escolha do GQ decide depois da conta
-	if m.p.PnTDesligado && !slices.Contains(hab.Conectores, dominio.ConectorFlexscan) {
-		if m.amb == dominio.AmbienteSimulador && !m.p.Amb.PnTNoSimulador() {
-			// v1.26: no SIMULADOR o PnT não existe (não é que esteja desligado)
-			return nil, simples("CONECTOR_AMBIENTE", "o PnT só opera no REAL (a HML do PnT é D-1)")
-		}
-		return nil, conectorDesligado()
+	// PNT_DESLIGADO: antes da conta (pntDesligadoAntes)
+	if r := m.pntDesligadoAntes(hab); r != nil {
+		return nil, r
 	}
 	if op := m.operacaoDo(p); op != nil {
 		// a idempotência (repetido) já tratou o reenvio; aqui só chega operação sem pedido guardado
@@ -233,12 +228,30 @@ func (m *Motor) verificarHabilitacao(p Pedido, amb string) (dominio.Habilitacao,
 		return h, simples("CONFIG_USUARIO_INDISPONIVEL", "habilitação ilegível")
 	}
 	if !ok || !h.Habilitado {
-		if len(m.p.Amb.Permitidos) == 1 {
-			return h, simples("UID_NAO_HABILITADO", fmt.Sprintf("uid %d não habilitado para ordens reais", *p.UID))
-		}
-		return h, simples("UID_NAO_HABILITADO", fmt.Sprintf("uid %d não habilitado no %s", *p.UID, amb))
+		return h, m.naoHabilitado(*p.UID, amb)
 	}
 	return h, nil
+}
+
+// naoHabilitado: a recusa do uid sem habilitação no ambiente (a entrada e o /destino).
+func (m *Motor) naoHabilitado(uid int, amb string) *recusa {
+	if len(m.p.Amb.Permitidos) == 1 {
+		return simples("UID_NAO_HABILITADO", fmt.Sprintf("uid %d não habilitado para ordens reais", uid))
+	}
+	return simples("UID_NAO_HABILITADO", fmt.Sprintf("uid %d não habilitado no %s", uid, amb))
+}
+
+// pntDesligadoAntes: o uid só habilitado no PnT, com o PnT desligado nesta instância, nem chega à
+// conta (sem CONTA_AMBIENTE); com os dois conectores, a escolha do GQ decide depois da conta.
+func (m *Motor) pntDesligadoAntes(hab dominio.Habilitacao) *recusa {
+	if !m.p.PnTDesligado || slices.Contains(hab.Conectores, dominio.ConectorFlexscan) {
+		return nil
+	}
+	if m.amb == dominio.AmbienteSimulador && !m.p.Amb.PnTNoSimulador() {
+		// v1.26: no SIMULADOR o PnT não existe (não é que esteja desligado)
+		return simples("CONECTOR_AMBIENTE", "o PnT só opera no REAL (a HML do PnT é D-1)")
+	}
+	return conectorDesligado()
 }
 
 // contaDoUsuario lê a configuração do usuário no GQ e resolve conta e destino no ambiente da ordem
@@ -582,5 +595,5 @@ func abs(x int) int {
 
 // conectorDesligado: a recusa da entrada de uid PNT com PNT_DESLIGADO (28/10).
 func conectorDesligado() *recusa {
-	return simples("CONECTOR_DESLIGADO", "conector PNT desligado nesta instancia (PNT_DESLIGADO)")
+	return simples("CONECTOR_DESLIGADO", "o PnT está desligado nesta máquina (PNT_DESLIGADO): as ordens pelo PnT não são aceitas")
 }

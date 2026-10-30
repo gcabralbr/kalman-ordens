@@ -79,7 +79,13 @@ contrato docs/SPEC-AMBIENTES-v1.md 4.3
 resposta ambientes.SIMULADOR.destino=CONECTOR ambientes.SIMULADOR.conector=FLEXSCAN ambientes.SIMULADOR.corretora=BTG ambientes.SIMULADOR.conta=S-1117150 ambientes.SIMULADOR.pode_enviar=true "ambientes.SIMULADOR.rotulo=Simulador · Flexscan"
 resposta ambientes.REAL.destino=null ambientes.REAL.permitido=false ambientes.REAL.pode_enviar=false ambientes.REAL.codigo=AMBIENTE_NAO_PERMITIDO
 http GET /usuarios/9/destino?ambiente=SIMULADOR
-resposta ambientes.SIMULADOR.destino=PAPER ambientes.SIMULADOR.pode_enviar=false ambientes.SIMULADOR.codigo=null "ambientes.SIMULADOR.rotulo=Simulador · paper"
+resposta ambientes.SIMULADOR.destino=PAPER ambientes.SIMULADOR.pode_enviar=false ambientes.SIMULADOR.codigo=DESTINO_PAPER "ambientes.SIMULADOR.rotulo=Simulador · paper"
+# v1.27: o /destino dá o mesmo código que a entrada daria (11804 DESTINO_PAPER, 11805 CONECTOR_AMBIENTE)
+http GET /usuarios/7/destino?ambiente=SIMULADOR
+resposta ambientes.SIMULADOR.destino=null ambientes.SIMULADOR.pode_enviar=false ambientes.SIMULADOR.codigo=CONECTOR_AMBIENTE ambientes.SIMULADOR.habilitado=true
+# sem habilitação: o código é o da habilitação, e a tela ainda vê para onde iria
+http GET /usuarios/8/destino?ambiente=REAL
+resposta ambientes.REAL.codigo=AMBIENTE_NAO_PERMITIDO ambientes.REAL.habilitado=false
 http GET /usuarios/8/destino?ambiente=X
 resposta _status=400
 # a habilitação é por ambiente: a do REAL não existe

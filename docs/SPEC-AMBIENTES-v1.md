@@ -232,6 +232,15 @@ elas vão.
 - `?ambiente=SIMULADOR` ou `?ambiente=REAL`; sem o parâmetro, os dois.
 - Roda as verificações 3 a 8 do §4.1, sem limites e sem posição, e devolve o resultado em vez de
   recusar.
+- **v1.27 (30/10): o código é o que a entrada daria.** O `/destino` roda na fila do motor da
+  instância, com as mesmas funções e o mesmo cache da entrada, na mesma ordem: o teto da máquina, a
+  habilitação do ambiente (`UID_NAO_HABILITADO`), o conector desligado nesta instância
+  (`CONECTOR_DESLIGADO`, item 7; `CONECTOR_AMBIENTE` para o PnT no SIMULADOR), a coluna do GQ com a
+  trava (`DESTINO_PAPER`, `CONTA_AMBIENTE`, `REAL_CONTA_NAO_PERMITIDA`...). `codigo` e `motivo` são os
+  da primeira que falha, iguais aos da recusa da entrada. Nada disso emite alerta (é consulta).
+- **Fora do `/destino`** ficam as condições do pedido (campos, `DUPLICADA`) e as do momento
+  (`PARADA`, `DIVERGENTE`, `SEM_SESSAO`, `CONCILIANDO`, o disjuntor, o símbolo, os limites, o preço):
+  `pode_enviar` verdadeiro diz que a configuração deixa; a entrada ainda pode ser recusada por elas.
 - Nunca lê nem devolve credencial. Do GQ, só o destino, o conector e a conta.
 - **A resposta é sempre 200.** Mesmo quando não dá para mandar ordem, ela traz `pode_enviar: false`
   e o motivo. Uid sem linha no GQ: os dois ambientes com `CONFIG_USUARIO_INVALIDA`.
@@ -249,9 +258,12 @@ elas vão.
 
 **Os campos:**
 - **`destino`:**
-  - `PAPER`: o 9999 com a conta QUANT; `pode_enviar` falso, `rotulo` "Simulador · paper";
+  - `PAPER`: o 9999 com a conta QUANT; `pode_enviar` falso, `codigo` `DESTINO_PAPER` (v1.27; antes
+    nulo), `rotulo` "Simulador · paper";
   - `CONECTOR`: o conector, a corretora e a conta preenchidos;
   - `null`: a configuração não resolve, e `codigo` e `motivo` dizem por quê.
+  - `destino`, `conector` e `conta` aparecem sempre que a coluna resolve, mesmo com um `codigo`
+    (ex.: sem habilitação, ou o PnT desligado): a tela mostra para onde iria e por que não vai.
 - **`permitido`:** a máquina aceita esse ambiente, esse uid e essa conta (§3).
 - **`habilitado`:** a habilitação do uid naquele ambiente (§4.2).
 - **`pode_enviar`:** destino `CONECTOR`, habilitado e permitido.

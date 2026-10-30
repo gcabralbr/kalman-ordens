@@ -21,6 +21,16 @@ saude flexscan.simbolo=WINZ26 flexscan.fonte.compartilhada=true flexscan.idade_p
 entrada 11401 C
 resposta aceito=false codigo=CONECTOR_DESLIGADO
 nada
+# v1.27: o /destino diz o mesmo antes da ativação (o 1450 da .53 em 30/10: aparecia pode_enviar true)
+http GET /usuarios/7/destino?ambiente=SIMULADOR
+resposta ambientes.SIMULADOR.pode_enviar=false ambientes.SIMULADOR.codigo=CONECTOR_DESLIGADO ambientes.SIMULADOR.habilitado=true ambientes.SIMULADOR.permitido=true
+http GET /usuarios/8/destino?ambiente=SIMULADOR
+resposta ambientes.SIMULADOR.pode_enviar=true ambientes.SIMULADOR.codigo=null ambientes.SIMULADOR.conector=FLEXSCAN
+# um uid sem habilitação: UID_NAO_HABILITADO nos dois
+http GET /usuarios/9/destino?ambiente=SIMULADOR
+resposta ambientes.SIMULADOR.pode_enviar=false ambientes.SIMULADOR.codigo=UID_NAO_HABILITADO
+entrada 11499 C uid=9
+resposta aceito=false codigo=UID_NAO_HABILITADO
 
 # a Flexscan: entrada, proteção, ajuste TRSP, saída
 executa COMPRADO_FLX OP=11402
