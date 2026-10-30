@@ -154,3 +154,26 @@ func TestAgendaDaPonte(t *testing.T) {
 	esperar(t, p.Logado)
 	quer("envio", contar(), map[string]int{"LOGIN:reconexao": 1})
 }
+
+// v1.28 (30/10, ajuste aprovado): a partida fora da janela loga uma vez (a instalação valida as
+// credenciais) e mais nada: nem conferência, nem renovação; o token vencido deixa a ponte dormindo.
+func TestAgendaPartidaForaDaJanela(t *testing.T) {
+	rel := relogio.NovoControlado(time.Date(2026, 10, 29, 19, 3, 0, 0, relogio.Fuso)) // quinta, depois da janela
+	f := falso.Novo("flx_partida", "senha-partida", rel.Agora)
+	defer f.Parar()
+	ag, _ := LerAgenda("08:00-18:30", "08:15", "08:30")
+	p := Nova(Config{URL: f.URL(), Usuario: "flx_partida", Senha: "senha-partida", Timeout: time.Second, Agenda: &ag,
+		WebhookURL: "https://kalman.exemplo/flexscan/webhook/segredo", ConfereWebhook: 10 * time.Minute, RenovarAntes: 30 * time.Minute}, &ouvinteTeste{}, rel)
+	p.Iniciar()
+	defer p.Parar()
+	esperar(t, p.Logado)
+	for i := 0; i < 4*60; i++ { // até 23:03
+		rel.Avancar(time.Minute)
+		p.Tick()
+		esperar(t, func() bool { return !p.Ocupada() })
+	}
+	ls, _, _ := p.Trafego(0, 1000)
+	if len(ls) != 1 || ls[0].Tipo != TrafegoLogin || !strings.HasPrefix(ls[0].Resumo, "partida") {
+		t.Fatalf("fora da janela, só o login da partida: %+v", ls)
+	}
+}

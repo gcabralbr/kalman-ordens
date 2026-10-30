@@ -300,11 +300,13 @@ func (p *Ponte) Iniciar() {
 		p.wg.Add(1)
 		go p.trabalhar()
 	}
-	// v1.28: o primeiro login é do Tick, pela agenda (fora da janela, sem ordem viva, não loga)
+	// v1.28: o login da partida sai sempre, mesmo fora da janela (a instalação valida as credenciais
+	// na hora); o resto é do Tick, pela agenda (fora da janela, sem ordem viva, a ponte não renova:
+	// o token vencido a deixa dormindo até a abertura)
 	p.mu.Lock()
 	p.proxLogin = p.rel.Agora()
 	p.mu.Unlock()
-	p.Tick()
+	p.tentarLogin()
 }
 
 // Parar encerra os trabalhadores (nada é cancelado na Flexscan: as ordens ficam na bolsa).

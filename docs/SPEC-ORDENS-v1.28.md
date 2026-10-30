@@ -28,8 +28,9 @@ serviço não sobe.
 4. **Fora da janela, sem ordem viva: nenhuma chamada à Flexscan.** Nem conferência, nem renovação,
    nem login. O token que vence fora da janela não é renovado: a ponte fica sem sessão, **sem
    alerta** (`dormindo: true`; o `SESSAO_CAIU` é só da queda de verdade), e loga no início da
-   janela (ou na conferência/renovação da abertura, o que vier primeiro). Uma partida fora da
-   janela também não loga.
+   janela (ou na conferência/renovação da abertura, o que vier primeiro). **A partida loga sempre**,
+   mesmo fora da janela (ajuste de 30/10: a instalação valida as credenciais na hora); fora da
+   janela, sem ordem viva, esse login é a única chamada.
 5. **Com ordem viva da Flexscan** (operação não encerrada do motor, ou ordem acompanhada pela ponte),
    a qualquer hora: tudo continua (consultas, conferência, renovação), por segurança.
 6. **Um envio do serviço com a ponte dormindo** (a saída, as ações do admin): a ponte loga na hora.
