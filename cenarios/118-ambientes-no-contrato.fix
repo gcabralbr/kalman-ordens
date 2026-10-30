@@ -75,7 +75,7 @@ evento ZERADA operacao_id=11806 ambiente=SIMULADOR
 
 # --- o destino resolvido (o Kalman consulta na ativação do dia), contra o contrato da SPEC
 http GET /usuarios/8/destino
-contrato docs/SPEC-AMBIENTES-v1.md 4.3
+contrato docs/SPEC-ORDENS-v1.28.md 3.2
 resposta ambientes.SIMULADOR.destino=CONECTOR ambientes.SIMULADOR.conector=FLEXSCAN ambientes.SIMULADOR.corretora=BTG ambientes.SIMULADOR.conta=S-1117150 ambientes.SIMULADOR.pode_enviar=true "ambientes.SIMULADOR.rotulo=Simulador · Flexscan"
 resposta ambientes.REAL.destino=null ambientes.REAL.permitido=false ambientes.REAL.pode_enviar=false ambientes.REAL.codigo=AMBIENTE_NAO_PERMITIDO
 http GET /usuarios/9/destino?ambiente=SIMULADOR

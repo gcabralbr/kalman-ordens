@@ -55,6 +55,8 @@ const ajuda = `uso: kalman-ordens <comando> [opções]
   zerar   -motivo X [-ambiente A] parada ZERAR (HTTP local)
   retomar -motivo X [-ambiente A] retira a parada (sempre manual)
   saude                           GET /saude
+  operacao confirmar -op N -posicao P -motivo X -por UID [-modulo M]
+                                  v1.28: a posição na corretora da operação SUSPENSA (com sinal; 0 = zerada fora: ENCERRADA_FORA)
   teste-posicao -conta C [-espera S]   bancada da HML: RequestForPositions (35=AN) pela sessão do serviço; imprime a resposta crua
   versao                          commit embutido no binário
 `
@@ -86,6 +88,8 @@ func executar(args []string, saida, erros io.Writer) int {
 		err = cli(config.DoAmbiente(), cmd, args)
 	case "usuario":
 		err = cliUsuario(config.DoAmbiente(), args, saida)
+	case "operacao":
+		err = cliOperacao(config.DoAmbiente(), args, saida)
 	case "historico":
 		err = cliHistorico(config.DoAmbiente(), args, saida)
 	case "quarentena":

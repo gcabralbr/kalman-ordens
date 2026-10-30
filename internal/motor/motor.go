@@ -71,6 +71,8 @@ const (
 // ordem = persistido + volátil.
 type ordem struct {
 	dominio.Ordem
+	// v1.28 §3: viva aqui e ausente na corretora na conciliação da volta do canal (operação suspensa)
+	ausenteNaVolta bool
 	// v1.13: 35=G enviados a esta 1014 (MaxReplaces 20771, padrão 100); no restart, recontados do
 	// kalmanordemevento. reservaAvisada: PROTECAO_RESERVA_REPLACES já publicado.
 	replaces         int
@@ -156,6 +158,13 @@ type operacao struct {
 	zeradaEm              time.Time // virada de mão (v1.10 L); zero depois de um restart
 	recriacoes            int       // recriações da 1014 na janela de 30 s (P8)
 	ultimaRecriacao       time.Time
+	// v1.28 §3 (canal.go): o que a conciliação da volta sugere (só em memória; recalculado a cada
+	// conciliação), a confirmação de posição 0 esperando o cancel da stop, e a única ordem que pode
+	// sair da operação suspensa (esse cancel)
+	sugestao       string
+	encerrandoFora bool
+	porFora        string
+	liberadas      map[*ordem]bool
 	// lote (v1.10 B): já gravada uma vez e a cópia da última gravação
 	persistida bool
 	gravada    dominio.Operacao
@@ -233,6 +242,9 @@ func (m *Motor) chaveUltimo(con, ticker string) string {
 }
 
 func (op *operacao) posicao() int {
+	if op.Estado == dominio.EncerradaFora {
+		return 0 // v1.28 §3: zerada fora do sistema (confirmada pelo admin)
+	}
 	s := 0
 	for _, o := range op.ordens {
 		s += o.posicao()
@@ -377,6 +389,9 @@ type Motor struct {
 	// FONTE_DEGRADADA dela
 	flx        Envio
 	flxJaLogou bool
+	// v1.28 §3 (canal.go): desde quando cada conector está fora do ar, e o motivo da última queda
+	canais     map[string]*estadoCanal
+	quedas     map[string]string
 	pregao     *pregao.Calendario // dia de pregão (a janela do FONTE_DEGRADADA)
 	precosFlx  preco.Fonte
 	vigenteFlx string
@@ -494,7 +509,7 @@ func NovoNoAmbiente(amb string, c config.Config, rel relogio.Relogio, r repo.Rep
 	m := &Motor{
 		amb: amb, ids: &contadorIDs{}, donos: &sync.Map{},
 		p: p, rel: rel, repo: repo.Medir(r), precos: f,
-		ultimos: map[string]ultimoPreco{}, massReqIDs: map[string]bool{},
+		ultimos: map[string]ultimoPreco{}, canais: map[string]*estadoCanal{}, quedas: map[string]string{}, massReqIDs: map[string]bool{},
 		p0: make(chan func(), capFilaP0), p1: make(chan func(), capFilaP1), p2: make(chan func(), capFilaP2),
 		fim:         make(chan struct{}),
 		execVistos:  map[string]bool{},
@@ -968,6 +983,7 @@ func (m *Motor) Caiu() {
 	}
 	m.entrarFIX(func() {
 		m.conciliando = false
+		m.registrarQueda(dominio.ConectorPnT, "a sessão FIX caiu")
 		m.al.Emitir("SESSAO_CAIU", "", "sessão FIX caiu", 0)
 	})
 }

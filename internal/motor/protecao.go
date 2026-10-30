@@ -14,7 +14,7 @@ import (
 
 // ajustarProtecao cria a 1014 ou faz o replace para a posição atual (Parte 3.4).
 func (m *Motor) ajustarProtecao(op *operacao) {
-	if op.Estado.Saindo() || op.Estado.Final() || op.saidaAposEntrada {
+	if op.Estado.Saindo() || op.Estado.Final() || op.saidaAposEntrada || !op.SuspensaEm.IsZero() {
 		return
 	}
 	pos := op.posicao()
@@ -124,7 +124,8 @@ func (m *Motor) protecaoRejeitada(op *operacao, texto string) {
 // Pega qualquer caminho que deixe a posição sem proteção, previsto ou não.
 func (m *Motor) verificarInvariante(agora time.Time) {
 	for _, op := range m.ops {
-		violada := !op.Estado.Final() && op.posicao() != 0 && op.viva(dominio.Saida) == nil && op.viva(dominio.Protecao) == nil
+		// v1.28 §3: a operação suspensa não recria nada (a stop cancelada fora é a sugestão da volta)
+		violada := !op.Estado.Final() && op.SuspensaEm.IsZero() && op.posicao() != 0 && op.viva(dominio.Saida) == nil && op.viva(dominio.Protecao) == nil
 		switch {
 		case !violada:
 			op.violacaoDesde = timeZero

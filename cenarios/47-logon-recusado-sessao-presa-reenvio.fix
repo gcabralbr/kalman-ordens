@@ -48,3 +48,8 @@ alerta CONCILIACAO
 saude sessao_logada=true posicao=1 divergente=false parada=null
 sem_alerta FIX_STORE_ILEGIVEL
 nada
+# v1.28 §3: os 61 s fora com a posição suspenderam a operação (CONECTOR_FORA_COM_POSICAO aos 30 s); na
+# volta a stop está viva: a sugestão, e nada sai até o admin confirmar
+evento ALERTA codigo=CONECTOR_FORA_COM_POSICAO operacao_id=4701
+evento ALERTA codigo=OPERACAO_SUSPENSA texto="~stop viva na corretora, sem fill"
+saude operacoes_suspensas.0.operacao_id=4701

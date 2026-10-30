@@ -259,7 +259,8 @@ func Handler(m *motor.Servico, espera time.Duration) http.Handler {
 		escrever(w, http.StatusOK, resp)
 	})
 	// ações de admin sobre uma operação (v1.7 A1): {motivo, por} obrigatórios; ?modulo= (ausente = KALMAN)
-	for rota, acao := range map[string]string{"encerrar": motor.AcaoEncerrar, "cancelar-entrada": motor.AcaoCancelarEntrada} {
+	// v1.28 §3: confirmar-posicao {posicao, motivo, por} na operação suspensa
+	for rota, acao := range map[string]string{"encerrar": motor.AcaoEncerrar, "cancelar-entrada": motor.AcaoCancelarEntrada, "confirmar-posicao": motor.AcaoConfirmarPosicao} {
 		acao := acao
 		mux.HandleFunc("POST /operacoes/{id}/"+rota, func(w http.ResponseWriter, r *http.Request) {
 			corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))

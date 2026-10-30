@@ -101,6 +101,9 @@ func (m *Motor) ajustarStop(id int64, a AjusteStop) (Resposta, *recusa) {
 		return nil, simples("CAMPO_INVALIDO", fmt.Sprintf("uid %d diferente do da operação (%d)", *a.UID, op.UID))
 	}
 	m.conferirAmbientePedido(op, a.Ambiente, "ajuste do stop")
+	if r := m.recusaCanal(op); r != nil {
+		return nil, r // v1.28 §3
+	}
 	if op.Estado.Saindo() || !op.SaidaPedidaEm.IsZero() || op.saidaAposEntrada {
 		return nil, simples("SEM_PROTECAO", "operação em saída")
 	}

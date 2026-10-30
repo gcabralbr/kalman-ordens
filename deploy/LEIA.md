@@ -641,6 +641,43 @@ da operação (`/eventos?modulo=KHML`).
 Testado em 19/10 07:57 (sem efeito) com um id inexistente: `encerrar` e `cancelar-entrada` com
 `?modulo=KHML` → `OPERACAO_INEXISTENTE`; sem `por` → `CAMPO_INVALIDO`.
 
+### 1.18 O conector caiu com posição aberta (v1.28, SPEC-ORDENS-v1.28 §3)
+
+O que o serviço faz sozinho:
+- Com o conector da operação fora (PnT caído, Flexscan sem token ou sem resposta) por mais de
+  `CONECTOR_FORA_TOLERANCIA_S` (30 s), a operação fica **SUSPENSA**.
+- O alerta crítico `CONECTOR_FORA_COM_POSICAO` traz a corretora, a conta, o lado, a quantidade, o
+  preço médio e a stop que segue valendo.
+- **O serviço não sai sozinho**, nem por outro conector.
+
+**Quem decide é o usuário.** Se quiser sair já, sai pela corretora: home broker, Profit ou mesa,
+na conta do alerta. A stop do serviço continua lá até ser cancelada: **ao zerar à mão, cancele também
+a stop**, senão ela abre posição se disparar.
+
+Quando o canal volta:
+- A conciliação **sugere** o caso no alerta crítico `OPERACAO_SUSPENSA` e em
+  `/saude.operacoes_suspensas`, por exemplo "stop cancelada fora sem fill: provável zeragem manual".
+- Nada sai da operação até a confirmação.
+
+Confira a posição na corretora e confirme:
+
+```bash
+kalman-ordens operacao confirmar -op 12101 -posicao 0 -motivo "zerada no home broker" -por 5725
+# -posicao com sinal: 1 comprado, -1 vendido, 0 zerada; -modulo M se não for KALMAN
+```
+
+O que cada resposta significa:
+- `ENCERRADA_FORA`: posição 0 e nada vivo lá. A operação fecha sem ordem.
+- `CANCELANDO_STOP`: posição 0, mas a stop do serviço ficou viva. O serviço manda só o cancelamento
+  dela, e a operação fecha `ENCERRADA_FORA` quando ele confirma.
+- `RETOMADA`: a posição é a do sistema. A operação volta ao normal, e a stop que sumiu é recriada.
+- `POSICAO_DIVERGENTE`: a posição não bate. A operação segue suspensa, com alerta `DIVERGENTE`.
+  Confira de novo.
+- `CONECTOR_FORA` / `CONCILIANDO`: o canal ainda não voltou, ou a conciliação ainda roda. Repita em
+  instantes.
+
+O mesmo vale por HTTP: `POST /operacoes/{id}/confirmar-posicao` com `{"posicao":0,"motivo":"...","por":N}`.
+
 ---
 
 ## 2. Checklist da F1 (SPEC v1 Parte 11.2)

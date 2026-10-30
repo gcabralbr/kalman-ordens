@@ -23,6 +23,8 @@ import (
 type AcaoAdmin struct {
 	Motivo string `json:"motivo"`
 	Por    *int   `json:"por"`
+	// v1.28 §3: só no confirmar-posicao — a posição na corretora, com sinal
+	Posicao *int `json:"posicao,omitempty"`
 }
 
 func (a AcaoAdmin) validar(maxMotivo int) *recusa {
@@ -78,6 +80,17 @@ func (m *Motor) acaoOperacao(acao, modulo string, id int64, a AcaoAdmin) (Respos
 	}
 	if op.Estado.Final() {
 		return nil, simples("OPERACAO_ENCERRADA", fmt.Sprintf("operação já encerrada (%s)", op.Estado))
+	}
+	// v1.28 §3: a confirmação da posição da operação suspensa; as outras ações não andam com o
+	// canal fora ou com a operação suspensa
+	if acao == AcaoConfirmarPosicao {
+		return m.confirmarPosicao(op, a)
+	}
+	if a.Posicao != nil {
+		return nil, simples("CAMPO_INVALIDO", "posicao só vale em confirmar-posicao")
+	}
+	if r := m.recusaCanal(op); r != nil {
+		return nil, r
 	}
 	if op.Estado.Saindo() || !op.SaidaPedidaEm.IsZero() || op.saidaAposEntrada {
 		return nil, simples("OPERACAO_EM_SAIDA", "a operação já está saindo (origem "+op.OrigemSaida+")")

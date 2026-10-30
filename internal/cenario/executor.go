@@ -1288,6 +1288,10 @@ func iguaisJSON(esperado string, v any) bool {
 	case bool:
 		return esperado == strconv.FormatBool(x)
 	case string:
+		// v1.28: "~trecho" = o texto contém o trecho (os alertas longos)
+		if strings.HasPrefix(esperado, "~") && len(esperado) > 1 {
+			return strings.Contains(x, esperado[1:])
+		}
 		return esperado == "*" || esperado == x || (esperado != "" && iguaisNumero(esperado, x))
 	default:
 		return esperado == "*"

@@ -238,8 +238,10 @@ elas vão.
   (`CONECTOR_DESLIGADO`, item 7; `CONECTOR_AMBIENTE` para o PnT no SIMULADOR), a coluna do GQ com a
   trava (`DESTINO_PAPER`, `CONTA_AMBIENTE`, `REAL_CONTA_NAO_PERMITIDA`...). `codigo` e `motivo` são os
   da primeira que falha, iguais aos da recusa da entrada. Nada disso emite alerta (é consulta).
+- **v1.28 (SPEC-ORDENS-v1.28 §3.2, o contrato atual):** o `canal` do conector resolvido; fora do ar,
+  `SEM_SESSAO` (o Kalman não pede enquanto o canal estiver fora).
 - **Fora do `/destino`** ficam as condições do pedido (campos, `DUPLICADA`) e as do momento
-  (`PARADA`, `DIVERGENTE`, `SEM_SESSAO`, `CONCILIANDO`, o disjuntor, o símbolo, os limites, o preço):
+  (`PARADA`, `DIVERGENTE`, `CONCILIANDO`, o disjuntor, o símbolo, os limites, o preço):
   `pode_enviar` verdadeiro diz que a configuração deixa; a entrada ainda pode ser recusada por elas.
 - Nunca lê nem devolve credencial. Do GQ, só o destino, o conector e a conta.
 - **A resposta é sempre 200.** Mesmo quando não dá para mandar ordem, ela traz `pode_enviar: false`

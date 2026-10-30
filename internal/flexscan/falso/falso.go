@@ -83,6 +83,7 @@ type Falso struct {
 	loginErro *Falha
 	espera    time.Duration // timeout: quanto o falso segura a resposta
 	agora     func() time.Time
+	foraDoAr  bool
 
 	// v1.21: o cadastro de webhooks do usuário, a falha programada da próxima chamada a ele (por
 	// método) e o "Order not found" do GET logo depois do POST (o apisim de 27/10)
@@ -109,6 +110,14 @@ func (f *Falso) Parar() { f.srv.Close() }
 func (f *Falso) EsperaTimeout(d time.Duration) { f.mu.Lock(); f.espera = d; f.mu.Unlock() }
 
 func (f *Falso) servir(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	fora := f.foraDoAr
+	f.mu.Unlock()
+	if fora {
+		// v1.28: a Flexscan fora do ar — todo pedido, login inclusive, 503
+		responder(w, http.StatusServiceUnavailable, map[string]any{"code": 503, "title": "Service Unavailable"})
+		return
+	}
 	if r.URL.Path == "/connect/login" && r.Method == http.MethodPost {
 		f.login(w, r)
 		return
@@ -182,6 +191,9 @@ func (f *Falso) login(w http.ResponseWriter, r *http.Request) {
 
 // Logins: quantos logins o falso atendeu.
 func (f *Falso) Logins() int { f.mu.Lock(); defer f.mu.Unlock(); return f.logins }
+
+// ForaDoAr (v1.28): a Flexscan responde 503 a todo pedido (login inclusive) até voltar.
+func (f *Falso) ForaDoAr(v bool) { f.mu.Lock(); f.foraDoAr = v; f.mu.Unlock() }
 
 // InvalidarTokens: todo token atual passa a dar 401 (o próximo pedido faz login de novo).
 func (f *Falso) InvalidarTokens() { f.mu.Lock(); f.tokens = map[string]time.Time{}; f.mu.Unlock() }

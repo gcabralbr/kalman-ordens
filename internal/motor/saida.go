@@ -41,6 +41,11 @@ func (m *Motor) pedirSaida(p Pedido) (Resposta, *recusa) {
 	}
 	m.conferirAmbientePedido(op, p.Ambiente, "saida")
 	m.conferirConta(op)
+	// v1.28 §3: o canal da operação fora do ar (ou a operação suspensa): recusa na hora, nada fica
+	// guardado; nem por outro conector
+	if r := m.recusaCanal(op); r != nil {
+		return nil, r
+	}
 	if !op.SaidaPedidaEm.IsZero() || op.saidaAposEntrada {
 		// saída já iniciada pelo serviço (stop, parada, zeragem...): o pedido do gestor é aceito
 		return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "ja_em_saida": true, "origem": op.OrigemSaida}, nil
@@ -93,6 +98,10 @@ func (m *Motor) intervaloRepreco(op *operacao) time.Duration {
 func (m *Motor) iniciarSaida(op *operacao, motivo, origem string) {
 	if op.Estado.Final() || op.Estado.Saindo() || op.saidaAposEntrada {
 		return
+	}
+	if !op.SuspensaEm.IsZero() {
+		slog.Warn("saída não iniciada: operação suspensa", "op", op.OperacaoID, "origem", origem, "motivo", motivo)
+		return // v1.28 §3
 	}
 	op.MotivoSaida, op.OrigemSaida, op.SaidaPedidaEm = motivo, origem, m.agora()
 	if e := op.viva(dominio.Entrada); e != nil {
@@ -266,6 +275,7 @@ func (m *Motor) zerada(op *operacao) {
 	if op.Estado.Final() {
 		return
 	}
+	m.limparSuspensao(op) // v1.28 §3: a stop executou (na queda, vista na volta): zerada de verdade
 	for _, o := range op.ordens {
 		// a que acabou de executar por completo (39=2 ainda não aplicado) não se cancela
 		if o.viva() && o.QtdExec < o.Qtd {

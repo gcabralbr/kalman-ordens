@@ -241,6 +241,9 @@ func (m *Motor) conciliar() {
 	for _, op := range m.ops {
 		for _, o := range op.ordens {
 			// só julga as que já existiam quando o mass status foi pedido
+			if !op.SuspensaEm.IsZero() {
+				continue // v1.28 §3: a operação suspensa não é julgada (marcarAusentesDaVolta)
+			}
 			if !o.viva() || vistas[o] || o.seq > m.massCorte || o.saidaNoMass {
 				continue // a saída com recusa terminal é decidida abaixo (v1.3 I1)
 			}
@@ -267,6 +270,22 @@ func (m *Motor) conciliar() {
 			if o.Papel == dominio.Entrada {
 				m.encerrarEntrada(op, "DESCONHECIDA", true)
 			}
+		}
+	}
+	// v1.28 §3: as ordens da operação suspensa que a corretora não tem (sem julgar); a confirmação de
+	// posição 0 esperando um cancel de ordem que sumiu termina aqui
+	for _, op := range m.ops {
+		if op.Estado.Final() || op.SuspensaEm.IsZero() {
+			continue
+		}
+		m.marcarAusentesDaVolta(op, vistas, !semResposta[op.Conta] && !m.massSemSessao[op.conector()])
+		if op.encerrandoFora {
+			for _, o := range op.ordens {
+				if o.viva() && o.ausenteNaVolta {
+					m.canceladaFora(o)
+				}
+			}
+			m.terminarForaSePronto(op)
 		}
 	}
 	for _, op := range m.ops {
@@ -296,7 +315,7 @@ func (m *Motor) conciliar() {
 	}
 	// posição ≠ 0 sem 1014 viva → cria a 1014 (7.2.4)
 	for _, op := range m.ops {
-		if op.Estado.Final() || op.Estado.Saindo() || op.posicao() == 0 || op.viva(dominio.Protecao) != nil {
+		if op.Estado.Final() || op.Estado.Saindo() || op.posicao() == 0 || op.viva(dominio.Protecao) != nil || !op.SuspensaEm.IsZero() {
 			continue
 		}
 		m.mudar(op, dominio.PosicionadaSemProtecao)
@@ -327,6 +346,7 @@ func (m *Motor) conciliar() {
 	}
 	m.al.Emitir("CONCILIACAO", "", texto, 0)
 	slog.Info("conciliação", "resumo", texto)
+	m.avaliarSuspensas(semResposta)
 }
 
 // reconstituir (v1.22): a 1014 e a saída saem antes da gravação do lote; se o processo cai entre o

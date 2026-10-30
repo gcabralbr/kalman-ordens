@@ -1,0 +1,89 @@
+cenario 120 O caminho gravado na operação (v1.28 §2): com uma operação aberta no PnT e outra na Flexscan, o GQ troca o Robo.Conector, a corretora e a conta dos dois usuários; o ajuste do stop, a saída e a zeragem seguem pelo conector, pela corretora e pela conta da entrada, inclusive depois de um restart; a conferência periódica só alerta (CONTA_ALTERADA_COM_POSICAO)
+hora 2026-10-30 10:00:00
+config FLEXSCAN_URL=falso
+config LIMITE_POSICAO_MAX=2
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+# uid 7: PnT, BTG (85), conta 12345; uid 8: Flexscan, BTG (85), conta S-1117150; os dois habilitados
+# nos dois conectores (o GQ escolhe)
+usuario 7 hml {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"12345"}}
+habilita 7 conectores=pnt,flexscan
+usuario 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=pnt,flexscan
+
+executa INICIO
+executa COMPRADO OP=12001
+# o bloco COMPRADO_FLX confere posicao=1: aqui por extenso
+entrada 12002 C uid=8
+resposta aceito=true
+flx_recebe POST name=KM-E-12002-1 qtty=1 ordType=2 price=130020 account=S-1117150 id=>FE
+flx_executa $FE preco=130010
+flx_webhook $FE
+evento ENTRADA_EXECUTADA operacao_id=12002 qtd=1 preco=130010
+flx_recebe POST name=KM-P-12002-1 qtty=1 ordType=4 stopPrice=129510 price=129410 account=S-1117150 id=>FP
+evento PROTEGIDA operacao_id=12002 preco_stop=129510
+saude posicao=2
+
+# --- o GQ troca tudo com as posições abertas: o 7 passa para a Flexscan, Capital (88), conta
+# S-7777777; o 8 para o PnT, Capital (88), conta 12345
+usuario 7 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"S-7777777"}}
+usuario 8 hml {"Robo":{"Conector":"PNT","CORSeqId":88,"CCONroConta":"12345"}}
+avanca 60s
+alerta CONTA_ALTERADA_COM_POSICAO
+alerta CONTA_ALTERADA_COM_POSICAO
+nada
+flx_nada
+
+# o ajuste do stop de cada uma, pelo caminho da entrada: o da 12001 é um 35=G no PnT (conta 12345),
+# o da 12002 um PUT na Flexscan
+stop 12001 preco=129800
+resposta aceito=true situacao=ENVIADO
+recebe 35=G 11=KM-P-12001-2 41=KM-P-12001-1 1=12345 116=12345 37=dsa.12001.P 847=1014 20828=129800 20829=129700
+envia @ER 11=KM-P-12001-2 41=KM-P-12001-1 37=dsa.12001.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+evento PROTECAO_AJUSTADA operacao_id=12001 preco_stop=129800
+stop 12002 preco=129800 uid=8
+resposta aceito=true situacao=ENVIADO
+flx_recebe PUT id=$FP stopPrice=129800
+evento PROTECAO_AJUSTADA operacao_id=12002 preco_stop=129800
+flx_nada
+nada
+
+# --- restart: cada operação volta com o caminho gravado; o mass status do PnT pergunta a conta da
+# operação (12345), nunca a nova do GQ; a da Flexscan concilia na conta S-1117150
+reinicia_servico
+aguarda_logon
+recebe 35=AF 585=9 1=12345 584=>MS
+envia @ER 11=KM-P-12001-2 37=dsa.12001.P 150=I 39=0 584=$MS 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+avanca 3s
+alerta CONCILIACAO
+saude posicao=2 divergente=false parada=null
+http GET /ordens/12001
+resposta conector=PNT conta=12345 destino=85
+http GET /ordens/12002
+resposta conector=FLEXSCAN conta=S-1117150 destino=85
+nada
+flx_nada
+avanca 60s
+alerta CONTA_ALTERADA_COM_POSICAO
+
+# a saída do gestor da 12001: cancel da 1014 e saída no PnT, conta 12345
+preco bid=130100 ask=130105 preco=130100
+saida 12001 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-12001-3 41=KM-P-12001-2 1=12345 116=12345
+envia @ER 11=KM-P-12001-3 41=KM-P-12001-2 37=dsa.12001.P 150=4 39=4 54=2 38=1 44=129700 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-12001-1 1=12345 116=12345 55=WINZ26 847=1031
+envia @ER 11=KM-S-12001-1 37=dsa.12001.S 150=F 39=2 54=2 38=1 44=130050 847=1031 32=1 31=130100 14=1 151=0 6=130100
+evento ZERADA operacao_id=12001 origem=GESTOR
+flx_nada
+
+# a zeragem (parada ZERAR) da 12002: cancel da stop e saída na Flexscan, conta S-1117150; nada no PnT
+http POST /parada {"modo":"ZERAR","origem":"ADMIN","motivo":"zeragem do roteiro","por":12}
+resposta aceito=true
+flx_recebe DELETE id=$FP
+flx_recebe POST name=KM-S-12002-1 account=S-1117150 id=>S2
+flx_executa $S2 preco=130100
+flx_webhook $S2
+evento ZERADA operacao_id=12002
+saude posicao=0
+nada

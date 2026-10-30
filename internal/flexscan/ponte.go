@@ -67,6 +67,8 @@ type Config struct {
 	Agenda *Agenda
 	// v1.28: o dia é de pregão (o calendário do motor, com os feriados); nil = seg–sex
 	DiaDePregao func(time.Time) bool
+	// v1.28 §3: FLEXSCAN_SEM_RESPOSTA_N pedidos seguidos sem resposta = sem sessão (0 = não derruba)
+	SemRespostaMax int
 }
 
 func (c *Config) padroes() {
@@ -585,6 +587,13 @@ func (p *Ponte) Tick() {
 	}
 	if !p.logado.Load() || !ativa {
 		return // fora da janela, sem ordem viva: nenhuma chamada à Flexscan
+	}
+	// v1.28 §3: a Flexscan sem resposta (FLEXSCAN_SEM_RESPOSTA_N pedidos seguidos) é queda de sessão:
+	// o motor vê o canal fora; a ponte tenta logar a cada FLEXSCAN_ESPERA_LOGIN_S até ela responder
+	if n := p.cli.semResposta.Load(); p.cfg.SemRespostaMax > 0 && int(n) >= p.cfg.SemRespostaMax {
+		p.cli.semResposta.Store(0)
+		p.semSessao(fmt.Sprintf("Flexscan sem resposta (%d pedidos seguidos)", n))
+		return
 	}
 	p.conferirEsperas(agora)
 	p.mu.Lock()

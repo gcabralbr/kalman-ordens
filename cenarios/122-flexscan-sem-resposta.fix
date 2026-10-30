@@ -1,0 +1,43 @@
+cenario 122 Flexscan sem resposta com posição aberta (v1.28 §3): FLEXSCAN_SEM_RESPOSTA_N pedidos seguidos sem resposta derrubam a sessão; o ajuste do stop é recusado na hora (CONECTOR_FORA); depois da tolerância a operação fica SUSPENSA; na volta, a stop viva na corretora é a sugestão e nada sai até o admin confirmar; a mesma posição retoma
+hora 2026-10-30 11:00:00
+config FLEXSCAN_URL=falso
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+usuario 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+executa COMPRADO_FLX OP=12201
+
+# a Flexscan para de responder: a consulta periódica da stop (5 s) acha 3 pedidos seguidos sem
+# resposta e a ponte fica sem sessão
+flx_fora_do_ar sim
+avanca 20s
+alerta SESSAO_CAIU
+saude flexscan.logado=false canais.FLEXSCAN.estado=FORA canais.FLEXSCAN.motivo="~Flexscan sem resposta"
+stop 12201 preco=129800 uid=8
+resposta aceito=false codigo=CONECTOR_FORA
+sem_alerta CONECTOR_FORA_COM_POSICAO
+avanca 30s
+evento ALERTA codigo=CONECTOR_FORA_COM_POSICAO texto="~o conector Flexscan esta fora do ar"
+evento SUSPENSA operacao_id=12201 conector=FLEXSCAN conta=S-1117150 posicao=1
+
+# a Flexscan volta: a ponte loga na próxima tentativa e concilia; a stop está viva lá
+flx_fora_do_ar nao
+avanca 31s
+saude flexscan.logado=true canais.FLEXSCAN.estado=NO_AR
+avanca 3s
+evento ALERTA codigo=OPERACAO_SUSPENSA texto="~stop viva na corretora, sem fill"
+sem_alerta DIVERGENTE
+flx_nada
+stop 12201 preco=129800 uid=8
+resposta aceito=false codigo=OPERACAO_SUSPENSA
+
+# a mesma posição: retoma; o ajuste do stop volta a sair
+http POST /operacoes/12201/confirmar-posicao {"posicao":1,"motivo":"conferi: segue comprado","por":12}
+resposta aceito=true codigo=RETOMADA
+flx_nada
+stop 12201 preco=129800 uid=8
+resposta aceito=true situacao=ENVIADO
+flx_recebe PUT id=$FP stopPrice=129800
+saude operacoes_suspensas.#=0

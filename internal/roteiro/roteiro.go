@@ -60,7 +60,7 @@ var verbos = map[string]int{
 	"corrompe_store": 0, "descarta": -1, "sinal": -1,
 	// SPEC-FLEXSCAN-v1: a Flexscan falsa (config FLEXSCAN_URL=falso)
 	"flx_recebe": -1, "flx_nada": 0, "flx_executa": -1, "flx_webhook": -1, "flx_webhook_corpo": -1, "flx_webhook_http": -1,
-	"flx_falha": -1, "flx_recusa_edicao": -1, "flx_cancela": 1, "flx_token_expira": 0, "flx_altera": -1, "flx_ordem": -1,
+	"flx_falha": -1, "flx_recusa_edicao": -1, "flx_cancela": 1, "flx_token_expira": 0, "flx_fora_do_ar": 1, "flx_altera": -1, "flx_ordem": -1,
 	"flx_login": 1, "flx_cria": -1, "flx_webhooks": -1, "flx_nao_achada": 1, "flx_trafego": -1, "flx_ambiente": 1, "flx_webhook_em": -1, "contrato": -1,
 }
 

@@ -37,6 +37,8 @@ var Catalogo = map[string]bool{
 	// SPEC-FLEXSCAN-v1
 	"FLEXSCAN_LOGIN": true, "FLEXSCAN_PERMISSAO": true, "FLEXSCAN_WEBHOOK_ATRASADO": false, "FLEXSCAN_WEBHOOK_INVALIDO": false,
 	"FLEXSCAN_WEBHOOK_INCOERENTE": true, "FLEXSCAN_WEBHOOK_AUSENTE": true, "FLEXSCAN_WEBHOOK_SEM_CHEGAR": true, "FLEXSCAN_ESTADO_INESPERADO": true,
+	// v1.28 §3: o conector da operação fora do ar
+	"CONECTOR_FORA_COM_POSICAO": true, "OPERACAO_SUSPENSA": true,
 }
 
 // Notificador entrega o alerta para fora (Telegram). Não pode bloquear.

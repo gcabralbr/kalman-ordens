@@ -111,7 +111,7 @@ func (m *Motor) DestinoDoUsuario(uid int, ambientes []string) (Resposta, error) 
 // mostra para onde iria).
 func (m *Motor) destinoDaEntrada(uid int, amb string) map[string]any {
 	d := map[string]any{"destino": nil, "conector": nil, "corretora": nil, "corretora_codigo": nil, "conta": nil,
-		"habilitado": false, "permitido": false, "pode_enviar": false, "codigo": nil, "motivo": nil, "rotulo": nil}
+		"habilitado": false, "permitido": false, "pode_enviar": false, "codigo": nil, "motivo": nil, "rotulo": nil, "canal": nil}
 	falhar := func(r *recusa) {
 		if r != nil && d["codigo"] == nil {
 			d["codigo"], d["motivo"] = r.codigo, r.motivo
@@ -157,6 +157,12 @@ func (m *Motor) destinoDaEntrada(uid int, amb string) map[string]any {
 		// o conector da coluna desligado nesta instância (item 7)
 		if res.Conector == dominio.ConectorPnT && m.p.PnTDesligado {
 			falhar(conectorDesligado())
+		}
+		// v1.28 §3: o canal do conector (a entrada sem sessão é SEM_SESSAO)
+		est, motivo, _ := m.canal(res.Conector)
+		d["canal"] = est
+		if est != canalNoAr {
+			falhar(simples("SEM_SESSAO", fmt.Sprintf("conector %s sem sessão: %s", nomeConector(res.Conector), motivo)))
 		}
 	}
 	d["pode_enviar"] = d["destino"] == "CONECTOR" && d["codigo"] == nil

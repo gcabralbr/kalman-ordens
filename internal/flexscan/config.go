@@ -35,7 +35,8 @@ func ConfigDe(c config.Config) Config {
 		// v1.22
 		EsperaWebhook: c.Segundos("FLEXSCAN_WEBHOOK_ESPERA_S", 5),
 		// v1.28: a agenda (o erro de formato é conferido na partida, AgendaDe)
-		Agenda: agendaOuSempre(AgendaDe(c)),
+		Agenda:         agendaOuSempre(AgendaDe(c)),
+		SemRespostaMax: c.Inteiro("FLEXSCAN_SEM_RESPOSTA_N", 3),
 	}
 }
 

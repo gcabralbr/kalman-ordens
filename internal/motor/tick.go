@@ -28,6 +28,7 @@ func (m *Motor) tick() {
 	m.observarPreco()
 	m.observarFonte()
 	m.marcarVivasFlexscan()
+	m.tickCanais(agora)
 	logadoPnT := m.logado(dominio.ConectorPnT)
 	// SPEC-FLEXSCAN-v1: a conciliação e as ações de tempo andam com qualquer conector com sessão;
 	// cada operação só age com o conector dela logado
@@ -71,7 +72,7 @@ func (m *Motor) tick() {
 			return
 		}
 		for _, op := range m.ops {
-			if !op.Estado.Final() && m.logado(op.conector()) {
+			if !op.Estado.Final() && op.SuspensaEm.IsZero() && m.logado(op.conector()) {
 				m.acoesDeTempo(op, agora)
 			}
 		}

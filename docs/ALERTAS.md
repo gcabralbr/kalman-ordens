@@ -68,6 +68,8 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `REAL_UID_NAO_PERMITIDO` | (SPEC-AMBIENTES-v1 §3) entrada REAL de uid fora de `REAL_UIDS` | sim |
 | `REAL_CONTA_NAO_PERMITIDA` | (SPEC-AMBIENTES-v1 §3) entrada REAL com a conta do `usutxtconfigprd` fora de `REAL_CONTAS` | sim |
 | `AMBIENTE_PEDIDO_DIVERGENTE` | (SPEC-AMBIENTES-v1 §1.2) saída ou ajuste do stop com `ambiente` diferente do gravado na operação: executado no gravado (nunca recusa a saída); por operação | sim |
+| `CONECTOR_FORA_COM_POSICAO` | (v1.28) o conector da operação está fora do ar há mais de `CONECTOR_FORA_TOLERANCIA_S` com posição ou ordem viva: a operação fica SUSPENSA; o texto traz corretora, conta, lado, quantidade, preço médio, a stop que segue valendo e a orientação de sair pela corretora (home broker, Profit, mesa); resolve na volta (vira `OPERACAO_SUSPENSA`) ou ao zerar | sim |
+| `OPERACAO_SUSPENSA` | (v1.28) o conector voltou e a operação segue SUSPENSA: a conciliação sugere o caso (ex.: "stop cancelada fora sem fill: provável zeragem manual") e o admin confirma a posição na corretora (`kalman-ordens operacao confirmar`); resolve com ENCERRADA_FORA, RETOMADA ou ZERADA | sim |
 | `CONTA_ALTERADA_COM_POSICAO` | a conta/destino do usuário no GQ mudou com posição aberta; a posição segue pela conta gravada na entrada; resolve ao zerar ou se voltar | sim |
 | `SAIDA_DIVERGENTE_NAO_EXECUTOU` | saída com ticker divergente não executou no timeout: não repete, decisão humana | sim |
 | `SAIDA_BLOQUEADA_PRECO_ANTIGO` | saída com ticker divergente e último preço do símbolo certo com mais de 60 s: não enviada, 1014 fica | sim |
@@ -139,6 +141,8 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `ENVIO_FALHOU` | a biblioteca recusou a mensagem antes do fio | não | `RECUSA_PNT` |
 | `SEM_POSICAO` | SAIDA sem posição real | não | `SEM_POSICAO` (não quando a operação já foi zerada pelo stop) |
 | `LADO_INCOMPATIVEL` | SAIDA com o lado que aumentaria a posição | não | `LADO_INCOMPATIVEL` |
+| `CONECTOR_FORA` | (v1.28 §3) SAIDA com o conector da operação fora do ar (sessão caída, sem token, sem resposta, desligado): recusada na hora, nada fica guardado, nem vai por outro conector | não | — |
+| `OPERACAO_SUSPENSA` | (v1.28 §3) SAIDA da operação suspensa (o conector caiu com posição): aguardando o admin confirmar a posição na corretora | não | — |
 | `RESULTADO_DESCONHECIDO` | (HTTP 503) motor não respondeu a tempo; consultar `GET /ordens/{id}` | não | — |
 
 ## Códigos de recusa do `POST /operacoes/{id}/stop` (ajuste da proteção, SPEC v1.4 K)
@@ -153,6 +157,8 @@ Nenhum conta para a parada automática; nenhum gera alerta.
 | `PROTECAO_DISPARADA` | a 1014 já disparou no PnT (39=B com 20807>0): quem decide são os fills |
 | `PROTECAO_LIMITE_REPLACES` | (v1.13) a 1014 já teve `REPLACES_1014_MAX − REPLACES_1014_RESERVA` replaces (95 de 100): a reserva fica para a saída por replace; o trailing segue pelo TRSP do gestor |
 | `SEM_PRECO` | sem bid/ask do símbolo da posição com até `PRECO_IDADE_MAX_S` para validar |
+| `CONECTOR_FORA` | (v1.28 §3) o conector da operação está fora do ar |
+| `OPERACAO_SUSPENSA` | (v1.28 §3) a operação está suspensa (o conector caiu com posição) |
 | `STOP_ALEM_DO_PRECO` | comprado com stop >= bid, ou vendido com stop <= ask (depois do arredondamento ao tick): a 1014 dispararia na hora; quem sai é o gestor |
 | `RESULTADO_DESCONHECIDO` | (HTTP 503) motor não respondeu a tempo; o pedido segue; reenviar o mesmo é inofensivo |
 
@@ -179,8 +185,9 @@ campo desconhecido no item, e `repetido: true` para o item igual a um já recebi
 
 ## Códigos de recusa das ações de admin (SPEC v1.7 A)
 
-`POST /operacoes/{id}/encerrar` e `POST /operacoes/{id}/cancelar-entrada`. Nenhum conta para a
-parada automática; nenhum gera alerta.
+`POST /operacoes/{id}/encerrar`, `POST /operacoes/{id}/cancelar-entrada` e (v1.28 §3)
+`POST /operacoes/{id}/confirmar-posicao`. Nenhum conta para a parada automática; nenhum gera alerta
+(a não ser o `DIVERGENTE` da posição divergente).
 
 | Código | Quando |
 |---|---|
@@ -192,6 +199,11 @@ parada automática; nenhum gera alerta.
 | `SIMBOLO_DIVERGENTE` | encerrar com a posição num contrato que não é mais o vigente e sem preço recente dele |
 | `SEM_ENTRADA_PENDENTE` | cancelar-entrada sem entrada viva |
 | `COM_POSICAO` | cancelar-entrada com a entrada já executada em parte (usar encerrar) |
+| `CONECTOR_FORA` | (v1.28) encerrar/cancelar-entrada com o conector da operação fora do ar; confirmar-posicao antes de o conector voltar |
+| `OPERACAO_SUSPENSA` | (v1.28) encerrar/cancelar-entrada na operação suspensa: confirmar a posição antes |
+| `OPERACAO_NAO_SUSPENSA` | (v1.28) confirmar-posicao numa operação que não está suspensa |
+| `CONCILIANDO` | (v1.28) confirmar-posicao com a conciliação da volta em curso: tentar de novo em instantes |
+| `POSICAO_DIVERGENTE` | (v1.28) confirmar-posicao com uma posição diferente de 0 e da do sistema: a operação segue suspensa; alerta `DIVERGENTE` com os números |
 | `QUARENTENA_PENDENTE` | (v1.13, `POST /retomar`) há linha na quarentena do banco sem resolução: `kalman-ordens quarentena listar/resolver` antes |
 | `RESULTADO_DESCONHECIDO` | (HTTP 503) motor não respondeu a tempo |
 
@@ -202,6 +214,10 @@ Respostas aceitas (`"aceito": true`, com `codigo` e `motivo`, SPEC v1.7 A4):
 | `ENCERRANDO` | encerrar aceito: saída iniciada com origem `ADMIN`; a operação fecha com `ZERADA` |
 | `CANCELANDO` | cancelar-entrada aceito: cancelamento enviado ao PnT |
 | `JA_CANCELANDO` | cancelar-entrada com o cancelamento já em curso: nada de novo |
+| `ENCERRADA_FORA` | (v1.28) confirmar-posicao 0 sem ordem viva na corretora: a operação fecha `ENCERRADA_FORA`, sem ordem |
+| `CANCELANDO_STOP` | (v1.28) confirmar-posicao 0 com a stop do serviço viva na corretora: o cancelamento dela foi enviado (a única ordem); a operação fecha `ENCERRADA_FORA` quando ele confirmar |
+| `JA_ENCERRANDO` | (v1.28) confirmar-posicao repetido com o cancelamento da stop em curso |
+| `RETOMADA` | (v1.28) confirmar-posicao com a posição do sistema: a operação volta ao fluxo normal (a stop ausente é recriada) |
 | `PARADA_ATIVA` | `POST /parada` aceito |
 | `RETOMADO` | `POST /retomar` aceito |
 

@@ -105,9 +105,14 @@ const (
 	Saindo                 EstadoOperacao = "SAINDO"
 	Zerada                 EstadoOperacao = "ZERADA"
 	EncerradaSemEntrada    EstadoOperacao = "ENCERRADA_SEM_ENTRADA"
+	// v1.28 §3: a posição foi zerada fora do sistema (home broker, Profit, mesa) com o conector fora
+	// do ar; o admin confirmou a posição 0 na corretora
+	EncerradaFora EstadoOperacao = "ENCERRADA_FORA"
 )
 
-func (e EstadoOperacao) Final() bool { return e == Zerada || e == EncerradaSemEntrada }
+func (e EstadoOperacao) Final() bool {
+	return e == Zerada || e == EncerradaSemEntrada || e == EncerradaFora
+}
 func (e EstadoOperacao) Saindo() bool {
 	return e == CancelandoProtecao || e == AguardandoStop || e == Saindo
 }
@@ -180,6 +185,10 @@ type Operacao struct {
 	PedidoEntrada, RespostaEntrada, PedidoSaida, RespostaSaida string
 	// POST /sinais (v1.10 §6): a posição da entrada e da saída na rajada do sinal (zero = avulsa).
 	SinalEntrada, SinalSaida Rajada
+	// v1.28 §3: o conector caiu com posição ou ordem viva — nada sai pela operação até o admin
+	// confirmar a posição na corretora (zero = não suspensa)
+	SuspensaEm     time.Time
+	SuspensaMotivo string
 }
 
 // Rajada: a posição de um item no envio de um sinal (POST /sinais, SPEC v1.10 §6). Posicao 0 =

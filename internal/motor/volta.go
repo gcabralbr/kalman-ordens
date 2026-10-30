@@ -440,6 +440,13 @@ func (m *Motor) devolverAoLote(l *repo.Lote) {
 
 // enfileirarEnvio: a mensagem sai depois do commit desta volta (despachar).
 func (m *Motor) enfileirarEnvio(e envioPendente) {
+	if m.bloqueadoNaSuspensao(e) {
+		// v1.28 §3: nada sai da operação suspensa (a rede de segurança das decisões automáticas)
+		if e.aoFalhar != nil {
+			e.aoFalhar()
+		}
+		return
+	}
 	e.pedidoEm, e.pedidoRotulo, e.decididoEm, e.decididoNo = m.pedidoEm, m.pedidoRotulo, time.Now(), m.agora()
 	m.pedidoEm = timeZero // a métrica do pedido mede só a primeira mensagem que ele causou
 	m.v.envios = append(m.v.envios, e)

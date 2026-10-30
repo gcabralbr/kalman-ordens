@@ -41,7 +41,8 @@ func inserir(tx *sql.Tx, cabeca string, ncol int, linhas [][]any, sufixo string)
 
 const colunasOp = `id, data, modulo, operacao_id, uid, conta, destino, conector, ambiente, simbolo, lado, qtd_pedida, stop_pts, stop_ajustado, stop_origem, stop_ajustado_origem, estado,
 	motivo_entrada, ts_decisao, motivo_saida, origem_saida, saida_pedida_em, divergente, pnl_pts, encerrou_entrada, contador_n,
-	pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, sinal_entrada, sinal_saida, criado_em, atualizado_em`
+	pedido_entrada, resposta_entrada, pedido_saida, resposta_saida, sinal_entrada, sinal_saida, criado_em, atualizado_em,
+	suspensa_em, suspensa_motivo`
 
 func linhaOp(o dominio.Operacao, agora time.Time) []any {
 	cn, _ := json.Marshal(o.ContadorN)
@@ -50,7 +51,8 @@ func linhaOp(o dominio.Operacao, agora time.Time) []any {
 		o.StopPts, nuloInt(o.StopAjustado), nulo(cortar(o.StopOrigem, 20)), nulo(cortar(o.StopAjustadoOrigem, 20)), string(o.Estado), nulo(cortar(o.MotivoEntrada, 20)), nulo(cortar(o.TsDecisao, 40)), nulo(cortar(o.MotivoSaida, 60)),
 		nulo(cortar(o.OrigemSaida, 30)),
 		utc(o.SaidaPedidaEm), o.Divergente, o.PnL.String(), o.EncerrouEntrada, string(cn), nulo(o.PedidoEntrada), nulo(o.RespostaEntrada),
-		nulo(o.PedidoSaida), nulo(o.RespostaSaida), rajadaSQL(o.SinalEntrada), rajadaSQL(o.SinalSaida), utc(o.CriadaEm), agora}
+		nulo(o.PedidoSaida), nulo(o.RespostaSaida), rajadaSQL(o.SinalEntrada), rajadaSQL(o.SinalSaida), utc(o.CriadaEm), agora,
+		utc(o.SuspensaEm), nulo(cortar(o.SuspensaMotivo, 255))}
 }
 
 const colunasOrdem = `id, data, modulo, uid, operacao_id, papel, conta, simbolo, clordid_base, clordid_atual, orderid37, secid198,
@@ -92,7 +94,8 @@ func (r *MariaDB) GravarLote(l *Lote) error {
 		origem_saida=VALUES(origem_saida), saida_pedida_em=VALUES(saida_pedida_em), divergente=VALUES(divergente), pnl_pts=VALUES(pnl_pts),
 		encerrou_entrada=VALUES(encerrou_entrada), contador_n=VALUES(contador_n), pedido_entrada=VALUES(pedido_entrada),
 		resposta_entrada=VALUES(resposta_entrada), pedido_saida=VALUES(pedido_saida), resposta_saida=VALUES(resposta_saida),
-		sinal_entrada=VALUES(sinal_entrada), sinal_saida=VALUES(sinal_saida), atualizado_em=VALUES(atualizado_em)`); err != nil {
+		sinal_entrada=VALUES(sinal_entrada), sinal_saida=VALUES(sinal_saida), atualizado_em=VALUES(atualizado_em),
+		suspensa_em=VALUES(suspensa_em), suspensa_motivo=VALUES(suspensa_motivo)`); err != nil {
 		return err
 	}
 	novas, velhas = nil, nil

@@ -144,6 +144,13 @@ func (e *Executor) flexscan(p roteiro.Passo) error {
 	case "flx_cancela":
 		e.flx.Cancelar(args[0])
 		return nil
+	case "flx_fora_do_ar":
+		// flx_fora_do_ar sim|nao (v1.28): a Flexscan falsa responde 503 a tudo, login inclusive
+		if len(args) != 1 || (args[0] != "sim" && args[0] != "nao") {
+			return fmt.Errorf("flx_fora_do_ar sim|nao")
+		}
+		e.flx.ForaDoAr(args[0] == "sim")
+		return nil
 	case "flx_token_expira":
 		e.flx.InvalidarTokens()
 		return nil

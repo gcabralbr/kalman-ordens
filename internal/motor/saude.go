@@ -63,6 +63,10 @@ func (m *Motor) saude() Resposta {
 		"ordens_vivas":         vivas,
 		"alertas_criticos":     m.al.Ativos(),
 		"fonte":                m.saudeFonte(),
+		// v1.28 §3: o estado de cada conector e as operações suspensas (o Kalman não pede saída
+		// nem ajuste enquanto o canal da operação estiver fora)
+		"canais":              m.canaisSaude(),
+		"operacoes_suspensas": m.suspensasSaude(),
 		"limites": map[string]any{
 			"entradas_hoje":                m.entradasHoje,
 			"entradas_ultimo_minuto":       len(m.entradasRec),
@@ -112,7 +116,16 @@ func (m *Motor) descrever(op *operacao) Resposta {
 	return Resposta{"existe": true, "modulo": op.Modulo, "operacao_id": op.OperacaoID, "estado": op.Estado, "divergente": op.Divergente, "posicao": op.posicao(),
 		"uid": op.UID, "conta": op.Conta, "destino": op.Destino, "conector": op.conector(), "ambiente": dominio.AmbienteDe(op.Ambiente), "simbolo": op.Simbolo,
 		"preco_medio_entrada": pe, "preco_medio_saida": ps, "motivo_saida": op.MotivoSaida, "origem_saida": op.OrigemSaida,
-		"pnl_pts": op.PnL, "preco_stop_ajustado": op.StopAjustado, "stop_origem": op.stopOrigem(), "ordens": os, "sinal": sinalDe(op)}
+		"pnl_pts": op.PnL, "preco_stop_ajustado": op.StopAjustado, "stop_origem": op.stopOrigem(), "ordens": os, "sinal": sinalDe(op),
+		"suspensa": suspensaDe(op)}
+}
+
+// suspensaDe (v1.28 §3): nulo = a operação não está suspensa.
+func suspensaDe(op *operacao) any {
+	if op.SuspensaEm.IsZero() {
+		return nil
+	}
+	return map[string]any{"desde": emBR(op.SuspensaEm), "motivo": op.SuspensaMotivo, "sugestao": nuloSeVazio(op.sugestao)}
 }
 
 // sinalDe (v1.10 §6): a posição da entrada e da saída nas rajadas dos sinais; nulo = avulsa.

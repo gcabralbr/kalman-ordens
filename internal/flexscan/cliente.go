@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -85,6 +86,9 @@ type cliente struct {
 	aoLogin func(motivo string, err error, dur time.Duration)
 	// v1.28: o relógio do token (o do serviço; o virtual nos roteiros)
 	agora func() time.Time
+	// v1.28 §3: pedidos seguidos sem resposta (erro de rede ou 502/503/504); zera com qualquer
+	// outra resposta
+	semResposta atomic.Int32
 }
 
 func novoCliente(url, usuario, senha string, timeout time.Duration, reqPorS float64, rajada int, guarda *guardaLogin) *cliente {
@@ -294,9 +298,16 @@ func (c *cliente) um(ctx context.Context, metodo, caminho string, corpo []byte, 
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
+		c.semResposta.Add(1)
 		return Resposta{Erro: errors.New(semURL(err))}
 	}
 	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		c.semResposta.Add(1)
+	default:
+		c.semResposta.Store(0)
+	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return Resposta{Erro: errors.New(semURL(err))}

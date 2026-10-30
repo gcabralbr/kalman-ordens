@@ -38,6 +38,7 @@ func (o *OuvinteFlexscan) Logou() {
 func (o *OuvinteFlexscan) Caiu(motivo string) {
 	m := o.m
 	m.entrarFIX(func() {
+		m.registrarQueda(dominio.ConectorFlexscan, motivo)
 		m.al.Emitir("SESSAO_CAIU", "SESSAO_CAIU:FLEXSCAN", "[flexscan] sem sessão: "+motivo, 0)
 	})
 }

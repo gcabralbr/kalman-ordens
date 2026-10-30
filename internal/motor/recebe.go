@@ -565,6 +565,13 @@ func (m *Motor) eraAjuste(op *operacao, o *ordem) bool {
 // ordemEncerrada: executada, cancelada ou expirada.
 func (m *Motor) ordemEncerrada(op *operacao, o *ordem, motivo string) {
 	o.cancelarApos = false
+	if op.encerrandoFora {
+		m.terminarForaSePronto(op) // v1.28 §3: o cancel da stop da confirmação de posição 0
+		return
+	}
+	if !op.SuspensaEm.IsZero() && o.Papel != dominio.Entrada {
+		return // v1.28 §3: nada automático na operação suspensa (nem recriar a stop)
+	}
 	switch o.Papel {
 	case dominio.Entrada:
 		m.encerrarEntrada(op, motivo, motivo == "EXECUTADA")

@@ -118,6 +118,9 @@ type Parametros struct {
 	Amb          Ambientes
 	ContasHML    []string
 	ConfereConta time.Duration
+	// v1.28 §3: o conector da operação fora do ar por mais que isto, com posição ou ordem viva → a
+	// operação fica SUSPENSA (CONECTOR_FORA_TOLERANCIA_S; 0 = na hora)
+	CanalForaTolerancia time.Duration
 	// SPEC-FLEXSCAN-v1: o conector Flexscan existe (FLEXSCAN_URL) e as contas de HML dele
 	Flexscan     bool
 	ContasHMLFlx []string
@@ -182,13 +185,14 @@ type Parametros struct {
 // Parametros lê tudo com os padrões da SPEC (v1 + v1.1).
 func (c Config) Parametros() Parametros {
 	p := Parametros{
-		Bolsa:            c.Texto("ORDENS_BOLSA", "BVMF"),
-		SenderLocationID: c.Texto("ORDENS_SENDER_LOCATION", ""),
-		ContasHML:        listaContas(c.Texto("ORDENS_CONTAS_HML", "")),
-		ConfereConta:     c.Segundos("CONFERE_CONTA_S", 60),
-		Flexscan:         c.Texto("FLEXSCAN_URL", "") != "",
-		PnTDesligado:     c.Bool("PNT_DESLIGADO", false),
-		ContasHMLFlx:     listaContas(c.Texto("FLEXSCAN_CONTAS_HML", "")),
+		Bolsa:               c.Texto("ORDENS_BOLSA", "BVMF"),
+		SenderLocationID:    c.Texto("ORDENS_SENDER_LOCATION", ""),
+		ContasHML:           listaContas(c.Texto("ORDENS_CONTAS_HML", "")),
+		ConfereConta:        c.Segundos("CONFERE_CONTA_S", 60),
+		CanalForaTolerancia: c.Segundos("CONECTOR_FORA_TOLERANCIA_S", 30),
+		Flexscan:            c.Texto("FLEXSCAN_URL", "") != "",
+		PnTDesligado:        c.Bool("PNT_DESLIGADO", false),
+		ContasHMLFlx:        listaContas(c.Texto("FLEXSCAN_CONTAS_HML", "")),
 
 		ColarEntrada:            c.Pontos("COLAR_ENTRADA_PTS", 15),
 		FolgaStop:               c.Pontos("FOLGA_STOP_PTS", 100),

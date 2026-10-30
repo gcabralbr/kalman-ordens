@@ -73,7 +73,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 | `http METODO /caminho [json]` | requisição livre |
 | `http_async METODO /caminho [json]` / `http_aguarda` | a requisição fica em curso enquanto o roteiro segue (ex.: `GET /pnt/ordens`, que espera as respostas do PnT falso ao AF); `http_aguarda` espera a resposta (tempo real, até 15 s) e ela vira a "última resposta" |
 | `metrica NOME [rotulo=valor ...] OP N` | `GET /metrics` (texto do Prometheus): a série `NOME` com exatamente esses rótulos (fora o `le`) tem valor `OP N` (`=`, `>=`, `>`, `<=`); os contadores somam em todos os roteiros do processo, então os roteiros usam `>=` |
-| `resposta campo=valor ...` | confere o corpo da última resposta HTTP (`parada.modo=BLOQUEAR`; `null`; `*` = presente; numa lista, `mensagens.0.msgtype` e `mensagens.#` = tamanho; resposta que é uma lista fica em `_lista`); `_status` é o código HTTP |
+| `resposta campo=valor ...` | confere o corpo da última resposta HTTP (`parada.modo=BLOQUEAR`; `null`; `*` = presente; `~trecho` = o texto contém o trecho (v1.28; também em `saude` e `evento`); numa lista, `mensagens.0.msgtype` e `mensagens.#` = tamanho; resposta que é uma lista fica em `_lista`); `_status` é o código HTTP |
 | `saude campo=valor ...` | `GET /saude` e confere |
 | `evento TIPO campo=valor ...` | existe em `GET /eventos` um evento desse tipo, ainda não casado, que bate; ele passa a contar como casado |
 | `sem_evento TIPO [campo=valor ...]` | nenhum evento não casado desse tipo |
@@ -141,6 +141,7 @@ protegida (capturas `FE` e `FP`). O `avanca` também move a ponte (consulta ativ
 | `flx_webhook ID [ID ...]` | o webhook com a lista de retratos (estratégia sorder) dessas ordens, na ordem dada |
 | `flx_webhook_corpo CORPO` | o webhook com o corpo cru (o resto da linha; `$NOME` resolvido) |
 | `flx_webhook_http METODO /caminho [corpo]` | um pedido qualquer ao receptor; `resposta _status=N` confere |
+| `flx_fora_do_ar sim\|nao` | (v1.28) a Flexscan falsa responde 503 a todo pedido, login inclusive, até `nao` |
 | `flx_falha timeout\|500\|400\|401\|403 [cria=1] [texto=...] [codigo=N]` | o próximo pedido de alteração falha assim; `timeout cria=1`: a ordem nasce (ou a edição/o cancel acontece) e a resposta se perde |
 | `flx_recusa_edicao ID [texto]` | a próxima edição (PUT) é recusada como a razão 4 do apisim (202, valores antigos, `clxRejReason` 4, `Text` "Edicao rejeitada, ...") |
 | `flx_cancela ID` | cancelamento que não foi nosso |
