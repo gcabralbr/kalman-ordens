@@ -96,7 +96,7 @@ func TestServirAtualizaDoInstalado(t *testing.T) {
 		"FIX_DIR": dirFix, "FIX_INICIO": "00:00:00", "FIX_FIM": "00:00:00", "FIX_RECONEXAO_S": "1",
 		"ORDENS_AMBIENTE": "HML", "ORDENS_CONTAS_HML": "12345", "ACUSUARIO_TABELA": "acusuario_teste",
 		"HTTP_ENDERECO": endereco, "PRECOS_URL": md.URL, "PRECOS_URL_FLEXSCAN": mdFlx.URL, "MASS_STATUS_SILENCIO_S": "0.5",
-		"FLEXSCAN_URL": flx.URL(), "FLEXSCAN_USUARIO": "flx_atualiza", "FLEXSCAN_SENHA": "senha-atualiza",
+		"FLEXSCAN_URL": flx.URL(), "FLEXSCAN_USUARIO": "flx_atualiza", "FLEXSCAN_SENHA": "senha-atualiza", "FLEXSCAN_JANELA": "sempre",
 		"FLEXSCAN_CONTAS_HML": "S-1117150", "FLEXSCAN_ESTADO_LOGIN": dirFix + "/flexscan-login.json",
 		"FLEXSCAN_WEBHOOK_ENDERECO": livre(), "FLEXSCAN_WEBHOOK_SEGREDO": "segredo-da-atualizacao-0123456789abcdef",
 	})

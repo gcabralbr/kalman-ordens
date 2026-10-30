@@ -547,7 +547,30 @@ func (m *Motor) Usar(e Envio) {
 }
 
 // UsarFlexscan liga o conector Flexscan (a ponte REST).
-func (m *Motor) UsarFlexscan(e Envio) { m.flx = e }
+func (m *Motor) UsarFlexscan(e Envio) {
+	m.flx = e
+	// v1.28: a agenda da ponte usa o dia de pregão do motor (com os feriados)
+	if c, ok := e.(interface{ UsarCalendario(func(time.Time) bool) }); ok {
+		c.UsarCalendario(func(t time.Time) bool { ok, _ := m.pregao.DiaDePregao(t); return ok })
+	}
+}
+
+// marcarVivasFlexscan (v1.28): a ponte fica ativa fora da janela enquanto houver operação não
+// encerrada da Flexscan (a conferência continua, por segurança).
+func (m *Motor) marcarVivasFlexscan() {
+	mv, ok := m.flx.(interface{ MarcarVivas(bool) })
+	if !ok {
+		return
+	}
+	vivas := false
+	for _, op := range m.ops {
+		if !op.Estado.Final() && op.conector() == dominio.ConectorFlexscan {
+			vivas = true
+			break
+		}
+	}
+	mv.MarcarVivas(vivas)
+}
 
 // DefinirURLsPrecos (v1.21): as URLs das fontes, só para o /saude (flx vazia = fonte única).
 func (m *Motor) DefinirURLsPrecos(pnt, flx string) { m.urlPrecos, m.urlPrecosFlx = pnt, flx }

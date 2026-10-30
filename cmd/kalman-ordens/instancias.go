@@ -128,6 +128,9 @@ func planejarInstancias(cfg config.Config, amb config.Ambientes) ([]*instancia, 
 			if c.Texto("FLEXSCAN_USUARIO", "") == "" || c.Texto("FLEXSCAN_SENHA", "") == "" {
 				return nil, fmt.Errorf("%s sem %s/%s", k("FLEXSCAN_URL"), k("FLEXSCAN_USUARIO"), k("FLEXSCAN_SENHA"))
 			}
+			if _, err := flexscan.AgendaDe(c); err != nil {
+				return nil, err // v1.28: a janela da Flexscan com formato errado não sobe
+			}
 		}
 	}
 	return lista, nil

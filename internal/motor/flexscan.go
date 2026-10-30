@@ -42,6 +42,16 @@ func (o *OuvinteFlexscan) Caiu(motivo string) {
 	})
 }
 
+// Adormeceu (v1.28): o token venceu fora da janela da Flexscan, sem ordem viva — sem sessão e sem
+// alerta; o login da abertura não é "sessão voltou".
+func (o *OuvinteFlexscan) Adormeceu(motivo string) {
+	m := o.m
+	m.entrarFIX(func() {
+		m.flxJaLogou = false
+		slog.Info("flexscan: sem sessão fora da janela", "motivo", motivo)
+	})
+}
+
 // Recebeu: um ExecutionReport (35=8) ou um 35=9 sintético da ponte.
 func (o *OuvinteFlexscan) Recebeu(msg pnt.Mensagem) {
 	m := o.m

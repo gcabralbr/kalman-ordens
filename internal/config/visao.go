@@ -29,6 +29,7 @@ var padroesReal = map[string]string{
 // chavesComRecuo: no REAL, a REAL_ se houver; senão a sem prefixo (a mesma bolsa, a mesma fonte).
 var chavesComRecuo = []string{
 	"ORDENS_BOLSA", "ORDENS_SENDER_LOCATION", "FLEXSCAN_BOLSA",
+	"FLEXSCAN_JANELA", "FLEXSCAN_RENOVAR_ABERTURA", "FLEXSCAN_CONFERIR_ABERTURA", // v1.28
 	"PRECOS_URL_FLEXSCAN", "PRECOS_SAUDE_URL_FLEXSCAN", "PRECOS_URL_PNT", "PRECOS_SAUDE_URL_PNT",
 }
 

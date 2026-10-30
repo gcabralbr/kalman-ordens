@@ -83,11 +83,13 @@ type cliente struct {
 	// v1.21: chamado a cada login que esta chamada fez (ou que a guarda barrou), com o motivo, o
 	// resultado e a duração; nunca com usuário, senha ou token
 	aoLogin func(motivo string, err error, dur time.Duration)
+	// v1.28: o relógio do token (o do serviço; o virtual nos roteiros)
+	agora func() time.Time
 }
 
 func novoCliente(url, usuario, senha string, timeout time.Duration, reqPorS float64, rajada int, guarda *guardaLogin) *cliente {
 	return &cliente{url: strings.TrimRight(url, "/"), usuario: usuario, senha: senha,
-		http: &http.Client{Timeout: timeout}, taxa: novoBalde(reqPorS, rajada), guarda: guarda}
+		http: &http.Client{Timeout: timeout}, taxa: novoBalde(reqPorS, rajada), guarda: guarda, agora: time.Now}
 }
 
 // ErroLogin: o login falhou; Definitivo = não adianta tentar de novo sem intervenção (senha
@@ -143,7 +145,7 @@ func (c *cliente) login(ctx context.Context, motivo string) error {
 
 	c.mu.Lock()
 	if err == nil {
-		c.token, c.expira, c.obtido = tok, exp, time.Now()
+		c.token, c.expira, c.obtido = tok, exp, c.agora()
 	}
 	c.errLogin = err
 	c.logando = nil
@@ -218,9 +220,9 @@ func (c *cliente) temToken(vidaMax time.Duration) bool {
 		return false
 	}
 	if !c.expira.IsZero() {
-		return time.Now().Before(c.expira)
+		return c.agora().Before(c.expira)
 	}
-	return time.Since(c.obtido) < vidaMax
+	return c.agora().Sub(c.obtido) < vidaMax
 }
 
 // renovarEm: quando renovar (exp − antes; sem exp, obtido + vida − antes).

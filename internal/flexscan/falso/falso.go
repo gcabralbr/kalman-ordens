@@ -117,7 +117,7 @@ func (f *Falso) servir(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	exp, ok := f.tokens[tok]
 	f.mu.Unlock()
-	if !ok || time.Now().After(exp) {
+	if !ok || f.agora().After(exp) {
 		responder(w, http.StatusUnauthorized, map[string]any{"code": 3410, "title": "Unauthorized", "description": "invalid or expired token"})
 		return
 	}
@@ -174,7 +174,7 @@ func (f *Falso) login(w http.ResponseWriter, r *http.Request) {
 		responder(w, http.StatusBadRequest, map[string]any{"code": 3402, "title": "Authentication_error", "description": "invalid password"})
 		return
 	}
-	exp := time.Now().Add(time.Duration(f.expTokenS) * time.Second)
+	exp := f.agora().Add(time.Duration(f.expTokenS) * time.Second)
 	tok := jwt(exp, f.logins)
 	f.tokens[tok] = exp
 	responder(w, http.StatusOK, map[string]any{"auth_token": tok, "user_name": c.User})

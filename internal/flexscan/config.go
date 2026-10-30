@@ -34,5 +34,20 @@ func ConfigDe(c config.Config) Config {
 		ConfereWebhook:   time.Duration(c.Inteiro("FLEXSCAN_WEBHOOK_CONFERIR_MIN", 10)) * time.Minute,
 		// v1.22
 		EsperaWebhook: c.Segundos("FLEXSCAN_WEBHOOK_ESPERA_S", 5),
+		// v1.28: a agenda (o erro de formato é conferido na partida, AgendaDe)
+		Agenda: agendaOuSempre(AgendaDe(c)),
 	}
+}
+
+// AgendaDe (v1.28): FLEXSCAN_JANELA, FLEXSCAN_RENOVAR_ABERTURA e FLEXSCAN_CONFERIR_ABERTURA.
+func AgendaDe(c config.Config) (Agenda, error) {
+	return LerAgenda(c.Texto("FLEXSCAN_JANELA", "08:00-18:30"), c.Texto("FLEXSCAN_RENOVAR_ABERTURA", "08:15"),
+		c.Texto("FLEXSCAN_CONFERIR_ABERTURA", "08:30"))
+}
+
+func agendaOuSempre(a Agenda, err error) *Agenda {
+	if err != nil {
+		a = AgendaSempre
+	}
+	return &a
 }

@@ -63,9 +63,17 @@ type Config struct {
 	// Flexscan a cada ConfereWebhook; vazia = não confere
 	WebhookURL     string
 	ConfereWebhook time.Duration
+	// v1.28 (agenda.go): a janela, a renovação e a conferência da abertura; nil = sempre ativa
+	Agenda *Agenda
+	// v1.28: o dia é de pregão (o calendário do motor, com os feriados); nil = seg–sex
+	DiaDePregao func(time.Time) bool
 }
 
 func (c *Config) padroes() {
+	if c.Agenda == nil {
+		a := AgendaSempre
+		c.Agenda = &a
+	}
 	if c.Bolsa == "" {
 		c.Bolsa = "XBMF"
 	}
@@ -214,6 +222,15 @@ type Ponte struct {
 	proxConfWebhook   time.Time // relógio do serviço; zero = conferir no próximo Tick logado
 	conferindoWebhook bool
 
+	// v1.28 (agenda.go): o motor tem operação viva neste conector; a ponte dorme (token vencido fora
+	// da janela, sem alerta); o dia da renovação e o da conferência da abertura já feitas
+	vivasMotor       atomic.Bool
+	dormindo         bool
+	diaRenovAbertura string
+	diaConfAbertura  string
+	ativaPor         string
+	acordada         bool
+
 	entregues atomic.Int64
 	ctx       context.Context
 	cancelar  context.CancelFunc
@@ -229,6 +246,7 @@ func Nova(cfg Config, ouv Ouvinte, rel relogio.Relogio) *Ponte {
 		ordens: map[string]*ordemP{}, porNome: map[string]*ordemP{}, porCl: map[string]*ordemP{}, ocupadas: map[string]bool{},
 		sinal: make(chan struct{}, 1), ctx: ctx, cancelar: cancel, traf: novoTrafego(rel)}
 	p.cli.aoLogin = p.registrarLogin
+	p.cli.agora = rel.Agora
 	return p
 }
 
@@ -259,8 +277,17 @@ func (p *Ponte) registrarLogin(motivo string, err error, dur time.Duration) {
 	if err != nil && el == nil {
 		dur = -1
 	}
+	agora := p.rel.Agora()
+	pregao := p.diaDePregao(agora)
 	p.mu.Lock()
-	p.ultLogin = map[string]any{"em": p.rel.Agora().In(relogio.Fuso).Format(formatoEmTrafego), "motivo": motivo, "resultado": resultado}
+	p.ultLogin = map[string]any{"em": agora.In(relogio.Fuso).Format(formatoEmTrafego), "motivo": motivo, "resultado": resultado}
+	if err == nil {
+		// v1.28: acordou; o login de hoje a partir da abertura vale pela renovação da abertura
+		p.dormindo, p.acordada = false, false
+		if a := p.cfg.Agenda; a.devida(a.inicioDoDia(), agora, pregao) {
+			p.diaRenovAbertura = diaDe(agora)
+		}
+	}
 	p.mu.Unlock()
 	p.linhaGravada(TrafegoLogin, msgLogin, status, dur, texto)
 }
@@ -271,7 +298,11 @@ func (p *Ponte) Iniciar() {
 		p.wg.Add(1)
 		go p.trabalhar()
 	}
-	p.tentarLogin()
+	// v1.28: o primeiro login é do Tick, pela agenda (fora da janela, sem ordem viva, não loga)
+	p.mu.Lock()
+	p.proxLogin = p.rel.Agora()
+	p.mu.Unlock()
+	p.Tick()
 }
 
 // Parar encerra os trabalhadores (nada é cancelado na Flexscan: as ordens ficam na bolsa).
@@ -330,7 +361,8 @@ func (p *Ponte) Saude() map[string]any {
 	return map[string]any{"token_expira": exp, "webhooks_recebidos": p.webhooks, "ultimo_webhook": ult,
 		"ordens_acompanhadas": len(p.ordens), "ordens_vivas": vivas, "ultimo_erro": p.ultimoErro, "receptor": p.cfg.Webhook,
 		"webhook_cadastrado": cad, "webhook_conferido_em": confEm, "webhook_recadastrado_em": recadEm, "ultimo_login": ultLogin,
-		"webhook_faltas_seguidas": p.whFaltas}
+		"webhook_faltas_seguidas": p.whFaltas, "janela": p.cfg.Agenda.Texto(), "ativa": p.ativaPor != "", "ativa_por": nulo(p.ativaPor),
+		"dormindo": p.dormindo}
 }
 
 // ---------------------------------------------------------------- sessão (login e token)
@@ -390,49 +422,184 @@ func (p *Ponte) semSessao(motivo string) {
 	p.mu.Unlock()
 }
 
-// Tick: as ações de tempo — renovação do token, login depois de falha, consultas ativas e periódicas.
-// Chamado pelo relógio do serviço (a cada 100 ms) e pelo executor dos roteiros.
+// ---------------------------------------------------------------- agenda (v1.28, agenda.go)
+
+func nulo(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// MarcarVivas: o motor diz, a cada volta, se tem operação não encerrada neste conector (a ponte
+// fica ativa fora da janela enquanto houver).
+func (p *Ponte) MarcarVivas(v bool) { p.vivasMotor.Store(v) }
+
+// UsarCalendario: o dia de pregão do motor (com os feriados).
+func (p *Ponte) UsarCalendario(f func(time.Time) bool) {
+	p.mu.Lock()
+	p.cfg.DiaDePregao = f
+	p.mu.Unlock()
+}
+
+// Dormindo: o token venceu fora da janela e a ponte espera a abertura (sem alerta).
+func (p *Ponte) Dormindo() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.dormindo
+}
+
+func (p *Ponte) diaDePregao(t time.Time) bool {
+	p.mu.Lock()
+	f := p.cfg.DiaDePregao
+	p.mu.Unlock()
+	if f == nil {
+		return diaUtil(t)
+	}
+	return f(t)
+}
+
+// ativaLocked: a ponte pode falar com a Flexscan agora — na janela, com ordem viva (do motor ou
+// acompanhada aqui), na renovação ou na conferência da abertura ainda não feitas, ou acordada por
+// um envio do motor.
+func (p *Ponte) ativaLocked(agora time.Time, pregao bool) bool {
+	a, dia := p.cfg.Agenda, diaDe(agora)
+	por := ""
+	switch {
+	case a.Sempre():
+		por = "sempre"
+	case a.dentro(agora, pregao):
+		por = "janela"
+	case p.vivasMotor.Load() || p.vivasLocked():
+		por = "ordem viva"
+	case a.devida(a.ConferirAbertura, agora, pregao) && p.diaConfAbertura != dia,
+		a.devida(a.RenovarAbertura, agora, pregao) && p.diaRenovAbertura != dia:
+		por = "abertura"
+	case p.dormindo && p.acordada:
+		por = "envio"
+	}
+	if por != p.ativaPor {
+		slog.Info("flexscan: agenda", "ativa", por != "", "por", por, "janela", a.Texto())
+		p.ativaPor = por
+	}
+	return por != ""
+}
+
+func (p *Ponte) vivasLocked() bool {
+	for _, o := range p.ordens {
+		if !o.fase.Terminal() {
+			return true
+		}
+	}
+	return false
+}
+
+// adormecer: o token venceu fora da janela, sem ordem viva — sem sessão e sem alerta; o login volta
+// na abertura (ou num envio do motor).
+func (p *Ponte) adormecer(motivo string) {
+	p.mu.Lock()
+	if p.dormindo {
+		p.mu.Unlock()
+		return
+	}
+	p.dormindo, p.acordada = true, false
+	p.proxLogin = p.rel.Agora()
+	p.mu.Unlock()
+	slog.Info("flexscan: sem sessão até a abertura", "motivo", motivo, "janela", p.cfg.Agenda.Texto())
+	if p.logado.Swap(false) {
+		if d, ok := p.ouv.(interface{ Adormeceu(string) }); ok {
+			d.Adormeceu(motivo)
+		} else {
+			p.ouv.Caiu(motivo)
+		}
+	}
+}
+
+// acordar: um envio do motor com a ponte dormindo — loga na hora (a saída e as ações do admin nunca
+// esperam a janela).
+func (p *Ponte) acordarSessao() {
+	p.mu.Lock()
+	if !p.dormindo {
+		p.mu.Unlock()
+		return
+	}
+	p.acordada = true
+	p.mu.Unlock()
+	p.tentarLogin()
+}
+
+// Tick: as ações de tempo — renovação do token, login depois de falha, consultas ativas e periódicas,
+// conferência do webhook; pela agenda (v1.28, agenda.go). Chamado pelo relógio do serviço (a cada
+// 100 ms) e pelo executor dos roteiros.
 func (p *Ponte) Tick() {
 	agora := p.rel.Agora()
-	// token: renova antes de vencer (sem derrubar a sessão: o token atual vale até o novo chegar)
+	pregao := p.diaDePregao(agora)
+	p.mu.Lock()
+	ativa := p.ativaLocked(agora, pregao)
+	p.mu.Unlock()
 	if p.logado.Load() {
-		if r := p.cli.renovarEm(p.cfg.RenovarAntes, p.cfg.VidaToken); !r.IsZero() && time.Now().After(r) {
-			p.mu.Lock()
-			renovar := !p.renovando
-			p.renovando = true
-			p.mu.Unlock()
-			if renovar {
-				go func() {
-					err := p.cli.login(p.ctx, "renovacao")
-					p.mu.Lock()
-					p.renovando = false
-					p.mu.Unlock()
-					if err != nil {
-						slog.Warn("flexscan: renovação do token falhou", "erro", err)
-					}
-				}()
+		// token: renova antes de vencer (sem derrubar a sessão: o token atual vale até o novo chegar),
+		// só com a ponte ativa; e uma vez por dia na renovação da abertura, se o token não chega ao fim
+		// da janela
+		motivo := ""
+		if r := p.cli.renovarEm(p.cfg.RenovarAntes, p.cfg.VidaToken); ativa && !r.IsZero() && agora.After(r) {
+			motivo = "renovacao"
+		}
+		p.mu.Lock()
+		if a := p.cfg.Agenda; a.devida(a.RenovarAbertura, agora, pregao) && p.diaRenovAbertura != diaDe(agora) {
+			p.diaRenovAbertura = diaDe(agora)
+			if exp := p.cli.renovarEm(0, p.cfg.VidaToken); exp.Before(a.fimDoDia(agora)) {
+				motivo = "renovacao-abertura"
 			}
 		}
-		if !p.cli.temToken(p.cfg.VidaToken) {
-			p.semSessao("token vencido")
+		renovar := motivo != "" && !p.renovando
+		if renovar {
+			p.renovando = true
 		}
-	} else {
+		p.mu.Unlock()
+		if renovar {
+			go func() {
+				err := p.cli.login(p.ctx, motivo)
+				p.mu.Lock()
+				p.renovando = false
+				p.mu.Unlock()
+				if err != nil {
+					slog.Warn("flexscan: renovação do token falhou", "motivo", motivo, "erro", err)
+				}
+			}()
+		}
+		if !p.cli.temToken(p.cfg.VidaToken) {
+			if ativa {
+				p.semSessao("token vencido")
+			} else {
+				p.adormecer("token vencido fora da janela")
+			}
+		}
+	} else if ativa {
 		p.mu.Lock()
-		vez := !p.proxLogin.IsZero() && agora.After(p.proxLogin) && !p.logando
+		vez := !p.proxLogin.IsZero() && !agora.Before(p.proxLogin) && !p.logando
 		p.mu.Unlock()
 		if vez {
 			p.tentarLogin()
 		}
 	}
-	if !p.logado.Load() {
-		return
+	if !p.logado.Load() || !ativa {
+		return // fora da janela, sem ordem viva: nenhuma chamada à Flexscan
 	}
 	p.conferirEsperas(agora)
 	p.mu.Lock()
-	if p.cfg.WebhookURL != "" && !p.conferindoWebhook && (p.proxConfWebhook.IsZero() || !agora.Before(p.proxConfWebhook)) {
-		p.conferindoWebhook = true
-		p.proxConfWebhook = agora.Add(p.cfg.ConfereWebhook)
-		p.enfileirarLocked(prioConsulta, "", p.conferirWebhook)
+	if p.cfg.WebhookURL != "" && !p.conferindoWebhook {
+		// a conferência obrigatória da abertura (uma por dia de pregão), ou a periódica
+		a := p.cfg.Agenda
+		abertura := a.devida(a.ConferirAbertura, agora, pregao) && p.diaConfAbertura != diaDe(agora)
+		if abertura || p.proxConfWebhook.IsZero() || !agora.Before(p.proxConfWebhook) {
+			if abertura {
+				p.diaConfAbertura = diaDe(agora)
+			}
+			p.conferindoWebhook = true
+			p.proxConfWebhook = agora.Add(p.cfg.ConfereWebhook)
+			p.enfileirarLocked(prioConsulta, "", p.conferirWebhook)
+		}
 	}
 	var due []*ordemP
 	var expiradas []*ordemP
@@ -620,6 +787,7 @@ func (p *Ponte) entregar(msgs []pnt.Mensagem) {
 // trata como "não saiu").
 func (p *Ponte) Enviar(m *quickfix.Message) (int, error) {
 	if !p.logado.Load() {
+		p.acordarSessao()
 		return 0, errors.New("conector Flexscan sem sessão")
 	}
 	tipo, _ := m.Header.GetString(quickfix.Tag(35))

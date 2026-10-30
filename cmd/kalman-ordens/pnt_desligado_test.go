@@ -81,6 +81,7 @@ func TestServirPnTDesligado(t *testing.T) {
 	}
 
 	base["FLEXSCAN_URL"] = flx.URL()
+	base["FLEXSCAN_JANELA"] = "sempre" // relógio real: o teste não depende da hora em que roda (v1.28)
 	ok := make(chan struct{})
 	pronto = func(string) { close(ok) }
 	ctx, desligar := context.WithCancel(context.Background())
