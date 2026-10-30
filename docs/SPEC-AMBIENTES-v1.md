@@ -45,6 +45,14 @@ No SIMULADOR, quem decide entre paper e ordens é o `usutxtconfig` do usuário:
   sem alerta.
 - **O PnT não tem uso no SIMULADOR,** porque a HML do PnT é D-1. Ele só existe no REAL. O SIMULADOR
   com o conector PNT é recusado com `CONECTOR_AMBIENTE` ("o PnT só opera no REAL").
+  - **Exceção da transição:** na equivalência `ORDENS_AMBIENTE=HML` (a .53 hoje) o PnT continua
+    aceito no SIMULADOR, como antes. É por ela que o 1450 (`usutxtconfig` no PnT, conta 99999)
+    aparece hoje como "Simulador · PnT" no `/usuarios/1450/destino`.
+  - **Ao sair da equivalência HML** (`AMBIENTES_PERMITIDOS` no lugar do `ORDENS_AMBIENTE`), o 1450
+    passa a "não permitido" no SIMULADOR: o destino responde `destino: null`, `pode_enviar: false`,
+    `codigo: CONECTOR_AMBIENTE`, e a entrada é recusada com o mesmo código. Está certo assim
+    (decisão de 30/10): o PnT da HML está desligado desde 28/10 e o 1450 não opera. Para voltar a
+    operar, o 1450 precisa de um destino válido no SIMULADOR (paper ou simulador externo).
 - **O serviço expõe o destino resolvido** por uid e ambiente (§4.3). O Kalman o consulta na ativação
   do dia, para decidir se manda ordens e para mostrar na tela: "Simulador · paper", "Simulador ·
   Flexscan" ou "REAL · Flexscan · Capital 715124".
@@ -74,7 +82,7 @@ No SIMULADOR, quem decide entre paper e ordens é o `usutxtconfig` do usuário:
     passa a ler a coluna do ambiente da operação.
 - **Pedido com outro ambiente para uma operação existente:**
   - **entrada** (mesmo `operacao_id`, outro ambiente): recusa `AMBIENTE_DIVERGENTE`;
-  - **saída, stop ou ação do admin:** **não é recusado**, porque recusar uma saída deixa a posição
+  - **saída ou stop:** **não é recusado**, porque recusar uma saída deixa a posição
     aberta. Executa no ambiente gravado, com alerta crítico `AMBIENTE_PEDIDO_DIVERGENTE` (operação,
     ambiente pedido e ambiente gravado).
 - **Idempotência:** a chave continua `(modulo, operacao_id, papel)`. O `operacao_id` do Kalman é
@@ -259,7 +267,7 @@ elas vão.
 | `REAL_UID_NAO_PERMITIDO` | recusa + crítico | uid fora de `REAL_UIDS` |
 | `REAL_CONTA_NAO_PERMITIDA` | recusa + crítico | conta fora de `REAL_CONTAS` |
 | `AMBIENTE_DIVERGENTE` | recusa | entrada repetida (mesmo `operacao_id`) com outro ambiente |
-| `AMBIENTE_PEDIDO_DIVERGENTE` | crítico (não recusa) | saída, stop ou ação com ambiente diferente do gravado: executa no gravado |
+| `AMBIENTE_PEDIDO_DIVERGENTE` | crítico (não recusa) | saída ou stop com ambiente diferente do gravado: executa no gravado |
 | `DESTINO_PAPER` | recusa | entrada no SIMULADOR para um uid cujo destino é o paper (9999 com a conta QUANT) |
 | `CONECTOR_AMBIENTE` | recusa | o conector não opera nesse ambiente (o PnT no SIMULADOR) |
 
@@ -339,8 +347,15 @@ em que a operação nasceu (`KOTxtAmbiente`).
 {"sinal_id": "S-20261103-101500", "ts_decisao": "...", "ambiente": "REAL", "entradas": [...]}
 ```
 
-**`POST /operacoes/{id}/stop` e as ações do admin**: `ambiente` opcional. Vale o gravado, e um valor
-diferente gera o alerta `AMBIENTE_PEDIDO_DIVERGENTE`.
+**`POST /operacoes/{id}/stop`**: `ambiente` opcional. Vale o gravado, e um valor diferente gera o
+alerta `AMBIENTE_PEDIDO_DIVERGENTE`.
+
+**Ações do admin** (`POST /operacoes/{id}/encerrar` e `/cancelar-entrada`, decisão de 30/10): **sem**
+`ambiente`. O corpo continua `{motivo, por}`, e um campo a mais é recusado (`CAMPO_INVALIDO`), como
+antes. A operação já tem o ambiente gravado, e o roteador acha a instância dona pelo
+`(modulo, operacao_id)`. Esse par é único no banco inteiro (`uk_kop_operacao`), e a entrada repetida
+com outro ambiente é recusada (`AMBIENTE_DIVERGENTE`), então o mesmo id nunca existe nos dois
+ambientes e não há o que desempatar.
 
 **Respostas:** `ambiente` na resposta do `POST /ordens`, no `GET /ordens/{id}`, em cada linha do
 `GET /operacoes` e em cada evento. As recusas novas são as do §5.
