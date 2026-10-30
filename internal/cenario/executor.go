@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -225,6 +226,31 @@ func (e *Executor) preparar() error {
 			}
 		}
 	}
+	// v1.30: as Flexscan falsas por corretora (config REAL_FLEXSCAN_<NOME>_URL=falso); o alvo dos
+	// verbos flx_ é "REAL:<NOME>" (flx_ambiente REAL:CMC)
+	if crs := strings.TrimSpace(v["REAL_FLEXSCAN_CORRETORAS"]); crs != "" {
+		for i, item := range strings.Split(crs, ",") {
+			_, nome, _ := strings.Cut(strings.TrimSpace(item), ":")
+			nome = strings.ToUpper(strings.TrimSpace(nome))
+			k := func(s string) string { return "REAL_FLEXSCAN_" + nome + "_" + s }
+			if v[k("URL")] != "falso" {
+				continue
+			}
+			usuario, senha := "flx_roteiro_"+strings.ToLower(nome), SenhaFlexscanRoteiro+"-"+strings.ToLower(nome)
+			f := flxfalso.Novo(usuario, senha, e.rel.Agora)
+			f.EsperaTimeout(600 * time.Millisecond)
+			f.PrefixoID = fmt.Sprintf("00000000-0000-4000-a%03d-", i)
+			e.flxs[dominio.AmbienteReal+":"+nome] = f
+			v[k("URL")], v[k("USUARIO")], v[k("SENHA")] = f.URL(), usuario, senha
+			for kk, x := range map[string]string{"FLEXSCAN_WEBHOOK_ENDERECO": "roteiro", k("WEBHOOK_SEGREDO"): SegredoWebhookRoteiro + "-" + strings.ToLower(nome),
+				k("ESTADO_LOGIN"): filepath.Join(e.dir, "flexscan-login-real-"+strings.ToLower(nome)+".json"), "FLEXSCAN_TIMEOUT_MS": "300",
+				"FLEXSCAN_REQ_POR_S": "0", "FLEXSCAN_LOGIN_MAX": "50", "FLEXSCAN_PRIMEIRA_CONSULTA_MS": "0"} {
+				if v[kk] == "" {
+					v[kk] = x
+				}
+			}
+		}
+	}
 	e.cfg = config.Novo(v)
 	for _, p := range e.c.Preparo {
 		if err := e.usuario(p); err != nil {
@@ -338,8 +364,31 @@ func (e *Executor) subir() error {
 	m.Usar(s)
 	svc := &servico{motor: m, motores: ms, sessao: s, pontes: map[string]*flexscan.Ponte{}, receptores: map[string]*flexscan.Receptor{},
 		caminhos: map[string]string{}}
+	crs, err := e.cfg.CorretorasFlexscan()
+	if err != nil {
+		return err
+	}
 	for i, mi := range ms {
 		amb, c := mi.Ambiente(), cs[i]
+		if amb == dominio.AmbienteReal && len(crs) > 0 {
+			// v1.30: uma ponte por corretora, como o servir as monta
+			for _, cr := range crs {
+				alvo := amb + ":" + cr.Nome
+				if e.flxs[alvo] == nil {
+					continue
+				}
+				vc := c.VisaoCorretora(cr)
+				ponte := flexscan.Nova(flexscan.ConfigDe(vc), mi.NovoCanalFlexscan(cr.Codigo, cr.Nome, cr.Contas), e.rel)
+				mi.LigarFlexscan(cr.Nome, ponte)
+				prefixo := vc.Texto("FLEXSCAN_WEBHOOK_PREFIXO", "")
+				rec, err := flexscan.NovoReceptor(ponte, prefixo, vc.Texto("FLEXSCAN_WEBHOOK_SEGREDO", ""))
+				if err != nil {
+					return err
+				}
+				svc.pontes[alvo], svc.receptores[alvo], svc.caminhos[alvo] = ponte, rec, prefixo+vc.Texto("FLEXSCAN_WEBHOOK_SEGREDO", "")
+			}
+			continue
+		}
 		if e.flxs[amb] == nil || c.Texto("FLEXSCAN_URL", "") == "" {
 			continue
 		}
@@ -363,15 +412,25 @@ func (e *Executor) subir() error {
 	if err := s.Iniciar(); err != nil {
 		return err
 	}
-	for _, amb := range []string{dominio.AmbienteSimulador, dominio.AmbienteReal} {
-		if ponte := svc.pontes[amb]; ponte != nil {
-			ponte.Iniciar()
-			if !esperarAte(5*time.Second, ponte.Logado) {
-				return fmt.Errorf("a ponte Flexscan do %s não logou na Flexscan falsa", amb)
-			}
+	for _, amb := range svc.alvos() {
+		ponte := svc.pontes[amb]
+		ponte.Iniciar()
+		if !esperarAte(5*time.Second, ponte.Logado) {
+			return fmt.Errorf("a ponte Flexscan do %s não logou na Flexscan falsa", amb)
 		}
 	}
 	return nil
+}
+
+// alvos: as pontes em ordem (SIMULADOR, REAL, REAL:<NOME>...).
+func (s *servico) alvos() []string {
+	var r []string
+	for k := range s.pontes {
+		r = append(r, k)
+	}
+	sort.Strings(r)
+	sort.SliceStable(r, func(i, j int) bool { return r[i] == dominio.AmbienteSimulador && r[j] != dominio.AmbienteSimulador })
+	return r
 }
 
 // mirarFlexscan (flx_ambiente): os verbos flx_ passam a valer para a Flexscan falsa, a ponte e o
@@ -396,10 +455,8 @@ func (s *servico) tick() {
 	for _, m := range s.motores {
 		m.Tick()
 	}
-	for _, amb := range []string{dominio.AmbienteSimulador, dominio.AmbienteReal} {
-		if p := s.pontes[amb]; p != nil {
-			p.Tick()
-		}
+	for _, amb := range s.alvos() {
+		s.pontes[amb].Tick()
 	}
 }
 

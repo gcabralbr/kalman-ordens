@@ -263,9 +263,9 @@ func servir(ctx context.Context, cfg config.Config) error {
 				return err
 			}
 		}
-		if in.ponte != nil {
-			in.ponte.Iniciar()
-			slog.Info("flexscan: conector ligado", "ambiente", in.amb, "url", in.flx.URL, "usuario", in.flx.Usuario, "webhook", in.webhook)
+		for _, pf := range in.pontes {
+			pf.p.Iniciar()
+			slog.Info("flexscan: conector ligado", "ambiente", in.amb, "corretora", pf.nome, "url", pf.cfg.URL, "usuario", pf.cfg.Usuario, "webhook", pf.webhook)
 		}
 	}
 
@@ -280,8 +280,8 @@ func servir(ctx context.Context, cfg config.Config) error {
 			case <-t.C:
 				sv.Tick()
 				for _, in := range insts.lista {
-					if in.ponte != nil {
-						in.ponte.Tick()
+					for _, pf := range in.pontes {
+						pf.p.Tick()
 					}
 				}
 			}
@@ -300,9 +300,9 @@ func servir(ctx context.Context, cfg config.Config) error {
 	slog.Info("desligando: logout FIX, nada é cancelado no PnT")
 	close(fim)
 	for _, in := range insts.lista {
-		if in.ponte != nil {
+		for _, pf := range in.pontes {
 			// as ordens da Flexscan ficam na bolsa (a stop-limite é da B3)
-			in.ponte.Parar()
+			pf.p.Parar()
 		}
 	}
 	if srvWebhook != nil {

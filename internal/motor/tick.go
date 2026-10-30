@@ -72,7 +72,7 @@ func (m *Motor) tick() {
 			return
 		}
 		for _, op := range m.ops {
-			if !op.Estado.Final() && op.SuspensaEm.IsZero() && m.logado(op.conector()) {
+			if !op.Estado.Final() && op.SuspensaEm.IsZero() && m.logado(m.canalOp(op)) {
 				m.acoesDeTempo(op, agora)
 			}
 		}

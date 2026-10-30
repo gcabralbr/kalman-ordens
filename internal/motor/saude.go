@@ -78,9 +78,14 @@ func (m *Motor) saude() Resposta {
 	}
 	// SPEC-FLEXSCAN-v1: o conector Flexscan (sessao_logada continua sendo a do PnT: o desligamento do
 	// pnt-md-hml lê esse campo)
-	if m.flx != nil {
-		f := map[string]any{"logado": m.flx.Logado()}
-		if s, ok := m.flx.(interface{ Saude() map[string]any }); ok {
+	// v1.30: no modo por corretora, um bloco por corretora em "flexscan_corretoras"
+	porCor := map[string]any{}
+	for _, c := range m.flxs {
+		if c.e == nil {
+			continue
+		}
+		f := map[string]any{"logado": c.e.Logado()}
+		if s, ok := c.e.(interface{ Saude() map[string]any }); ok {
 			for k, v := range s.Saude() {
 				f[k] = v
 			}
@@ -100,7 +105,15 @@ func (m *Motor) saude() Resposta {
 			fo["url"], fo["compartilhada"] = textoOuNulo(m.urlPrecos), true
 			f["simbolo"], f["fonte"], f["idade_preco_ms"] = m.vigente, fo, idade
 		}
-		r["flexscan"] = f
+		if c.nome == "" {
+			r["flexscan"] = f
+		} else {
+			f["corretora_codigo"], f["contas"] = c.codigo, c.contas
+			porCor[c.nome] = f
+		}
+	}
+	if m.porCorretora() {
+		r["flexscan_corretoras"] = porCor
 	}
 	return r
 }
@@ -148,7 +161,7 @@ func sinalDe(op *operacao) any {
 
 func (m *Motor) posicaoPorConector() map[string]int {
 	r := map[string]int{dominio.ConectorPnT: 0}
-	if m.flx != nil {
+	if m.temFlexscan() {
 		r[dominio.ConectorFlexscan] = 0
 	}
 	for _, op := range m.ops {

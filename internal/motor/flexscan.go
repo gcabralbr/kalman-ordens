@@ -13,20 +13,29 @@ import (
 // do pnt.Ouvinte da sessão FIX — logou, caiu, mensagem de aplicação (os ExecutionReports e 35=9
 // sintéticos) —, mais os alertas e o registro dos eventos REST e dos webhooks, tudo pela fila do
 // motor (P0, como as mensagens do PnT).
-type OuvinteFlexscan struct{ m *Motor }
+// v1.30: um ouvinte por ponte (canal): a queda, a volta e os alertas de sessão são do canal.
+type OuvinteFlexscan struct {
+	m *Motor
+	c *canalFlx
+}
 
-// OuvinteFlexscan: o ouvinte da ponte.
-func (m *Motor) OuvinteFlexscan() *OuvinteFlexscan { return &OuvinteFlexscan{m} }
+// rotulo: o prefixo dos textos ("[flexscan]" ou "[flexscan CMC]").
+func (o *OuvinteFlexscan) rotulo() string {
+	if o.c.nome == "" {
+		return "[flexscan]"
+	}
+	return "[flexscan " + o.c.nome + "]"
+}
 
 // Logou: a ponte obteve token (no boot ou depois de perder a sessão). Concilia, como o logon FIX.
 func (o *OuvinteFlexscan) Logou() {
 	m := o.m
 	m.entrarFIX(func() {
-		if m.flxJaLogou {
-			m.al.Emitir("SESSAO_VOLTOU", "SESSAO_VOLTOU:FLEXSCAN", "[flexscan] sessão voltou (token)", 0)
+		if o.c.jaLogou {
+			m.al.Emitir("SESSAO_VOLTOU", "SESSAO_VOLTOU:"+o.c.chave, o.rotulo()+" sessão voltou (token)", 0)
 		}
-		m.flxJaLogou = true
-		m.al.Resolver("SESSAO_CAIU:FLEXSCAN")
+		o.c.jaLogou = true
+		m.al.Resolver("SESSAO_CAIU:" + o.c.chave)
 		m.conciliando = true
 		m.massTentativas = 0
 		m.pedirMassStatus()
@@ -38,8 +47,8 @@ func (o *OuvinteFlexscan) Logou() {
 func (o *OuvinteFlexscan) Caiu(motivo string) {
 	m := o.m
 	m.entrarFIX(func() {
-		m.registrarQueda(dominio.ConectorFlexscan, motivo)
-		m.al.Emitir("SESSAO_CAIU", "SESSAO_CAIU:FLEXSCAN", "[flexscan] sem sessão: "+motivo, 0)
+		m.registrarQueda(o.c.chave, motivo)
+		m.al.Emitir("SESSAO_CAIU", "SESSAO_CAIU:"+o.c.chave, o.rotulo()+" sem sessão: "+motivo, 0)
 	})
 }
 
@@ -48,8 +57,8 @@ func (o *OuvinteFlexscan) Caiu(motivo string) {
 func (o *OuvinteFlexscan) Adormeceu(motivo string) {
 	m := o.m
 	m.entrarFIX(func() {
-		m.flxJaLogou = false
-		slog.Info("flexscan: sem sessão fora da janela", "motivo", motivo)
+		o.c.jaLogou = false
+		slog.Info("flexscan: sem sessão fora da janela", "canal", o.c.chave, "motivo", motivo)
 	})
 }
 
@@ -80,6 +89,7 @@ func (o *OuvinteFlexscan) Registrar(ev repo.EventoFIX) {
 		if ev.Em.IsZero() {
 			ev.Em = m.agora()
 		}
+		ev.Canal = o.c.nome // v1.30: a corretora da ponte (vazio = a única)
 		if ev.OrderID != "" {
 			if or := m.por37[ev.OrderID]; or != nil {
 				ev.OrdemID, ev.Modulo = or.ID, or.Modulo

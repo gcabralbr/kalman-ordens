@@ -24,20 +24,36 @@ import (
 
 // instancia: o motor de um ambiente e os conectores dele.
 type instancia struct {
-	amb     string
-	cfg     config.Config // a visão do ambiente
-	m       *motor.Motor
-	ponte   *flexscan.Ponte
-	flx     flexscan.Config
+	amb    string
+	cfg    config.Config // a visão do ambiente
+	m      *motor.Motor
+	pontes []*ponteFlx // a Flexscan: a única, ou (v1.30, REAL) uma por corretora
+	// v1.30: REAL_FLEXSCAN_CORRETORAS (vazia = a ponte única)
+	corretoras []config.CorretoraFlexscan
+	sessao     *pnt.Sessao
+	fix        string // host:porta, ou "desligado"
+}
+
+// ponteFlx: uma ponte Flexscan da instância.
+type ponteFlx struct {
+	nome    string // vazio = a única; senão a corretora (CMC, BTG...)
+	p       *flexscan.Ponte
+	cfg     flexscan.Config
 	webhook bool
-	sessao  *pnt.Sessao
-	fix     string // host:porta, ou "desligado"
 }
 
 func (in *instancia) resumo() string {
 	flx := "sem"
-	if in.ponte != nil {
-		flx = in.flx.URL
+	if len(in.pontes) > 0 {
+		var ps []string
+		for _, p := range in.pontes {
+			if p.nome == "" {
+				ps = append(ps, p.cfg.URL)
+			} else {
+				ps = append(ps, p.nome+":"+p.cfg.Usuario)
+			}
+		}
+		flx = strings.Join(ps, ",")
 	}
 	return fmt.Sprintf("%s(flexscan=%s fix=%s)", in.amb, flx, in.fix)
 }
@@ -102,7 +118,21 @@ func planejarInstancias(cfg config.Config, amb config.Ambientes) ([]*instancia, 
 		k := func(x string) string { return nomeChave(in.amb, legado, x) }
 		pntDesligado := c.Bool("PNT_DESLIGADO", false)
 		flxURL := c.Texto("FLEXSCAN_URL", "")
-		if pntDesligado && flxURL == "" {
+		if in.amb == dominio.AmbienteReal && !legado {
+			// v1.30: as credenciais Flexscan do REAL por corretora (D4 revisada)
+			crs, err := cfg.CorretorasFlexscan()
+			if err != nil {
+				return nil, err
+			}
+			in.corretoras = crs
+			for _, cr := range crs {
+				if _, err := flexscan.AgendaDe(c.VisaoCorretora(cr)); err != nil {
+					return nil, err
+				}
+			}
+		}
+		porCorretora := len(in.corretoras) > 0 // conferidas acima (cada corretora com URL, usuário, senha e contas)
+		if pntDesligado && flxURL == "" && !porCorretora {
 			if legado {
 				// PNT_DESLIGADO (28/10) na equivalência: só a Flexscan
 				return nil, fmt.Errorf("PNT_DESLIGADO: configuração ausente: [FLEXSCAN_URL]")
@@ -124,7 +154,7 @@ func planejarInstancias(cfg config.Config, amb config.Ambientes) ([]*instancia, 
 				return nil, fmt.Errorf("configuração ausente: %v", faltam)
 			}
 		}
-		if flxURL != "" {
+		if flxURL != "" && !porCorretora {
 			if c.Texto("FLEXSCAN_USUARIO", "") == "" || c.Texto("FLEXSCAN_SENHA", "") == "" {
 				return nil, fmt.Errorf("%s sem %s/%s", k("FLEXSCAN_URL"), k("FLEXSCAN_USUARIO"), k("FLEXSCAN_SENHA"))
 			}
@@ -172,31 +202,52 @@ func montarInstancias(lista []*instancia, cfg config.Config, amb config.Ambiente
 		}
 		in.m = motor.NovoNoAmbiente(in.amb, c, rel, r, fonte(urlPnT, saudePnT), tg)
 		in.m.DefinirURLsPrecos(urlPnT, "")
-		if flxURL != "" {
-			in.flx = flexscan.ConfigDe(c)
+		// as pontes: a única (FLEXSCAN_URL da visão) ou, no REAL por corretora, uma por guarda-chuva
+		type plano struct {
+			nome, rotulo string
+			vc           config.Config
+			ouv          *motor.OuvinteFlexscan
+			chave        func(string) string
+		}
+		var planos []plano
+		if len(in.corretoras) > 0 {
+			for _, cr := range in.corretoras {
+				cr := cr
+				planos = append(planos, plano{nome: cr.Nome, rotulo: in.amb + " " + cr.Nome, vc: c.VisaoCorretora(cr),
+					ouv:   in.m.NovoCanalFlexscan(cr.Codigo, cr.Nome, cr.Contas),
+					chave: func(x string) string { return "REAL_FLEXSCAN_" + cr.Nome + strings.TrimPrefix(x, "FLEXSCAN") }})
+			}
+		} else if flxURL != "" {
+			planos = append(planos, plano{rotulo: in.amb, vc: c, ouv: in.m.OuvinteFlexscan(), chave: k})
+		}
+		if len(planos) > 0 {
 			if u := c.Texto("PRECOS_URL_FLEXSCAN", c.Texto("PRECOS_URL", "http://172.16.110.51:9090")); u != urlPnT {
 				in.m.UsarPrecosFlexscan(fonte(u, c.Texto("PRECOS_SAUDE_URL_FLEXSCAN", "")))
 				in.m.DefinirURLsPrecos(urlPnT, u)
 			}
-			in.ponte = flexscan.Nova(in.flx, in.m.OuvinteFlexscan(), rel)
-			in.m.UsarFlexscan(in.ponte)
-			if c.Texto("FLEXSCAN_WEBHOOK_ENDERECO", "") != "" {
-				prefixo := c.Texto("FLEXSCAN_WEBHOOK_PREFIXO", "/flexscan/webhook/")
-				for outro, p := range prefixos {
-					if strings.HasPrefix(prefixo, p) || strings.HasPrefix(p, prefixo) {
-						return nil, fmt.Errorf("%s %q e o webhook do %s (%q): um prefixo por ambiente, sem um conter o outro", k("FLEXSCAN_WEBHOOK_PREFIXO"), prefixo, outro, p)
-					}
-				}
-				rec, err := flexscan.NovoReceptor(in.ponte, prefixo, c.Texto("FLEXSCAN_WEBHOOK_SEGREDO", ""))
-				if err != nil {
-					return nil, fmt.Errorf("webhook do %s: %w", in.amb, err)
-				}
-				prefixos[in.amb] = prefixo
-				out.receptores = append(out.receptores, rotaWebhook{prefixo, rec})
-				in.webhook = true
-			} else {
-				slog.Warn("flexscan sem receptor de webhook (FLEXSCAN_WEBHOOK_ENDERECO vazio): só a consulta", "ambiente", in.amb)
+		}
+		for _, pl := range planos {
+			pf := &ponteFlx{nome: pl.nome, cfg: flexscan.ConfigDe(pl.vc)}
+			pf.p = flexscan.Nova(pf.cfg, pl.ouv, rel)
+			in.m.LigarFlexscan(pl.nome, pf.p)
+			in.pontes = append(in.pontes, pf)
+			if pl.vc.Texto("FLEXSCAN_WEBHOOK_ENDERECO", "") == "" {
+				slog.Warn("flexscan sem receptor de webhook (FLEXSCAN_WEBHOOK_ENDERECO vazio): só a consulta", "ponte", pl.rotulo)
+				continue
 			}
+			prefixo := pl.vc.Texto("FLEXSCAN_WEBHOOK_PREFIXO", "/flexscan/webhook/")
+			for outro, p := range prefixos {
+				if strings.HasPrefix(prefixo, p) || strings.HasPrefix(p, prefixo) {
+					return nil, fmt.Errorf("%s %q e o webhook do %s (%q): um prefixo por ponte, sem um conter o outro", pl.chave("FLEXSCAN_WEBHOOK_PREFIXO"), prefixo, outro, p)
+				}
+			}
+			rec, err := flexscan.NovoReceptor(pf.p, prefixo, pl.vc.Texto("FLEXSCAN_WEBHOOK_SEGREDO", ""))
+			if err != nil {
+				return nil, fmt.Errorf("webhook do %s: %w", pl.rotulo, err)
+			}
+			prefixos[pl.rotulo] = prefixo
+			out.receptores = append(out.receptores, rotaWebhook{prefixo, rec})
+			pf.webhook = true
 		}
 		in.fix = "desligado"
 		if !pntDesligado {

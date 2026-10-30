@@ -125,8 +125,8 @@ func (c Config) LerAmbientes() (a Ambientes, avisos []string, err error) {
 	}
 	// v1.26: os conectores do REAL são os das chaves REAL_ (Visao); sem nenhum, o REAL não teria por
 	// onde mandar ordem
-	if c.Texto("REAL_FLEXSCAN_URL", "") == "" && (c.Texto("REAL_FIX_HOST", "") == "" || c.Bool("REAL_PNT_DESLIGADO", false)) {
-		return a, nil, fmt.Errorf("REAL em AMBIENTES_PERMITIDOS sem conector REAL: REAL_FLEXSCAN_URL ou REAL_FIX_HOST (SPEC-AMBIENTES-v1 §2.1)")
+	if c.Texto("REAL_FLEXSCAN_URL", "") == "" && c.Texto("REAL_FLEXSCAN_CORRETORAS", "") == "" && (c.Texto("REAL_FIX_HOST", "") == "" || c.Bool("REAL_PNT_DESLIGADO", false)) {
+		return a, nil, fmt.Errorf("REAL em AMBIENTES_PERMITIDOS sem conector REAL: REAL_FLEXSCAN_URL, REAL_FLEXSCAN_CORRETORAS ou REAL_FIX_HOST (SPEC-AMBIENTES-v1 §2.1)")
 	}
 	return a, nil, nil
 }

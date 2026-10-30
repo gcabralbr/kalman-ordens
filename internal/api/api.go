@@ -187,10 +187,12 @@ func Handler(m *motor.Servico, espera time.Duration) http.Handler {
 		}
 		// v1.23: ?dia=AAAA-MM-DD — o dia inteiro, do registro (desde e limite não valem)
 		if dia := q.Get("dia"); dia != "" {
-			resp, ok, err := m.TrafegoFlexscanDoDia(amb, dia)
+			resp, ok, err := m.TrafegoFlexscanDoDia(amb, q.Get("corretora"), dia)
 			switch {
 			case !ok:
 				escrever(w, http.StatusNotFound, motor.Resposta{"erro": "flexscan nao configurada"})
+			case errors.Is(err, motor.ErrCorretora):
+				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": err.Error()})
 			case errors.Is(err, motor.ErrDia):
 				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "dia invalido (AAAA-MM-DD)"})
 			case err != nil:
@@ -200,9 +202,14 @@ func Handler(m *motor.Servico, espera time.Duration) http.Handler {
 			}
 			return
 		}
-		resp, ok := m.TrafegoFlexscan(amb, desde, limite)
-		if !ok {
+		// v1.30: ?corretora= (CMC, BTG...) no REAL por corretora
+		resp, ok, err := m.TrafegoFlexscan(amb, q.Get("corretora"), desde, limite)
+		switch {
+		case !ok:
 			escrever(w, http.StatusNotFound, motor.Resposta{"erro": "flexscan nao configurada"})
+			return
+		case err != nil:
+			escrever(w, http.StatusBadRequest, motor.Resposta{"erro": err.Error()})
 			return
 		}
 		escrever(w, http.StatusOK, resp)

@@ -678,6 +678,32 @@ O que cada resposta significa:
 
 O mesmo vale por HTTP: `POST /operacoes/{id}/confirmar-posicao` com `{"posicao":0,"motivo":"...","por":N}`.
 
+### 1.19 O REAL por corretora (v1.30, SPEC-ORDENS-v1.30; a .51)
+
+Cada corretora tem o seu usuário guarda-chuva Flexscan, **próprio do kalman-ordens** (D4), e a sua
+lista de contas. O bloco está no `service.env.example` (`REAL_FLEXSCAN_CORRETORAS=88:CMC,85:BTG` e as
+chaves `REAL_FLEXSCAN_<NOME>_*`).
+
+Na subida, o journal mostra uma linha `flexscan: conector ligado` por corretora, com `corretora=CMC` e
+o usuário. Depois disso, confira:
+
+```bash
+curl -s $B/saude | jq '.ambientes.REAL.flexscan_corretoras | map_values({logado, webhook_cadastrado, contas})'
+curl -s $B/saude | jq '.ambientes.REAL.canais'
+curl -s "$B/flexscan/trafego?ambiente=REAL&corretora=CMC&limite=20" | jq '.saude.logado, .mensagens[-3:]'
+curl -s "$B/usuarios/5725/destino?ambiente=REAL" | jq .
+```
+
+O que muda para o operador:
+- **Conta nova de cliente:** entra em `REAL_FLEXSCAN_<NOME>_CONTAS` da corretora e o serviço é
+  reiniciado.
+  - Uma conta fora da lista é recusada (`CONTA_FORA_DA_CORRETORA`), e o `/destino` mostra o motivo.
+  - Uma conta não pode estar em duas listas.
+- **Corretora sem guarda-chuva:** os usuários dela recebem `CORRETORA_SEM_CREDENCIAL`.
+- **Uma operação aberta segue pela corretora da entrada**, mesmo se o usuário mudar de corretora no GQ.
+- **Uma corretora fora do ar** suspende só as operações dela (§1.18).
+
+
 ---
 
 ## 2. Checklist da F1 (SPEC v1 Parte 11.2)

@@ -134,11 +134,11 @@ func (r *MariaDB) GravarLote(l *Lote) error {
 			ordem = e.OrdemID
 		}
 		ev = append(ev, []any{ordem, modulo(e.Modulo), e.Direcao, cortar(e.MsgType, 20), nulo(cortar(e.ExecType, 1)), nulo(cortar(e.OrdStatus, 1)),
-			nulo(cortar(e.ClOrdID, 60)), nulo(cortar(e.OrderID, 40)), nulo(cortar(e.ExecID, 80)), lq, lp, cq, ap, nulo(cortar(e.Texto, 1000)), nulo(cortar(e.Codigo, 20)), nulo(e.Bruta), utc(e.Em), dominio.AmbienteDe(e.Ambiente)})
+			nulo(cortar(e.ClOrdID, 60)), nulo(cortar(e.OrderID, 40)), nulo(cortar(e.ExecID, 80)), lq, lp, cq, ap, nulo(cortar(e.Texto, 1000)), nulo(cortar(e.Codigo, 20)), nulo(e.Bruta), utc(e.Em), dominio.AmbienteDe(e.Ambiente), nulo(cortar(e.Canal, 10))})
 	}
 	// INSERT IGNORE: o fill repetido (37, 17) já foi descartado pelo motor; a chave única fica de rede
 	if err := inserir(tx, `INSERT IGNORE INTO kalmanordemevento (ordem_id, modulo, direcao, msgtype, exectype, ordstatus, clordid, orderid37,
-		execid, lastqty, lastpx, cumqty, avgpx, texto, codigo, fix_raw, em, ambiente)`, 18, ev, ""); err != nil {
+		execid, lastqty, lastpx, cumqty, avgpx, texto, codigo, fix_raw, em, ambiente, canal)`, 19, ev, ""); err != nil {
 		return err
 	}
 

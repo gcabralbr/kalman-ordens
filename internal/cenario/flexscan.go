@@ -19,9 +19,14 @@ import (
 // Verbos da Flexscan falsa (SPEC-FLEXSCAN-v1 §10; cenarios/FORMATO.md, seção Flexscan).
 func (e *Executor) flexscan(p roteiro.Passo) error {
 	if p.Verbo == "flx_ambiente" {
-		amb, err := dominio.LerAmbiente(p.Args[0])
+		// v1.30: REAL:<NOME> = a Flexscan falsa da corretora (config REAL_FLEXSCAN_<NOME>_URL=falso)
+		a, nome, _ := strings.Cut(p.Args[0], ":")
+		amb, err := dominio.LerAmbiente(a)
+		if nome != "" {
+			amb += ":" + strings.ToUpper(nome)
+		}
 		if err != nil || e.flxs[amb] == nil {
-			return fmt.Errorf("flx_ambiente %s: sem a Flexscan falsa desse ambiente (REAL: config REAL_FLEXSCAN_URL=falso)", p.Args[0])
+			return fmt.Errorf("flx_ambiente %s: sem a Flexscan falsa desse ambiente (REAL: config REAL_FLEXSCAN_URL=falso; corretora: REAL_FLEXSCAN_<NOME>_URL=falso)", p.Args[0])
 		}
 		e.ocioso()
 		e.mirarFlexscan(amb)
@@ -403,7 +408,13 @@ func (e *Executor) flxTrafego(args []string) error {
 	esperado := args[len(args)-1]
 	e.ocioso()
 	rec := httptest.NewRecorder()
-	e.svc.http.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/flexscan/trafego?limite=2000&ambiente="+e.alvoFlx, nil))
+	// v1.30: o alvo REAL:<NOME> é a ponte da corretora (?corretora=)
+	amb, nome, _ := strings.Cut(e.alvoFlx, ":")
+	q := "/flexscan/trafego?limite=2000&ambiente=" + amb
+	if nome != "" {
+		q += "&corretora=" + nome
+	}
+	e.svc.http.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, q, nil))
 	corpo := rec.Body.String()
 	segredos := append(e.flx.Tokens(), SenhaFlexscanRoteiro, SegredoWebhookRoteiro, SenhaFlexscanRoteiro+"-real", SegredoWebhookRoteiro+"-real")
 	if u := e.cfg.Texto("FLEXSCAN_WEBHOOK_URL", ""); u != "" {

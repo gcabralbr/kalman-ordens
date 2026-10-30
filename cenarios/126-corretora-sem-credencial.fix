@@ -1,0 +1,32 @@
+cenario 126 O REAL por corretora sem o guarda-chuva da corretora do usuário (v1.30): só a CMC configurada; o usuário da BTG recebe CORRETORA_SEM_CREDENCIAL no /destino e na entrada; o da CMC segue normal
+hora 2026-10-30 10:00:00
+config ORDENS_AMBIENTE=
+config AMBIENTES_PERMITIDOS=REAL
+config REAL_FLEXSCAN_CORRETORAS=88:CMC
+config REAL_FLEXSCAN_CMC_URL=falso
+config REAL_FLEXSCAN_CMC_CONTAS=715124
+config REAL_UIDS=*
+config REAL_CONTAS=*
+config REAL_LIMITE_QTD_ORDEM=1
+config REAL_LIMITE_PERDA_DIA_PTS=3000
+config REAL_LIMITE_ENTRADAS_DIA=10
+usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
+usuario 9 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"9001"}}
+habilita 8 ambiente=REAL conectores=flexscan
+habilita 9 ambiente=REAL conectores=flexscan
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+http GET /usuarios/9/destino?ambiente=REAL
+resposta ambientes.REAL.codigo=CORRETORA_SEM_CREDENCIAL ambientes.REAL.pode_enviar=false ambientes.REAL.corretora=BTG
+entrada 12601 C uid=9 ambiente=REAL
+resposta aceito=false codigo=CORRETORA_SEM_CREDENCIAL
+flx_ambiente REAL:CMC
+flx_nada
+http GET /usuarios/8/destino?ambiente=REAL
+resposta ambientes.REAL.pode_enviar=true
+entrada 12602 C uid=8 ambiente=REAL
+resposta aceito=true
+flx_recebe POST name=KM-E-12602-1 account=715124

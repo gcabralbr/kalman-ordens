@@ -166,11 +166,14 @@ func (m *Motor) destinoDaEntrada(uid int, amb string) map[string]any {
 		if res.Conector == dominio.ConectorPnT && m.p.PnTDesligado {
 			falhar(conectorDesligado())
 		}
+		// v1.30: o guarda-chuva da corretora (no modo por corretora) e a conta na lista dele
+		falhar(m.recusaCorretora(res.Conector, res.Destino, res.Conta))
 		// v1.28 §3: o canal do conector (a entrada sem sessão é SEM_SESSAO)
-		est, motivo, _ := m.canal(res.Conector)
+		chave := m.chaveDe(res.Conector, res.Destino)
+		est, motivo, _ := m.canal(chave)
 		d["canal"] = est
 		if est != canalNoAr {
-			falhar(simples("SEM_SESSAO", fmt.Sprintf("conector %s sem sessão: %s", nomeConector(res.Conector), motivo)))
+			falhar(simples("SEM_SESSAO", fmt.Sprintf("conector %s sem sessão: %s", nomeCanal(chave), motivo)))
 		}
 	}
 	// v1.29 (SPEC-AMBIENTES D2 revisada): no SIMULADOR todo usuário é paper; a máquina que não roda o

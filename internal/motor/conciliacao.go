@@ -73,7 +73,7 @@ func (m *Motor) contasMassStatus() []contaConector {
 	vistas := map[contaConector]bool{}
 	var r []contaConector
 	for _, op := range m.ops {
-		cc := contaConector{op.Conta, op.conector()}
+		cc := contaConector{op.Conta, m.canalOp(op)} // v1.30: a conta pela ponte da corretora gravada
 		if op.Conta == "" || vistas[cc] {
 			continue
 		}
@@ -247,7 +247,7 @@ func (m *Motor) conciliar() {
 			if !o.viva() || vistas[o] || o.seq > m.massCorte || o.saidaNoMass {
 				continue // a saída com recusa terminal é decidida abaixo (v1.3 I1)
 			}
-			if semResposta[o.Conta] || m.massSemSessao[op.conector()] {
+			if semResposta[o.Conta] || m.massSemSessao[m.canalOp(op)] {
 				naoJulgadas++
 				continue
 			}
@@ -278,7 +278,7 @@ func (m *Motor) conciliar() {
 		if op.Estado.Final() || op.SuspensaEm.IsZero() {
 			continue
 		}
-		m.marcarAusentesDaVolta(op, vistas, !semResposta[op.Conta] && !m.massSemSessao[op.conector()])
+		m.marcarAusentesDaVolta(op, vistas, !semResposta[op.Conta] && !m.massSemSessao[m.canalOp(op)])
 		if op.encerrandoFora {
 			for _, o := range op.ordens {
 				if o.viva() && o.ausenteNaVolta {

@@ -39,23 +39,29 @@ type estadoCanal struct {
 	motivo    string
 }
 
-// canal: o estado do conector nesta instância, o motivo e desde quando (FORA).
+// canal: o estado do canal nesta instância (v1.30: "PNT", "FLEXSCAN" ou "FLEXSCAN:<NOME>"), o
+// motivo e desde quando (FORA).
 func (m *Motor) canal(con string) (estado, motivo string, desde time.Time) {
-	switch con {
-	case dominio.ConectorPnT:
+	var flx *canalFlx
+	switch {
+	case con == dominio.ConectorPnT:
 		if m.p.PnTDesligado || m.fix == nil {
 			return canalDesligado, "o PnT está desligado nesta máquina (PNT_DESLIGADO)", timeZero
 		}
-	case dominio.ConectorFlexscan:
-		if m.flx == nil {
+	case con == dominio.ConectorFlexscan && !m.porCorretora():
+		if flx = m.canalFlxDe(con); flx == nil || flx.e == nil {
 			return canalDesligado, "a Flexscan não está configurada nesta instância (FLEXSCAN_URL)", timeZero
+		}
+	default:
+		if flx = m.canalFlxDe(con); flx == nil || flx.e == nil {
+			return canalDesligado, "sem credencial Flexscan desta corretora nesta máquina (REAL_FLEXSCAN_CORRETORAS)", timeZero
 		}
 	}
 	if m.logado(con) {
 		return canalNoAr, "", timeZero
 	}
-	if con == dominio.ConectorFlexscan {
-		if d, ok := m.flx.(interface{ Dormindo() bool }); ok && d.Dormindo() {
+	if flx != nil {
+		if d, ok := flx.e.(interface{ Dormindo() bool }); ok && d.Dormindo() {
 			return canalDormindo, "fora da janela da Flexscan: loga na abertura", timeZero
 		}
 	}
@@ -78,22 +84,15 @@ func (m *Motor) canalForaDoAr(con string) bool {
 	return e == canalFora || e == canalDesligado
 }
 
-func nomeConector(con string) string {
-	if con == dominio.ConectorFlexscan {
-		return "Flexscan"
-	}
-	return "PnT"
-}
-
 // registrarQueda: o motivo da queda do conector (Caiu da sessão FIX ou da ponte).
 func (m *Motor) registrarQueda(con, motivo string) { m.quedas[con] = motivo }
 
 // recusaCanal: a saída, o ajuste do stop e as ações do admin com o canal da operação fora do ar, ou
 // com a operação suspensa: recusa na hora, nada fica guardado.
 func (m *Motor) recusaCanal(op *operacao) *recusa {
-	if est, motivo, _ := m.canal(op.conector()); est == canalFora || est == canalDesligado {
+	if est, motivo, _ := m.canal(m.canalOp(op)); est == canalFora || est == canalDesligado {
 		return simples("CONECTOR_FORA", fmt.Sprintf("o conector %s da operação está fora do ar (%s): nada sai por ele nem por outro conector; para sair já, pela corretora (home broker, Profit, mesa)",
-			nomeConector(op.conector()), motivo))
+			nomeCanal(m.canalOp(op)), motivo))
 	}
 	if !op.SuspensaEm.IsZero() {
 		return simples("OPERACAO_SUSPENSA", "a operação está suspensa desde a queda do conector ("+op.SuspensaMotivo+"): aguardando o admin confirmar a posição na corretora")
@@ -116,7 +115,7 @@ func (op *operacao) temVivaNaCorretora() bool {
 // tickCanais: o estado de cada conector e a suspensão das operações com o canal fora há mais da
 // tolerância (a toda volta do relógio, com ou sem sessão).
 func (m *Motor) tickCanais(agora time.Time) {
-	for _, con := range conectores {
+	for _, con := range m.chavesCanais() {
 		if m.logado(con) {
 			if c := m.canais[con]; c != nil {
 				slog.Info("conector de volta", "conector", con, "fora_por", agora.Sub(c.foraDesde))
@@ -140,7 +139,7 @@ func (m *Motor) tickCanais(agora time.Time) {
 		if !op.SuspensaEm.IsZero() || (op.posicao() == 0 && !op.temVivaNaCorretora()) {
 			continue
 		}
-		est, motivo, desde := m.canal(op.conector())
+		est, motivo, desde := m.canal(m.canalOp(op))
 		if est != canalFora && est != canalDesligado {
 			continue
 		}
@@ -157,7 +156,7 @@ func (m *Motor) tickCanais(agora time.Time) {
 // suspender: o canal da operação caiu com posição ou ordem viva.
 func (m *Motor) suspender(op *operacao, motivo string, desde time.Time) {
 	op.SuspensaEm = m.agora()
-	op.SuspensaMotivo = fmt.Sprintf("%s fora do ar desde %s: %s", nomeConector(op.conector()), desde.In(relogio.Fuso).Format("15:04:05"), motivo)
+	op.SuspensaMotivo = fmt.Sprintf("%s fora do ar desde %s: %s", nomeCanal(m.canalOp(op)), desde.In(relogio.Fuso).Format("15:04:05"), motivo)
 	op.sugestao = ""
 	m.salvarOp(op)
 	slog.Warn("operação suspensa: o conector caiu com posição", "op", op.OperacaoID, "conector", op.conector(), "motivo", motivo, "posicao", op.posicao())
@@ -193,7 +192,7 @@ func (m *Motor) textoCanalFora(op *operacao, motivo string, desde time.Time) str
 		corretora = fmt.Sprintf("corretora %d", op.Destino)
 	}
 	fmt.Fprintf(&b, "operação %d (uid %d): o conector %s está fora do ar desde %s (%s). ", op.OperacaoID, op.UID,
-		nomeConector(op.conector()), desde.In(relogio.Fuso).Format("15:04:05"), motivo)
+		nomeCanal(m.canalOp(op)), desde.In(relogio.Fuso).Format("15:04:05"), motivo)
 	if pos != 0 {
 		lado := "comprado"
 		if pos < 0 {
@@ -233,7 +232,7 @@ func (m *Motor) marcarAusentesDaVolta(op *operacao, vistas map[*ordem]bool, julg
 // avaliarSuspensas: depois da conciliação, a sugestão de cada operação suspensa com o canal de volta.
 func (m *Motor) avaliarSuspensas(semResposta map[string]bool) {
 	for _, op := range m.ops {
-		if op.Estado.Final() || op.SuspensaEm.IsZero() || op.encerrandoFora || m.canalForaDoAr(op.conector()) || m.massSemSessao[op.conector()] {
+		if op.Estado.Final() || op.SuspensaEm.IsZero() || op.encerrandoFora || m.canalForaDoAr(m.canalOp(op)) || m.massSemSessao[m.canalOp(op)] {
 			continue
 		}
 		op.sugestao = m.sugestaoDaVolta(op, semResposta[op.Conta])
@@ -244,7 +243,7 @@ func (m *Motor) avaliarSuspensas(semResposta map[string]bool) {
 		}
 		m.al.Emitir("OPERACAO_SUSPENSA", chaveOp("SUSPENSA", op), fmt.Sprintf(
 			"operação %d (uid %d): o conector %s voltou; a operação segue SUSPENSA (nada sai por ela). A conciliação sugere: %s. Confirme a posição na corretora (conta %s): kalman-ordens operacao confirmar -op %d -posicao N -motivo ... — 0 = zerada fora, encerra sem ordem%s; %d (a do sistema) = retoma; outra = divergência",
-			op.OperacaoID, op.UID, nomeConector(op.conector()), op.sugestao, op.Conta, op.OperacaoID, zero, op.posicao()), op.OperacaoID)
+			op.OperacaoID, op.UID, nomeCanal(m.canalOp(op)), op.sugestao, op.Conta, op.OperacaoID, zero, op.posicao()), op.OperacaoID)
 		d := m.resumoParaMao(op)
 		d["sugestao"] = op.sugestao
 		m.publicar("SUSPENSA_CONFERIR", op, d)
@@ -319,8 +318,8 @@ func (m *Motor) confirmarPosicao(op *operacao, a AcaoAdmin) (Resposta, *recusa) 
 	if op.SuspensaEm.IsZero() {
 		return nil, simples("OPERACAO_NAO_SUSPENSA", "a operação não está suspensa")
 	}
-	if est, motivo, _ := m.canal(op.conector()); est != canalNoAr {
-		return nil, simples("CONECTOR_FORA", fmt.Sprintf("o conector %s ainda está fora do ar (%s): confirme depois da volta e da conciliação", nomeConector(op.conector()), motivo))
+	if est, motivo, _ := m.canal(m.canalOp(op)); est != canalNoAr {
+		return nil, simples("CONECTOR_FORA", fmt.Sprintf("o conector %s ainda está fora do ar (%s): confirme depois da volta e da conciliação", nomeCanal(m.canalOp(op)), motivo))
 	}
 	if m.conciliando {
 		return nil, simples("CONCILIANDO", "a conciliação da volta ainda está em curso: tente de novo em instantes")
@@ -418,7 +417,7 @@ func (m *Motor) terminarForaSePronto(op *operacao) bool {
 // canaisSaude: o bloco "canais" do /saude.
 func (m *Motor) canaisSaude() map[string]any {
 	r := map[string]any{}
-	for _, con := range conectores {
+	for _, con := range m.chavesCanais() {
 		est, motivo, desde := m.canal(con)
 		c := map[string]any{"estado": est, "motivo": nuloSeVazio(motivo), "desde": nil}
 		if est == canalFora {

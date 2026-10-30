@@ -29,14 +29,17 @@ type EventoFIX struct {
 	ExecID    string // único por OrderID quando os dois estão presentes (v1.3 H1)
 	// Ambiente (v1.26, 0015): o da instância que trocou a mensagem; vazio = SIMULADOR
 	Ambiente string
-	LastQty  *int
-	LastPx   *decimal.Decimal
-	CumQty   *int
-	AvgPx    *decimal.Decimal
-	Texto    string
-	Codigo   string
-	Bruta    string
-	Em       time.Time
+	// Canal (v1.30, 0017): a corretora da ponte Flexscan que trocou o evento (REAL por corretora);
+	// vazio = a ponte única
+	Canal   string
+	LastQty *int
+	LastPx  *decimal.Decimal
+	CumQty  *int
+	AvgPx   *decimal.Decimal
+	Texto   string
+	Codigo  string
+	Bruta   string
+	Em      time.Time
 }
 
 // Publicado é um evento para o gestor (GET /eventos).
@@ -86,7 +89,7 @@ type Repositorio interface {
 	EventosFIXDasOrdens(ordemIDs []int64) ([]EventoFIX, error)
 	// EventosFlexscanEntre (28/10): os eventos da ponte Flexscan (msgtype FLX-*) em [de, ate), os
 	// limite mais recentes, em ordem; o tráfego da aba "Flexscan ao vivo" recarregado na partida.
-	EventosFlexscanEntre(de, ate time.Time, limite int, ambiente string) ([]EventoFIX, error)
+	EventosFlexscanEntre(de, ate time.Time, limite int, ambiente, canal string) ([]EventoFIX, error)
 	PublicadosDaOperacao(modulo string, operacaoID int64) ([]Publicado, error)
 	// PublicadosEntre: [de, ate); tipo vazio = todos.
 	PublicadosEntre(de, ate time.Time, tipo string) ([]Publicado, error)
@@ -390,12 +393,12 @@ func (m *Memoria) Eventos() []EventoFIX {
 	return append([]EventoFIX(nil), m.eventos...)
 }
 
-func (m *Memoria) EventosFlexscanEntre(de, ate time.Time, limite int, amb string) ([]EventoFIX, error) {
+func (m *Memoria) EventosFlexscanEntre(de, ate time.Time, limite int, amb, canal string) ([]EventoFIX, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var es []EventoFIX
 	for _, e := range m.eventos {
-		if dominio.AmbienteDe(e.Ambiente) == dominio.AmbienteDe(amb) && strings.HasPrefix(e.MsgType, "FLX-") && !e.Em.Before(de) && e.Em.Before(ate) {
+		if dominio.AmbienteDe(e.Ambiente) == dominio.AmbienteDe(amb) && e.Canal == canal && strings.HasPrefix(e.MsgType, "FLX-") && !e.Em.Before(de) && e.Em.Before(ate) {
 			es = append(es, e)
 		}
 	}

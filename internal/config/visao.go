@@ -66,6 +66,10 @@ func (c Config) Visao(a Ambientes, amb string) (Config, []string) {
 			v.v[k] = x
 		}
 	}
+	// v1.30: a Flexscan do REAL por corretora (sem REAL_FLEXSCAN_URL, ela ainda existe)
+	if c.Texto("REAL_FLEXSCAN_CORRETORAS", "") != "" {
+		v.v["FLEXSCAN_POR_CORRETORA"] = "1"
+	}
 	// o PnT do REAL existe com REAL_FIX_HOST; REAL_PNT_DESLIGADO o desliga
 	desl := c.Texto("REAL_FIX_HOST", "") == "" || c.Bool("REAL_PNT_DESLIGADO", false)
 	v.v["PNT_DESLIGADO"] = map[bool]string{true: "1", false: "0"}[desl]

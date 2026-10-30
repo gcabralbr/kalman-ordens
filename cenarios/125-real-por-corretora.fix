@@ -1,0 +1,109 @@
+cenario 125 O REAL por corretora (v1.30, SPEC-AMBIENTES-v1 D4 revisada, passo 2b): um usuário guarda-chuva Flexscan por corretora (CMC e BTG, duas Flexscan falsas), cada um com as suas contas permitidas; corretora sem credencial e conta fora da lista recusadas na entrada e no /destino; cada operação pela ponte da corretora gravada, mesmo se o usuário mudar de corretora no GQ; o restart concilia cada uma na sua; tráfego e canais por corretora; a corretora que cai não afeta a outra
+hora 2026-10-30 10:00:00
+config ORDENS_AMBIENTE=
+config AMBIENTES_PERMITIDOS=REAL
+config REAL_FLEXSCAN_CORRETORAS=88:CMC,85:BTG
+config REAL_FLEXSCAN_CMC_URL=falso
+config REAL_FLEXSCAN_BTG_URL=falso
+config REAL_FLEXSCAN_CMC_CONTAS=715124
+config REAL_FLEXSCAN_BTG_CONTAS=9001,9002
+config REAL_UIDS=*
+config REAL_CONTAS=*
+config REAL_LIMITE_QTD_ORDEM=1
+config REAL_LIMITE_POSICAO_MAX=2
+config REAL_LIMITE_PERDA_DIA_PTS=3000
+config REAL_LIMITE_ENTRADAS_DIA=10
+config REAL_LIMITE_ENTRADAS_MIN=10
+config LIMITE_INTERVALO_ENTRADAS_S=0
+# uid 8: Capital (88) → CMC; uid 9: BTG (85) → BTG; uid 11: Capital numa conta fora da lista da CMC (a
+# corretora sem guarda-chuva: roteiro 126)
+usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
+usuario 9 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"9001"}}
+usuario 11 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715999"}}
+habilita 8 ambiente=REAL conectores=flexscan
+habilita 9 ambiente=REAL conectores=flexscan
+habilita 11 ambiente=REAL conectores=flexscan
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+saude ambientes.REAL.flexscan_corretoras.CMC.logado=true ambientes.REAL.flexscan_corretoras.BTG.logado=true ambientes.REAL.flexscan_corretoras.CMC.corretora_codigo=88
+saude ambientes.REAL.canais.FLEXSCAN:CMC.estado=NO_AR ambientes.REAL.canais.FLEXSCAN:BTG.estado=NO_AR ambientes.REAL.canais.PNT.estado=DESLIGADO
+
+# --- conta fora da lista do guarda-chuva: recusa clara no /destino e na entrada
+http GET /usuarios/11/destino?ambiente=REAL
+resposta ambientes.REAL.codigo=CONTA_FORA_DA_CORRETORA "ambientes.REAL.motivo=~REAL_FLEXSCAN_CMC_CONTAS" ambientes.REAL.pode_enviar=false
+http GET /usuarios/8/destino?ambiente=REAL
+resposta ambientes.REAL.pode_enviar=true ambientes.REAL.canal=NO_AR ambientes.REAL.conta=715124
+entrada 12502 C uid=11 ambiente=REAL
+resposta aceito=false codigo=CONTA_FORA_DA_CORRETORA
+
+# --- a do uid 8 pela CMC, a do 9 pela BTG; nada na outra
+entrada 12503 C uid=8 ambiente=REAL
+resposta aceito=true
+flx_ambiente REAL:CMC
+flx_recebe POST name=KM-E-12503-1 account=715124 id=>E1
+flx_executa $E1 preco=130010
+flx_webhook $E1
+evento ENTRADA_EXECUTADA operacao_id=12503
+flx_recebe POST name=KM-P-12503-1 ordType=4 id=>P1
+evento PROTEGIDA operacao_id=12503
+flx_ambiente REAL:BTG
+flx_nada
+entrada 12504 C uid=9 ambiente=REAL
+resposta aceito=true
+flx_recebe POST name=KM-E-12504-1 account=9001 id=>E2
+flx_executa $E2 preco=130010
+flx_webhook $E2
+evento ENTRADA_EXECUTADA operacao_id=12504
+flx_recebe POST name=KM-P-12504-1 ordType=4 id=>P2
+evento PROTEGIDA operacao_id=12504
+flx_ambiente REAL:CMC
+flx_nada
+
+# --- o uid 8 muda de corretora no GQ (BTG, conta 9002): a saída da 12503 sai pela CMC, na conta gravada
+usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"9002"}}
+preco bid=130100 ask=130105 preco=130100
+saida 12503 V SINAL_OPOSTO uid=8 ambiente=REAL
+resposta aceito=true
+flx_recebe DELETE id=$P1
+flx_recebe POST name=KM-S-12503-1 account=715124 id=>S1
+flx_executa $S1 preco=130100
+flx_webhook $S1
+evento ZERADA operacao_id=12503
+flx_ambiente REAL:BTG
+flx_nada
+
+# --- restart: a 12504 volta e concilia pela BTG
+reinicia_servico
+aguarda_logon
+avanca 3s
+saude ambientes.REAL.posicao=1 ambientes.REAL.divergente=false
+http GET /ordens/12504
+resposta destino=85 conta=9001 estado=PROTEGIDA
+flx_nada
+
+# --- o tráfego por corretora (?corretora= obrigatório no REAL por corretora)
+http GET /flexscan/trafego?ambiente=REAL&corretora=CMC&limite=1
+resposta _status=200 corretora=CMC ambiente=REAL
+http GET /flexscan/trafego?ambiente=REAL
+resposta _status=400
+http GET /flexscan/trafego?ambiente=REAL&corretora=XP
+resposta _status=400
+flx_trafego tipo=POST clordid=KM-E-12504-1 = 1
+flx_trafego tipo=POST clordid=KM-E-12503-1 = 0
+flx_ambiente REAL:CMC
+flx_trafego tipo=POST clordid=KM-E-12503-1 = 1
+flx_trafego tipo=POST clordid=KM-E-12504-1 = 0
+
+# --- a BTG para de responder: só o canal dela cai; a CMC segue no ar
+flx_ambiente REAL:BTG
+flx_fora_do_ar sim
+avanca 20s
+saude ambientes.REAL.canais.FLEXSCAN:BTG.estado=FORA ambientes.REAL.canais.FLEXSCAN:CMC.estado=NO_AR
+http GET /usuarios/8/destino?ambiente=REAL
+resposta ambientes.REAL.canal=FORA ambientes.REAL.codigo=SEM_SESSAO
+avanca 30s
+evento ALERTA codigo=CONECTOR_FORA_COM_POSICAO texto="~o conector Flexscan BTG esta fora do ar"
+evento SUSPENSA operacao_id=12504

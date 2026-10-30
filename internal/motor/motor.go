@@ -6,6 +6,7 @@ package motor
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -192,11 +193,15 @@ func (m *Motor) divergenteOp(op *operacao) bool {
 func (op *operacao) conector() string { return dominio.ConectorDe(op.Conector) }
 
 // envioDo: a sessão do conector (nil = não configurada).
-func (m *Motor) envioDo(con string) Envio {
-	if con == dominio.ConectorFlexscan {
-		return m.flx
+// envioDo: o envio de um canal (v1.30: "PNT", "FLEXSCAN" ou "FLEXSCAN:<NOME>").
+func (m *Motor) envioDo(chave string) Envio {
+	if chave == dominio.ConectorPnT {
+		return m.fix
 	}
-	return m.fix
+	if c := m.canalFlxDe(chave); c != nil && c.e != nil {
+		return c.e
+	}
+	return nil
 }
 
 // logado: o conector tem sessão (FIX logada; Flexscan com token válido).
@@ -207,7 +212,15 @@ func (m *Motor) logado(con string) bool {
 
 // algumLogado: ao menos um conector com sessão (conciliação e ações de tempo andam).
 func (m *Motor) algumLogado() bool {
-	return m.logado(dominio.ConectorPnT) || m.logado(dominio.ConectorFlexscan)
+	if m.logado(dominio.ConectorPnT) {
+		return true
+	}
+	for _, c := range m.flxs {
+		if m.logado(c.chave) {
+			return true
+		}
+	}
+	return false
 }
 
 // fonteFlxPropria: a Flexscan tem fonte de preço própria (PRECOS_URL_FLEXSCAN diferente).
@@ -387,8 +400,8 @@ type Motor struct {
 	// SPEC-FLEXSCAN-v1: o conector Flexscan (a ponte REST, com a mesma interface da sessão FIX) e a
 	// fonte de preço dele (PRECOS_URL_FLEXSCAN; nil = a mesma do PnT), com o contrato vigente e o
 	// FONTE_DEGRADADA dela
-	flx        Envio
-	flxJaLogou bool
+	// v1.30 (canais_flexscan.go): as pontes Flexscan da instância (a única, ou uma por corretora)
+	flxs []*canalFlx
 	// v1.28 §3 (canal.go): desde quando cada conector está fora do ar, e o motivo da última queda
 	canais     map[string]*estadoCanal
 	quedas     map[string]string
@@ -562,31 +575,6 @@ func (m *Motor) Usar(e Envio) {
 }
 
 // UsarFlexscan liga o conector Flexscan (a ponte REST).
-func (m *Motor) UsarFlexscan(e Envio) {
-	m.flx = e
-	// v1.28: a agenda da ponte usa o dia de pregão do motor (com os feriados)
-	if c, ok := e.(interface{ UsarCalendario(func(time.Time) bool) }); ok {
-		c.UsarCalendario(func(t time.Time) bool { ok, _ := m.pregao.DiaDePregao(t); return ok })
-	}
-}
-
-// marcarVivasFlexscan (v1.28): a ponte fica ativa fora da janela enquanto houver operação não
-// encerrada da Flexscan (a conferência continua, por segurança).
-func (m *Motor) marcarVivasFlexscan() {
-	mv, ok := m.flx.(interface{ MarcarVivas(bool) })
-	if !ok {
-		return
-	}
-	vivas := false
-	for _, op := range m.ops {
-		if !op.Estado.Final() && op.conector() == dominio.ConectorFlexscan {
-			vivas = true
-			break
-		}
-	}
-	mv.MarcarVivas(vivas)
-}
-
 // DefinirURLsPrecos (v1.21): as URLs das fontes, só para o /saude (flx vazia = fonte única).
 func (m *Motor) DefinirURLsPrecos(pnt, flx string) { m.urlPrecos, m.urlPrecosFlx = pnt, flx }
 
@@ -608,20 +596,48 @@ func (m *Motor) Iniciar() error {
 
 // recarregarTrafegoFlexscan (28/10): as trocas do dia com a Flexscan voltam ao buffer do
 // /flexscan/trafego (antes do login da ponte). Falha de leitura não impede a partida: só log.
+// v1.30: o de cada ponte, só com as trocas dela (o canal do evento).
 func (m *Motor) recarregarTrafegoFlexscan() {
-	t, ok := m.flx.(interface{ CarregarTrafego([]repo.EventoFIX) int })
-	if m.flx == nil || !ok {
-		return
-	}
-	de, ate, err := Dia(m.dia)
-	if err == nil {
-		var evs []repo.EventoFIX
-		if evs, err = m.repo.EventosFlexscanEntre(de, ate, 4*flexscan.CapacidadeTrafego, m.amb); err == nil {
-			slog.Info("flexscan: tráfego do dia recarregado", "eventos", len(evs), "linhas", t.CarregarTrafego(evs))
-			return
+	for _, c := range m.flxs {
+		t, ok := c.e.(interface{ CarregarTrafego([]repo.EventoFIX) int })
+		if !ok {
+			continue
 		}
+		de, ate, err := Dia(m.dia)
+		if err == nil {
+			var evs []repo.EventoFIX
+			if evs, err = m.repo.EventosFlexscanEntre(de, ate, 4*flexscan.CapacidadeTrafego, m.amb, c.nome); err == nil {
+				slog.Info("flexscan: tráfego do dia recarregado", "canal", c.chave, "eventos", len(evs), "linhas", t.CarregarTrafego(evs))
+				continue
+			}
+		}
+		slog.Warn("flexscan: tráfego do dia não recarregado", "canal", c.chave, "erro", err)
 	}
-	slog.Warn("flexscan: tráfego do dia não recarregado", "erro", err)
+}
+
+// canalTrafego (v1.30): a ponte do /flexscan/trafego — a única (sem ?corretora=), ou a da corretora
+// pedida (no modo por corretora, obrigatória). nil sem erro = a instância não tem Flexscan.
+// ErrCorretora: o ?corretora= do tráfego não serve nesta instância (400).
+var ErrCorretora = errors.New("corretora")
+
+func (m *Motor) canalTrafego(corretora string) (*canalFlx, error) {
+	if !m.temFlexscan() {
+		return nil, nil
+	}
+	if !m.porCorretora() {
+		if corretora != "" {
+			return nil, fmt.Errorf("%w %q: esta instancia tem uma ponte Flexscan so (sem REAL_FLEXSCAN_CORRETORAS)", ErrCorretora, corretora)
+		}
+		return m.flxs[0], nil
+	}
+	var nomes []string
+	for _, c := range m.flxs {
+		if c.nome == corretora {
+			return c, nil
+		}
+		nomes = append(nomes, c.nome)
+	}
+	return nil, fmt.Errorf("%w %q: use ?corretora= com uma de %v", ErrCorretora, corretora, nomes)
 }
 
 // recontarReplaces (v1.13): os 35=G já enviados a cada 1014 viva, do kalmanordemevento.
@@ -1402,16 +1418,25 @@ func limite(c, m string) *recusa  { return &recusa{codigo: c, motivo: m, porLimi
 // TrafegoFlexscan (GET /flexscan/trafego, v1.21 §1): o tráfego da ponte, com a operação, o módulo e o
 // uid de cada linha pelo clordid (o mapa do monitor ao vivo; sem a fila do motor). ok falso = sem o
 // conector Flexscan.
-func (m *Motor) TrafegoFlexscan(desde int64, limite int) (map[string]any, bool) {
-	t, ok := m.flx.(interface {
+// v1.30: a ponte da corretora (?corretora=, no modo por corretora); erro = corretora inválida (400).
+func (m *Motor) TrafegoFlexscan(corretora string, desde int64, limite int) (map[string]any, bool, error) {
+	c, err := m.canalTrafego(corretora)
+	if c == nil {
+		return nil, err != nil, err
+	}
+	t, ok := c.e.(interface {
 		Trafego(int64, int) ([]flexscan.LinhaTrafego, int64, map[string]any)
 	})
-	if m.flx == nil || !ok {
-		return nil, false
+	if !ok {
+		return nil, false, nil
 	}
 	ls, ult, saude := t.Trafego(desde, limite)
 	preencherOperacao(ls, m.aoVivo.Dono)
-	return map[string]any{"mensagens": ls, "ultimo_seq": ult, "saude": saude}, true
+	r := map[string]any{"mensagens": ls, "ultimo_seq": ult, "saude": saude}
+	if m.porCorretora() {
+		r["corretora"] = c.nome
+	}
+	return r, true, nil
 }
 
 // preencherOperacao: a operação e o módulo de cada linha, pelo ClOrdID (ou pelos retratos de um
@@ -1445,15 +1470,16 @@ const LimiteEventosDiaFlexscan = 50000
 // — o buffer em memória só guarda as últimas 2.000 linhas desde a partida. As consultas que não
 // mudaram o estado nunca foram gravadas e não aparecem. seq = a ordem no dia (1..N); o dono vem das
 // operações do dia. ok=false: sem a Flexscan (404, como o ao vivo).
-func (m *Motor) TrafegoFlexscanDoDia(dia string) (map[string]any, bool, error) {
-	if m.flx == nil {
-		return nil, false, nil
+func (m *Motor) TrafegoFlexscanDoDia(corretora, dia string) (map[string]any, bool, error) {
+	c, err := m.canalTrafego(corretora)
+	if c == nil {
+		return nil, err != nil, err
 	}
 	de, ate, err := Dia(dia)
 	if err != nil {
 		return nil, true, err
 	}
-	evs, err := m.repo.EventosFlexscanEntre(de, ate, LimiteEventosDiaFlexscan, m.amb)
+	evs, err := m.repo.EventosFlexscanEntre(de, ate, LimiteEventosDiaFlexscan, m.amb, c.nome)
 	if err != nil {
 		return nil, true, err
 	}

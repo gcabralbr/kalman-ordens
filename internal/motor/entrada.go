@@ -98,7 +98,12 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 			return nil, r
 		}
 	}
-	if !m.logado(conta.Conector) {
+	// v1.30: no modo por corretora, o guarda-chuva da corretora da coluna e a conta na lista dele; a
+	// sessão é a da ponte dessa corretora
+	if r := m.recusaCorretora(conta.Conector, conta.Destino, conta.Conta); r != nil {
+		return nil, r
+	}
+	if !m.logado(m.chaveDe(conta.Conector, conta.Destino)) {
 		if conta.Conector == dominio.ConectorFlexscan {
 			return nil, simples("SEM_SESSAO", "conector Flexscan sem sessão (sem token)")
 		}

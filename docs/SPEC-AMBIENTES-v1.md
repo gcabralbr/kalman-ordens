@@ -415,8 +415,9 @@ ambientes e não há o que desempatar.
     os webhooks do usuário em que loga: foi o que apagou o nosso cadastro no simulador.
   - O responsável põe as credenciais direto no `service.env` da .51. O IP de origem do webhook de
     produção será observado pelo tráfego (v1.24).
-  - **Implementação:** o passo 2b do §8, que ainda não foi feito. Hoje o REAL tem uma credencial
-    Flexscan só (`REAL_FLEXSCAN_*`).
+  - **Implementação:** o passo 2b do §8, feito na v1.30 (SPEC-ORDENS-v1.30). A ponte é escolhida
+    pelo `CORSeqId` gravado na operação, e cada guarda-chuva tem a sua lista de contas
+    (`REAL_FLEXSCAN_<NOME>_CONTAS`).
 - **D5 (30/10): a .53 nunca usa um guarda-chuva de produção que a .51 também usa.** O cadastro do
   webhook da .53 tomaria o da .51, e o mesmo vale para o GQ. No teste REAL na .53 (passo 4), uma de
   duas:
@@ -440,7 +441,7 @@ Cada passo é um pacote, com o fluxo de sempre:
 | **1. v1.25: ambiente no contrato e na operação** | migração 0014 (`ambiente` na operação e na habilitação); campo `ambiente` aceito; `AMBIENTES_PERMITIDOS`, `REAL_UIDS`, `REAL_CONTAS` e os limites REAL; a coluna do GQ pelo ambiente; o PAPER (§0.1); o `GET /usuarios/{uid}/destino` (§4.3); as recusas do §5; `ORDENS_AMBIENTE=HML` equivalente; CLI e API da habilitação por ambiente. Os conectores de hoje são os do SIMULADOR, e o PnT continua aceito nele **só na equivalência** (`ORDENS_AMBIENTE=HML`, que os roteiros usam) | igual a hoje: `SIM` e o padrão SIMULADOR. Um pedido REAL é recusado (`AMBIENTE_NAO_PERMITIDO`) | este SPEC aprovado |
 | **2. v1.26: conectores por ambiente** | chaves `REAL_` (as sem prefixo continuam SIMULADOR); duas pontes Flexscan; a sessão FIX só no REAL (`CONECTOR_AMBIENTE` no SIMULADOR); webhook por caminho; posição, conciliação, parada, disjuntor, `/saude`, tráfego e ao vivo por ambiente; os roteiros do PnT passam a rodar no REAL das falsas | igual (as chaves `REAL_` vazias; o PnT já está desligado) | passo 1 |
 | **3. Kalman manda `ambiente`** | o contrato do §7.2 no Kalman: o destino na ativação (D1) e o `ambiente` em todo pedido | sai o `AMBIENTE_PADRAO` (sem o campo = recusa). Os testes no simulador da corretora entram pela sessão SIMULADOR | passo 1 (o Kalman pode começar a mandar o campo logo depois do passo 1) |
-| **2b. Credenciais REAL por corretora (D4 revisada)** | no REAL, uma ponte Flexscan por corretora: `REAL_FLEXSCAN_CORRETORAS` (ex.: `88:CMC,85:BTG`) e as chaves `REAL_FLEXSCAN_<NOME>_URL/_USUARIO/_SENHA/_WEBHOOK_SEGREDO/_WEBHOOK_PREFIXO/_WEBHOOK_URL/_ESTADO_LOGIN`; a entrada escolhe a ponte pelo `CORSeqId` (corretora sem credencial: recusa `CORRETORA_SEM_CREDENCIAL`, também no `/destino`); saída, stop, conciliação e restart pela corretora gravada; o webhook com uma rota por corretora; `/saude`, tráfego e `canais` por corretora | igual | este SPEC revisado e aprovado |
+| **2b. v1.30: credenciais REAL por corretora (D4 revisada)** | no REAL, uma ponte Flexscan por corretora: `REAL_FLEXSCAN_CORRETORAS` (ex.: `88:CMC,85:BTG`) e as chaves `REAL_FLEXSCAN_<NOME>_URL/_USUARIO/_SENHA/_WEBHOOK_SEGREDO/_WEBHOOK_PREFIXO/_WEBHOOK_URL/_ESTADO_LOGIN`; a entrada escolhe a ponte pelo `CORSeqId` (corretora sem credencial: recusa `CORRETORA_SEM_CREDENCIAL`, e conta fora de `REAL_FLEXSCAN_<NOME>_CONTAS`, `CONTA_FORA_DA_CORRETORA`, também no `/destino`); saída, stop, conciliação e restart pela corretora gravada; o webhook com uma rota por corretora; `/saude`, tráfego e `canais` por corretora | igual | este SPEC revisado e aprovado |
 | **4. REAL de teste na .53** | `AMBIENTES_PERMITIDOS=SIM,REAL`, um uid, uma conta, 1 contrato e as credenciais REAL de um usuário de teste próprio (D5), ou sem cadastrar webhook; o ensaio do §6 no pregão, com o responsável | volta a `SIM` no fim do teste | passos 2, 2b e 3; D4 e D5 |
 | **5. .51 (PROD)** | instalação, `service.env` de produção (`AMBIENTES_PERMITIDOS=REAL`, D2 revisada; os guarda-chuvas próprios por corretora, D4), habilitações REAL e os limites de produção; `ORDENS_AMBIENTE` removida (o serviço não sobe com ela) | — | passo 4; D2, D3 e D4 |
 

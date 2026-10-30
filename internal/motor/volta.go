@@ -77,7 +77,7 @@ func (m *Motor) conectorDo(e envioPendente) string {
 	}
 	if e.o != nil {
 		if op := m.donoDa[e.o]; op != nil {
-			return op.conector()
+			return m.canalOp(op) // v1.30: a ponte da corretora gravada
 		}
 	}
 	return dominio.ConectorPnT

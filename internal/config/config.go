@@ -190,7 +190,7 @@ func (c Config) Parametros() Parametros {
 		ContasHML:           listaContas(c.Texto("ORDENS_CONTAS_HML", "")),
 		ConfereConta:        c.Segundos("CONFERE_CONTA_S", 60),
 		CanalForaTolerancia: c.Segundos("CONECTOR_FORA_TOLERANCIA_S", 30),
-		Flexscan:            c.Texto("FLEXSCAN_URL", "") != "",
+		Flexscan:            c.Texto("FLEXSCAN_URL", "") != "" || c.Bool("FLEXSCAN_POR_CORRETORA", false), // v1.30
 		PnTDesligado:        c.Bool("PNT_DESLIGADO", false),
 		ContasHMLFlx:        listaContas(c.Texto("FLEXSCAN_CONTAS_HML", "")),
 

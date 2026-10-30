@@ -208,7 +208,8 @@ func (r *MariaDB) Expurgar(antes time.Time, lote int, simular bool) (map[string]
 	return n, nil
 }
 
-func (r *MariaDB) EventosFlexscanEntre(de, ate time.Time, limite int, amb string) ([]EventoFIX, error) {
+func (r *MariaDB) EventosFlexscanEntre(de, ate time.Time, limite int, amb, canal string) ([]EventoFIX, error) {
+	// v1.30: o canal (a corretora); vazio = a ponte única (canal NULL)
 	return r.eventosFIX(`id IN (SELECT id FROM (SELECT id FROM kalmanordemevento WHERE em >= ? AND em < ? AND msgtype LIKE 'FLX-%' AND ambiente = ?
-		ORDER BY id DESC LIMIT ?) ultimos)`, de.UTC(), ate.UTC(), dominio.AmbienteDe(amb), limite)
+		AND COALESCE(canal, '') = ? ORDER BY id DESC LIMIT ?) ultimos)`, de.UTC(), ate.UTC(), dominio.AmbienteDe(amb), canal, limite)
 }

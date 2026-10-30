@@ -141,6 +141,8 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `ENVIO_FALHOU` | a biblioteca recusou a mensagem antes do fio | não | `RECUSA_PNT` |
 | `SEM_POSICAO` | SAIDA sem posição real | não | `SEM_POSICAO` (não quando a operação já foi zerada pelo stop) |
 | `LADO_INCOMPATIVEL` | SAIDA com o lado que aumentaria a posição | não | `LADO_INCOMPATIVEL` |
+| `CORRETORA_SEM_CREDENCIAL` | (v1.30) no REAL por corretora (`REAL_FLEXSCAN_CORRETORAS`), a corretora da coluna do GQ (`Robo.CORSeqId`) não tem guarda-chuva Flexscan nesta máquina; também no `/destino` | não | — |
+| `CONTA_FORA_DA_CORRETORA` | (v1.30) no REAL por corretora, a conta da coluna do GQ não está em `REAL_FLEXSCAN_<NOME>_CONTAS` do guarda-chuva da corretora; também no `/destino` | não | — |
 | `CONECTOR_FORA` | (v1.28 §3) SAIDA com o conector da operação fora do ar (sessão caída, sem token, sem resposta, desligado): recusada na hora, nada fica guardado, nem vai por outro conector | não | — |
 | `OPERACAO_SUSPENSA` | (v1.28 §3) SAIDA da operação suspensa (o conector caiu com posição): aguardando o admin confirmar a posição na corretora | não | — |
 | `RESULTADO_DESCONHECIDO` | (HTTP 503) motor não respondeu a tempo; consultar `GET /ordens/{id}` | não | — |

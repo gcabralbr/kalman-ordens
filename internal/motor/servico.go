@@ -318,25 +318,26 @@ func (s *Servico) flexscanDo(amb string) (*Motor, bool) {
 }
 
 // TrafegoFlexscan: o buffer da ponte do ambiente. ok falso: sem instância ou sem Flexscan.
-func (s *Servico) TrafegoFlexscan(amb string, desde int64, limite int) (map[string]any, bool) {
-	m, ok := s.flexscanDo(amb)
-	if !ok {
-		return nil, false
-	}
-	r, ok := m.TrafegoFlexscan(desde, limite)
-	if ok {
-		r["ambiente"] = m.amb
-	}
-	return r, ok
-}
-
-// TrafegoFlexscanDoDia: o dia inteiro, do registro do ambiente.
-func (s *Servico) TrafegoFlexscanDoDia(amb, dia string) (map[string]any, bool, error) {
+// v1.30: ?corretora= escolhe a ponte no modo por corretora (erro: corretora inválida, 400).
+func (s *Servico) TrafegoFlexscan(amb, corretora string, desde int64, limite int) (map[string]any, bool, error) {
 	m, ok := s.flexscanDo(amb)
 	if !ok {
 		return nil, false, nil
 	}
-	r, ok, err := m.TrafegoFlexscanDoDia(dia)
+	r, ok, err := m.TrafegoFlexscan(corretora, desde, limite)
+	if ok && err == nil {
+		r["ambiente"] = m.amb
+	}
+	return r, ok, err
+}
+
+// TrafegoFlexscanDoDia: o dia inteiro, do registro do ambiente.
+func (s *Servico) TrafegoFlexscanDoDia(amb, corretora, dia string) (map[string]any, bool, error) {
+	m, ok := s.flexscanDo(amb)
+	if !ok {
+		return nil, false, nil
+	}
+	r, ok, err := m.TrafegoFlexscanDoDia(corretora, dia)
 	if ok && err == nil {
 		r["ambiente"] = m.amb
 	}

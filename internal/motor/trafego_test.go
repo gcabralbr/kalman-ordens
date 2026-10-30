@@ -39,11 +39,11 @@ func TestMesmaOperacao(t *testing.T) {
 func TestTrafegoFlexscanDoDia(t *testing.T) {
 	mem := repo.NovaMemoria()
 	m := &Motor{repo: repo.Medir(mem)}
-	if _, ok, _ := m.TrafegoFlexscanDoDia("2026-10-28"); ok {
+	if _, ok, _ := m.TrafegoFlexscanDoDia("", "2026-10-28"); ok {
 		t.Fatal("sem a Flexscan: ok=true")
 	}
-	m.flx = &envioTeste{reg: &registro{}}
-	if _, _, err := m.TrafegoFlexscanDoDia("28/10/2026"); !errors.Is(err, ErrDia) {
+	m.flxs = []*canalFlx{{chave: dominio.ConectorFlexscan, e: &envioTeste{reg: &registro{}}}}
+	if _, _, err := m.TrafegoFlexscanDoDia("", "28/10/2026"); !errors.Is(err, ErrDia) {
 		t.Fatalf("dia inválido: %v", err)
 	}
 	if err := mem.SalvarOperacao(&dominio.Operacao{Data: "2026-10-28", Modulo: "KALMAN", OperacaoID: 234376,
@@ -62,7 +62,7 @@ func TestTrafegoFlexscanDoDia(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r, ok, err := m.TrafegoFlexscanDoDia("2026-10-28")
+	r, ok, err := m.TrafegoFlexscanDoDia("", "2026-10-28")
 	if !ok || err != nil {
 		t.Fatalf("ok %v err %v", ok, err)
 	}
@@ -75,7 +75,7 @@ func TestTrafegoFlexscanDoDia(t *testing.T) {
 		post.OperacaoID == nil || *post.OperacaoID != 234376 || post.UID == nil || *post.UID != 5725 {
 		t.Fatalf("linhas: %+v", ls)
 	}
-	if r, _, _ := m.TrafegoFlexscanDoDia("2026-10-20"); len(r["mensagens"].([]flexscan.LinhaTrafego)) != 0 {
+	if r, _, _ := m.TrafegoFlexscanDoDia("", "2026-10-20"); len(r["mensagens"].([]flexscan.LinhaTrafego)) != 0 {
 		t.Fatalf("dia sem eventos: %v", r)
 	}
 }
