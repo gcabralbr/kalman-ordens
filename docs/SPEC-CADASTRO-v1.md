@@ -39,20 +39,21 @@ associada ao `btg_gammaquant` (feito à mão em 01/11), então o teste não depe
   `x-api-key` (P3). Na AWS a rota não existe (erro do próprio gateway). A senha do guarda-chuva não é
   usada pelo cadastro.
 
-## 1. Parâmetros: `acparam` (GQ) e o arquivo de segredos
+## 1. Parâmetros: a `acparam` (GQ)
 
 ### 1.1 O que fica onde
 
 | onde | o quê | quem lê | quando vale |
 |---|---|---|---|
-| `acparam` (GQ, MariaDB) | os parâmetros que não são segredo: URLs da AWS e do apidma, as corretoras e o guarda-chuva de cada uma, o tipo de documento padrão, o tamanho dos lotes, a pausa entre lotes | `flexscan-cadastro` | a cada execução (sem nada fixo no código; mudar não exige nada) |
-| `/etc/flexscan-cadastro/segredos.env` (root, 600) | o usuário e a senha do admin de cada corretora e a `x-api-key` | só o `flexscan-cadastro` | a cada execução |
+| `acparam` (GQ, MariaDB) | tudo do cadastro (revisão 01/11): as URLs da AWS e do apidma, as corretoras, o guarda-chuva, o admin e a senha de cada uma, o código da `x-api-key`, o tipo de documento padrão e os lotes | `flexscan-cadastro` | a cada execução (nada fixo no código; mudar não exige nada) |
+| a DSN do GQ para o `flexscan-cadastro` | `/etc/flexscan-cadastro/gq.dsn` (root, 600): um usuário de banco só com `SELECT` em `acparam` | só o `flexscan-cadastro` | a cada execução |
 | `service.env` do kalman-ordens | o de hoje: URLs, credenciais e contas permitidas do caminho das ordens | o serviço | **só com restart, de propósito** |
 
-- O `flexscan-cadastro` **nunca** lê o `service.env`, e o serviço **nunca** lê o arquivo de segredos.
-- Os segredos não vão para log, relatório, banco nem saída de erro (mesma máscara da ponte).
-- Como o arquivo é root 600, o `flexscan-cadastro` roda com `sudo` (o usuário roda; eu não tenho
-  sudo). Ele recusa subir se o arquivo tiver permissão mais aberta que 600 ou dono diferente de root.
+- O `flexscan-cadastro` **nunca** lê o `service.env`, e o serviço **nunca** lê os parâmetros `FXC_*`.
+- A senha do admin e a `x-api-key` não vão para log, relatório, banco nem saída de erro (mesma
+  máscara da ponte).
+- Como a DSN é root 600, o `flexscan-cadastro` roda com `sudo` (o usuário roda; eu não tenho sudo). Ele
+  recusa subir se a permissão for mais aberta que 600 ou o dono não for root.
 - **O serviço de ordens continua só com o `service.env`** (P6). Se um dia ler a `acparam`, os
   parâmetros que mudam o caminho das ordens continuam valendo só no restart.
 
@@ -82,25 +83,31 @@ CiaCodCia, USUCodUsuario   NULL (parâmetro global)
 | `PRMCODPARAM` | exemplo | o quê |
 |---|---|---|
 | `FXC_URLCAD` | `https://2nqoqyemr1.execute-api.sa-east-1.amazonaws.com/v1` | a AWS (criar conta) |
-| `FXC_URLAPI` | (a do apidma de produção) | login, `accountlinks`, `accounts` |
+| `FXC_URLAPI` | `https://apidma.flexscan.com.br/v1` | login, `accountlinks`, `accounts` |
 | `FXC_CORRET` | `85:BTG` | as corretoras, no formato do `REAL_FLEXSCAN_CORRETORAS` (o NOME aqui com até 5 letras, para caber no código abaixo) |
 | `FXC_GC_<NOME>` | `FXC_GC_BTG` = `btg_gammaquant` | o guarda-chuva da corretora |
 | `FXC_DOCTIPO` | `1` | o `docType` padrão (1 = CPF) |
 | `FXC_LOTE` | `20` | contas por lote na migração |
 | `FXC_PAUSA_S` | `5` | pausa entre lotes, em segundos |
 | `FXC_TIMEOUT` | `20` | tempo máximo por chamada, em segundos |
+| `FXC_ADM_<NOME>` | `FXC_ADM_BTG` = `btg_gmadmin` | o usuário admin da corretora (login no apidma) |
+| `FXC_SEN_<NOME>` | `FXC_SEN_BTG` | a senha desse admin (decisão de 01/11: na `acparam`) |
 | `FXC_KEY_<NOME>` | `FXC_KEY_BTG` = `APIKEYFXBTG`; `FXC_KEY_CMC` = `APIKEYFLEX` | o **código** da `acparam` que guarda a `x-api-key` da corretora (decisão de 01/11: a chave fica na `acparam`, uma por corretora) |
 
 ```sql
 INSERT INTO acparam (PRMCODPARAM, PRMTXTPARAM, PRMTXTVALOR, PRMDATATUAL, PRMTXTUNID, PRMTXTMODULO) VALUES
  ('FXC_URLCAD',  'Flexscan cadastro: URL da AWS (criar conta)', 'https://2nqoqyemr1.execute-api.sa-east-1.amazonaws.com/v1', NOW(), 'S', 'FXC'),
- ('FXC_URLAPI',  'Flexscan cadastro: URL do apidma',            '<url do apidma de producao>', NOW(), 'S', 'FXC'),
- ('FXC_CORRET',  'Flexscan cadastro: corretoras (cod:NOME)',    '85:BTG',                      NOW(), 'S', 'FXC'),
+ ('FXC_URLAPI',  'Flexscan cadastro: URL do apidma',            'https://apidma.flexscan.com.br/v1', NOW(), 'S', 'FXC'),
+ ('FXC_CORRET',  'Flexscan cadastro: corretoras (cod:NOME)',    '85:BTG,88:CMC',                      NOW(), 'S', 'FXC'),
  ('FXC_GC_BTG',  'Flexscan cadastro: guarda-chuva da BTG',      'btg_gammaquant',              NOW(), 'S', 'FXC'),
  ('FXC_DOCTIPO', 'Flexscan cadastro: docType padrao (1=CPF)',   '1',                           NOW(), 'S', 'FXC'),
  ('FXC_LOTE',    'Flexscan cadastro: contas por lote',          '20',                          NOW(), 'S', 'FXC'),
  ('FXC_PAUSA_S', 'Flexscan cadastro: pausa entre lotes (s)',    '5',                           NOW(), 'S', 'FXC'),
  ('FXC_TIMEOUT', 'Flexscan cadastro: timeout por chamada (s)',  '20',                          NOW(), 'S', 'FXC'),
+ ('FXC_ADM_BTG', 'Flexscan cadastro: usuario admin BTG',        'btg_gmadmin',                 NOW(), 'S', 'FXC'),
+ ('FXC_SEN_BTG', 'Flexscan cadastro: senha do admin BTG',       '<senha>',                     NOW(), 'S', 'FXC'),
+ ('FXC_ADM_CMC', 'Flexscan cadastro: usuario admin CMC',        '<usuario admin CMC>',         NOW(), 'S', 'FXC'),
+ ('FXC_SEN_CMC', 'Flexscan cadastro: senha do admin CMC',       '<senha>',                     NOW(), 'S', 'FXC'),
  ('FXC_KEY_BTG', 'Flexscan cadastro: codigo da x-api-key BTG',  'APIKEYFXBTG',                 NOW(), 'S', 'FXC'),
  ('FXC_KEY_CMC', 'Flexscan cadastro: codigo da x-api-key CMC',  'APIKEYFLEX',                  NOW(), 'S', 'FXC');
 ```
@@ -108,8 +115,9 @@ INSERT INTO acparam (PRMCODPARAM, PRMTXTPARAM, PRMTXTVALOR, PRMDATATUAL, PRMTXTU
 - **A `x-api-key`** está na `acparam`, uma por corretora (`APIKEYFXBTG` na BTG, `APIKEYFLEX` na CM
   Capital). O `FXC_KEY_<NOME>` diz o código, e a ferramenta lê a chave por ele. A chave nunca aparece
   em log, relatório ou erro.
-- **O admin de cada corretora** (`btg_gmadmin` na BTG) e a senha dele: **em aberto** (`acparam` ou o
-  arquivo root 600).
+- **O admin de cada corretora e a senha dele** também ficam na `acparam` (`FXC_ADM_<NOME>`,
+  `FXC_SEN_<NOME>`). Com isso, não existe mais arquivo de segredos: só a DSN do GQ (§1.1). A ferramenta
+  nunca mostra a senha, nem a `x-api-key`, e só precisa de leitura na `acparam`.
 
 ## 2. Ferramenta 1 — boleta do admin (v1.31)
 
@@ -123,8 +131,7 @@ Revista pela P4 e implementada: **`docs/SPEC-ORDENS-v1.31.md`**.
 
 ## 3. Ferramenta 2 — cadastro de conta (`flexscan-cadastro`)
 
-Binário próprio (`cmd/flexscan-cadastro`), sem acesso ao banco do kalman-ordens; lê a `acparam` e o
-arquivo de segredos.
+Binário próprio (`cmd/flexscan-cadastro`), sem acesso ao banco do kalman-ordens; lê só a `acparam` (pela DSN do §1.1).
 
 ### 3.1 Comandos
 
@@ -216,8 +223,13 @@ flexscan-cadastro reverter -relatorio relatorio-AAAAMMDD-HHMM.csv [-ensaio]
 - **P7:** não sabemos ainda; o usuário vai perguntar à Flexscan. Sem rota, o cadastro avisa "liberada
   a partir do próximo dia útil".
 
-**Ainda em aberto:** onde fica a senha do admin. A `x-api-key` foi resolvida: está na `acparam`, uma
-por corretora (`FXC_KEY_<NOME>` aponta o código).
+**Resolvido em 01/11:**
+- a `x-api-key`: na `acparam`, uma por corretora (o `FXC_KEY_<NOME>` aponta o código);
+- o admin e a senha: `FXC_ADM_<NOME>` e `FXC_SEN_<NOME>`;
+- o apidma: `https://apidma.flexscan.com.br/v1`.
+
+**Consequência:** sem arquivo de segredos, quem lê a `acparam` lê a senha do admin e a `x-api-key`. O
+acesso do `flexscan-cadastro` ao GQ deve ser um usuário de banco só com `SELECT` na `acparam`.
 
 ## 6. Plano
 
