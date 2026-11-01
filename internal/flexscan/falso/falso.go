@@ -479,7 +479,7 @@ func fmtTS(t time.Time) string { return t.UTC().Format("20060102-15:04:05.000") 
 func (f *Falso) registro(o *Ordem) map[string]any {
 	r := map[string]any{"id": o.ID, "name": o.Nome, "account": o.Conta, "symbol": o.Simbolo, "side": o.Lado, "orderType": o.Tipo,
 		"quantity": o.Qtd, "quantityExecuted": o.Exec, "quantityRemaining": o.Qtd - o.Exec, "price": float64(o.Preco),
-		"orderStatus": o.Status, "exchange": "BVMF", "timeInForce": "0", "text": "", "lastQuantity": o.UltQtd,
+		"orderStatus": o.Status, "exchange": "BVMF", "timeInForce": "0", "text": o.Texto, "lastQuantity": o.UltQtd,
 		"uniqueTradeId": o.TradeID, "sendingTime": fmtTS(o.Transact), "transactTime": o.Transact.UTC().Format("20060102-15:04:05.000"),
 		"username": f.Usuario}
 	if o.Tipo == "4" {

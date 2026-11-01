@@ -56,6 +56,12 @@ type Pedido struct {
 	// Ambiente (SPEC-AMBIENTES-v1 §1): SIMULADOR ou REAL, o do login do usuário no GQ. Na entrada
 	// escolhe a coluna do GQ e fica gravado na operação; na saída vale o gravado.
 	Ambiente string `json:"ambiente,omitempty"`
+	// v1.31: só na boleta do admin (modulo BOLETA): por = o uid do admin (obrigatório); conta e
+	// corretora = o destino que o admin espera (opcionais, só na ENTRADA): têm de bater com a coluna
+	// do GQ do uid, senão BOLETA_DESTINO_DIVERGENTE.
+	Por       *int   `json:"por,omitempty"`
+	Conta     string `json:"conta,omitempty"`
+	Corretora string `json:"corretora,omitempty"`
 }
 
 // Resposta é um objeto JSON.
@@ -812,6 +818,9 @@ func (m *Motor) Enfileirar(f func()) { m.p0 <- f }
 func (m *Motor) pedir(p Pedido) Resposta {
 	if p.Modulo != "" && !dominio.ModuloValido(p.Modulo) {
 		return m.recusar(p, simples("CAMPO_INVALIDO", fmt.Sprintf("modulo %q inválido (2 a 8 letras maiúsculas e dígitos)", p.Modulo)))
+	}
+	if r := camposDaBoleta(p); r != nil {
+		return m.recusar(p, r)
 	}
 	if r, ok := m.repetido(p); ok {
 		return r

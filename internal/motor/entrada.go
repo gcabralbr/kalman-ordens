@@ -88,6 +88,10 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if r != nil {
 		return nil, r
 	}
+	// v1.31: na boleta, o destino que o admin espera tem de ser o da coluna
+	if r := m.destinoDaBoleta(p, conta); r != nil {
+		return nil, r
+	}
 	if conta.Conector == dominio.ConectorPnT && m.p.PnTDesligado {
 		return nil, conectorDesligado()
 	}
@@ -194,6 +198,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	} else {
 		enviar()
 	}
+	m.avisarBoleta(p, op)
 	slog.Info("ENTRADA decidida", "clordid", o.ClOrdAtual, "preco", o.Preco, "conta", op.Conta, "simbolo", op.Simbolo)
 	return Resposta{"aceito": true, "operacao_id": op.OperacaoID, "clordid": o.ClOrdAtual, "preco": o.Preco, "ambiente": amb}, nil
 }

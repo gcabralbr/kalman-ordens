@@ -56,6 +56,7 @@ const ajuda = `uso: kalman-ordens <comando> [opções]
   retomar -motivo X [-ambiente A] retira a parada (sempre manual)
   saude                           GET /saude
   operacao confirmar -op N -posicao P -motivo X -por UID [-modulo M]
+  boleta destino|enviar|estado|cancelar|encerrar ...   a boleta do admin (v1.31): "kalman-ordens boleta" mostra as opções
                                   v1.28: a posição na corretora da operação SUSPENSA (com sinal; 0 = zerada fora: ENCERRADA_FORA)
   teste-posicao -conta C [-espera S]   bancada da HML: RequestForPositions (35=AN) pela sessão do serviço; imprime a resposta crua
   versao                          commit embutido no binário
@@ -90,6 +91,8 @@ func executar(args []string, saida, erros io.Writer) int {
 		err = cliUsuario(config.DoAmbiente(), args, saida)
 	case "operacao":
 		err = cliOperacao(config.DoAmbiente(), args, saida)
+	case "boleta":
+		err = cliBoleta(config.DoAmbiente(), args, os.Stdin, saida, time.Now())
 	case "historico":
 		err = cliHistorico(config.DoAmbiente(), args, saida)
 	case "quarentena":

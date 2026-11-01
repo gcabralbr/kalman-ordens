@@ -235,6 +235,9 @@ type Habilitacao struct {
 // ModuloPadrao: o módulo de quem não diz qual é (o Kalman, o primeiro cliente do serviço).
 const ModuloPadrao = "KALMAN"
 
+// ModuloBoleta (v1.31): a operação aberta pelo admin, sem o Kalman (kalman-ordens boleta).
+const ModuloBoleta = "BOLETA"
+
 var reModulo = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,7}$`)
 
 // ModuloValido: 2 a 8 letras maiúsculas e dígitos, começando por letra. O nome entra no ClOrdID

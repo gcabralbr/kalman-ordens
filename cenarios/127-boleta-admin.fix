@@ -1,0 +1,99 @@
+cenario 127 A boleta do admin (v1.31): modulo BOLETA pelo POST /ordens, com o uid do cliente e as travas dele; por obrigatório; conta e corretora conferidas com a coluna do GQ; BOLETA_REAL; a rejeição "Conta nao contratada" depois do 202; cancelar e encerrar pelas ações de admin
+hora 2026-11-03 10:00:00
+config ORDENS_AMBIENTE=
+config AMBIENTES_PERMITIDOS=REAL
+config REAL_FLEXSCAN_CORRETORAS=85:BTG
+config REAL_FLEXSCAN_BTG_URL=falso
+config REAL_FLEXSCAN_BTG_CONTAS=4582351
+config REAL_UIDS=5725
+config REAL_CONTAS=4582351
+config REAL_LIMITE_QTD_ORDEM=1
+config REAL_LIMITE_PERDA_DIA_PTS=3000
+config REAL_LIMITE_ENTRADAS_DIA=10
+usuario 5725 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"4582351"}}
+habilita 5725 ambiente=REAL conectores=flexscan
+usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"4582351"}}
+habilita 8 ambiente=REAL conectores=flexscan
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+flx_ambiente REAL:BTG
+
+# --- os campos: por obrigatório na boleta; por, conta e corretora só nela
+entrada 12701 C uid=5725 ambiente=REAL modulo=BOLETA
+resposta aceito=false codigo=CAMPO_INVALIDO "motivo=~por (uid do admin) obrigatorio"
+entrada 12702 C uid=5725 ambiente=REAL por=1
+resposta aceito=false codigo=CAMPO_INVALIDO "motivo=~so na boleta"
+flx_nada
+
+# --- as travas do uid valem na boleta: o 8 não está em REAL_UIDS
+entrada 12703 C uid=8 ambiente=REAL modulo=BOLETA por=1
+resposta aceito=false codigo=REAL_UID_NAO_PERMITIDO
+flx_nada
+
+# --- a conta e a corretora esperadas têm de bater com a coluna do GQ
+entrada 12704 C uid=5725 ambiente=REAL modulo=BOLETA por=1 conta=9999
+resposta aceito=false codigo=BOLETA_DESTINO_DIVERGENTE "motivo=~a conta 9999"
+entrada 12705 C uid=5725 ambiente=REAL modulo=BOLETA por=1 corretora=CMC
+resposta aceito=false codigo=BOLETA_DESTINO_DIVERGENTE "motivo=~a corretora CMC"
+flx_nada
+
+# --- aceita (corretora pelo nome); a Flexscan aceita (202) e depois rejeita: conta ainda não liberada
+entrada 12706 C uid=5725 ambiente=REAL modulo=BOLETA por=1 conta=4582351 corretora=btg motivo=teste
+resposta aceito=true ambiente=REAL
+evento ALERTA codigo=BOLETA_REAL "texto=~boleta 12706 do admin 1: compra 1 WINZ26 no REAL, uid 5725, BTG conta 4582351"
+flx_recebe POST name=KM-BOLETA-E-12706-1 account=4582351 id=>E1
+flx_altera $E1 status=8 "texto=Conta nao contratada"
+flx_webhook $E1
+avanca 1s
+http GET /ordens/12706?modulo=BOLETA
+resposta estado=ENCERRADA_SEM_ENTRADA conta=4582351 destino=85
+evento ALERTA codigo=RECUSA_FLEXSCAN "texto=~KM-BOLETA-E-12706-1: [FLX] Conta nao contratada"
+flx_nada
+
+# --- cancelar a entrada que não executou (corretora pelo código; depois do intervalo mínimo do uid)
+avanca 60s
+entrada 12707 C uid=5725 ambiente=REAL modulo=BOLETA por=1 corretora=85
+resposta aceito=true
+flx_recebe POST name=KM-BOLETA-E-12707-1 id=>E2
+http POST /operacoes/12707/cancelar-entrada?modulo=BOLETA {"motivo":"teste","por":1}
+resposta aceito=true codigo=CANCELANDO
+evento ADMIN_ACAO operacao_id=12707 acao=CANCELAR_ENTRADA por=1
+flx_recebe DELETE id=$E2
+flx_webhook $E2
+avanca 8100ms
+evento ENTRADA_ENCERRADA operacao_id=12707 qtd_final=0 motivo=CANCELADA
+http GET /ordens/12707?modulo=BOLETA
+resposta estado=ENCERRADA_SEM_ENTRADA
+flx_nada
+
+# --- encerrar a boleta posicionada: cancela a stop e sai a mercado, como o encerrar de sempre
+avanca 60s
+entrada 12708 C uid=5725 ambiente=REAL modulo=BOLETA por=1 conta=4582351 corretora=BTG
+resposta aceito=true
+flx_recebe POST name=KM-BOLETA-E-12708-1 account=4582351 id=>E3
+flx_executa $E3 preco=130010
+flx_webhook $E3
+evento ENTRADA_EXECUTADA operacao_id=12708 qtd=1 preco=130010
+flx_recebe POST name=KM-BOLETA-P-12708-1 ordType=4 id=>P3
+evento PROTEGIDA operacao_id=12708
+# o restart com a boleta aberta: volta e concilia pela BTG, no módulo BOLETA
+reinicia_servico
+aguarda_logon
+avanca 3s
+saude ambientes.REAL.posicao=1 ambientes.REAL.divergente=false
+http GET /ordens/12708?modulo=BOLETA
+resposta estado=PROTEGIDA modulo=BOLETA conta=4582351 destino=85
+flx_nada
+http POST /operacoes/12708/encerrar?modulo=BOLETA {"motivo":"fim do teste","por":1}
+resposta aceito=true codigo=ENCERRANDO
+evento ADMIN_ACAO operacao_id=12708 acao=ENCERRAR motivo="fim do teste" por=1
+flx_recebe DELETE id=$P3
+flx_webhook $P3
+flx_recebe POST name=KM-BOLETA-S-12708-1 account=4582351 id=>S3
+flx_executa $S3 preco=130000
+flx_webhook $S3
+evento ZERADA operacao_id=12708 origem=ADMIN
+saude ambientes.REAL.posicao=0

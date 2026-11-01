@@ -70,6 +70,7 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `AMBIENTE_PEDIDO_DIVERGENTE` | (SPEC-AMBIENTES-v1 §1.2) saída ou ajuste do stop com `ambiente` diferente do gravado na operação: executado no gravado (nunca recusa a saída); por operação | sim |
 | `CONECTOR_FORA_COM_POSICAO` | (v1.28) o conector da operação está fora do ar há mais de `CONECTOR_FORA_TOLERANCIA_S` com posição ou ordem viva: a operação fica SUSPENSA; o texto traz corretora, conta, lado, quantidade, preço médio, a stop que segue valendo e a orientação de sair pela corretora (home broker, Profit, mesa); resolve na volta (vira `OPERACAO_SUSPENSA`) ou ao zerar | sim |
 | `OPERACAO_SUSPENSA` | (v1.28) o conector voltou e a operação segue SUSPENSA: a conciliação sugere o caso (ex.: "stop cancelada fora sem fill: provável zeragem manual") e o admin confirma a posição na corretora (`kalman-ordens operacao confirmar`); resolve com ENCERRADA_FORA, RETOMADA ou ZERADA | sim |
+| `BOLETA_REAL` | (v1.31) uma boleta do admin (`kalman-ordens boleta enviar`, modulo `BOLETA`) foi aceita no REAL: o admin (`por`), o lado, a quantidade, o contrato, o uid, a corretora, a conta e o motivo | não |
 | `CONTA_ALTERADA_COM_POSICAO` | a conta/destino do usuário no GQ mudou com posição aberta; a posição segue pela conta gravada na entrada; resolve ao zerar ou se voltar | sim |
 | `SAIDA_DIVERGENTE_NAO_EXECUTOU` | saída com ticker divergente não executou no timeout: não repete, decisão humana | sim |
 | `SAIDA_BLOQUEADA_PRECO_ANTIGO` | saída com ticker divergente e último preço do símbolo certo com mais de 60 s: não enviada, 1014 fica | sim |
@@ -143,6 +144,7 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `LADO_INCOMPATIVEL` | SAIDA com o lado que aumentaria a posição | não | `LADO_INCOMPATIVEL` |
 | `CORRETORA_SEM_CREDENCIAL` | (v1.30) no REAL por corretora (`REAL_FLEXSCAN_CORRETORAS`), a corretora da coluna do GQ (`Robo.CORSeqId`) não tem guarda-chuva Flexscan nesta máquina; também no `/destino` | não | — |
 | `CONTA_FORA_DA_CORRETORA` | (v1.30) no REAL por corretora, a conta da coluna do GQ não está em `REAL_FLEXSCAN_<NOME>_CONTAS` do guarda-chuva da corretora; também no `/destino` | não | — |
+| `BOLETA_DESTINO_DIVERGENTE` | (v1.31) na boleta (modulo `BOLETA`), a `conta` ou a `corretora` informadas não batem com a coluna do GQ do uid naquele ambiente | não | — |
 | `CONECTOR_FORA` | (v1.28 §3) SAIDA com o conector da operação fora do ar (sessão caída, sem token, sem resposta, desligado): recusada na hora, nada fica guardado, nem vai por outro conector | não | — |
 | `OPERACAO_SUSPENSA` | (v1.28 §3) SAIDA da operação suspensa (o conector caiu com posição): aguardando o admin confirmar a posição na corretora | não | — |
 | `RESULTADO_DESCONHECIDO` | (HTTP 503) motor não respondeu a tempo; consultar `GET /ordens/{id}` | não | — |

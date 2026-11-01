@@ -39,6 +39,8 @@ var Catalogo = map[string]bool{
 	"FLEXSCAN_WEBHOOK_INCOERENTE": true, "FLEXSCAN_WEBHOOK_AUSENTE": true, "FLEXSCAN_WEBHOOK_SEM_CHEGAR": true, "FLEXSCAN_ESTADO_INESPERADO": true,
 	// v1.28 §3: o conector da operação fora do ar
 	"CONECTOR_FORA_COM_POSICAO": true, "OPERACAO_SUSPENSA": true,
+	// v1.31: a boleta do admin no REAL
+	"BOLETA_REAL": false,
 }
 
 // Notificador entrega o alerta para fora (Telegram). Não pode bloquear.

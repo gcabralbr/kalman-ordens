@@ -973,6 +973,11 @@ func (e *Executor) pedido(p roteiro.Passo) error {
 			b["modulo"] = v
 		case "ambiente":
 			b["ambiente"] = v
+		case "por":
+			// v1.31: a boleta do admin (modulo=BOLETA)
+			b["por"], _ = strconv.Atoi(v)
+		case "conta", "corretora":
+			b[k] = v
 		}
 	}
 	j, _ := json.Marshal(b)

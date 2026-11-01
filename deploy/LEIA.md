@@ -705,6 +705,53 @@ O que muda para o operador:
 - **Uma operação aberta segue pela corretora da entrada**, mesmo se o usuário mudar de corretora no GQ.
 - **Uma corretora fora do ar** suspende só as operações dela (§1.18).
 
+### 1.20 A boleta do admin e o REAL de teste na .53 (v1.31, SPEC-ORDENS-v1.31)
+
+A boleta manda uma ENTRADA sem o Kalman, pelo mesmo caminho (módulo `BOLETA`): o uid tem de estar
+habilitado no ambiente, e valem as travas e os limites dele. O teste de terça (03/11) na .53:
+
+1. **No GQ**, o `usutxtconfigprd` do 5725: `{"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"4582351"}}`.
+2. **No `service.env`** da .53 (D5: o `btg_gammaquant` é só do kalman-ordens; **sem cadastrar webhook**,
+   os fills chegam pela consulta):
+
+   ```
+   AMBIENTES_PERMITIDOS=SIM,REAL
+   REAL_UIDS=5725
+   REAL_CONTAS=4582351
+   REAL_LIMITE_QTD_ORDEM=1
+   REAL_LIMITE_PERDA_DIA_PTS=300
+   REAL_LIMITE_ENTRADAS_DIA=10
+   REAL_FLEXSCAN_CORRETORAS=85:BTG
+   REAL_FLEXSCAN_BTG_URL=<a API de produção da Flexscan>
+   REAL_FLEXSCAN_BTG_USUARIO=btg_gammaquant
+   REAL_FLEXSCAN_BTG_SENHA=...
+   REAL_FLEXSCAN_BTG_CONTAS=4582351
+   REAL_FLEXSCAN_BTG_WEBHOOK_URL=
+   ```
+
+   Com o receptor ligado (`FLEXSCAN_WEBHOOK_ENDERECO`), a rota da BTG precisa de um
+   `REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO` (base64url, como o do SIMULADOR), mesmo sem cadastro.
+3. **Habilitar o REAL do 5725** e reiniciar:
+
+   ```bash
+   sudo /opt/kalman-ordens/kalman-ordens usuario habilitar -uid 5725 -ambiente REAL -conectores flexscan -qtd-max 1 -posicao-max 1 -motivo "teste REAL 03/11"
+   sudo systemctl restart kalman-ordens
+   ```
+4. **Conferir e mandar:**
+
+   ```bash
+   K=/opt/kalman-ordens/kalman-ordens
+   $K boleta destino -uid 5725 -ambiente REAL -conta 4582351 -corretora BTG
+   $K boleta enviar  -uid 5725 -ambiente REAL -conta 4582351 -corretora BTG -lado C -qtd 1 -stop 300 -por 5725 -motivo "teste REAL 03/11"
+   $K boleta estado  -op <id> -historico
+   $K boleta encerrar -op <id> -por 5725 -motivo "fim do teste"     # com posição
+   $K boleta cancelar -op <id> -por 5725 -motivo "..."              # entrada ainda pendente
+   ```
+
+   "Conta nao contratada" no `RECUSA_FLEXSCAN` quer dizer que a conta ainda não foi liberada (a
+   Flexscan libera no dia seguinte ao cadastro).
+5. **No fim:** `AMBIENTES_PERMITIDOS=SIM` e o restart (a .53 volta a só SIMULADOR).
+
 
 ---
 
