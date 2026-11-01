@@ -67,7 +67,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 
 | Instrução | Efeito |
 |---|---|
-| `entrada OP LADO [qtd=1] [stop=500] [motivo=SINAL] [ts=...] [uid=N] [modulo=M] [ambiente=A] [por=N] [conta=C] [corretora=X]` | `POST /ordens` papel ENTRADA, uid 7 (o habilitado no `_comum.fix`; `uid=` troca; `modulo=` põe o campo no corpo — sem ele, KALMAN; v1.31: `por=`, `conta=` e `corretora=` são os campos da boleta do admin, `modulo=BOLETA`); `ts_decisao` = hora do relógio no primeiro pedido da operação e **o mesmo** nos seguintes (o gestor reenvia o mesmo corpo); `ts=` força outro |
+| `entrada OP LADO [qtd=1] [stop=500] [motivo=SINAL] [ts=...] [uid=N] [modulo=M] [ambiente=A] [por=N] [conta=C] [corretora=X] [preco=P]` | `POST /ordens` papel ENTRADA, uid 7 (o habilitado no `_comum.fix`; `uid=` troca; `modulo=` põe o campo no corpo — sem ele, KALMAN; v1.31: `por=`, `conta=`, `corretora=` e `preco=` são os campos da boleta do admin, `modulo=BOLETA`); `ts_decisao` = hora do relógio no primeiro pedido da operação e **o mesmo** nos seguintes (o gestor reenvia o mesmo corpo); `ts=` força outro |
 | `saida OP LADO MOTIVO [qtd=1] [modulo=M]` | `POST /ordens` papel SAIDA; LADO é o lado da ordem de saída |
 | `stop OP preco=N\|pts=N [uid=N] [modulo=M] [origem=O]` | `POST /operacoes/OP/stop` (ajuste da proteção, SPEC v1.4 K): `preco=` vira `preco_stop`, `pts=` vira `stop_pts`, `origem=` vira `origem` (v1.19) |
 | `sinal ID [parte=N] [partes=N] [modulo=M] [ts=T] e=OP:C\|V[:UID] ... s=OP:C\|V:MOTIVO[:UID] ...` | `POST /sinais` (SPEC v1.10 §6): `parte`/`partes` 1/1 se ausentes; entrada com qtd 1, stop_pts 500, motivo SINAL; uid 7 se ausente; `ts_decisao` = hora do relógio no primeiro envio do sinal e o mesmo nos reenvios |

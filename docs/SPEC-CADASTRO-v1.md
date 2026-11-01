@@ -89,6 +89,7 @@ CiaCodCia, USUCodUsuario   NULL (parâmetro global)
 | `FXC_LOTE` | `20` | contas por lote na migração |
 | `FXC_PAUSA_S` | `5` | pausa entre lotes, em segundos |
 | `FXC_TIMEOUT` | `20` | tempo máximo por chamada, em segundos |
+| `FXC_KEY_<NOME>` | `FXC_KEY_BTG` = `APIKEYFXBTG`; `FXC_KEY_CMC` = `APIKEYFLEX` | o **código** da `acparam` que guarda a `x-api-key` da corretora (decisão de 01/11: a chave fica na `acparam`, uma por corretora) |
 
 ```sql
 INSERT INTO acparam (PRMCODPARAM, PRMTXTPARAM, PRMTXTVALOR, PRMDATATUAL, PRMTXTUNID, PRMTXTMODULO) VALUES
@@ -99,12 +100,16 @@ INSERT INTO acparam (PRMCODPARAM, PRMTXTPARAM, PRMTXTVALOR, PRMDATATUAL, PRMTXTU
  ('FXC_DOCTIPO', 'Flexscan cadastro: docType padrao (1=CPF)',   '1',                           NOW(), 'S', 'FXC'),
  ('FXC_LOTE',    'Flexscan cadastro: contas por lote',          '20',                          NOW(), 'S', 'FXC'),
  ('FXC_PAUSA_S', 'Flexscan cadastro: pausa entre lotes (s)',    '5',                           NOW(), 'S', 'FXC'),
- ('FXC_TIMEOUT', 'Flexscan cadastro: timeout por chamada (s)',  '20',                          NOW(), 'S', 'FXC');
+ ('FXC_TIMEOUT', 'Flexscan cadastro: timeout por chamada (s)',  '20',                          NOW(), 'S', 'FXC'),
+ ('FXC_KEY_BTG', 'Flexscan cadastro: codigo da x-api-key BTG',  'APIKEYFXBTG',                 NOW(), 'S', 'FXC'),
+ ('FXC_KEY_CMC', 'Flexscan cadastro: codigo da x-api-key CMC',  'APIKEYFLEX',                  NOW(), 'S', 'FXC');
 ```
 
-No arquivo de segredos (root 600), por corretora: `BTG_ADMIN_USUARIO` (`btg_gmadmin`),
-`BTG_ADMIN_SENHA` e `BTG_X_API_KEY`. Um `X_API_KEY` sem prefixo vale para as corretoras que não têm a
-sua.
+- **A `x-api-key`** está na `acparam`, uma por corretora (`APIKEYFXBTG` na BTG, `APIKEYFLEX` na CM
+  Capital). O `FXC_KEY_<NOME>` diz o código, e a ferramenta lê a chave por ele. A chave nunca aparece
+  em log, relatório ou erro.
+- **O admin de cada corretora** (`btg_gmadmin` na BTG) e a senha dele: **em aberto** (`acparam` ou o
+  arquivo root 600).
 
 ## 2. Ferramenta 1 — boleta do admin (v1.31)
 
@@ -211,8 +216,8 @@ flexscan-cadastro reverter -relatorio relatorio-AAAAMMDD-HHMM.csv [-ensaio]
 - **P7:** não sabemos ainda; o usuário vai perguntar à Flexscan. Sem rota, o cadastro avisa "liberada
   a partir do próximo dia útil".
 
-**Ainda em aberto:** a URL do apidma de produção (`FXC_URLAPI`) e se a `x-api-key` é por corretora ou
-uma só.
+**Ainda em aberto:** onde fica a senha do admin. A `x-api-key` foi resolvida: está na `acparam`, uma
+por corretora (`FXC_KEY_<NOME>` aponta o código).
 
 ## 6. Plano
 

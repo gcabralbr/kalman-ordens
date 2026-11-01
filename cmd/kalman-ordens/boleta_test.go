@@ -40,7 +40,7 @@ func TestBoletaCLI(t *testing.T) {
 	defer srv.Close()
 	cfg := config.Novo(map[string]string{"HTTP_ENDERECO": strings.TrimPrefix(srv.URL, "http://")})
 	agora := time.Date(2026, 11, 3, 13, 15, 0, 0, time.UTC) // 10:15:00 em São Paulo
-	enviar := []string{"enviar", "-uid", "5725", "-ambiente", "REAL", "-lado", "C", "-qtd", "1", "-stop", "300", "-por", "1", "-motivo", "teste", "-conta", "4582351", "-corretora", "BTG"}
+	enviar := []string{"enviar", "-uid", "5725", "-ambiente", "REAL", "-lado", "C", "-qtd", "1", "-stop", "300", "-por", "1", "-motivo", "teste", "-preco", "129000", "-conta", "4582351", "-corretora", "BTG"}
 	var saida bytes.Buffer
 
 	// sem "sim", nada sai
@@ -65,7 +65,7 @@ func TestBoletaCLI(t *testing.T) {
 	}
 	p := pedidos[0]
 	for k, v := range map[string]any{"modulo": "BOLETA", "papel": "ENTRADA", "uid": 5725.0, "por": 1.0, "conta": "4582351",
-		"corretora": "BTG", "ambiente": "REAL", "lado": "C", "qtd": 1.0, "stop_pts": 300.0, "operacao_id": 1103101500.0} {
+		"corretora": "BTG", "ambiente": "REAL", "lado": "C", "qtd": 1.0, "stop_pts": 300.0, "preco": 129000.0, "operacao_id": 1103101500.0} {
 		if p[k] != v {
 			t.Errorf("%s = %v, esperava %v", k, p[k], v)
 		}

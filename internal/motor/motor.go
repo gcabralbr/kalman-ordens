@@ -62,6 +62,8 @@ type Pedido struct {
 	Por       *int   `json:"por,omitempty"`
 	Conta     string `json:"conta,omitempty"`
 	Corretora string `json:"corretora,omitempty"`
+	// v1.31: o preço limite da ENTRADA da boleta (pontos, múltiplo do tick); sem ele, a agressiva
+	Preco *int64 `json:"preco,omitempty"`
 }
 
 // Resposta é um objeto JSON.

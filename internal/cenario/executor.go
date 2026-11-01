@@ -978,6 +978,8 @@ func (e *Executor) pedido(p roteiro.Passo) error {
 			b["por"], _ = strconv.Atoi(v)
 		case "conta", "corretora":
 			b[k] = v
+		case "preco":
+			b["preco"], _ = strconv.Atoi(v)
 		}
 	}
 	j, _ := json.Marshal(b)

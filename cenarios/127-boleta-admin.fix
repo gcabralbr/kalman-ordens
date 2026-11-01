@@ -69,6 +69,26 @@ http GET /ordens/12707?modulo=BOLETA
 resposta estado=ENCERRADA_SEM_ENTRADA
 flx_nada
 
+# --- a limitada longe do preço: fica viva (sem o timeout da entrada) até o cancelar
+avanca 60s
+entrada 12709 C uid=5725 ambiente=REAL modulo=BOLETA por=1 preco=129003
+resposta aceito=false codigo=CAMPO_INVALIDO "motivo=~preco 129003 invalido"
+entrada 12710 C uid=5725 ambiente=REAL modulo=BOLETA por=1 preco=129000
+resposta aceito=true preco=129000
+flx_recebe POST name=KM-BOLETA-E-12710-1 ordType=2 price=129000 account=4582351 id=>E4
+avanca 30s
+flx_nada
+http GET /ordens/12710?modulo=BOLETA
+resposta estado=ENTRANDO
+http POST /operacoes/12710/cancelar-entrada?modulo=BOLETA {"motivo":"fim do teste","por":1}
+resposta aceito=true codigo=CANCELANDO
+flx_recebe DELETE id=$E4
+flx_webhook $E4
+avanca 8100ms
+evento ENTRADA_ENCERRADA operacao_id=12710 qtd_final=0 motivo=CANCELADA
+entrada 12711 C uid=7 preco=129000
+resposta aceito=false codigo=CAMPO_INVALIDO "motivo=~so na boleta"
+
 # --- encerrar a boleta posicionada: cancela a stop e sai a mercado, como o encerrar de sempre
 avanca 60s
 entrada 12708 C uid=5725 ambiente=REAL modulo=BOLETA por=1 conta=4582351 corretora=BTG

@@ -13,20 +13,31 @@ import (
 // POST /ordens (modulo BOLETA). O uid é o do cliente, com todas as travas e limites dele; o admin
 // fica no "por", e a conta e a corretora informadas conferem a coluna do GQ.
 
-// camposDaBoleta: por, conta e corretora só existem na boleta; nela, o por é obrigatório e a conta
-// e a corretora só valem na ENTRADA.
+// camposDaBoleta: por, conta, corretora e preco só existem na boleta; nela, o por é obrigatório e
+// os outros três só valem na ENTRADA.
 func camposDaBoleta(p Pedido) *recusa {
 	if p.modulo() != dominio.ModuloBoleta {
-		if p.Por != nil || p.Conta != "" || p.Corretora != "" {
-			return simples("CAMPO_INVALIDO", "por, conta e corretora so na boleta (modulo BOLETA)")
+		if p.Por != nil || p.Conta != "" || p.Corretora != "" || p.Preco != nil {
+			return simples("CAMPO_INVALIDO", "por, conta, corretora e preco so na boleta (modulo BOLETA)")
 		}
 		return nil
 	}
 	if p.Por == nil || *p.Por <= 0 {
 		return simples("CAMPO_INVALIDO", "por (uid do admin) obrigatorio na boleta")
 	}
-	if p.Papel != "ENTRADA" && (p.Conta != "" || p.Corretora != "") {
-		return simples("CAMPO_INVALIDO", "conta e corretora so na ENTRADA da boleta (a saida vale o gravado)")
+	if p.Papel != "ENTRADA" && (p.Conta != "" || p.Corretora != "" || p.Preco != nil) {
+		return simples("CAMPO_INVALIDO", "conta, corretora e preco so na ENTRADA da boleta (a saida vale o gravado)")
+	}
+	return nil
+}
+
+// precoDaBoleta: o preço limite, se veio, é positivo e múltiplo do tick.
+func (m *Motor) precoDaBoleta(p Pedido) *recusa {
+	if p.Preco == nil {
+		return nil
+	}
+	if *p.Preco <= 0 || (m.p.Tick > 0 && *p.Preco%m.p.Tick != 0) {
+		return simples("CAMPO_INVALIDO", fmt.Sprintf("preco %d invalido (positivo e multiplo de %d)", *p.Preco, m.p.Tick))
 	}
 	return nil
 }

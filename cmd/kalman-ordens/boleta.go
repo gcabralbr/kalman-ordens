@@ -22,10 +22,12 @@ const usoBoleta = `uso: kalman-ordens boleta <subcomando> [opções]   (v1.31, p
   destino  -uid N -ambiente A [-conta C] [-corretora X]
            o destino do uid naquele ambiente (GET /usuarios/{uid}/destino) e se a conta e a
            corretora esperadas batem
-  enviar   -uid N -ambiente A -lado C|V -qtd Q -stop PTS -por UID -motivo X [-conta C]
+  enviar   -uid N -ambiente A -lado C|V -qtd Q -stop PTS -por UID -motivo X [-preco P] [-conta C]
            [-corretora X] [-op N] [-sim]
            uma ENTRADA do módulo BOLETA pelo POST /ordens: as travas e os limites do uid; o contrato
-           é o vigente; -op padrão MMDDHHMMSS; no REAL pede "sim" (-sim pula)
+           é o vigente; -preco = limitada nesse preço (sem ele, a agressiva de sempre); a entrada
+           fica viva até executar ou o "cancelar" (sem o timeout da entrada); -op padrão
+           MMDDHHMMSS; no REAL pede "sim" (-sim pula)
   estado   -op N [-historico]          GET /ordens/{id}?modulo=BOLETA (e a linha do tempo)
   cancelar -op N -por UID -motivo X    cancela a entrada que ainda não executou (cancelar-entrada)
   encerrar -op N -por UID -motivo X    zera a posição da boleta (encerrar)
@@ -47,6 +49,7 @@ func cliBoleta(cfg config.Config, args []string, entrada io.Reader, saida io.Wri
 	lado := fs.String("lado", "", "C ou V")
 	qtd := fs.Int("qtd", 0, "contratos")
 	stop := fs.Int64("stop", 0, "stop em pontos")
+	preco := fs.Int64("preco", 0, "preço limite da entrada (pontos); sem ele, a agressiva")
 	por := fs.Int("por", 0, "uid do admin")
 	motivo := fs.String("motivo", "", "motivo")
 	op := fs.Int64("op", 0, "operacao_id da boleta")
@@ -76,8 +79,12 @@ func cliBoleta(cfg config.Config, args []string, entrada io.Reader, saida io.Wri
 			id, _ = strconv.ParseInt(agora.In(relogio.Fuso).Format("0102150405"), 10, 64)
 		}
 		if strings.EqualFold(*amb, dominio.AmbienteReal) && !*sim {
-			fmt.Fprintf(saida, "\nREAL: %s %d no contrato vigente, stop %d pts, uid %d, %v conta %v (boleta %d). Digite sim para enviar: ",
-				map[string]string{"C": "COMPRA", "V": "VENDA"}[*lado], *qtd, *stop, *uid, d["corretora"], d["conta"], id)
+			px := "a mercado (agressiva)"
+			if *preco > 0 {
+				px = fmt.Sprintf("limitada a %d", *preco)
+			}
+			fmt.Fprintf(saida, "\nREAL: %s %d no contrato vigente, %s, stop %d pts, uid %d, %v conta %v (boleta %d). Digite sim para enviar: ",
+				map[string]string{"C": "COMPRA", "V": "VENDA"}[*lado], *qtd, px, *stop, *uid, d["corretora"], d["conta"], id)
 			l, _ := bufio.NewReader(entrada).ReadString('\n')
 			if strings.TrimSpace(l) != "sim" {
 				return fmt.Errorf("boleta não enviada")
@@ -91,6 +98,9 @@ func cliBoleta(cfg config.Config, args []string, entrada io.Reader, saida io.Wri
 		}
 		if *corretora != "" {
 			corpo["corretora"] = *corretora
+		}
+		if *preco > 0 {
+			corpo["preco"] = *preco
 		}
 		r, status, err := b.pedir("POST", "/ordens", corpo)
 		if err != nil {

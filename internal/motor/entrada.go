@@ -57,6 +57,9 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if p.StopPts == nil || *p.StopPts <= 0 {
 		return nil, simples("SEM_STOP", "stop_pts ausente na ENTRADA: sem stop, não há ordem")
 	}
+	if r := m.precoDaBoleta(p); r != nil {
+		return nil, r
+	}
 	// PNT_DESLIGADO: antes da conta (pntDesligadoAntes)
 	if r := m.pntDesligadoAntes(hab); r != nil {
 		return nil, r
@@ -148,6 +151,9 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	}
 	o := m.novaOrdem(op, dominio.Entrada, lado, *p.Qtd, pnt.EstrategiaAgendada)
 	o.Preco = m.agressivo(lado, ref)
+	if p.Preco != nil {
+		o.Preco = *p.Preco // v1.31: a boleta limitada
+	}
 	o.MotivoGestor = p.Motivo
 	m.salvarOrdem(o)
 	m.indexar(op, o)

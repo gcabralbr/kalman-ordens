@@ -22,6 +22,7 @@ O contrato é o vigente (o do preço), como no Kalman. O ClOrdID/`name` é `KM-B
 | `por` | obrigatório na boleta | o uid do admin; fica no pedido gravado (`pedidos[]` do histórico) e no alerta |
 | `conta` | opcional, só na ENTRADA da boleta | a conta que o admin espera |
 | `corretora` | opcional, só na ENTRADA da boleta | a corretora que o admin espera: o nome (`BTG`, sem diferença de maiúsculas) ou o código (`85`) |
+| `preco` | opcional, só na ENTRADA da boleta | a entrada limitada nesse preço (pontos, múltiplo do tick); sem ele, a agressiva de sempre (ask/bid ± `COLAR_ENTRADA_PTS`) |
 
 - **Fora do módulo `BOLETA`**, qualquer um dos três dá `CAMPO_INVALIDO` ("por, conta e corretora so na
   boleta"). O contrato do Kalman não muda.
@@ -29,7 +30,11 @@ O contrato é o vigente (o do preço), como no Kalman. O ClOrdID/`name` é `KM-B
 - **`conta` ou `corretora` diferentes da coluna do GQ do uid** naquele ambiente: recusa nova
   `BOLETA_DESTINO_DIVERGENTE`, com as duas no motivo. A conferência é feita logo depois da coluna
   resolvida, antes da sessão e dos limites.
-- A SAIDA da boleta usa o destino gravado (não aceita `conta` nem `corretora`).
+- A SAIDA da boleta usa o destino gravado (não aceita `conta`, `corretora` nem `preco`).
+- **A entrada da boleta não tem o timeout da entrada** (`TIMEOUT_ENTRADA_S`): ela fica viva até
+  executar ou até o `cancelar` (pedido de 01/11: "enviar longe do preço, estado, cancelar"). Isso vale
+  para toda boleta, também a agressiva, e continua valendo depois de um restart, porque a regra é pelo
+  módulo gravado.
 
 ## 3. Alerta
 
@@ -42,7 +47,7 @@ Pelo HTTP local do serviço, como o `operacao confirmar`:
 
 ```
 kalman-ordens boleta destino  -uid 5725 -ambiente REAL [-conta 4582351] [-corretora BTG]
-kalman-ordens boleta enviar   -uid 5725 -ambiente REAL -lado C -qtd 1 -stop 300 -por 5725 -motivo "teste REAL" [-conta 4582351] [-corretora BTG] [-op N] [-sim]
+kalman-ordens boleta enviar   -uid 5725 -ambiente REAL -lado C -qtd 1 -stop 300 -por 5725 -motivo "teste REAL" [-preco P] [-conta 4582351] [-corretora BTG] [-op N] [-sim]
 kalman-ordens boleta estado   -op N [-historico]
 kalman-ordens boleta cancelar -op N -por 5725 -motivo X
 kalman-ordens boleta encerrar -op N -por 5725 -motivo X
@@ -73,6 +78,8 @@ o motivo ("Conta nao contratada") aparece no `RECUSA_FLEXSCAN` e no `motivo_reje
   - a trava do uid;
   - a conta e a corretora divergentes;
   - a boleta aceita com o `BOLETA_REAL`;
+  - a limitada longe do preço: o preço fora do tick é recusado; ela segue viva depois de 30 s, sai no
+    `cancelar` e não é aceita fora da boleta;
   - a rejeição "Conta nao contratada" depois do 202;
   - o cancelar da entrada pendente;
   - o restart com a boleta protegida;
