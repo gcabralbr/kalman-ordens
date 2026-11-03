@@ -24,7 +24,7 @@ O contrato é o vigente (o do preço), como no Kalman. O ClOrdID/`name` é `KM-B
 | `corretora` | opcional, só na ENTRADA da boleta | a corretora que o admin espera: o nome (`BTG`, sem diferença de maiúsculas) ou o código (`85`) |
 | `preco` | opcional, só na ENTRADA da boleta | a entrada limitada nesse preço (pontos, múltiplo do tick); sem ele, a agressiva de sempre (ask/bid ± `COLAR_ENTRADA_PTS`) |
 
-- **Fora do módulo `BOLETA`**, qualquer um dos três dá `CAMPO_INVALIDO` ("por, conta e corretora so na
+- **Fora do módulo `BOLETA`**, qualquer um dos quatro dá `CAMPO_INVALIDO` ("por, conta, corretora e preco so na
   boleta"). O contrato do Kalman não muda.
 - **Boleta sem `por`:** `CAMPO_INVALIDO`.
 - **`conta` ou `corretora` diferentes da coluna do GQ do uid** naquele ambiente: recusa nova
