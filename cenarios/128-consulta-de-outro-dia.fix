@@ -1,0 +1,40 @@
+cenario 128 GET /ordens/{id} de uma operação de outro dia (v1.32 §3): fora da memória, o retrato do banco com acompanhada=false e o dia; a não final gera OPERACAO_DE_OUTRO_DIA (uma vez)
+hora 2026-11-03 11:40:00
+# O caso da 234449 (30/10 → 02/11): o Kalman sobe e consulta uma operação de outro dia; a memória do
+# serviço só tem as do dia (CarregarDia), e a resposta era {"existe": false}.
+config FLEXSCAN_URL=falso
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+# 2801: zerada pelo stop no mesmo dia
+executa COMPRADO_FLX OP=2801
+flx_executa $FP preco=129410
+flx_webhook $FP
+evento ZERADA operacao_id=2801 origem=STOP_SERVIDOR
+# 2802: fica protegida (a anomalia: a noite com a operação aberta)
+executa COMPRADO_FLX OP=2802
+http GET /ordens/2802
+resposta existe=true estado=PROTEGIDA acompanhada=true dia=2026-11-03
+
+# o serviço sobe no dia seguinte: a memória só tem o dia novo
+reinicia_servico salta=24h
+aguarda_logon
+avanca 3s
+
+# a zerada: o retrato do banco, sem alerta
+http GET /ordens/2801?modulo=KALMAN
+resposta existe=true estado=ZERADA acompanhada=false dia=2026-11-03 posicao=0 pnl_pts=-600 origem_saida=STOP_SERVIDOR
+sem_alerta OPERACAO_DE_OUTRO_DIA
+# a não final: o retrato e o alerta, uma vez só
+http GET /ordens/2802
+resposta existe=true estado=PROTEGIDA acompanhada=false dia=2026-11-03
+alerta OPERACAO_DE_OUTRO_DIA
+http GET /ordens/2802
+resposta existe=true acompanhada=false
+sem_alerta OPERACAO_DE_OUTRO_DIA
+# a que não existe, em nenhum dia
+http GET /ordens/2899
+resposta existe=false

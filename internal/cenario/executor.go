@@ -667,6 +667,12 @@ func (e *Executor) passo(p roteiro.Passo) error {
 	case "reinicia_servico":
 		e.descer()
 		_ = e.pnt.EsperarQueda(5 * time.Second)
+		for _, a := range p.Args {
+			if v, ok := strings.CutPrefix(a, "salta="); ok {
+				d, _ := roteiro.Duracao(v)
+				e.rel.Avancar(d) // v1.32: com o serviço fora, sem ticks no meio (a noite)
+			}
+		}
 		r, err := e.backend.Reabrir(e.falha.Repositorio)
 		if err != nil {
 			return err

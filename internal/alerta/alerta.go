@@ -41,6 +41,8 @@ var Catalogo = map[string]bool{
 	"CONECTOR_FORA_COM_POSICAO": true, "OPERACAO_SUSPENSA": true,
 	// v1.31: a boleta do admin no REAL
 	"BOLETA_REAL": false,
+	// v1.32: a consulta de uma operação de outro dia, não final no banco
+	"OPERACAO_DE_OUTRO_DIA": false,
 }
 
 // Notificador entrega o alerta para fora (Telegram). Não pode bloquear.

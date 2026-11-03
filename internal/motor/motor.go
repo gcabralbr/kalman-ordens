@@ -987,6 +987,7 @@ func (m *Motor) Consultar(modulo string, id int64) Resposta {
 			return
 		}
 		r = m.descrever(op)
+		r["dia"], r["acompanhada"] = op.Data, true // v1.32: da memória da instância
 	})
 	return r
 }

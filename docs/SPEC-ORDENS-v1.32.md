@@ -5,9 +5,11 @@ teste pela boleta (pausado: "Conta nao contratada", SPEC-CADASTRO-v1 §0.1):
 
 | # | o quê | estado |
 |---|---|---|
-| 1 | a ponte sem URL de webhook não espera webhook | **feito** no branch `v1.32` |
-| 2 | a CLI da boleta confere o motivo antes do "sim" | **feito** no branch `v1.32` |
-| 3 | o `GET /ordens/{id}` de uma op de outro dia lê o banco | **aguardando aprovação** (§3) |
+| 1 | a ponte sem URL de webhook não espera webhook | feito |
+| 2 | a CLI da boleta confere o motivo antes do "sim" | feito |
+| 3 | o `GET /ordens/{id}` de uma op de outro dia lê o banco | feito (§3 aprovado em 03/11, com D1 e D2) |
+
+Os três vão juntos numa v1.32 só, instalada fora do pregão (o REAL está pausado).
 
 ## 1. A ponte sem `FLEXSCAN_WEBHOOK_URL` não espera webhook
 
@@ -65,7 +67,7 @@ REAL limitada"` (19 caracteres), com uma nota sobre o limite.
 **Teste:** `TestBoletaCLI` cobre o motivo de 41 caracteres (para antes de ler o "sim", nenhum
 `POST`) e o `cancelar` com 61 caracteres.
 
-## 3. O `GET /ordens/{id}` de uma op de outro dia lê o banco (para aprovar)
+## 3. O `GET /ordens/{id}` de uma op de outro dia lê o banco
 
 ### 3.1 O caso (234449)
 
@@ -102,13 +104,17 @@ entram no caminho.
 5. **O ambiente:** é o gravado na operação. A consulta não depende de instância (o banco é comum), e o
    `?ambiente=` continua ignorado como hoje.
 
-### 3.3 Para decidir
+### 3.3 Decisões (03/11)
 
-- **D1: uma op de outro dia que não está final no banco** (por exemplo `PROTEGIDA` de ontem) é uma
-  anomalia, porque o serviço não a acompanha mais. A proposta responde o retrato com
-  `acompanhada: false` e o estado gravado, sem alerta do lado do serviço. Alternativa: emitir também
-  um alerta `OPERACAO_DE_OUTRO_DIA` (não crítico) na consulta.
-- **D2: o lado do Kalman** (`KalmanWIN`, que eu só mexo avisando antes):
+- **D1 (decidido: com alerta):** uma op de outro dia que não está final no banco (por exemplo
+  `PROTEGIDA` de ontem) é uma anomalia, como foi a 234449: o serviço não a acompanha mais. A consulta
+  responde o retrato com `acompanhada: false` e o estado gravado, **e emite `OPERACAO_DE_OUTRO_DIA`**
+  (não crítico), uma vez por operação em cada processo (o Kalman consulta a cada subida; a CLI, a cada
+  `boleta estado`). A op de outro dia final (`ZERADA`, `ENCERRADA_*`) não alerta, e a de hoje fora da
+  memória (a instância do outro ambiente não está no ar) também não.
+- **D2 (decidido: o KalmanWIN não muda nesta versão).** Os dois defeitos do Kalman (a posição não
+  gravada antes do restart e o `_fechar_real` sem posição em memória) estão com o responsável pelo
+  Kalman; a 234449 foi fechada à mão no Kalman em 03/11, 08:47. O que segue é o registro da análise:
   - com `acompanhada: false` e o estado final (`ZERADA`, `ENCERRADA_*`), o Kalman fecha a operação
     dele pelo `_conciliar`;
   - com `acompanhada: false` e o estado não final, o Kalman deve alertar "conferir à mão", não esperar.
@@ -120,17 +126,28 @@ entram no caminho.
   memória (fora das somas, como hoje), e entender por que a reidratação das 10:58 trouxe "0
   posição(ões)" com a 234449 aberta.
 
-### 3.4 Testes (depois da aprovação)
+### 3.4 Implementação e testes
 
-- **No motor:** a op de ontem (gravada, fora do `CarregarDia`) responde com `existe: true`,
-  `acompanhada: false`, `dia` e o estado gravado. A op de hoje responde com `acompanhada: true`. Uma op
-  que não existe responde `existe: false`. O banco com erro responde `existe: false` com o `motivo`.
-- **Nos dois backends** (memória e MariaDB), na suíte.
-- **Um roteiro** com uma op zerada num dia e a consulta no dia seguinte, depois do restart.
+- **Onde:** `Servico.Consultar` pergunta à instância dona (a memória, como antes, agora com `dia` e
+  `acompanhada: true`). Se ela não conhece a operação, lê o banco fora da fila do motor
+  (`carregarOperacao`, a leitura do histórico) e descreve com o mesmo `descrever`. O alerta sai pela
+  instância do ambiente gravado (ou a principal).
+- **Roteiro 128** (memória e MariaDB):
+  - a 2801 zerada pelo stop e a 2802 protegida no dia 03/11; a 2802 consultada no mesmo dia vem com
+    `acompanhada: true`;
+  - o serviço sobe no dia seguinte: `reinicia_servico salta=24h`, um verbo novo dos roteiros que pula
+    o relógio com o serviço fora, sem ticks no meio;
+  - a 2801 vem `ZERADA`, com `acompanhada: false`, `dia 2026-11-03`, o pnl e a origem, sem alerta;
+  - a 2802 vem `PROTEGIDA` com `acompanhada: false` e o `OPERACAO_DE_OUTRO_DIA`; consultada de novo, sem
+    um segundo alerta;
+  - uma op que não existe em nenhum dia: `existe: false`.
+- O caso do banco com erro (`existe: false` com o `motivo`) é o mesmo caminho de erro do histórico.
 
 ## 4. O que não muda
 
 - Nenhuma migração (continuam 17).
-- O contrato do Kalman: os campos do §3 são novos, nenhum muda.
+- O contrato do Kalman: os campos do §3 (`dia`, `acompanhada`) são novos, nenhum muda. O Kalman de
+  hoje passa a receber o retrato de uma op de outro dia em vez de `existe: false`, e o trata pelo
+  `_conciliar` como uma op do dia.
 - O `service.env` da .53: nada a mudar para os itens 1 e 2. Depois da v1.32, a ponte REAL/BTG mostra
   `webhook_esperado=false`.

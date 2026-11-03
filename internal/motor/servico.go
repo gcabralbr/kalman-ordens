@@ -1,6 +1,8 @@
 package motor
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -28,6 +30,7 @@ type Servico struct {
 	lista     []*Motor // SIMULADOR antes do REAL
 	principal *Motor   // o SIMULADOR, se houver: os campos de hoje do /saude, o banco, os recusados
 	donos     *sync.Map
+	avisadas  sync.Map // v1.32: as operações de outro dia não finais já alertadas (OPERACAO_DE_OUTRO_DIA)
 }
 
 // NovoServico junta as instâncias (não inicia); no máximo uma por ambiente.
@@ -150,8 +153,40 @@ func (s *Servico) AjustarStopAssincrono(id int64, a AjusteStop) <-chan Resposta 
 }
 
 // Consultar: GET /ordens/{id}.
+// v1.32 (SPEC-ORDENS-v1.32 §3): fora da memória das instâncias (a operação de outro dia), o retrato
+// gravado no banco, só leitura, com acompanhada=false; a de outro dia que não está final é anomalia
+// (OPERACAO_DE_OUTRO_DIA, uma vez por operação neste processo).
 func (s *Servico) Consultar(modulo string, id int64) Resposta {
-	return s.dono(modulo, id).Consultar(modulo, id)
+	r := s.dono(modulo, id).Consultar(modulo, id)
+	if r["existe"] != false {
+		return r
+	}
+	return s.consultarGravada(modulo, id)
+}
+
+func (s *Servico) consultarGravada(modulo string, id int64) Resposta {
+	op, err := carregarOperacao(s.principal.Repo(), modulo, id)
+	if errors.Is(err, ErrNaoEncontrada) {
+		return Resposta{"existe": false}
+	}
+	if err != nil {
+		return Resposta{"existe": false, "motivo": "banco indisponivel: " + err.Error()}
+	}
+	r := (&Motor{}).descrever(op)
+	r["dia"], r["acompanhada"] = op.Data, false
+	m := s.motores[dominio.AmbienteDe(op.Ambiente)]
+	if m == nil {
+		m = s.principal
+	}
+	if op.Estado.Final() || op.Data == m.hoje() {
+		return r
+	}
+	if _, ja := s.avisadas.LoadOrStore(chaveOperacao{op.Modulo, op.OperacaoID}, true); !ja {
+		texto := fmt.Sprintf("operacao %s %d de %s em %s no banco e fora do acompanhamento do servico (consultada; conferir a mao)",
+			op.Modulo, op.OperacaoID, op.Data, op.Estado)
+		m.Fazer(func() { m.al.Emitir("OPERACAO_DE_OUTRO_DIA", "", texto, op.OperacaoID) })
+	}
+	return r
 }
 
 // AcaoOperacaoAssincrona: encerrar e cancelar-entrada do admin.

@@ -54,7 +54,7 @@ var verbos = map[string]int{
 	"em_qualquer_ordem": 0,
 	"entrada":           -1, "saida": -1, "stop": -1, "http": -1, "http_async": -1, "http_aguarda": 0, "metrica": -1, "resposta": -1, "saude": -1,
 	"evento": -1, "sem_evento": -1, "conta_eventos": -1, "alerta": 1, "sem_alerta": 1,
-	"aguarda_logon": -1, "derruba_sessao": 0, "reinicia_servico": 0, "banco_erro_dado": -1, "banco_descarta": 0, "quarentena_resolver": -1, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
+	"aguarda_logon": -1, "derruba_sessao": 0, "reinicia_servico": -1, "banco_erro_dado": -1, "banco_descarta": 0, "quarentena_resolver": -1, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
 	"usuario": -1, "habilita": -1, "desabilita": 1, "gq": -1,
 	"pnt_recusa_logon": 1, "pnt_aceita_logon": 0, "aguarda_recusas": 1, "pnt_espera_seq": 1, "pnt_esquece": 1,
 	"corrompe_store": 0, "descarta": -1, "sinal": -1,
@@ -468,6 +468,17 @@ func conferir(p Passo, capturas map[string]bool) error {
 	case "avanca":
 		if _, err := Duracao(p.Args[0]); err != nil {
 			return fmt.Errorf("%s: %w", p.Origem, err)
+		}
+	case "reinicia_servico":
+		// v1.32: reinicia_servico [salta=DUR] — o relógio pula com o serviço fora (o dia seguinte)
+		for _, a := range p.Args {
+			k, v, ok := strings.Cut(a, "=")
+			if !ok || k != "salta" {
+				return fmt.Errorf("%s: reinicia_servico aceita só salta=DUR", p.Origem)
+			}
+			if _, err := Duracao(v); err != nil {
+				return fmt.Errorf("%s: %w", p.Origem, err)
+			}
 		}
 	case "preco":
 		if len(p.Args) == 0 {
