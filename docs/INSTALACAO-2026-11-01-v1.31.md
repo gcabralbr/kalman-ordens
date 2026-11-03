@@ -203,7 +203,8 @@ OP=<operacao_id>
 $K boleta estado -op $OP
 #   estado ENTRANDO; a ordem E com orderid37 (o id da Flexscan) e preco $P, qtd_exec 0
 #   "Conta nao contratada": estado ENCERRADA_SEM_ENTRADA, a ordem REJEITADA e o alerta
-#   RECUSA_FLEXSCAN com o texto (a conta ainda não liberada: pare aqui e me avise)
+#   RECUSA_FLEXSCAN com o texto. Vem do OMS do BTG: a conta sem o Flexscan contratado no BTG
+#   (03/11; SPEC-CADASTRO-v1 §0.1). Pare aqui, vá ao 3.6 e repita o §3 quando o BTG liberar
 curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&limite=20" | jq '.mensagens[-5:]'
 ```
 

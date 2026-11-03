@@ -3,6 +3,11 @@
 **Revisão 01/11 (tarde):** respostas P1–P7 incorporadas (§5); a `acparam` real (§1.2–1.3); a boleta
 revista pela P4 e implementada na v1.31 (`docs/SPEC-ORDENS-v1.31.md`), que substitui o §2 abaixo.
 
+**Revisão 03/11:** o "Conta nao contratada" vem do OMS do BTG, não da Flexscan, e quer dizer que a
+conta não tem o Flexscan contratado na corretora. Isso virou o pré-requisito de cada conta (§0.1). A
+ferramenta avisa dele (§3.1, §3.3), e o relatório da migração separa essas contas como pendência na
+corretora (§4). O teste REAL de 03/11 está pausado até o BTG liberar a 4582351.
+
 Base: v1.30 (instalada na .53). Três ferramentas, nesta ordem de entrega:
 
 | # | ferramenta | onde | pacote | prazo |
@@ -25,8 +30,11 @@ associada ao `btg_gammaquant` (feito à mão em 01/11), então o teste não depe
 - **Associar antes de criar** gera um registro provisório `D-<conta>` sem o titular, e as ordens são
   recusadas com "Invalid client document".
 - **Na ordem, a conta vai como o número puro** (`4582351`). É o que a ponte já manda (`account`).
-- **Conta nova só é liberada no dia seguinte ao cadastro:** antes disso, a ordem é aceita (202) e
-  depois rejeitada com "Conta nao contratada".
+- **"Conta nao contratada" (corrigido em 03/11):** a ordem é aceita pela Flexscan (202) e depois
+  rejeitada pelo **OMS da corretora** com esse texto. Isso acontece quando a conta não tem o Flexscan
+  contratado na corretora do cliente. Não é um prazo de liberação da Flexscan (a leitura de 01/11, "só
+  no dia seguinte", estava errada), e não é um erro do cadastro: a conta pode estar criada e associada
+  certo e mesmo assim ser recusada.
 - A doc (`docs/referencia/flexscan-cadastro-1.0.0.json`) descreve o `POST /accounts` como "echo
   temporário". O contrato real é o da AWS (P2):
   - `POST https://2nqoqyemr1.execute-api.sa-east-1.amazonaws.com/v1/accounts` → **201**
@@ -38,6 +46,21 @@ associada ao `btg_gammaquant` (feito à mão em 01/11), então o teste não depe
 - **O `accountlinks` (associar, desassociar, listar)** vai ao apidma, com o token do admin e a
   `x-api-key` (P3). Na AWS a rota não existe (erro do próprio gateway). A senha do guarda-chuva não é
   usada pelo cadastro.
+
+### 0.1 Pré-requisito de cada conta: o Flexscan contratado na corretora
+
+Antes de qualquer ordem, **o cliente tem de ter o Flexscan contratado na corretora dele** (no BTG,
+para as contas do `btg_gammaquant`). Esse contrato é feito pelo cliente, ou por nós, com a corretora.
+Ele não passa pela Flexscan nem pelo cadastro. Cadastrar e associar a conta na Flexscan é necessário,
+mas não basta.
+
+- **Sem o contrato:** o cadastro e a associação funcionam. A primeira ordem é aceita (202) e depois
+  vem a rejeição "Conta nao contratada": no serviço de ordens, o `RECUSA_FLEXSCAN` e a operação
+  `ENCERRADA_SEM_ENTRADA`.
+- **Ninguém confirma o contrato antes da ordem:** nem a Flexscan nem a corretora têm uma rota de
+  consulta que conheçamos (P8). O sinal é a recusa, ou a confirmação da corretora.
+- **Quem resolve é a corretora.** Para nós a conta fica como **pendência na corretora**, nunca como
+  erro do cadastro.
 
 ## 1. Parâmetros: a `acparam` (GQ)
 
@@ -145,8 +168,10 @@ flexscan-cadastro desassociar -corretora BTG -conta 4582351 -motivo "..."
 - **`listar`:** `GET /users/{guarda-chuva}/accounts`. Marca as contas `D-<conta>` como provisórias
   (associadas antes de criadas).
 - **`conferir`:** associada ou não, provisória ou não. A Flexscan não tem rota que diga se a conta já
-  está "contratada" (P7, a confirmar com ela). O `conferir` mostra a data do nosso cadastro e "liberada
-  a partir do próximo dia útil". O sinal certo continua sendo a recusa "Conta nao contratada".
+  tem o Flexscan contratado na corretora (§0.1, P8). O `conferir` mostra a data do nosso cadastro e o
+  aviso do pré-requisito: "a conta só opera com o Flexscan contratado no BTG; sem ele, a 1ª ordem é
+  recusada com 'Conta nao contratada' (pendência na corretora)". Se o `registro.jsonl` tiver uma
+  recusa dessas para a conta (§4, `pendencias`), o `conferir` a mostra, com a data.
 - **`cadastrar`:**
   1. faz o login do admin da corretora no apidma;
   2. cria a conta (`POST /accounts` na AWS). **Só passa à etapa seguinte com a criação confirmada:**
@@ -161,6 +186,10 @@ flexscan-cadastro desassociar -corretora BTG -conta 4582351 -motivo "..."
   para isso).
 - **`-ensaio`** (em todos os que gravam): faz o login, lê e mostra o que faria, sem gravar.
 - Todo comando que grava pede confirmação ("sim"), como a boleta.
+- **O aviso do pré-requisito (§0.1):** o `cadastrar` mostra o aviso **antes** do "sim" e o repete no
+  fim, junto da linha do `service.env`. O texto é "pré-requisito: o Flexscan contratado no <corretora>
+  para a conta <conta>; sem ele, a 1ª ordem é recusada com 'Conta nao contratada'". A ferramenta não
+  bloqueia por isso, porque não tem como conferir.
 
 ### 3.2 Registro
 
@@ -177,6 +206,10 @@ Cadastrar na Flexscan **não** libera a conta no serviço de ordens. A conta ain
 `REAL_FLEXSCAN_<NOME>_CONTAS` (e em `REAL_CONTAS`, se não for `*`) no `service.env`, e o serviço tem
 de ser reiniciado. O `cadastrar` termina mostrando a linha exata a acrescentar e a data a partir da
 qual a conta opera.
+
+A conta só opera de fato com o Flexscan contratado na corretora (§0.1). A ordem de teste, pela boleta
+(SPEC-ORDENS-v1.31), é o que confirma. Uma recusa "Conta nao contratada" nessa ordem é uma pendência na
+corretora: a conta fica no `service.env` e não se desfaz o cadastro.
 
 ## 4. Ferramenta 3 — migração em massa
 
@@ -199,14 +232,46 @@ flexscan-cadastro reverter -relatorio relatorio-AAAAMMDD-HHMM.csv [-ensaio]
   feito em cada conta: criar e associar; já associada; provisória a consertar; inválida.
 - **Execução:** em lotes de `FXC_LOTE` (da `acparam`), com `FXC_PAUSA_S` entre eles. Uma conta
   falhada não para o lote.
+- **O aviso do pré-requisito (§0.1):** o ensaio e a execução abrem com ele, por corretora: "N contas
+  no <corretora>: cada uma só opera com o Flexscan contratado no <corretora>; as sem contrato aparecem
+  em PENDENTE_CORRETORA".
 - **Relatório por conta** (CSV e JSON):
   - corretora, conta e doc mascarado;
   - as etapas (`criada`, `associada`, `conferida`), com o resultado e o texto da Flexscan;
-  - data de liberação prevista;
-  - no fim, a linha `REAL_FLEXSCAN_<NOME>_CONTAS` de cada corretora para o `service.env`.
+  - a **situação** da conta, uma de:
+
+    | situação | o quê | de quem é a ação |
+    |---|---|---|
+    | `OK` | criada, associada e conferida | ninguém |
+    | `JA_ASSOCIADA` | já estava associada, pura, antes desta execução | ninguém |
+    | `ERRO_CADASTRO` | falha na criação, na associação ou na conferência (com o texto) | nós: corrigir e repetir |
+    | `INVALIDA` | a linha não passou na validação | nós: corrigir o arquivo |
+    | `PENDENTE_CORRETORA` | recusada com "Conta nao contratada": o Flexscan não está contratado na corretora | a corretora/o cliente; **não é erro do cadastro** |
+
+  - no fim, um resumo por situação e por corretora. As `PENDENTE_CORRETORA` vão numa lista própria
+    (`pendentes-corretora-AAAAMMDD-HHMM.csv`: corretora, conta, a data e o texto da recusa), para
+    mandar à corretora;
+  - a linha `REAL_FLEXSCAN_<NOME>_CONTAS` de cada corretora para o `service.env`, com as `OK`, as
+    `JA_ASSOCIADA` e também as `PENDENTE_CORRETORA`. A conta pendente está cadastrada certo e passa a
+    operar quando a corretora liberar, sem mexer de novo no cadastro nem no `service.env`.
+- **De onde vem a `PENDENTE_CORRETORA`:**
+  - **No cadastro:** se alguma resposta da Flexscan, da criação ou da associação, trouxer "Conta nao
+    contratada" (sem diferença de maiúsculas e acentos), a conta vai para `PENDENTE_CORRETORA`, não
+    para `ERRO_CADASTRO`.
+  - **Depois da migração,** porque a recusa normalmente só aparece na 1ª ordem:
+    `flexscan-cadastro pendencias -relatorio R [-desde AAAA-MM-DD]` lê, só para leitura, as recusas do
+    serviço de ordens da mesma máquina pelo HTTP local. São os `RECUSA_FLEXSCAN` com "Conta nao
+    contratada", pela conta e pela corretora, no histórico das operações (`GET /operacoes`). O comando
+    atualiza a situação dessas contas no relatório, gera a lista da corretora e grava no
+    `registro.jsonl`.
+  - Uma conta `PENDENTE_CORRETORA` que depois opera (uma ordem executada) volta a `OK` no próximo
+    `pendencias`.
+- **O `reverter` não desassocia as `PENDENTE_CORRETORA` por padrão:** o cadastro delas está certo. Só
+  com `-incluir-pendentes`.
 - **Volta (`reverter`):** desassocia as contas que o relatório marca como associadas por aquela
   execução. As já associadas antes ficam onde estavam.
-- A execução pode ser repetida sobre o mesmo arquivo: a conta já associada (pura) é pulada.
+- A execução pode ser repetida sobre o mesmo arquivo: a conta já associada (pura) é pulada, e a
+  `PENDENTE_CORRETORA` continua pendente, sem nova chamada.
 
 ## 5. Respostas (01/11)
 
@@ -220,8 +285,13 @@ flexscan-cadastro reverter -relatorio relatorio-AAAAMMDD-HHMM.csv [-ensaio]
   com as travas e os limites dele. O admin fica no `por`.
 - **P5:** a tela de admin fica para depois de terça.
 - **P6:** o serviço de ordens continua só com o `service.env`.
-- **P7:** não sabemos ainda; o usuário vai perguntar à Flexscan. Sem rota, o cadastro avisa "liberada
-  a partir do próximo dia útil".
+- **P7:** respondida em 03/11. O "Conta nao contratada" não é prazo da Flexscan: é o OMS do BTG
+  recusando uma conta sem o Flexscan contratado na corretora (§0.1).
+
+**Pergunta aberta (03/11):**
+- **P8:** a corretora (BTG) ou a Flexscan têm um jeito de consultar, antes de uma ordem, se a conta tem
+  o Flexscan contratado (uma rota, um relatório ou uma lista)? Se tiverem, o `conferir` e o ensaio da
+  migração passam a mostrar isso, e a `PENDENTE_CORRETORA` aparece antes da 1ª ordem.
 
 **Resolvido em 01/11:**
 - a `x-api-key`: na `acparam`, uma por corretora (o `FXC_KEY_<NOME>` aponta o código);
@@ -236,7 +306,7 @@ acesso do `flexscan-cadastro` ao GQ deve ser um usuário de banco só com `SELEC
 | passo | o quê | quando |
 |---|---|---|
 | 1 | v1.31: a boleta (CLI; `modulo: BOLETA` no `POST /ordens`; roteiro 127) | 01/11; instalar na .53 antes de terça |
-| 2 | o teste REAL de terça pela boleta (`deploy/LEIA.md` §1.20) | terça, 03/11, com você |
+| 2 | o teste REAL de terça pela boleta (`deploy/LEIA.md` §1.20) | 03/11: **pausado**. A 4582351 foi recusada com "Conta nao contratada" (o BTG sem o Flexscan contratado). Repetir o §3 da `INSTALACAO-2026-11-01-v1.31.md` quando o BTG liberar |
 | 3 | `flexscan-cadastro` v1: `listar`, `conferir`, `cadastrar`, `desassociar` | depois do passo 2, com os códigos `FXC_*` na `acparam` |
 | 4 | `flexscan-cadastro` v1.1: `migrar` e `reverter` | depois do 3 |
 | 5 | a boleta na tela de admin | depois do 2 |

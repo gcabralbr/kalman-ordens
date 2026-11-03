@@ -748,8 +748,9 @@ habilitado no ambiente, e valem as travas e os limites dele. O teste de terça (
    $K boleta cancelar -op <id> -por 5725 -motivo "..."              # entrada ainda pendente
    ```
 
-   "Conta nao contratada" no `RECUSA_FLEXSCAN` quer dizer que a conta ainda não foi liberada (a
-   Flexscan libera no dia seguinte ao cadastro).
+   "Conta nao contratada" no `RECUSA_FLEXSCAN` vem do OMS da corretora: a conta não tem o Flexscan
+   contratado no BTG (03/11). É uma pendência na corretora, não um erro do cadastro nem do serviço
+   (SPEC-CADASTRO-v1 §0.1).
 5. **No fim:** `AMBIENTES_PERMITIDOS=SIM` e o restart (a .53 volta a só SIMULADOR).
 
 
