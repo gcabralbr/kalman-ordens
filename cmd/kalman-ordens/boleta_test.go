@@ -52,6 +52,16 @@ func TestBoletaCLI(t *testing.T) {
 	if err := cliBoleta(cfg, errado, strings.NewReader("sim\n"), &saida, agora); err == nil || !strings.Contains(err.Error(), "4582351") || len(pedidos) != 0 {
 		t.Fatalf("conta divergente: err=%v pedidos=%d", err, len(pedidos))
 	}
+	// v1.32: o motivo longo para antes do destino e da pergunta (03/11: 41 caracteres recusados só
+	// depois do "sim")
+	longo := append(append([]string{}, enviar...), "-motivo", "teste REAL 03/11: limitada longe do preco")
+	consultas := 0
+	if err := cliBoleta(cfg, longo, &leitorContado{n: &consultas}, &saida, agora); err == nil || !strings.Contains(err.Error(), "41 caracteres (maximo 20)") || len(pedidos) != 0 || consultas != 0 {
+		t.Fatalf("motivo longo: err=%v pedidos=%d leituras=%d", err, len(pedidos), consultas)
+	}
+	if err := cliBoleta(cfg, []string{"cancelar", "-op", "1", "-por", "1", "-motivo", strings.Repeat("x", 61)}, nil, &saida, agora); err == nil || !strings.Contains(err.Error(), "maximo 60") {
+		t.Fatalf("cancelar com motivo longo: %v", err)
+	}
 	// o uid que não pode enviar
 	if err := cliBoleta(cfg, []string{"destino", "-uid", "8", "-ambiente", "REAL"}, nil, &saida, agora); err == nil || !strings.Contains(err.Error(), "REAL_UID_NAO_PERMITIDO") {
 		t.Fatalf("uid sem permissão: %v", err)
@@ -76,4 +86,12 @@ func TestBoletaCLI(t *testing.T) {
 	if err := cliBoleta(cfg, []string{"cancelar", "-op", "1103101500", "-por", "1", "-motivo", "x"}, nil, &saida, agora); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// leitorContado: conta as leituras (a pergunta do "sim" não pode acontecer).
+type leitorContado struct{ n *int }
+
+func (l *leitorContado) Read(p []byte) (int, error) {
+	*l.n++
+	return copy(p, "sim\n"), nil
 }

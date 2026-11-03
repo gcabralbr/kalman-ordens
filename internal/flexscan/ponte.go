@@ -374,7 +374,7 @@ func (p *Ponte) Saude() map[string]any {
 	return map[string]any{"token_expira": exp, "webhooks_recebidos": p.webhooks, "ultimo_webhook": ult,
 		"ordens_acompanhadas": len(p.ordens), "ordens_vivas": vivas, "ultimo_erro": p.ultimoErro, "receptor": p.cfg.Webhook,
 		"webhook_cadastrado": cad, "webhook_conferido_em": confEm, "webhook_recadastrado_em": recadEm, "ultimo_login": ultLogin,
-		"webhook_faltas_seguidas": p.whFaltas, "janela": p.cfg.Agenda.Texto(), "ativa": p.ativaPor != "", "ativa_por": nulo(p.ativaPor),
+		"webhook_faltas_seguidas": p.whFaltas, "webhook_esperado": p.cfg.esperaWebhook(), "janela": p.cfg.Agenda.Texto(), "ativa": p.ativaPor != "", "ativa_por": nulo(p.ativaPor),
 		"dormindo": p.dormindo}
 }
 

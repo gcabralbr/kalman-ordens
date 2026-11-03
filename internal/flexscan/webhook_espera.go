@@ -13,6 +13,8 @@ import (
 // (5) sem ele: FLEXSCAN_WEBHOOK_ATRASADO (não crítico) e uma falta. faltasCriticas faltas seguidas:
 // FLEXSCAN_WEBHOOK_SEM_CHEGAR (crítico) e a conferência do cadastro roda na hora. Um webhook de
 // qualquer ordem zera as faltas e resolve os dois alertas. Sem o receptor ligado, nada disso.
+// v1.32: nem sem a FLEXSCAN_WEBHOOK_URL — a ponte que não cadastra webhook (o REAL de teste da .53,
+// D5) não espera nenhum: só a consulta, sem alerta de atraso, sem falta e sem conferência.
 // v1.29: as faltas seguidas são FLEXSCAN_WEBHOOK_FALTAS_N (3); e uma mudança espontânea sem webhook
 // já pede a conferência na hora (no máximo uma por intervaloConfEvento; a das faltas seguidas, sempre).
 
@@ -30,13 +32,18 @@ const (
 // esperarWebhookLocked: abre (ou renova) a espera pelo webhook de o. desde = o envio do pedido
 // (ação) ou a hora da consulta (mudança). Se um webhook da ordem já chegou depois de desde, não abre.
 func (p *Ponte) esperarWebhookLocked(o *ordemP, desde time.Time, motivo, detalhe string) {
-	if !p.cfg.Webhook || p.cfg.EsperaWebhook <= 0 {
+	if !p.cfg.esperaWebhook() {
 		return
 	}
 	if !o.whUltimo.IsZero() && !o.whUltimo.Before(desde) {
 		return
 	}
 	o.whEsperaDesde, o.whEsperaMotivo, o.whEsperaDetalhe = desde, motivo, detalhe
+}
+
+// esperaWebhook (v1.32): a ponte espera webhook? O receptor ligado, a URL do cadastro e a espera > 0.
+func (c Config) esperaWebhook() bool {
+	return c.Webhook && c.WebhookURL != "" && c.EsperaWebhook > 0
 }
 
 // webhookDaOrdemLocked: um retrato de o chegou num webhook.

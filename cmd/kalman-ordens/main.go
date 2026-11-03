@@ -268,7 +268,7 @@ func servir(ctx context.Context, cfg config.Config) error {
 		}
 		for _, pf := range in.pontes {
 			pf.p.Iniciar()
-			slog.Info("flexscan: conector ligado", "ambiente", in.amb, "corretora", pf.nome, "url", pf.cfg.URL, "usuario", pf.cfg.Usuario, "webhook", pf.webhook)
+			slog.Info("flexscan: conector ligado", "ambiente", in.amb, "corretora", pf.nome, "url", pf.cfg.URL, "usuario", pf.cfg.Usuario, "webhook", pf.webhook, "webhook_esperado", pf.cfg.WebhookURL != "")
 		}
 	}
 

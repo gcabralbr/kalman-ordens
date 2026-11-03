@@ -78,6 +78,9 @@ resposta aceito=true preco=129000
 flx_recebe POST name=KM-BOLETA-E-12710-1 ordType=2 price=129000 account=4582351 id=>E4
 avanca 30s
 flx_nada
+# v1.32: a ponte sem REAL_FLEXSCAN_BTG_WEBHOOK_URL (a .53, D5) não espera webhook: 30 s depois do 202
+sem_alerta FLEXSCAN_WEBHOOK_ATRASADO
+sem_alerta FLEXSCAN_WEBHOOK_SEM_CHEGAR
 http GET /ordens/12710?modulo=BOLETA
 resposta estado=ENTRANDO
 http POST /operacoes/12710/cancelar-entrada?modulo=BOLETA {"motivo":"fim do teste","por":1}

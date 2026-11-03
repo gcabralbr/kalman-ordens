@@ -8,7 +8,7 @@ import (
 // v1.22 §2: o webhook da ordem que chega antes do 202 (o POST leva ~0,3 s, o webhook também) não
 // abre a espera; o que chega depois a fecha; sem o receptor, nada.
 func TestEsperaWebhook(t *testing.T) {
-	p := &Ponte{cfg: Config{Webhook: true, EsperaWebhook: 5 * time.Second}}
+	p := &Ponte{cfg: Config{Webhook: true, WebhookURL: "https://kalman.exemplo/flexscan/webhook/s", EsperaWebhook: 5 * time.Second}}
 	t0 := time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC)
 	o := &ordemP{nome: "KM-P-1-1"}
 
@@ -29,5 +29,11 @@ func TestEsperaWebhook(t *testing.T) {
 	p.esperarWebhookLocked(o, t0.Add(2*time.Second), esperaAcao, "DELETE")
 	if !o.whEsperaDesde.IsZero() {
 		t.Fatalf("sem receptor: não espera")
+	}
+	// v1.32: com o receptor e sem a URL do cadastro (o REAL de teste da .53, D5), também não
+	p.cfg.Webhook, p.cfg.WebhookURL = true, ""
+	p.esperarWebhookLocked(o, t0.Add(3*time.Second), esperaAcao, "POST")
+	if !o.whEsperaDesde.IsZero() {
+		t.Fatalf("sem a FLEXSCAN_WEBHOOK_URL: não espera")
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gammaquant.com.br/kalman-ordens/internal/config"
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
@@ -27,7 +28,8 @@ const usoBoleta = `uso: kalman-ordens boleta <subcomando> [opções]   (v1.31, p
            uma ENTRADA do módulo BOLETA pelo POST /ordens: as travas e os limites do uid; o contrato
            é o vigente; -preco = limitada nesse preço (sem ele, a agressiva de sempre); a entrada
            fica viva até executar ou o "cancelar" (sem o timeout da entrada); -op padrão
-           MMDDHHMMSS; no REAL pede "sim" (-sim pula)
+           MMDDHHMMSS; no REAL pede "sim" (-sim pula); -motivo até 20 caracteres
+           (cancelar e encerrar: até 60), conferido antes de tudo
   estado   -op N [-historico]          GET /ordens/{id}?modulo=BOLETA (e a linha do tempo)
   cancelar -op N -por UID -motivo X    cancela a entrada que ainda não executou (cancelar-entrada)
   encerrar -op N -por UID -motivo X    zera a posição da boleta (encerrar)
@@ -69,6 +71,10 @@ func cliBoleta(cfg config.Config, args []string, entrada io.Reader, saida io.Wri
 	case "enviar":
 		if *uid <= 0 || *amb == "" || (*lado != "C" && *lado != "V") || *qtd <= 0 || *stop <= 0 || *por <= 0 || strings.TrimSpace(*motivo) == "" {
 			return fmt.Errorf("boleta enviar exige -uid, -ambiente, -lado C|V, -qtd, -stop, -por e -motivo")
+		}
+		// v1.32: o que o serviço recusaria por forma, antes do destino e do "sim"
+		if err := motivoCabe(*motivo, dominio.MaxMotivoEntrada); err != nil {
+			return err
 		}
 		d, err := b.destino(*uid, *amb, *conta, *corretora)
 		if err != nil {
@@ -127,6 +133,9 @@ func cliBoleta(cfg config.Config, args []string, entrada io.Reader, saida io.Wri
 		if *op <= 0 || *por <= 0 || strings.TrimSpace(*motivo) == "" {
 			return fmt.Errorf("boleta %s exige -op, -por e -motivo", sub)
 		}
+		if err := motivoCabe(*motivo, dominio.MaxMotivoSaida); err != nil {
+			return err
+		}
 		rota := map[string]string{"cancelar": "cancelar-entrada", "encerrar": "encerrar"}[sub]
 		_, status, err := b.pedir("POST", fmt.Sprintf("/operacoes/%d/%s?modulo=%s", *op, rota, dominio.ModuloBoleta),
 			map[string]any{"motivo": *motivo, "por": *por})
@@ -136,6 +145,14 @@ func cliBoleta(cfg config.Config, args []string, entrada io.Reader, saida io.Wri
 		return err
 	}
 	return fmt.Errorf("boleta: subcomando desconhecido %q\n\n%s", sub, usoBoleta)
+}
+
+// motivoCabe (v1.32): o motivo no tamanho que o serviço aceita (a coluna); o mesmo texto da recusa.
+func motivoCabe(motivo string, max int) error {
+	if n := utf8.RuneCountInString(motivo); n > max {
+		return fmt.Errorf("motivo com %d caracteres (maximo %d): nada enviado", n, max)
+	}
+	return nil
 }
 
 type boletaHTTP struct {

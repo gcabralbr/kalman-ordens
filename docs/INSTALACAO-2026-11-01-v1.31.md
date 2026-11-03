@@ -192,8 +192,9 @@ curl -s '172.16.110.53:9090/precos/atual?ativo=WINFUT' | jq '.WINFUT | {ticker, 
 
 ```bash
 BID=<o bid de agora>; P=$(( (BID - 1000) / 5 * 5 ))
-$K boleta enviar -uid 5725 -ambiente REAL -conta 4582351 -corretora BTG -lado C -qtd 1 -stop 300 -preco $P -por 5725 -motivo "teste REAL 03/11: limitada longe do preco"
+$K boleta enviar -uid 5725 -ambiente REAL -conta 4582351 -corretora BTG -lado C -qtd 1 -stop 300 -preco $P -por 5725 -motivo "teste REAL limitada"
 #   mostra o destino e pede "sim"; a resposta traz aceito true, operacao_id (MMDDHHMMSS) e preco
+#   -motivo até 20 caracteres (o serviço grava em motivo_entrada); a v1.32 confere antes do "sim"
 OP=<operacao_id>
 ```
 
