@@ -73,7 +73,7 @@ O contrato da SPEC-AMBIENTES-v1 §10.1 com os quatro campos da agenda no `saude`
     "webhooks_recebidos": 7, "ultimo_webhook": "2026-10-27T09:45:59-03:00", "ultimo_erro": "",
     "ordens_acompanhadas": 6, "ordens_vivas": 0,
     "webhook_cadastrado": true, "webhook_conferido_em": "2026-10-27T09:52:40-03:00",
-    "webhook_recadastrado_em": null, "webhook_faltas_seguidas": 0,
+    "webhook_recadastrado_em": null, "webhook_faltas_seguidas": 0, "webhook_esperado": true,
     "ultimo_login": {"em": "2026-10-27T09:20:21.004-03:00", "motivo": "partida", "resultado": "OK"},
     "janela": "08:00-18:30", "ativa": true, "ativa_por": "janela", "dormindo": false,
     "boot": "2026-10-27T09:20:20.512-03:00", "dia": "2026-10-27", "recarregadas": 0, "msgs_min": 12, "consultas_min": 40,
@@ -85,13 +85,15 @@ O contrato da SPEC-AMBIENTES-v1 §10.1 com os quatro campos da agenda no `saude`
 
 ### 1.2 `GET /saude` → `flexscan` (v1.28)
 
+`webhook_esperado` (v1.32, SPEC-ORDENS-v1.32 §1): a ponte espera webhook (o receptor, a URL do cadastro e a espera); `false` = só a consulta, sem alerta de atraso.
+
 ```json
 {
   "logado": true, "token_expira": "2026-10-27T19:20:21-03:00", "receptor": true,
   "webhooks_recebidos": 7, "ultimo_webhook": "2026-10-27T09:45:59-03:00", "ultimo_erro": "",
   "ordens_acompanhadas": 6, "ordens_vivas": 0,
   "webhook_cadastrado": true, "webhook_conferido_em": "2026-10-27T09:52:40-03:00",
-  "webhook_recadastrado_em": null, "webhook_faltas_seguidas": 0,
+  "webhook_recadastrado_em": null, "webhook_faltas_seguidas": 0, "webhook_esperado": true,
   "ultimo_login": {"em": "2026-10-27T09:20:21.004-03:00", "motivo": "partida", "resultado": "OK"},
   "janela": "08:00-18:30", "ativa": true, "ativa_por": "janela", "dormindo": false,
   "simbolo": "WINZ26", "idade_preco_ms": 412,
