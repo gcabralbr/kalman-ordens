@@ -4,7 +4,7 @@ Só o `service.env`, com o binário instalado hoje (v1.31, `93245099bd13`). O bi
 `FLEXSCAN_JANELA` desde a v1.28. O motivo está na SPEC-ORDENS-v1.32 §4.1: o login das 08:00:00 fica
 sem resposta em 3 s, e o das 08:00:30 passa em 180 ms.
 
-**Quando:** fora do pregão e sem ordem viva, com o seu ok: 13/11 antes das 08:00 (decidido em 12/11).
+**Quando:** fora do pregão e sem ordem viva, com o seu ok: sexta, 13/11, antes das 08:00 (decidido em 12/11).
 Veja no §4 o que isso muda na conferência do login das 08:02.
 
 **O que muda:** a ponte passa a acordar e logar às 08:02, não às 08:00. A renovação da abertura
@@ -69,8 +69,9 @@ Se o serviço não subir, o formato está errado (a agenda é conferida na parti
 10 h. Com o restart **antes das 08:00**, a ponte já está logada às 08:02 e não faz o login das 08:02:
 o próximo login é a renovação da abertura, às 08:15. Assim, o primeiro login às 08:02 só aparece no
 primeiro pregão que **começa sem restart de manhã**: com o restart depois das 18:30 da véspera, o token
-da partida vence de madrugada, a ponte dorme e loga às 08:02. Com a janela em 13/11 de manhã e a v1.32
-em 14/11 de manhã, isso é na segunda, 17/11.
+da partida vence de madrugada, a ponte dorme e loga às 08:02. O mesmo acontece com um restart num dia
+sem pregão, porque o token vence no mesmo dia. Com a janela em 13/11 (sexta) de manhã e a v1.32 em
+14/11 (sábado), o primeiro login às 08:02 é na segunda, 16/11.
 
 ```bash
 curl -s '127.0.0.1:9092/flexscan/trafego?limite=20' | jq -r '.mensagens[]
