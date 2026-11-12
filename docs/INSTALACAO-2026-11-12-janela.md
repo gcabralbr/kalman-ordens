@@ -4,8 +4,8 @@ Só o `service.env`, com o binário instalado hoje (v1.31, `93245099bd13`). O bi
 `FLEXSCAN_JANELA` desde a v1.28. O motivo está na SPEC-ORDENS-v1.32 §4.1: o login das 08:00:00 fica
 sem resposta em 3 s, e o das 08:00:30 passa em 180 ms.
 
-**Quando:** fora do pregão e sem ordem viva, com o seu ok. Hoje depois das 18:30 ou amanhã antes das
-08:00.
+**Quando:** fora do pregão e sem ordem viva, com o seu ok: 13/11 antes das 08:00 (decidido em 12/11).
+Veja no §4 o que isso muda na conferência do login das 08:02.
 
 **O que muda:** a ponte passa a acordar e logar às 08:02, não às 08:00. A renovação da abertura
 (08:15), a conferência da abertura (08:30) e o fim da janela (18:30) ficam como estão. A chave
@@ -63,17 +63,28 @@ curl -s 127.0.0.1:9092/saude | jq '.ambientes.SIMULADOR.flexscan | {janela, loga
 
 Se o serviço não subir, o formato está errado (a agenda é conferida na partida). Volte pelo §5.
 
-## 4. No dia seguinte (o primeiro pregão com a janela nova)
+## 4. No pregão seguinte
+
+**Atenção ao horário do restart.** A partida sempre loga, mesmo fora da janela, e o token dela vale
+10 h. Com o restart **antes das 08:00**, a ponte já está logada às 08:02 e não faz o login das 08:02:
+o próximo login é a renovação da abertura, às 08:15. Assim, o primeiro login às 08:02 só aparece no
+primeiro pregão que **começa sem restart de manhã**: com o restart depois das 18:30 da véspera, o token
+da partida vence de madrugada, a ponte dorme e loga às 08:02. Com a janela em 13/11 de manhã e a v1.32
+em 14/11 de manhã, isso é na segunda, 17/11.
 
 ```bash
 curl -s '127.0.0.1:9092/flexscan/trafego?limite=20' | jq -r '.mensagens[]
   | select(.tipo=="LOGIN" or .tipo=="WEBHOOK_CADASTRO") | "\(.em) \(.tipo) \(.status_http) \(.duracao_ms) \(.resumo)"'
 ```
 
-O esperado: às 08:02:00 o login `reconexao OK`, em menos de 1 s e sem `FLEXSCAN_LOGIN` no Telegram.
-Depois, a conferência acha o webhook `ausente`, recadastra e confere `presente`. Com a v1.31 isso
-ainda manda `FLEXSCAN_WEBHOOK_AUSENTE` e `RESOLVIDO`; com a v1.32 vai virar a linha
-`FLEXSCAN_ABERTURA`. A limpeza é da Flexscan e continua todo dia.
+O esperado com o restart antes das 08:00: o login `partida OK` na hora do restart. Às 08:02, a
+conferência pedida por esse login acha o webhook `ausente`, recadastra e confere `presente`. Com a
+v1.31 isso ainda manda `FLEXSCAN_WEBHOOK_AUSENTE` e `RESOLVIDO`; com a v1.32 vira a linha
+`FLEXSCAN_ABERTURA`. Às 08:15 vem o login `renovacao-abertura OK`. A limpeza é da Flexscan e
+continua todo dia.
+
+O esperado num pregão sem restart de manhã: às 08:02:00 o login `reconexao OK`, em menos de 1 s, sem
+`FLEXSCAN_LOGIN`; depois, a mesma conferência.
 
 Se o login das 08:02 também falhar, a lentidão não é só no primeiro instante. Nesse caso a janela
 pode voltar ao que era, e quem resolve passa a ser a tolerância da v1.32.
