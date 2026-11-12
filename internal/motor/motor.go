@@ -508,6 +508,11 @@ type Motor struct {
 	consulta         *consultaPnT
 	ultimaConsulta   Resposta
 	ultimaConsultaEm time.Time
+
+	// v1.33 (só observação, para os roteiros): os itens postos nas filas, os que já tiveram a volta
+	// fechada (iguais = o motor parado), os da volta em curso e os pedidos HTTP que já entraram
+	naFila, feitos, pedidosHTTP atomic.Int64
+	itensVolta                  int64
 }
 
 // Novo cria o motor de um ambiente só (não inicia): o dos conectores da configuração (o REAL na
@@ -705,6 +710,7 @@ func (m *Motor) verQuarentena() {
 // Parar encerra a goroutine (não mexe em nada no PnT), depois de fechar a volta em curso.
 func (m *Motor) Parar() {
 	done := make(chan struct{})
+	m.naFila.Add(1)
 	m.p0 <- func() { m.aposVolta(func() { close(done) }) }
 	<-done
 	close(m.fim)
@@ -736,6 +742,10 @@ func (m *Motor) fazerComo(origem string, f func()) {
 // http_entrada), medindo a espera (fila_espera_segundos{origem}).
 func (m *Motor) entrar(origem string, f func()) {
 	t0 := time.Now()
+	m.naFila.Add(1)
+	if classeDaOrigem(origem) != classeP0 {
+		m.pedidosHTTP.Add(1)
+	}
 	m.filaDa(classeDaOrigem(origem)) <- func() {
 		metricas.FilaEspera.Observar(time.Since(t0).Seconds(), origem)
 		f()
@@ -815,7 +825,18 @@ func (m *Motor) PedirAssincrono(p Pedido) <-chan Resposta {
 }
 
 // Enfileirar roda f na goroutine do motor sem esperar (testes: simular motor lento).
-func (m *Motor) Enfileirar(f func()) { m.p0 <- f }
+func (m *Motor) Enfileirar(f func()) { m.naFila.Add(1); m.p0 <- f }
+
+// Parado (v1.33, testes): nada na fila nem em curso — tudo o que entrou já teve a volta fechada
+// (commit, envios e respostas). Lê os feitos antes: um item que entre entre as duas leituras deixa
+// os números diferentes (nunca um "parado" falso).
+func (m *Motor) Parado() bool {
+	f := m.feitos.Load()
+	return m.naFila.Load() == f
+}
+
+// PedidosHTTP (v1.33, testes): quantos pedidos HTTP (P1 e P2) já entraram na fila do motor.
+func (m *Motor) PedidosHTTP() int64 { return m.pedidosHTTP.Load() }
 
 func (m *Motor) pedir(p Pedido) Resposta {
 	if p.Modulo != "" && !dominio.ModuloValido(p.Modulo) {

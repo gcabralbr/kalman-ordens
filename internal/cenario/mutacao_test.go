@@ -2,8 +2,10 @@ package cenario
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"gammaquant.com.br/kalman-ordens/internal/roteiro"
 )
@@ -83,4 +85,44 @@ func TestExecutorReprovaMutacoes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// v1.33 (SPEC-ORDENS-v1.33 §1): o recebe de uma mensagem que não vem falha assim que o serviço para
+// ("o serviço parou sem mandar"), não depois de um prazo no relógio real — e o roteiro que espera
+// o 503 com o motor travado continua vendo o 503 (os roteiros 24 e 62, sem HTTP_ESPERA_S curto).
+func TestRecebeSemMensagemFalhaNaHora(t *testing.T) {
+	cs, err := roteiro.LerDiretorio("../../cenarios")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cs {
+		if c.Numero != "72" {
+			continue
+		}
+		// até o primeiro nada (as três entradas da rajada já recebidas) e um recebe que não vem
+		k := slices.IndexFunc(c.Passos, func(p roteiro.Passo) bool { return p.Verbo == "nada" })
+		if k < 0 {
+			t.Fatal("o 72 sem nada")
+		}
+		falso := c.Passos[k-1]
+		falso.Origem = "inserido"
+		falso.Campos = append([]roteiro.Campo(nil), falso.Campos...)
+		for i := range falso.Campos {
+			if falso.Campos[i].Tag == 11 {
+				falso.Campos[i].Valor = "KM-E-7299-1"
+			}
+		}
+		c.Passos = append(append([]roteiro.Passo(nil), c.Passos[:k+1]...), falso)
+		dir := t.TempDir()
+		t0 := time.Now()
+		err := Executar(c, dir, Memoria)
+		if err == nil || !strings.HasPrefix(err.Error(), "inserido: recebe:") || !strings.Contains(err.Error(), "o serviço parou sem mandar") {
+			t.Fatalf("esperava a falha do recebe inserido pelo serviço parado: %v", err)
+		}
+		if d := time.Since(t0); d > esperaServico/3 {
+			t.Fatalf("o roteiro levou %s: o recebe não falhou na hora", d)
+		}
+		return
+	}
+	t.Fatal("roteiro 72 não encontrado")
 }

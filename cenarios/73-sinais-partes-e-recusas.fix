@@ -8,7 +8,6 @@ config LIMITE_INTERVALO_ENTRADAS_S=0
 config LIMITE_ENTRADAS_MIN=10
 config LIMITE_MENSAGENS_MIN=1000
 config SINAL_MAX_PARTES=3
-config HTTP_ESPERA_S=0.2
 
 executa INICIO
 # --- duas partes: nada sai até a segunda

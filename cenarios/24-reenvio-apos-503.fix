@@ -2,7 +2,7 @@ cenario 24 503 RESULTADO_DESCONHECIDO → o gestor reenvia o mesmo pedido e rece
 hora 2026-10-13 12:40:00
 # SPEC v1.1 C2: a API espera o motor por HTTP_ESPERA_S; estourou → 503 RESULTADO_DESCONHECIDO,
 # e o motor segue com o pedido. O gestor reenvia o mesmo corpo: idempotência devolve o original.
-config HTTP_ESPERA_S=0.2
+# v1.33: com o motor travado (motor_lento), o executor usa a API com a espera curta (0,2 s).
 
 executa INICIO
 

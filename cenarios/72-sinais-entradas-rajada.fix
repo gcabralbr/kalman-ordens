@@ -9,7 +9,6 @@ config LIMITE_POSICAO_MAX=10
 config LIMITE_INTERVALO_ENTRADAS_S=0
 config LIMITE_ENTRADAS_MIN=10
 config LIMITE_MENSAGENS_MIN=1000
-config HTTP_ESPERA_S=0.2
 usuario 8 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
 habilita 8
 usuario 9 hml {"AmbienteDef":"BTG_Simulador","Robo":{"CORSeqId":85,"CCONroConta":"12345"}}

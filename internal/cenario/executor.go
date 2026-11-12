@@ -35,6 +35,13 @@ import (
 const (
 	esperaMensagem = 2 * time.Second
 	passoRelogio   = 100 * time.Millisecond
+	// v1.33 (SPEC-ORDENS-v1.33 §1): os roteiros decidem pelo serviço parado, não por um prazo no
+	// relógio real. esperaServico é só o teto contra um travamento (o serviço que não para);
+	// esperaHTTP, a espera do motor pela API (a resposta chega quando o motor responde);
+	// esperaHTTPTravado, a de quando o motor está parado de propósito (motor_lento: o 503 é certo).
+	esperaServico     = 30 * time.Second
+	esperaHTTP        = 30 * time.Second
+	esperaHTTPTravado = 200 * time.Millisecond
 	// UIDRoteiro: o uid dos pedidos de entrada e saida (uid=N troca); _comum.fix o habilita.
 	UIDRoteiro = 7
 )
@@ -61,7 +68,8 @@ type servico struct {
 	caminhos   map[string]string // o caminho do webhook (prefixo + segredo) por ambiente
 	caminho    string
 	sessao     *pnt.Sessao
-	http       http.Handler
+	http       http.Handler       // v1.33: a API com a espera longa
+	httpCurto  http.Handler       // a mesma API com a espera curta, só com o motor travado (motor_lento)
 	baseEnv    int64              // falso.EnviadasApp() ao subir
 	baseRec    int64              // falso.RecebidasApp() ao subir
 	ponte      *flexscan.Ponte    // SPEC-FLEXSCAN-v1: com config FLEXSCAN_URL=falso
@@ -101,6 +109,7 @@ type Executor struct {
 	logonsMotor int                             // logons tratados pelo motor em execução (zera a cada subida)
 	async       chan *httptest.ResponseRecorder // http_async em curso
 	asyncDesc   string
+	naoParou    error    // v1.33: o ocioso que estourou o teto (o passo falha com ele)
 	Registro    []string // o que aconteceu, para depuração
 }
 
@@ -158,7 +167,11 @@ func Executar(c roteiro.Cenario, dir string, b Backend) (err error) {
 		return err
 	}
 	for _, p := range c.Passos {
-		if err := e.passo(p); err != nil {
+		err := e.passo(p)
+		if err == nil && e.naoParou != nil {
+			err = e.naoParou // v1.33: o ocioso do passo estourou o teto
+		}
+		if err != nil {
 			return fmt.Errorf("%s: %s: %w", p.Origem, p.Verbo, err)
 		}
 	}
@@ -406,7 +419,8 @@ func (e *Executor) subir() error {
 		return err
 	}
 	e.logonsMotor = 0
-	svc.http, svc.baseEnv, svc.baseRec = api.Handler(sv, e.cfg.Segundos("HTTP_ESPERA_S", 5)), e.pnt.EnviadasApp()+e.pnt.Reentregas(), e.pnt.RecebidasApp()
+	svc.http, svc.httpCurto = api.Handler(sv, e.cfg.Segundos("HTTP_ESPERA_S", esperaHTTP.Seconds())), api.Handler(sv, esperaHTTPTravado)
+	svc.baseEnv, svc.baseRec = e.pnt.EnviadasApp()+e.pnt.Reentregas(), e.pnt.RecebidasApp()
 	e.svc = svc
 	e.mirarFlexscan(e.alvoFlx)
 	if err := s.Iniciar(); err != nil {
@@ -510,32 +524,69 @@ func (e *Executor) encerrar() {
 	}
 }
 
-// ocioso espera o serviço tratar tudo o que o falso mandou e o falso receber tudo o que o
-// serviço mandou.
+// ocioso espera o serviço parar: o motor sem nada na fila nem em curso, tudo o que o falso mandou
+// tratado, tudo o que o serviço mandou recebido pelo falso e as pontes quietas. v1.33: sem desistir
+// calado (antes, 3 s e seguia); no teto (esperaServico), o passo falha com "o serviço não parou".
 func (e *Executor) ocioso() {
 	if e.travado != nil {
 		return // motor_lento: nada anda até motor_normal
 	}
-	fim := time.Now().Add(3 * time.Second)
-	semPonte := len(e.svc.pontes) == 0
-	for time.Now().Before(fim) {
-		proc := e.svc.processadas()
-		var pntParte, flxParte int64
-		if e.pnt.Logado() {
-			pntParte = e.pnt.EnviadasApp() + e.pnt.Reentregas() - e.svc.baseEnv
-		}
-		flxParte = e.svc.entregues() // os ERs sintéticos das pontes também contam no Processadas
-		dentro := proc >= pntParte+flxParte || (semPonte && !e.pnt.Logado())
-		fora := e.pnt.RecebidasApp()-e.svc.baseRec >= e.svc.sessao.Enviadas()
-		quieta := !e.svc.pontesOcupadas()
-		if dentro && fora && quieta {
-			if e.svc.processadas() == proc && !e.svc.pontesOcupadas() && e.svc.entregues() == flxParte {
-				return
+	if !esperarAte(esperaServico, e.quieto) && e.naoParou == nil {
+		e.naoParou = fmt.Errorf("o serviço não parou em %s (motor, sessão FIX ou ponte ainda trabalhando)", esperaServico)
+	}
+}
+
+// quieto (v1.33): o serviço parado agora — conferido duas vezes, para nada ter entrado no meio.
+func (e *Executor) quieto() bool {
+	parados := func() bool {
+		for _, m := range e.svc.motores {
+			if !m.Parado() {
+				return false
 			}
+		}
+		return true
+	}
+	if !parados() {
+		return false
+	}
+	semPonte := len(e.svc.pontes) == 0
+	proc := e.svc.processadas()
+	var pntParte, flxParte int64
+	if e.pnt.Logado() {
+		pntParte = e.pnt.EnviadasApp() + e.pnt.Reentregas() - e.svc.baseEnv
+	}
+	flxParte = e.svc.entregues() // os ERs sintéticos das pontes também contam no Processadas
+	dentro := proc >= pntParte+flxParte || (semPonte && !e.pnt.Logado())
+	fora := e.pnt.RecebidasApp()-e.svc.baseRec >= e.svc.sessao.Enviadas()
+	if !dentro || !fora || e.svc.pontesOcupadas() {
+		return false
+	}
+	return e.svc.processadas() == proc && parados() && !e.svc.pontesOcupadas() && e.svc.entregues() == flxParte
+}
+
+// proximaMensagem (v1.33): a próxima mensagem de aplicação que o PnT falso recebeu. Sem nenhuma,
+// espera o serviço parar: parado e sem mensagem, nada vai chegar (falha na hora, não em 2 s). Com
+// o motor travado (motor_lento), como antes: até esperaMensagem.
+func (e *Executor) proximaMensagem() (falso.Recebida, error) {
+	if e.travado != nil {
+		return e.pnt.Proxima(esperaMensagem)
+	}
+	fim := time.Now().Add(esperaServico)
+	for {
+		if r, ok := e.pnt.Consumir(0); ok {
+			return r, nil
+		}
+		if e.quieto() && len(e.pnt.Pendentes()) == 0 {
+			return falso.Recebida{}, errParou
+		}
+		if time.Now().After(fim) {
+			return falso.Recebida{}, fmt.Errorf("o serviço não parou em %s", esperaServico)
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
 }
+
+var errParou = fmt.Errorf("o serviço parou sem mandar")
 
 func (e *Executor) passo(p roteiro.Passo) error {
 	switch p.Verbo {
@@ -855,9 +906,9 @@ func (e *Executor) substituir(v string) (string, error) {
 }
 
 func (e *Executor) recebe(cs []roteiro.Campo) error {
-	r, err := e.pnt.Proxima(esperaMensagem)
+	r, err := e.proximaMensagem()
 	if err != nil {
-		return fmt.Errorf("nenhuma mensagem chegou em %s (esperava %v)", esperaMensagem, campos(cs))
+		return fmt.Errorf("nenhuma mensagem chegou: %v (esperava %v)", err, campos(cs))
 	}
 	if r.Validacao != nil {
 		return fmt.Errorf("mensagem do serviço reprovada no dicionário: %v\n  %s", r.Validacao, r.Bruta)
@@ -870,8 +921,13 @@ func (e *Executor) recebe(cs []roteiro.Campo) error {
 
 func (e *Executor) emQualquerOrdem(filhos []roteiro.Passo) error {
 	faltam := append([]roteiro.Passo(nil), filhos...)
-	fim := time.Now().Add(esperaMensagem)
-	for len(faltam) > 0 && time.Now().Before(fim) {
+	// v1.33: até o serviço parar (teto esperaServico); com o motor travado, esperaMensagem
+	fim := time.Now().Add(esperaServico)
+	if e.travado != nil {
+		fim = time.Now().Add(esperaMensagem)
+	}
+	parou := false
+	for len(faltam) > 0 && time.Now().Before(fim) && !parou {
 		pend := e.pnt.Pendentes()
 		achou := false
 		for i, r := range pend {
@@ -892,7 +948,11 @@ func (e *Executor) emQualquerOrdem(filhos []roteiro.Passo) error {
 			}
 		}
 		if !achou {
-			time.Sleep(10 * time.Millisecond)
+			// parado e nada novo pendente: o que falta não vem mais
+			parou = e.travado == nil && e.quieto() && len(e.pnt.Pendentes()) == len(pend)
+			if !parou {
+				time.Sleep(2 * time.Millisecond)
+			}
 		}
 	}
 	if len(faltam) > 0 {
@@ -1167,13 +1227,22 @@ func (e *Executor) httpAsync(metodo, caminho, corpo string) error {
 		return fmt.Errorf("já há uma http_async em curso")
 	}
 	ch := make(chan *httptest.ResponseRecorder, 1)
-	h := e.svc.http
+	h := e.api()
+	antes, enviadas := e.pedidosHTTP(), e.svc.sessao.Enviadas()
 	go func() {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest(metodo, caminho, bytes.NewBufferString(corpo)))
 		ch <- w
 	}()
 	e.async, e.asyncDesc = ch, metodo+" "+caminho+" "+corpo
+	// v1.33: o passo seguinte só começa com o pedido já na fila do motor, ou com a mensagem que ele
+	// manda direto pela sessão (a bancada, fora do motor), ou respondido; senão um "serviço parado"
+	// visto antes de o pedido entrar seria falso
+	if !esperarAte(esperaServico, func() bool {
+		return e.pedidosHTTP() > antes || e.svc.sessao.Enviadas() > enviadas || len(ch) > 0
+	}) {
+		return fmt.Errorf("http_async: o pedido não entrou no motor em %s: %s", esperaServico, e.asyncDesc)
+	}
 	return nil
 }
 
@@ -1193,8 +1262,26 @@ func (e *Executor) httpAguarda() error {
 func (e *Executor) http(metodo, caminho, corpo string) error {
 	req := httptest.NewRequest(metodo, caminho, bytes.NewBufferString(corpo))
 	w := httptest.NewRecorder()
-	e.svc.http.ServeHTTP(w, req)
+	e.api().ServeHTTP(w, req)
 	return e.lerResposta(metodo+" "+caminho+" "+corpo, w)
+}
+
+// api (v1.33): a API com a espera longa; com o motor travado (motor_lento), a da espera curta, que
+// dá o 503 (o motor não responde até motor_normal).
+func (e *Executor) api() http.Handler {
+	if e.travado != nil {
+		return e.svc.httpCurto
+	}
+	return e.svc.http
+}
+
+// pedidosHTTP: os pedidos HTTP que já entraram na fila de algum motor.
+func (e *Executor) pedidosHTTP() int64 {
+	var n int64
+	for _, m := range e.svc.motores {
+		n += m.PedidosHTTP()
+	}
+	return n
 }
 
 func (e *Executor) lerResposta(desc string, w *httptest.ResponseRecorder) error {

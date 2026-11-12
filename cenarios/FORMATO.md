@@ -52,13 +52,13 @@ o serviço observa a condição; os roteiros deixam a folga de um passo quando i
 
 | Instrução | Efeito |
 |---|---|
-| `recebe TAG=VAL ...` | a próxima mensagem de aplicação enviada pelo serviço (e 35=3/35=j) tem de casar com as tags listadas; as não listadas são livres |
+| `recebe TAG=VAL ...` | a próxima mensagem de aplicação enviada pelo serviço (e 35=3/35=j) tem de casar com as tags listadas; as não listadas são livres. v1.33: sem mensagem, espera o serviço parar (motor sem fila nem volta em curso, sessão FIX e pontes quietas); parado e sem mensagem, falha na hora ("o serviço parou sem mandar"); o teto de 30 s é só contra travamento. Com `motor_lento`, como antes (2 s) |
 | `TAG=>NOME` (dentro de `recebe`) | captura o valor da tag em `NOME`; vale para tags de cabeçalho (`34=>S1`) |
 | `envia TAG=VAL ...` | o PnT falso envia; `$NOME` usa uma captura; o cabeçalho de sessão é automático; `60` e, em 35=8, `17` são preenchidos se ausentes; a ordem das tags do corpo é preservada (grupos repetidos saem como escritos) |
 | `envia @MODELO TAG=VAL ...` | parte de um modelo e acrescenta/sobrescreve tags |
 | `envia_offline ...` | com a sessão caída: grava no store do PnT falso (consome sequência) sem transmitir; chega ao serviço por ResendRequest |
 | `recebe_sessao TAG=VAL ...` | confere uma mensagem de sessão (35=2, 35=4, 35=5...) enviada pelo serviço |
-| `nada` / `nada TAG=VAL ...` | depois de o serviço ficar ocioso, não há mensagem de aplicação pendente (ou nenhuma que case com o filtro) |
+| `nada` / `nada TAG=VAL ...` | depois de o serviço ficar ocioso, não há mensagem de aplicação pendente (ou nenhuma que case com o filtro). v1.33: o ocioso (também o de depois de `avanca`, `envia` etc.) não desiste calado: sem parar em 30 s, o passo falha |
 | `em_qualquer_ordem` ... `fim` | os `recebe` do bloco casam em qualquer ordem |
 
 Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; só em `recebe_sessao`.
@@ -96,7 +96,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 | `pnt_espera_seq +N` / `pnt_esquece N` | com a sessão caída: o PnT falso passa a esperar o MsgSeqNum N à frente (o logon seguinte é "MsgSeqNum too low, expecting …") / N atrás (pede o reenvio das últimas N mensagens no logon) |
 | `corrompe_store` | com a sessão caída: muda, no lugar, o 9 da última mensagem gravada no store FIX do serviço (o reenvio não a lê mais) |
 | `descarta TAG=VAL ...` | tira da fila as mensagens de aplicação pendentes que casam (zero ou mais) e dá por perdido o que o serviço enviou numa sessão que caiu antes de o PnT falso processar; só para corridas de tempo real numa queda |
-| `motor_lento` / `motor_normal` | trava / solta a fila do motor (os pedidos HTTP ficam esperando; com `HTTP_ESPERA_S` curto, dá o 503); com o motor travado, `avanca` move o relógio e só enfileira os ticks (atrás do motor parado) |
+| `motor_lento` / `motor_normal` | trava / solta a fila do motor (os pedidos HTTP ficam esperando; v1.33: com o motor travado o executor usa a API com a espera curta, 0,2 s, e o pedido dá o 503; fora disso, a espera é de 30 s: a resposta chega quando o motor responde); com o motor travado, `avanca` move o relógio e só enfileira os ticks (atrás do motor parado) |
 
 ## Blocos e modelos (em `_comum.fix`)
 

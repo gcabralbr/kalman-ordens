@@ -4,7 +4,6 @@ hora 2026-10-15 11:30:00
 # e como foi respondido. GET /operacoes/{id}/historico ganha "pedidos" ({em, rota, papel,
 # http_status, aceito, codigo, corpo, resposta}); no GET /operacoes?dia=, o pedido recusado que não
 # virou operação aparece com estado RECUSADA, o código, o motivo e o corpo.
-config HTTP_ESPERA_S=0.2
 
 executa INICIO
 

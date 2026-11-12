@@ -167,6 +167,7 @@ func (m *Motor) laco() {
 			return
 		}
 		m.protegido(f)
+		itens := int64(1)
 		inicio := time.Now()
 		for n := 1; n < maxItensPorVolta && time.Since(inicio) < maxDuracaoVolta; n++ {
 			f, ok := m.proxima(false)
@@ -174,8 +175,11 @@ func (m *Motor) laco() {
 				break
 			}
 			m.protegido(f)
+			itens++
 		}
+		m.itensVolta = itens
 		m.protegido(m.fecharVolta)
+		m.contarVolta() // se o fecharVolta não chegou lá (pânico)
 	}
 }
 
@@ -245,10 +249,19 @@ func (m *Motor) fecharVolta() {
 	for _, f := range rs {
 		f()
 	}
+	m.contarVolta() // antes do aposVolta: quem espera um Fazer já vê o motor parado
 	fs := m.v.aposVolta
 	m.v.aposVolta = nil
 	for _, f := range fs {
 		f()
+	}
+}
+
+// contarVolta (v1.33): os itens da volta passam a feitos (Parado).
+func (m *Motor) contarVolta() {
+	if m.itensVolta != 0 {
+		m.feitos.Add(m.itensVolta)
+		m.itensVolta = 0
 	}
 }
 
@@ -548,10 +561,12 @@ func (m *Motor) agendarVolta() {
 		return
 	}
 	m.voltaAgendada = true
+	m.naFila.Add(1)
 	select {
 	case m.p2 <- func() { m.voltaAgendada = false }:
 	default:
 		m.voltaAgendada = false
+		m.naFila.Add(-1)
 	}
 }
 
