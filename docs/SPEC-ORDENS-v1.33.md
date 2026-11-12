@@ -88,6 +88,13 @@ feito com `motor_lento` ativo conta na API curta e não aparece no `/saude`. Nen
   falha (§1.5).
 - A suíte completa nos dois bancos.
 
-### 1.5 Resultado
+### 1.5 Resultado (12/11)
 
-(preenchido depois da validação)
+- Antes (883bdc8 e d1bad43): os roteiros 64 e 72 falhavam cerca de 1 vez em 15 com `-race`; a suíte
+  completa do d1bad43 falhou 2 vezes em 3.
+- Depois (5e9fc2d): os roteiros 64 e 72, 204 vezes cada, com `-race` e 6 processos em paralelo
+  (`var/estresse133-20261112-112003.log`): 204 + 204 passaram, nenhuma falha.
+- `TestRecebeSemMensagemFalhaNaHora`: falha no passo inserido, "o serviço parou sem mandar"; o
+  roteiro inteiro leva 0,8 s.
+- A suíte completa nos dois bancos, com `-race`, no worktree limpo `../kalman-ordens-v133` (d0cd493):
+  passou na primeira (`var/suite133-20261112-112550.log`).
