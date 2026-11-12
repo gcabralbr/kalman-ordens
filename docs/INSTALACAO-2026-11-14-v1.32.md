@@ -19,7 +19,7 @@ v1.31). Por isso não há cópia do banco a fazer antes. O §3 confere no journa
 pendente". Se aparecer "migração aplicada", pare e me mande o journal.
 
 **`service.env`:** nada a mudar. A `FLEXSCAN_TOLERANCIA_ABERTURA` vale 08:45 sem estar no arquivo, e
-a janela das 08:02 já foi trocada em 13/11 (`INSTALACAO-2026-11-12-janela.md`).
+a janela das 08:02 já foi trocada em 12/11, às 15:37 (`INSTALACAO-2026-11-12-janela.md`).
 
 **Quando:** sábado, 14/11, a qualquer hora (decidido em 12/11). O sábado não é dia de pregão, e
 isso muda o que dá para ver no dia:
@@ -48,7 +48,7 @@ sha256sum /home/gammaquant/kalman-ordens-v132b/dist/kalman-ordens
 ```
 
 Se a posição, as vivas ou as suspensas não estiverem zeradas, ou se o sha256 for diferente, pare.
-A `janela` já deve estar `"08:02-18:30"` (a troca de sexta, 13/11). Se não estiver, pare também.
+A `janela` já deve estar `"08:02-18:30"` (trocada na quinta, 12/11, às 15:37). Se não estiver, pare também.
 
 ## 2. Instalar o binário (guardando o atual)
 
@@ -94,7 +94,8 @@ curl -s '127.0.0.1:9092/flexscan/trafego?limite=10' | jq -r '.mensagens[]
 
 ## 4. Segunda, 16/11, das 08:02 às 08:45: o teste real
 
-Este é o primeiro pregão sem restart de manhã. O token da partida de sábado venceu no próprio sábado,
+O primeiro teste real foi na sexta, 13/11, ainda com a v1.31 (janela trocada na véspera à tarde; o
+resultado está no §6 do roteiro da janela). A segunda é o primeiro pregão sem restart de manhã com a v1.32. O token da partida de sábado venceu no próprio sábado,
 então a ponte passa o fim de semana dormindo. Às 08:02:00 ela acorda e faz o login `reconexao`. É o
 teste da janela nova: a Flexscan responde rápido às 08:02?
 
