@@ -37,8 +37,17 @@ func TestRepeticaoEspaca(t *testing.T) {
 			t.Fatalf("repetições em %v, esperado %v", repeticoes, esperado)
 		}
 	}
-	if n.textos[1] != "FONTE_DEGRADADA: fonte ruim (continua)" {
+	// v1.32 §4: desde quando (a emissão, 09:00:30 UTC = 06:00:30 em Brasília)
+	if n.textos[1] != "FONTE_DEGRADADA: fonte ruim (continua desde 06:00:30)" {
 		t.Fatalf("texto %q", n.textos[1])
+	}
+	// Atualizar troca o texto das repetições seguintes; numa chave fechada, nada
+	a.Atualizar("FONTE_DEGRADADA", "fonte ruim, 2a vez")
+	a.Atualizar("OUTRA", "x")
+	rel.Avancar(5 * time.Minute)
+	a.Tick()
+	if ult := n.textos[len(n.textos)-1]; ult != "FONTE_DEGRADADA: fonte ruim, 2a vez (continua desde 06:00:30)" {
+		t.Fatalf("texto atualizado %q", ult)
 	}
 	// uma emissão nova depois de resolvido volta para os 30 s
 	a.Resolver("FONTE_DEGRADADA")

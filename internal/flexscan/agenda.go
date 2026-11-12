@@ -26,10 +26,13 @@ type Agenda struct {
 	Inicio, Fim      int // a janela; Inicio -1 = sempre (sem janela, como antes da v1.28)
 	RenovarAbertura  int
 	ConferirAbertura int
+	// v1.32 §4 (abertura.go): FLEXSCAN_TOLERANCIA_ABERTURA, até quando o login e o recadastro da
+	// abertura que se resolvem sozinhos saem numa linha só, sem crítico; -1 = sem tolerância ("sem")
+	ToleranciaAbertura int
 }
 
 // AgendaSempre: sem janela (a ponte sempre ativa, como antes da v1.28).
-var AgendaSempre = Agenda{Inicio: -1, Fim: -1, RenovarAbertura: -1, ConferirAbertura: -1}
+var AgendaSempre = Agenda{Inicio: -1, Fim: -1, RenovarAbertura: -1, ConferirAbertura: -1, ToleranciaAbertura: -1}
 
 // LerAgenda: FLEXSCAN_JANELA ("08:00-18:30"; vazia ou "sempre" = sem janela) e os dois horários
 // ("08:15"; vazio = sem).
@@ -139,6 +142,14 @@ func (a Agenda) inicioDoDia() int {
 		r = a.Inicio
 	}
 	return r
+}
+
+// naTolerancia (v1.32 §4): t num dia de pregão, do início do dia (inicioDoDia) até antes de
+// FLEXSCAN_TOLERANCIA_ABERTURA.
+func (a Agenda) naTolerancia(t time.Time, pregao bool) bool {
+	ini := a.inicioDoDia()
+	m := minuto(t)
+	return pregao && a.ToleranciaAbertura >= 0 && ini >= 0 && m >= ini && m < a.ToleranciaAbertura
 }
 
 // diaUtil: o calendário padrão, sem o arquivo de feriados (seg–sex).

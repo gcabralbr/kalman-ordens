@@ -240,6 +240,16 @@ type Ponte struct {
 	ativaPor         string
 	acordada         bool
 
+	// v1.32 §4 (abertura.go): a série de logins que falharam (quantos, desde quando, se já deu o
+	// crítico), o resumo da abertura, o dia em que o cadastro do webhook foi achado (ou deixado)
+	// completo e o motivo da conferência em curso
+	loginFalhas  int
+	loginDesde   time.Time
+	loginCritico bool
+	abert        resumoAbertura
+	diaWebhookOK string
+	confPor      string
+
 	entregues atomic.Int64
 	ctx       context.Context
 	cancelar  context.CancelFunc
@@ -292,7 +302,7 @@ func (p *Ponte) registrarLogin(motivo string, err error, dur time.Duration) {
 	p.ultLogin = map[string]any{"em": agora.In(relogio.Fuso).Format(formatoEmTrafego), "motivo": motivo, "resultado": resultado}
 	if err == nil {
 		// v1.29: depois de cada login, a conferência do cadastro do webhook
-		p.conferirPor = "login " + motivo
+		p.conferirPor = "login das " + hms(agora) + " (" + motivo + ")"
 		// v1.28: acordou; o login de hoje a partir da abertura vale pela renovação da abertura
 		p.dormindo, p.acordada = false, false
 		if a := p.cfg.Agenda; a.devida(a.inicioDoDia(), agora, pregao) {
@@ -410,11 +420,12 @@ func (p *Ponte) tentarLogin() {
 			if p.logado.Swap(false) {
 				p.ouv.Caiu(err.Error())
 			}
-			p.ouv.Alertar("FLEXSCAN_LOGIN", "FLEXSCAN_LOGIN", "[flexscan] login falhou: "+err.Error()+map[bool]string{true: " (definitivo: não tenta de novo sozinho)", false: ""}[definitivo])
+			p.loginFalhou(err, definitivo) // v1.32 §4: o FLEXSCAN_LOGIN, ou a tolerância da abertura
 			return
 		}
 		p.ultimoErro = ""
 		p.mu.Unlock()
+		p.loginDeuCerto()
 		p.ouv.Resolver("FLEXSCAN_LOGIN")
 		if !p.logado.Swap(true) {
 			p.ouv.Logou()
@@ -618,7 +629,8 @@ func (p *Ponte) Tick() {
 			if abertura {
 				p.diaConfAbertura = diaDe(agora)
 			}
-			slog.Info("flexscan: conferência do webhook", "por", map[bool]string{true: "abertura", false: map[bool]string{true: p.conferirPor, false: "periodica"}[p.conferirPor != ""]}[abertura])
+			p.confPor = motivoConferencia(abertura, p.conferirPor)
+			slog.Info("flexscan: conferência do webhook", "por", p.confPor)
 			p.conferirPor = ""
 			p.conferindoWebhook = true
 			p.ultConfWebhook = agora

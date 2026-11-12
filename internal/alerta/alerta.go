@@ -1,7 +1,7 @@
 // Package alerta emite os alertas do catálogo docs/ALERTAS.md (Telegram e evento ALERTA).
 // Os críticos repetem a cada ALERTA_REPETICAO_S até serem resolvidos — nos primeiros
 // ALERTA_REPETICAO_CURTA_S; depois, a cada ALERTA_REPETICAO_LONGA_S (22/10: sem enxurrada numa falha
-// longa) —; a resolução gera RESOLVIDO.
+// longa) —, com "(continua desde HH:MM:SS)" (v1.32 §4); a resolução gera RESOLVIDO.
 // Confinado à goroutine do motor.
 package alerta
 
@@ -43,6 +43,8 @@ var Catalogo = map[string]bool{
 	"BOLETA_REAL": false,
 	// v1.32: a consulta de uma operação de outro dia, não final no banco
 	"OPERACAO_DE_OUTRO_DIA": false,
+	// v1.32 §4: a linha única da abertura da Flexscan (login e recadastro que se resolveram sozinhos)
+	"FLEXSCAN_ABERTURA": false,
 }
 
 // Notificador entrega o alerta para fora (Telegram). Não pode bloquear.
@@ -100,6 +102,14 @@ func (a *Alertas) Emitir(codigo, chave, texto string, operacaoID int64) {
 	a.enviar(codigo, texto, operacaoID)
 }
 
+// Atualizar (v1.32 §4): troca o texto de um crítico aberto (as repetições seguintes saem com ele,
+// ex.: o login com o número de tentativas); sem efeito se a chave não está aberta.
+func (a *Alertas) Atualizar(chave, texto string) {
+	if c, ok := a.ativos[chave]; ok {
+		c.texto = ASCII(texto)
+	}
+}
+
 // Resolver encerra um crítico (e avisa com RESOLVIDO).
 func (a *Alertas) Resolver(chave string) {
 	c, ok := a.ativos[chave]
@@ -143,7 +153,7 @@ func (a *Alertas) Tick() {
 		if a.longa > 0 && agora.Sub(c.desde) >= a.curtaAte {
 			c.proximo = agora.Add(a.longa)
 		}
-		a.notif.Notificar(c.codigo, c.texto+" (continua)")
+		a.notif.Notificar(c.codigo, c.texto+" (continua desde "+c.desde.In(relogio.Fuso).Format("15:04:05")+")")
 	}
 }
 

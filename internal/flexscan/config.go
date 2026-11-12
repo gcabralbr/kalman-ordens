@@ -1,6 +1,8 @@
 package flexscan
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"gammaquant.com.br/kalman-ordens/internal/config"
@@ -42,10 +44,20 @@ func ConfigDe(c config.Config) Config {
 	}
 }
 
-// AgendaDe (v1.28): FLEXSCAN_JANELA, FLEXSCAN_RENOVAR_ABERTURA e FLEXSCAN_CONFERIR_ABERTURA.
+// AgendaDe (v1.28): FLEXSCAN_JANELA, FLEXSCAN_RENOVAR_ABERTURA e FLEXSCAN_CONFERIR_ABERTURA; v1.32
+// §4: FLEXSCAN_TOLERANCIA_ABERTURA ("sem" = sem tolerância; vazia = o padrão, como as outras).
 func AgendaDe(c config.Config) (Agenda, error) {
-	return LerAgenda(c.Texto("FLEXSCAN_JANELA", "08:00-18:30"), c.Texto("FLEXSCAN_RENOVAR_ABERTURA", "08:15"),
+	a, err := LerAgenda(c.Texto("FLEXSCAN_JANELA", "08:00-18:30"), c.Texto("FLEXSCAN_RENOVAR_ABERTURA", "08:15"),
 		c.Texto("FLEXSCAN_CONFERIR_ABERTURA", "08:30"))
+	if err != nil {
+		return a, err
+	}
+	if v := c.Texto("FLEXSCAN_TOLERANCIA_ABERTURA", "08:45"); !strings.EqualFold(strings.TrimSpace(v), "sem") {
+		if a.ToleranciaAbertura, err = minutoDoDia(v); err != nil {
+			return a, fmt.Errorf("FLEXSCAN_TOLERANCIA_ABERTURA %q: %w", v, err)
+		}
+	}
+	return a, nil
 }
 
 func agendaOuSempre(a Agenda, err error) *Agenda {

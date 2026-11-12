@@ -30,8 +30,13 @@ type cadastroWebhook struct {
 	Triggers []string `json:"triggers"`
 }
 
-// conferirWebhook: uma conferência (tarefa da fila).
+// conferirWebhook: uma conferência (tarefa da fila). v1.32 §4: o texto diz qual conferência foi
+// (depois do login, a da abertura...); o cadastro ausente na primeira do dia, na tolerância da
+// abertura, recadastrado e conferido completo, vai para a linha da abertura sem crítico.
 func (p *Ponte) conferirWebhook(ctx context.Context) {
+	p.mu.Lock()
+	por := p.confPor
+	p.mu.Unlock()
 	defer func() {
 		p.mu.Lock()
 		p.conferindoWebhook = false
@@ -39,13 +44,20 @@ func (p *Ponte) conferirWebhook(ctx context.Context) {
 	}()
 	faltam, n, ok := p.listarWebhooks(ctx)
 	if !ok {
+		p.linhaAbertura("sem conferencia (o GET do cadastro sem resposta valida)")
 		return
 	}
 	if len(faltam) == 0 {
 		p.marcarWebhook(true, false)
 		p.ouv.Resolver("FLEXSCAN_WEBHOOK_AUSENTE")
+		p.linhaAbertura("presente")
 		return
 	}
+	agora := p.rel.Agora()
+	pregao := p.diaDePregao(agora)
+	p.mu.Lock()
+	tolerado := p.webhookToleradoLocked(agora, pregao, faltam)
+	p.mu.Unlock()
 	p.marcarWebhook(false, false)
 	// ausente ou incompleto: cadastra a nossa com os gatilhos que faltam (os outros n cadastros ficam)
 	gatilhos := strings.Join(faltam, ",")
@@ -59,19 +71,37 @@ func (p *Ponte) conferirWebhook(ctx context.Context) {
 	p.linhaGravada(TrafegoWebhookCadastro, msgCadastro, statusDe(r), duracaoDe(r, time.Since(t0)),
 		comResposta(fmt.Sprintf("recadastro (%s; %d outro(s) cadastro(s) do usuario)", gatilhos, n), r))
 	if r.Status != http.StatusOK && r.Status != http.StatusCreated {
-		texto := fmt.Sprintf("[flexscan] webhook sem %s no cadastro da Flexscan e o recadastro falhou (%s): so a consulta segura as execucoes", gatilhos, r.TextoErro())
+		texto := fmt.Sprintf("[flexscan] webhook sem %s no cadastro da Flexscan (%s) e o recadastro falhou (%s): so a consulta segura as execucoes", gatilhos, porTexto(por), r.TextoErro())
 		slog.Warn("flexscan: recadastro do webhook falhou", "status", r.Status, "erro", r.TextoErro())
 		p.ouv.Alertar("FLEXSCAN_WEBHOOK_AUSENTE", "FLEXSCAN_WEBHOOK_AUSENTE", texto)
+		p.linhaAbertura("ausente e o recadastro falhou (FLEXSCAN_WEBHOOK_AUSENTE)")
 		return
 	}
-	slog.Warn("flexscan: webhook ausente do cadastro: recadastrado")
-	p.ouv.Alertar("FLEXSCAN_WEBHOOK_AUSENTE", "FLEXSCAN_WEBHOOK_AUSENTE", "[flexscan] webhook sem "+gatilhos+" no cadastro da Flexscan: recadastrado")
+	slog.Warn("flexscan: webhook ausente do cadastro: recadastrado", "por", por, "tolerado", tolerado)
 	p.marcarWebhook(false, true)
 	// confere de novo: completo, o alerta se resolve (fica o registro de que faltava)
+	completo := false
 	if faltam, _, ok := p.listarWebhooks(ctx); ok && len(faltam) == 0 {
+		completo = true
+	}
+	if tolerado && completo {
+		p.mu.Lock()
+		rs := p.resumoLocked(agora)
+		rs.webhook = "webhook recadastrado (ausente na " + porTexto(por) + "; a Flexscan limpa os webhooks de madrugada)"
+		rs.pendente = true
+		p.mu.Unlock()
+		p.marcarWebhook(true, false)
+		p.linhaAbertura("")
+		return
+	}
+	p.ouv.Alertar("FLEXSCAN_WEBHOOK_AUSENTE", "FLEXSCAN_WEBHOOK_AUSENTE", "[flexscan] webhook sem "+gatilhos+" no cadastro da Flexscan ("+porTexto(por)+"): recadastrado")
+	if completo {
 		p.marcarWebhook(true, false)
 		p.ouv.Resolver("FLEXSCAN_WEBHOOK_AUSENTE")
+		p.linhaAbertura("ausente, recadastrado (FLEXSCAN_WEBHOOK_AUSENTE)")
+		return
 	}
+	p.linhaAbertura("incompleto depois do recadastro (FLEXSCAN_WEBHOOK_AUSENTE)")
 }
 
 // listarWebhooks: o GET; faltam = os gatilhos que nenhum cadastro da nossa URL tem; ok falso = não
@@ -130,6 +160,9 @@ func (p *Ponte) marcarWebhook(cadastrado, recadastrado bool) {
 	defer p.mu.Unlock()
 	p.webhookCad = &cadastrado
 	agora := p.rel.Agora()
+	if cadastrado {
+		p.diaWebhookOK = diaDe(agora) // v1.32 §4: daqui em diante, um sumiço hoje é crítico
+	}
 	if cadastrado || !recadastrado {
 		p.webhookConfEm = agora
 	}

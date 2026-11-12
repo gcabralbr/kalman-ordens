@@ -78,6 +78,11 @@ func (o *OuvinteFlexscan) Alertar(codigo, chave, texto string) {
 	o.m.entrarFIX(func() { o.m.al.Emitir(codigo, chave, texto, 0) })
 }
 
+// AtualizarAlerta (v1.32 §4): o texto novo de um crítico aberto (as repetições saem com ele).
+func (o *OuvinteFlexscan) AtualizarAlerta(chave, texto string) {
+	o.m.entrarFIX(func() { o.m.al.Atualizar(chave, texto) })
+}
+
 func (o *OuvinteFlexscan) Resolver(chave string) {
 	o.m.entrarFIX(func() { o.m.al.Resolver(chave) })
 }

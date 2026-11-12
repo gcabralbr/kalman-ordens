@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"gammaquant.com.br/kalman-ordens/internal/config"
 	"gammaquant.com.br/kalman-ordens/internal/flexscan/falso"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
 )
@@ -229,5 +230,26 @@ func TestConferenciaPorEvento(t *testing.T) {
 	ate(1, 12, 0)
 	if n, _ := conferencias(); n != 1 {
 		t.Fatalf("08:30–12:00: %d conferência(s); esperava só a da abertura", n)
+	}
+}
+
+// v1.32 §4: FLEXSCAN_TOLERANCIA_ABERTURA (padrão 08:45, também vazia; "sem" = sem; formato errado não sobe) e a
+// janela da tolerância (do início do dia até antes dela, só em dia de pregão).
+func TestToleranciaAbertura(t *testing.T) {
+	a, err := AgendaDe(config.Novo(map[string]string{}))
+	if err != nil || a.ToleranciaAbertura != 8*60+45 {
+		t.Fatalf("padrão: %+v %v", a, err)
+	}
+	if a, err := AgendaDe(config.Novo(map[string]string{"FLEXSCAN_TOLERANCIA_ABERTURA": "sem"})); err != nil || a.ToleranciaAbertura != -1 {
+		t.Fatalf("sem: %+v %v", a, err)
+	}
+	if _, err := AgendaDe(config.Novo(map[string]string{"FLEXSCAN_TOLERANCIA_ABERTURA": "8h45"})); err == nil {
+		t.Fatal("formato errado devia dar erro")
+	}
+	a, _ = AgendaDe(config.Novo(map[string]string{"FLEXSCAN_JANELA": "08:02-18:30"}))
+	quinta := func(h, m int) time.Time { return time.Date(2026, 11, 12, h, m, 0, 0, relogio.Fuso) }
+	if a.naTolerancia(quinta(7, 59), true) || !a.naTolerancia(quinta(8, 2), true) || !a.naTolerancia(quinta(8, 44), true) ||
+		a.naTolerancia(quinta(8, 45), true) || a.naTolerancia(quinta(8, 10), false) || AgendaSempre.naTolerancia(quinta(8, 10), true) {
+		t.Fatal("naTolerancia")
 	}
 }

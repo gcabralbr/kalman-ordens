@@ -8,8 +8,9 @@ teste pela boleta (pausado: "Conta nao contratada", SPEC-CADASTRO-v1 §0.1):
 | 1 | a ponte sem URL de webhook não espera webhook | feito |
 | 2 | a CLI da boleta confere o motivo antes do "sim" | feito |
 | 3 | o `GET /ordens/{id}` de uma op de outro dia lê o banco | feito (§3 aprovado em 03/11, com D1 e D2) |
+| 4 | os alertas da abertura da Flexscan (12/11) | feito (§4, aprovado em 12/11) |
 
-Os três vão juntos numa v1.32 só, instalada fora do pregão (o REAL está pausado).
+Os quatro vão juntos numa v1.32 só, instalada fora do pregão (o REAL está pausado).
 
 ## 1. A ponte sem `FLEXSCAN_WEBHOOK_URL` não espera webhook
 
@@ -143,11 +144,102 @@ entram no caminho.
   - uma op que não existe em nenhum dia: `existe: false`.
 - O caso do banco com erro (`existe: false` com o `motivo`) é o mesmo caminho de erro do histórico.
 
-## 4. O que não muda
+## 4. Os alertas da abertura da Flexscan (12/11)
+
+### 4.1 O caso
+
+Todo dia de pregão a .53 manda ao Telegram, às 08:00:
+`FLEXSCAN_LOGIN` ("login sem resposta: ... Client.Timeout ..."), o mesmo com "(continua)",
+`RESOLVIDO`, `FLEXSCAN_WEBHOOK_AUSENTE` ("... recadastrado") e `RESOLVIDO`. No celular, parece que o
+login falha, resolve e falha de novo. O levantamento de 12/11 (journal desde 20/10 e o tráfego
+gravado):
+
+- **O login.** A ponte acorda às 08:00:00, o início de `FLEXSCAN_JANELA`. O login fica sem resposta em
+  `FLEXSCAN_TIMEOUT_MS` (3 s) em 03, 04, 05, 09, 11 e 12/11. Em 06 e 10/11 passou em 2,6 e 2,8 s. A
+  segunda tentativa, 30 s depois (`FLEXSCAN_ESPERA_LOGIN_S`), leva cerca de 180 ms, e a renovação
+  das 17:30 cerca de 1 s. Sempre uma falha só, e nunca no pregão. A Flexscan fica lenta no primeiro
+  instante depois das 08:00 (em 28/10 uma conferência às 08:00:14 também deu timeout).
+- **O "(continua)"** é a repetição do mesmo crítico a cada `ALERTA_REPETICAO_S` (30 s). Ela cai no
+  mesmo segundo da segunda tentativa e sai uns 0,3 s antes do `RESOLVIDO`. Não é uma segunda falha.
+- **O webhook.** A Flexscan apaga o cadastro todo dia entre 03:45:34 e 03:50:13 (com a conferência
+  de 10 em 10 min de 28 a 30/10). O `GET /webhooks` volta 200 sem a nossa URL e sem nenhum outro
+  cadastro. Não depende do token, e nós não apagamos: a ponte só faz GET e POST, e a .53 não tem
+  nenhum timer nesse horário. A referência da API não fala de expiração. A conferência depois do
+  login das 08:00 acha o cadastro ausente e recadastra. É a limpeza noturna que a v1.28 §1 já tinha
+  visto.
+
+### 4.2 A regra nova
+
+**A tolerância da abertura:** num dia de pregão, do início do dia da agenda (o menor entre o início
+da janela e `FLEXSCAN_RENOVAR_ABERTURA`) até antes de `FLEXSCAN_TOLERANCIA_ABERTURA` (nova, padrão
+`08:45`; `sem` = sem tolerância, como antes), **sem ordem viva da Flexscan** (do motor ou acompanhada
+pela ponte). No REAL, `REAL_FLEXSCAN_TOLERANCIA_ABERTURA` se diferir (o recuo das chaves da agenda).
+
+1. **O login que falha na tolerância** (não definitivo) não alerta: fica no journal ("login da
+   abertura falhou (sem alerta até a tolerância)") e no tráfego, como hoje. A ponte tenta a cada
+   `FLEXSCAN_ESPERA_LOGIN_S`.
+2. **O cadastro do webhook ausente** (sem nenhum dos dois gatilhos) na tolerância, se o dia ainda não
+   teve o cadastro conferido completo: a ponte recadastra e confere de novo. Completo, não alerta.
+3. **A linha da abertura** (`FLEXSCAN_ABERTURA`, novo, não crítico) sai uma vez, quando há o que
+   contar (um login tolerado que deu certo, ou o recadastro tolerado), depois da conferência que
+   segue o login (ponte sem URL de webhook: no login). Por exemplo:
+   `[flexscan] abertura: logou 08:02:30 na 2a tentativa (a 1a, 08:02:00: login sem resposta: ...);
+   webhook recadastrado (ausente na conferencia depois do login das 08:02:30 (reconexao); a Flexscan
+   limpa os webhooks de madrugada)`.
+4. **Continua crítico:**
+   - o erro definitivo (senha bloqueada, MFA...), na hora;
+   - o login ainda falhando a partir de `FLEXSCAN_TOLERANCIA_ABERTURA`: o `FLEXSCAN_LOGIN` sai na
+     primeira falha depois dela, já com as tentativas;
+   - o login que falha no pregão ou com ordem viva;
+   - o webhook que some depois de conferido completo no mesmo dia, o cadastro incompleto (só um
+     gatilho), o recadastro que falha e o recadastro fora da tolerância.
+
+   Um login que deu crítico não entra na linha da abertura (já teve o `RESOLVIDO`).
+
+**Os textos:**
+- `FLEXSCAN_LOGIN`, a partir da segunda tentativa: `... (N tentativas desde HH:MM:SS)`. O texto é
+  atualizado a cada tentativa, e as repetições do crítico saem com o último.
+- Todo crítico repetido: `(continua desde HH:MM:SS)`, a hora da emissão, no lugar de `(continua)`.
+- `FLEXSCAN_WEBHOOK_AUSENTE` diz qual conferência foi: `(conferencia depois do login das 08:46:30
+  (reconexao))`, `(conferencia da abertura)`, `(conferencia da abertura, depois do login das ...)`,
+  `(conferencia por 3 esperas sem webhook)`, `(conferencia periodica)`.
+
+### 4.3 Junto: a janela de 08:02 (só `service.env`)
+
+Aprovado em 12/11 e instalado à parte, antes da v1.32: `FLEXSCAN_JANELA=08:02-18:30` na .53
+(`docs/INSTALACAO-2026-11-12-janela.md`).
+Às 08:02 a Flexscan já responde rápido. Com a janela nova a falha das 08:00 deve sumir, e a
+tolerância fica para o dia em que ela não sumir. O recadastro diário continua (a limpeza é da
+Flexscan) e passa a sair como linha da abertura.
+
+### 4.4 Implementação e testes
+
+- `internal/flexscan/abertura.go`: a série de falhas (quantas, desde quando, se já deu crítico), o
+  resumo do dia e a linha. `tentarLogin` chama `loginFalhou`/`loginDeuCerto`, e `conferirWebhook`
+  decide o recadastro tolerado e diz o motivo da conferência.
+- `Agenda.ToleranciaAbertura` (`AgendaDe`; formato errado: o serviço não sobe, como as outras chaves
+  da agenda).
+- `alerta.Alertas.Atualizar` (o texto de um crítico aberto) e o `Tick` com o "desde". O motor
+  (`OuvinteFlexscan.AtualizarAlerta`) é chamado pela ponte por uma interface opcional, como o
+  `Adormeceu`.
+- `TestAberturaTolerada`, no relógio controlado:
+  - quinta: a limpeza de madrugada e a Flexscan fora do ar às 08:00:00 (503). Nenhum crítico e uma
+    linha, "logou 08:00:30 na 2a tentativa" e "webhook recadastrado (ausente na conferencia depois do
+    login das 08:00:30 (reconexao)". O cadastro apagado às 08:20 dá crítico na conferência da
+    abertura (já conferido no dia);
+  - sexta: fora do ar das 08:00 às 08:46. Nada até 08:44:50; às 08:45:00 o crítico com "(91
+    tentativas desde 08:00:00)", e o texto vivo chega a 93. O recadastro depois do login das 08:46:30
+    é crítico e diz qual conferência foi;
+  - segunda: com ordem viva, a falha das 08:09 é crítica na hora.
+- `TestRepeticaoEspaca`: o "(continua desde 06:00:30)" e o `Atualizar`.
+- Os roteiros não mudam: os da Flexscan começam depois de 08:59.
+
+## 5. O que não muda
 
 - Nenhuma migração (continuam 17).
 - O contrato do Kalman: os campos do §3 (`dia`, `acompanhada`) são novos, nenhum muda. O Kalman de
   hoje passa a receber o retrato de uma op de outro dia em vez de `existe: false`, e o trata pelo
   `_conciliar` como uma op do dia.
-- O `service.env` da .53: nada a mudar para os itens 1 e 2. Depois da v1.32, a ponte REAL/BTG mostra
+- O `service.env` da .53: nada a mudar para os itens 1, 2 e 4 (`FLEXSCAN_TOLERANCIA_ABERTURA` vale
+  08:45 sem estar no arquivo). Depois da v1.32, a ponte REAL/BTG mostra
   `webhook_esperado=false`.
