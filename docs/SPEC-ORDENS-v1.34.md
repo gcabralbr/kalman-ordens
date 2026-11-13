@@ -134,7 +134,8 @@ A suíte completa rodou nos dois bancos, com `-race`, no worktree limpo `../kalm
   19 pacotes passaram, inclusive os roteiros.
 - **`95d87dc`**, com os códigos catalogados no `ALERTAS.md`: passou inteira, `FIM rc=0`, 20 pacotes
   (`var/suite134b-20261113-132918.log`).
-- **O commit seguinte** (o `historico` do 409 por rota): ver §3.1.
+- **`911caf4`** (o `historico` do 409 por rota, §3.1): passou inteira na primeira, `FIM rc=0`, 20 pacotes
+  (`var/suite134c-20261113-142219.log`).
 
 ### 3.1 O `historico` por rota (13/11)
 
