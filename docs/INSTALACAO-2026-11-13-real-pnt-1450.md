@@ -422,6 +422,28 @@ pelo robô leva de 1 a 1,8 s, inclusive a da entrada 1031, que não tem gatilho 
 Na 234754 (venda, stop de compra com gatilho 173835 e limite 173935), a execução saiu a 173790,
 45 pts melhor que o gatilho: o preço voltou durante os 2 s. A demora pode custar ou ajudar.
 
+**8.5 PnT × Flexscan, as mesmas etapas** (medianas do journal da .53, 20/10 a 13/11; entre
+parênteses, o p90 e o n):
+
+| etapa | PnT REAL (13/11) | PnT HML | Flexscan SIMULADOR | Flexscan REAL |
+|---|---|---|---|---|
+| entrada: decidida → executada | 1,36 s (n=3) | 1,94 s (p90 2,88; n=38) | 0,34 s (p90 1,56; n=73) | — |
+| proteção: decidida → aceita | 0,25 s (n=3) | 0,25 s (p90 0,55; n=38) | 0,30 s (p90 0,34; n=73) | — |
+| ajuste do stop: decidido → confirmado | 0,11 s (n=2) | 0,40 s (p90 0,71; n=19) | 0,37 s (p90 0,42; n=72) | — |
+| saída: decidida → executada | 1,60 s, por replace (n=2) | 1,45 s, por replace (p90 2,17; n=38) | 0,30 s, ordem nova (p90 0,57; n=31) | — |
+| stop: gatilho tocado → executado | 2,26 s (n=1) | 2,13 s (19/10, n=1) | não medido | — |
+
+Como ler a tabela:
+- **Flexscan REAL não tem dado.** Houve uma ordem só, a boleta de 03/11, recusada ("Conta nao
+  contratada") 0,35 s depois de decidida. Não houve execução, proteção nem ajuste.
+- **O SIMULADOR da Flexscan executa contra um casamento simulado (apisim)**, não contra a B3. As
+  execuções de lá não medem a bolsa. A comparação justa é das confirmações (proteção e ajuste), e
+  nelas os dois conectores ficam em 0,1 a 0,4 s.
+- **O stop não tem gatilho no journal.** O horário do toque vem de fora (o Profit), por isso só há os
+  dois casos medidos à mão.
+- **A comparação de execução PnT × Flexscan no REAL** só vai existir depois de um teste REAL pela
+  Flexscan, com o Flexscan contratado na 4582351.
+
 ## 9. Para o próximo teste REAL pelo PnT
 
 **9.1 A sequência: não montar store à mão.** O §2 sai do roteiro. Em outro dia, o store guardado em
