@@ -109,6 +109,11 @@ type Identificacao struct {
 	Bolsa            string // 207
 	OnBehalfOfSubID  string // 116 (cabeçalho), opcional
 	SenderLocationID string // 142 (cabeçalho), opcional
+	// v1.31.1: o robô e o OMS da DSA, no D e no G (o dicionário só os tem nessas e nas multileg; o F
+	// não leva). No PnT/BTG de produção, sem eles a ordem é recusada com "[DSA-3] Robot not found"
+	// (13/11): o OMS de day trade é o BTGDAYTRADE (o do L&S, de posição, é o BTGCEDRO). Vazio = não vai.
+	RobotID      string // 20858 (RobotID), ex. BTG_ALGO
+	EnteringFirm string // 20859 (EnteringFirmName), ex. BTGDAYTRADE
 }
 
 // Ordem é uma ordem single-leg da DSA (1031 ou 1014).
@@ -227,6 +232,12 @@ func corpoOrdem(m *quickfix.Message, id Identificacao, o Ordem, agora time.Time)
 		m.Body.SetString(quickfix.Tag(207), id.Bolsa)
 	}
 	m.Body.SetInt(quickfix.Tag(847), o.Estrategia)
+	if id.RobotID != "" {
+		m.Body.SetString(quickfix.Tag(20858), id.RobotID)
+	}
+	if id.EnteringFirm != "" {
+		m.Body.SetString(quickfix.Tag(20859), id.EnteringFirm)
+	}
 	if o.IgnorarTunel {
 		m.Body.SetString(quickfix.Tag(20864), "Y")
 	}

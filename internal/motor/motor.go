@@ -187,7 +187,8 @@ type ultimoPreco struct {
 // idDe: a identificação das ordens da operação — a conta congelada na entrada vai no 1 e no 116
 // (como o PT faz), o 142 é da instância (v1.2 U4).
 func (m *Motor) idDe(op *operacao) pnt.Identificacao {
-	return pnt.Identificacao{Conta: op.Conta, Bolsa: m.p.Bolsa, OnBehalfOfSubID: op.Conta, SenderLocationID: m.p.SenderLocationID}
+	return pnt.Identificacao{Conta: op.Conta, Bolsa: m.p.Bolsa, OnBehalfOfSubID: op.Conta, SenderLocationID: m.p.SenderLocationID,
+		RobotID: m.p.RobotID, EnteringFirm: m.p.EnteringFirm}
 }
 
 // divergenteOp (v1.2 S2): a posição está num contrato que deixou de ser o vigente (o da fonte de

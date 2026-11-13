@@ -17,6 +17,7 @@ var chavesDoAmbiente = []string{
 	"FLEXSCAN_WEBHOOK_URL", "FLEXSCAN_ESTADO_LOGIN",
 	"FIX_SENDER_COMP_ID", "FIX_TARGET_COMP_ID", "FIX_HOST", "FIX_PORTA", "FIX_USUARIO", "FIX_SENHA", "FIX_DIR",
 	"FIX_INICIO", "FIX_FIM", "FIX_RESET_ON_LOGON",
+	"PNT_ROBOT_ID", "PNT_ENTERING_FIRM", // v1.31.1: o robô e o OMS da sessão do REAL
 }
 
 // padroesReal: os caminhos do REAL, separados dos do SIMULADOR quando a chave REAL_ não vem.

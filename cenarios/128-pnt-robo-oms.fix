@@ -1,0 +1,40 @@
+cenario 128 v1.31.1: 20858 (RobotID) e 20859 (EnteringFirmName) no D e no G do PnT; o F sem eles
+hora 2026-10-13 10:15:00
+# 13/11: no PnT/BTG de produção, a boleta do REAL foi recusada com "[DSA-3] Robot not found": o
+# robô e o OMS (day trade) não iam na ordem. Com PNT_ROBOT_ID e PNT_ENTERING_FIRM (no REAL, as
+# REAL_), os dois vão na entrada (1031), na 1014, no replace da 1014 e na saída; o cancelamento (F)
+# não os tem no dicionário e sai como antes (o PnT falso valida cada mensagem contra o dicionário).
+config PNT_ROBOT_ID=BTG_ALGO
+config PNT_ENTERING_FIRM=BTGDAYTRADE
+
+executa INICIO
+
+entrada 1281 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1281-1 1=12345 38=1 40=2 44=130020 54=1 847=1031 20856=Y 20858=BTG_ALGO 20859=BTGDAYTRADE
+envia @ER 11=KM-E-1281-1 37=dsa.1281 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-E-1281-1 37=dsa.1281 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=1281 qtd=1 preco=130010
+
+# a proteção (1014)
+recebe 35=D 11=KM-P-1281-1 38=1 54=2 847=1014 20828=129510 20829=129410 20858=BTG_ALGO 20859=BTGDAYTRADE
+envia @ER 11=KM-P-1281-1 37=dsa.1282 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=1281 preco_stop=129510
+
+# o ajuste da proteção: replace (G) com os dois
+stop 1281 preco=129700
+resposta aceito=true
+recebe 35=G 11=KM-P-1281-2 41=KM-P-1281-1 37=dsa.1282 847=1014 20828=129700 20858=BTG_ALGO 20859=BTGDAYTRADE
+envia @ER 11=KM-P-1281-2 41=KM-P-1281-1 37=dsa.1282 150=5 39=5 54=2 38=1 44=129600 847=1014 14=0 151=1 6=0
+evento PROTECAO_AJUSTADA operacao_id=1281 preco_stop=129700
+
+# a saída: o cancelamento da 1014 (F, sem os dois: conferido no teste do pnt) e a 1031 de saída com eles
+preco bid=130100 ask=130105 preco=130100
+saida 1281 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=F 11=KM-P-1281-3 41=KM-P-1281-2 37=dsa.1282
+envia @ER 11=KM-P-1281-3 41=KM-P-1281-2 37=dsa.1282 150=4 39=4 54=2 38=1 44=129600 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-1281-1 38=1 44=130050 54=2 847=1031 20856=Y 20858=BTG_ALGO 20859=BTGDAYTRADE
+envia @ER 11=KM-S-1281-1 37=dsa.1283 150=F 39=2 54=2 38=1 44=130050 847=1031 32=1 31=130100 14=1 151=0 6=130100
+evento ZERADA operacao_id=1281 origem=GESTOR
+saude posicao=0
