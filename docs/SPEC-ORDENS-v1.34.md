@@ -122,4 +122,10 @@ fechamento do REAL de 13/11: o env de volta e o restart.
 
 ## 3. Resultado
 
-(a preencher com a suíte completa)
+A suíte completa rodou nos dois bancos, com `-race`, no worktree limpo `../kalman-ordens-v134`:
+
+- **`a4b0339`**: falhou só o `TestCoerencia` (`var/suite134-20261113-131032.log`). O roteiro 131
+  usava `INSTANCIA_DESLIGADA` e `CONECTOR_AUSENTE`, que ainda não estavam no `ALERTAS.md`. Os outros
+  19 pacotes passaram, inclusive os roteiros.
+- **`95d87dc`**, com os códigos catalogados no `ALERTAS.md`: passou inteira, `FIM rc=0`, 20 pacotes
+  (`var/suite134b-20261113-132918.log`).
