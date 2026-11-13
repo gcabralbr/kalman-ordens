@@ -56,7 +56,7 @@ http GET /conectores
 resposta ambientes.0.ambiente=SIMULADOR ambientes.0.instancia=LIGADA ambientes.1.ambiente=REAL ambientes.1.instancia=LIGADA ambientes.1.historico=true
 resposta ambientes.1.conectores.0.conector=PNT ambientes.1.conectores.0.estado=NO_AR
 http GET /pnt/ordens?ambiente=SIMULADOR
-resposta _status=409 codigo=CONECTOR_AUSENTE ambiente=SIMULADOR conector=PNT
+resposta _status=409 codigo=CONECTOR_AUSENTE ambiente=SIMULADOR conector=PNT "historico=/historico/ordens?dia=2026-11-13&ambiente=SIMULADOR&conector=PNT"
 
 # --- o fechamento: o REAL fora de AMBIENTES_PERMITIDOS
 reinicia_servico config=AMBIENTES_PERMITIDOS=SIM
@@ -82,15 +82,16 @@ resposta mensagens.#=0
 http GET /sessao/eventos?dia=2026-11-13&ambiente=REAL&conector=PNT
 resposta _lista.0.tipo=LOGON _lista.0.ambiente=REAL
 
-# o ao vivo e o consultar agora: 409, com o caminho do histórico
+# o ao vivo e o consultar agora: 409, com o histórico que substitui cada rota (as ordens gravadas no
+# lugar do consultar agora; o fio do dia no lugar do ao vivo)
 http GET /sessao/ao-vivo?ambiente=REAL
-resposta _status=409 codigo=INSTANCIA_DESLIGADA ambiente=REAL "historico=~/historico/fio?dia=2026-11-13&ambiente=REAL&conector=PNT" ambientes_permitidos.0=SIMULADOR
+resposta _status=409 codigo=INSTANCIA_DESLIGADA ambiente=REAL "historico=/historico/fio?dia=2026-11-13&ambiente=REAL&conector=PNT" ambientes_permitidos.0=SIMULADOR
 http GET /pnt/ordens?ambiente=REAL
-resposta _status=409 codigo=INSTANCIA_DESLIGADA
+resposta _status=409 codigo=INSTANCIA_DESLIGADA ambiente=REAL conector=PNT "historico=/historico/ordens?dia=2026-11-13&ambiente=REAL&conector=PNT"
 http GET /sessao/ao-vivo
-resposta _status=409 codigo=CONECTOR_AUSENTE ambiente=SIMULADOR
+resposta _status=409 codigo=CONECTOR_AUSENTE ambiente=SIMULADOR "historico=/historico/fio?dia=2026-11-13&ambiente=SIMULADOR&conector=PNT"
 http GET /flexscan/trafego?ambiente=REAL
-resposta _status=409 codigo=INSTANCIA_DESLIGADA conector=FLEXSCAN
+resposta _status=409 codigo=INSTANCIA_DESLIGADA conector=FLEXSCAN "historico=/historico/fio?dia=2026-11-13&ambiente=REAL&conector=FLEXSCAN"
 http GET /flexscan/trafego?ambiente=REAL&dia=2026-11-13
 resposta _status=200 ambiente=REAL mensagens.#=0
 http GET /flexscan/trafego?ambiente=SIMULADOR&dia=2026-11-13

@@ -73,8 +73,12 @@ O contrato está na SPEC-ADMIN-CONECTORES-v1 §3. Pontos decididos na implementa
   - a sessão caída continua 503 `SEM_SESSAO`;
   - ambiente inválido: 400.
 - **Corpo do 409:** traz `erro` e `codigo` (o mesmo valor; o `erro` é o campo que a tela já lê),
-  `ambiente`, `motivo`, `ambientes_permitidos` e, quando há conector, `conector` e `historico` (o
-  link do fio do dia).
+  `ambiente`, `motivo`, `ambientes_permitidos`, `conector` e `historico`. `historico` é a rota que
+  substitui a que falhou (13/11, depois da suíte do `95d87dc`):
+  - `/pnt/ordens` → `/historico/ordens?dia=<hoje>&ambiente=<A>&conector=PNT` (as ordens gravadas no
+    lugar do "consultar agora");
+  - `/sessao/ao-vivo` → `/historico/fio?dia=<hoje>&ambiente=<A>&conector=PNT`;
+  - `/flexscan/trafego` → `/historico/fio?dia=<hoje>&ambiente=<A>&conector=FLEXSCAN`.
 - **Ambiente inválido nas rotas de admin:** 400 com `codigo: AMBIENTE_INVALIDO`.
 
 ### 1.4 CLI
@@ -101,7 +105,8 @@ fechamento do REAL de 13/11: o env de volta e o restart.
   - `reinicia_servico config=AMBIENTES_PERMITIDOS=SIM`, e daí:
     - `/conectores` com o REAL `DESLIGADA` e `historico: true`;
     - `/historico/ordens` e `/historico/fio` do REAL, do banco;
-    - o 409 de `/sessao/ao-vivo`, `/pnt/ordens` e `/flexscan/trafego`;
+    - o 409 de `/sessao/ao-vivo`, `/pnt/ordens` e `/flexscan/trafego`, com o `historico` de cada
+      rota conferido por inteiro (nos dois códigos);
     - o tráfego do dia do REAL com 200;
     - os 400 de ambiente, conector e dia inválidos.
   A contagem de roteiros vai a 141.
@@ -129,3 +134,15 @@ A suíte completa rodou nos dois bancos, com `-race`, no worktree limpo `../kalm
   19 pacotes passaram, inclusive os roteiros.
 - **`95d87dc`**, com os códigos catalogados no `ALERTAS.md`: passou inteira, `FIM rc=0`, 20 pacotes
   (`var/suite134b-20261113-132918.log`).
+- **O commit seguinte** (o `historico` do 409 por rota): ver §3.1.
+
+### 3.1 O `historico` por rota (13/11)
+
+Pedido depois da suíte do `95d87dc`: no 409 do `/pnt/ordens`, o `historico` passa a apontar para
+`/historico/ordens`. Antes, as três rotas apontavam para o fio do dia.
+- **Código:** `indisponivel` e `instanciaDe` recebem a rota de histórico, e o `pntDe` recebe a do
+  chamador.
+- **Roteiro 131:** confere o `historico` inteiro nas três rotas e nos dois códigos.
+- **Mutação:** com o `/pnt/ordens` apontando para o fio, o 131 falha na linha 59.
+- Antes da suíte, rodaram todos os pacotes rápidos, inclusive `internal/roteiro` (o `TestCoerencia`).
+

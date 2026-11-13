@@ -237,7 +237,7 @@ estes códigos.
 
 | Código | HTTP | Quando |
 |---|---|---|
-| `INSTANCIA_DESLIGADA` | 409 | o ambiente é válido, mas não tem instância nesta máquina (fora de `AMBIENTES_PERMITIDOS`); `historico` aponta para o fio do dia |
+| `INSTANCIA_DESLIGADA` | 409 | o ambiente é válido, mas não tem instância nesta máquina (fora de `AMBIENTES_PERMITIDOS`); `historico` aponta para o que substitui a rota: `/historico/ordens` (do `/pnt/ordens`) ou `/historico/fio` (do ao vivo) |
 | `CONECTOR_AUSENTE` | 409 | a instância existe, mas sem esse conector (`PNT_DESLIGADO`; Flexscan não configurada) |
 | `SEM_SESSAO` | 503 | (`/pnt/ordens`) o conector existe e a sessão está fora agora: tentar de novo |
 | `AMBIENTE_INVALIDO` | 400 | `ambiente` diferente de `SIMULADOR` e `REAL` |

@@ -31,12 +31,19 @@ type Indisponivel struct {
 	Resp Resposta
 }
 
-func (s *Servico) indisponivel(codigo, amb, conector, motivo string) *Indisponivel {
+// O histórico que substitui cada rota sem a instância (o campo historico do 409): o
+// "consultar agora" das ordens vai às ordens gravadas; o ao vivo, ao fio do dia.
+const (
+	rotaHistoricoOrdens = "/historico/ordens"
+	rotaHistoricoFio    = "/historico/fio"
+)
+
+func (s *Servico) indisponivel(codigo, amb, conector, historico, motivo string) *Indisponivel {
 	r := Resposta{"erro": codigo, "codigo": codigo, "ambiente": amb, "motivo": motivo,
 		"ambientes_permitidos": s.principal.p.Amb.Lista()}
 	if conector != "" {
 		r["conector"] = conector
-		r["historico"] = "/historico/fio?dia=" + s.principal.hoje() + "&ambiente=" + amb + "&conector=" + conector
+		r["historico"] = historico + "?dia=" + s.principal.hoje() + "&ambiente=" + amb + "&conector=" + conector
 	}
 	st := http.StatusConflict
 	if codigo == SemSessao {
@@ -46,11 +53,11 @@ func (s *Servico) indisponivel(codigo, amb, conector, motivo string) *Indisponiv
 }
 
 // instanciaDe: a instância do ambiente, ou a resposta INSTANCIA_DESLIGADA (o ambiente já validado).
-func (s *Servico) instanciaDe(amb, conector string) (*Motor, *Indisponivel) {
+func (s *Servico) instanciaDe(amb, conector, historico string) (*Motor, *Indisponivel) {
 	if m := s.motores[amb]; m != nil {
 		return m, nil
 	}
-	return nil, s.indisponivel(InstanciaDesligada, amb, conector, amb+" fora de AMBIENTES_PERMITIDOS nesta maquina")
+	return nil, s.indisponivel(InstanciaDesligada, amb, conector, historico, amb+" fora de AMBIENTES_PERMITIDOS nesta maquina")
 }
 
 // Hoje: o dia corrente (o padrão das rotas de histórico).

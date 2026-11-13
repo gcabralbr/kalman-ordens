@@ -321,24 +321,24 @@ func (s *Servico) comPnT(amb string) (*Motor, bool) {
 // pntDe (v1.34, SPEC-ADMIN-CONECTORES-v1 §3.6): a instância com a sessão FIX do ambiente (já
 // validado; vazio = a que tiver), ou o que falta: a instância (INSTANCIA_DESLIGADA) ou o PnT nela
 // (CONECTOR_AUSENTE).
-func (s *Servico) pntDe(amb string) (*Motor, *Indisponivel) {
+func (s *Servico) pntDe(amb, historico string) (*Motor, *Indisponivel) {
 	if amb == "" {
 		m, _ := s.comPnT("")
 		amb = m.amb
 	}
-	m, ind := s.instanciaDe(amb, dominio.ConectorPnT)
+	m, ind := s.instanciaDe(amb, dominio.ConectorPnT, historico)
 	if ind != nil {
 		return nil, ind
 	}
 	if m.fix == nil || m.p.PnTDesligado {
-		return nil, s.indisponivel(ConectorAusente, amb, dominio.ConectorPnT, "o PnT esta desligado nesta instancia (PNT_DESLIGADO)")
+		return nil, s.indisponivel(ConectorAusente, amb, dominio.ConectorPnT, historico, "o PnT esta desligado nesta instancia (PNT_DESLIGADO)")
 	}
 	return m, nil
 }
 
 // ConsultarPnTAssincrono: GET /pnt/ordens[?ambiente=] (o 35=AF pela sessão viva).
 func (s *Servico) ConsultarPnTAssincrono(amb string) (<-chan Resposta, *Indisponivel) {
-	m, ind := s.pntDe(amb)
+	m, ind := s.pntDe(amb, rotaHistoricoOrdens)
 	if ind != nil {
 		return nil, ind
 	}
@@ -347,7 +347,7 @@ func (s *Servico) ConsultarPnTAssincrono(amb string) (<-chan Resposta, *Indispon
 
 // ConsultarAoVivo: GET /sessao/ao-vivo[?ambiente=]; sem o parâmetro, a instância com a sessão FIX.
 func (s *Servico) ConsultarAoVivo(amb string, desde int64, limite int) (map[string]any, *Indisponivel) {
-	m, ind := s.pntDe(amb)
+	m, ind := s.pntDe(amb, rotaHistoricoFio)
 	if ind != nil {
 		return nil, ind
 	}
@@ -374,12 +374,12 @@ func (s *Servico) flexscanDo(amb string) (*Motor, bool) {
 func (s *Servico) TrafegoFlexscan(amb, corretora string, desde int64, limite int) (map[string]any, *Indisponivel, error) {
 	m, ok := s.flexscanDo(amb)
 	if !ok {
-		_, ind := s.instanciaDe(amb, dominio.ConectorFlexscan)
+		_, ind := s.instanciaDe(amb, dominio.ConectorFlexscan, rotaHistoricoFio)
 		return nil, ind, nil
 	}
 	r, ok, err := m.TrafegoFlexscan(corretora, desde, limite)
 	if !ok {
-		return nil, s.indisponivel(ConectorAusente, m.amb, dominio.ConectorFlexscan, "a Flexscan nao esta configurada nesta instancia"), nil
+		return nil, s.indisponivel(ConectorAusente, m.amb, dominio.ConectorFlexscan, rotaHistoricoFio, "a Flexscan nao esta configurada nesta instancia"), nil
 	}
 	if err == nil {
 		r["ambiente"] = m.amb

@@ -187,5 +187,7 @@ A implementação e os pontos que ela decidiu estão em `SPEC-ORDENS-v1.34.md` �
 - o `historico` do `/conectores` é "há operação gravada";
 - as linhas antigas da sessão só aparecem sem o filtro de ambiente;
 - os alertas da fonte de preço ficam `SERVICO`;
-- a linha da Flexscan no fio é `{seq, conector, canal, linha}`.
+- a linha da Flexscan no fio é `{seq, conector, canal, linha}`;
+- o `historico` do 409 depende da rota: `/pnt/ordens` → `/historico/ordens`; `/sessao/ao-vivo` e
+  `/flexscan/trafego` → `/historico/fio`.
 
