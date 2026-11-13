@@ -228,6 +228,20 @@ Respostas aceitas (`"aceito": true`, com `codigo` e `motivo`, SPEC v1.7 A4):
 | `PARADA_ATIVA` | `POST /parada` aceito |
 | `RETOMADO` | `POST /retomar` aceito |
 
+## Respostas das rotas da tela de admin sem instância ou sem conector (SPEC-ADMIN-CONECTORES-v1 §3.6, v1.34)
+
+`GET /pnt/ordens`, `GET /sessao/ao-vivo` e `GET /flexscan/trafego` (ao vivo) → `{erro, codigo,
+ambiente, motivo, ambientes_permitidos[, conector, historico]}`. Nenhum gera alerta. As rotas de
+histórico (`/historico/*`, `/sessao/eventos`, `/flexscan/trafego?dia=`) leem o banco e não respondem
+estes códigos.
+
+| Código | HTTP | Quando |
+|---|---|---|
+| `INSTANCIA_DESLIGADA` | 409 | o ambiente é válido, mas não tem instância nesta máquina (fora de `AMBIENTES_PERMITIDOS`); `historico` aponta para o fio do dia |
+| `CONECTOR_AUSENTE` | 409 | a instância existe, mas sem esse conector (`PNT_DESLIGADO`; Flexscan não configurada) |
+| `SEM_SESSAO` | 503 | (`/pnt/ordens`) o conector existe e a sessão está fora agora: tentar de novo |
+| `AMBIENTE_INVALIDO` | 400 | `ambiente` diferente de `SIMULADOR` e `REAL` |
+
 ## Habilitação do usuário pelo admin (SPEC v1.8 H)
 
 `POST /usuarios/{uid}/habilitacao` → `{aceito, codigo, motivo}`. Nenhum gera alerta.
