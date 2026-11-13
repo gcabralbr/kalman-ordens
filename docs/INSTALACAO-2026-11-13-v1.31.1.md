@@ -7,7 +7,7 @@ isso.
 
 **O que muda:**
 - **Binário:** o do worktree limpo `../kalman-ordens-v1311`, commit `117b8bfefcd4`. A suíte completa
-  passou nele em 13/11 (`var/suite1311-20261113-095901.log`, no df50964: tudo verde menos a contagem de roteiros, 137 → 138, corrigida no 117b8bf; a suíte do 117b8bf em `var/suite1311b-*.log`).
+  passou nele em 13/11 (`var/suite1311-20261113-095901.log`, no df50964: tudo verde menos a contagem de roteiros, 137 → 138, corrigida no 117b8bf; a suíte completa do 117b8bf passou inteira: `var/suite1311b-20261113-101629.log`).
   ```
   sha256  76714e554186b3e11801be04d244883fc74018047259d18bcbc6792ce3d3fd59  dist/kalman-ordens
   ```
@@ -134,8 +134,6 @@ Também sem ordem viva e com o lado REAL do 1450 desligado no Kalman.
 ## 6. Depois (eu)
 
 - conferir a versão e o journal; rodar `scripts/instalado-migracoes.sh` e fazer o commit;
-- **a v1.32 de sábado não tem esta correção.** O binário `d1bad4358664` do roteiro de 14/11 sairia
-  sem os 20858/20859, e o REAL pelo PnT voltaria ao `[DSA-3]`. Antes de sábado, faço o merge do
-  `v1.31.1` no `v1.32` (e no `v1.33`), rodo a suíte de novo e gero um binário novo. O roteiro de
-  14/11 passa a apontar para ele;
+- a v1.32 de sábado já tem esta correção: o merge do `v1.31.1` foi feito em 13/11, e o binário novo
+  é o `02ee0f348001` (`INSTALACAO-2026-11-14-v1.32.md`);
 - o merge do `v1.31.1` no `main` vem junto com o da v1.32.

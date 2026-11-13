@@ -1,25 +1,35 @@
-# v1.32 na .53 — instalação (sábado, 14/11, sem pregão)
+# v1.32 (com a v1.31.1) na .53 — instalação (sábado, 14/11, sem pregão)
 
-O binário é o do worktree limpo `../kalman-ordens-v132b`, commit `d1bad4358664`. A suíte completa
-passou nele em 12/11 (`var/suite132e-20261112-101736.log`).
+O binário é o do worktree limpo `../kalman-ordens-v132c`, commit `02ee0f348001`: a v1.32 com o
+merge da v1.31.1 (13/11). A suíte completa passou nele em 13/11
+(`var/suite132m-20261113-103322.log`).
 
 ```
-sha256  f74b38746555394987382cbd3923d254b782e0f36017b337352e09ed9f2e269d  dist/kalman-ordens
+sha256  c49d718ab48001e10d416912aa10c43c01e7e8365cd684d17a9f0e983a3cbdf1  dist/kalman-ordens
 ```
+
+O binário anterior, `d1bad4358664` do `../kalman-ordens-v132b`, **não serve mais**. Ele não tem os
+20858/20859, e com ele o REAL pelo PnT voltaria a dar `[DSA-3] Robot not found`.
 
 O que entra (SPEC-ORDENS-v1.32):
 1. a ponte sem `FLEXSCAN_WEBHOOK_URL` não espera webhook (o REAL/BTG da .53);
 2. a CLI da boleta confere o motivo antes do "sim";
 3. o `GET /ordens/{id}` de uma operação de outro dia lê o banco (só leitura, `acompanhada: false`);
 4. os alertas da abertura da Flexscan: a linha `FLEXSCAN_ABERTURA`, `FLEXSCAN_TOLERANCIA_ABERTURA`
-   (08:45) e `(continua desde HH:MM:SS)`.
+   (08:45) e `(continua desde HH:MM:SS)`;
+5. a v1.31.1 (SPEC-ORDENS-v1.31.1, §6 da v1.32): o robô (20858) e o OMS (20859) da DSA nas ordens do
+   PnT, pelas `REAL_PNT_ROBOT_ID` e `REAL_PNT_ENTERING_FIRM`.
 
 **Banco:** a v1.32 não tem migração nova (continuam 17; nenhum arquivo de `migracoes/` mudou desde a
 v1.31). Por isso não há cópia do banco a fazer antes. O §3 confere no journal: "migrações: nenhuma
 pendente". Se aparecer "migração aplicada", pare e me mande o journal.
 
-**`service.env`:** nada a mudar. A `FLEXSCAN_TOLERANCIA_ABERTURA` vale 08:45 sem estar no arquivo, e
-a janela das 08:02 já foi trocada em 12/11, às 15:37 (`INSTALACAO-2026-11-12-janela.md`).
+**`service.env`:** nada a mudar.
+- A `FLEXSCAN_TOLERANCIA_ABERTURA` vale 08:45 sem estar no arquivo.
+- A janela das 08:02 já foi trocada em 12/11, às 15:37 (`INSTALACAO-2026-11-12-janela.md`).
+- O REAL deve estar desligado (`AMBIENTES_PERMITIDOS=SIM`), pelo fechamento do teste de 13/11 (§7 do
+  `INSTALACAO-2026-11-13-real-pnt-1450.md`). As `REAL_PNT_*` saíram junto. No próximo teste do REAL
+  pelo PnT, elas têm de voltar ao env com as `REAL_FIX_*`.
 
 **Quando:** sábado, 14/11, a qualquer hora (decidido em 12/11). O sábado não é dia de pregão, e
 isso muda o que dá para ver no dia:
@@ -37,25 +47,30 @@ Mesmo sem pregão, confira que não há posição nem ordem viva.
 ## 1. Antes
 
 ```bash
-V=$(/opt/kalman-ordens/kalman-ordens versao); echo $V      # 93245099bd13
-curl -s 127.0.0.1:9092/saude | jq '{posicao: .ambientes.SIMULADOR.posicao,
+V=$(/opt/kalman-ordens/kalman-ordens versao); echo $V      # 117b8bfefcd4 (a v1.31.1 de 13/11; 93245099bd13 se ela não entrou)
+curl -s 127.0.0.1:9092/saude | jq '{ambientes_permitidos, posicao: .ambientes.SIMULADOR.posicao,
   vivas: .ambientes.SIMULADOR.flexscan.ordens_vivas, janela: .ambientes.SIMULADOR.flexscan.janela,
   suspensas: .ambientes.SIMULADOR.operacoes_suspensas}'
-#   esperado: posicao 0, vivas 0, janela "08:02-18:30", suspensas []
-sha256sum /home/gammaquant/kalman-ordens-v132b/dist/kalman-ordens
-#   f74b38746555394987382cbd3923d254b782e0f36017b337352e09ed9f2e269d
-/home/gammaquant/kalman-ordens-v132b/dist/kalman-ordens versao   # d1bad4358664
+#   esperado: ambientes_permitidos ["SIMULADOR"], posicao 0, vivas 0, janela "08:02-18:30", suspensas []
+sha256sum /home/gammaquant/kalman-ordens-v132c/dist/kalman-ordens
+#   c49d718ab48001e10d416912aa10c43c01e7e8365cd684d17a9f0e983a3cbdf1
+/home/gammaquant/kalman-ordens-v132c/dist/kalman-ordens versao   # 02ee0f348001
+ps -eo pid,cmd | grep '[f]ix-integration'                 # o fix-integration do GQ de volta (fechamento de 13/11)
 ```
 
-Se a posição, as vivas ou as suspensas não estiverem zeradas, ou se o sha256 for diferente, pare.
+Pare aqui se:
+- a posição, as vivas ou as suspensas não estiverem zeradas;
+- o sha256 for diferente;
+- o REAL ainda estiver permitido. Nesse caso, o restart subiria a sessão `GAMMAQ2` do kalman-ordens
+  junto com a do GQ: feche antes pelo §7 do roteiro do REAL.
 A `janela` já deve estar `"08:02-18:30"` (trocada na quinta, 12/11, às 15:37). Se não estiver, pare também.
 
 ## 2. Instalar o binário (guardando o atual)
 
 ```bash
 sudo cp -a /opt/kalman-ordens/kalman-ordens /opt/kalman-ordens/kalman-ordens.$V
-sudo install -o root -g root -m 755 /home/gammaquant/kalman-ordens-v132b/dist/kalman-ordens /opt/kalman-ordens/kalman-ordens
-/opt/kalman-ordens/kalman-ordens versao                   # d1bad4358664
+sudo install -o root -g root -m 755 /home/gammaquant/kalman-ordens-v132c/dist/kalman-ordens /opt/kalman-ordens/kalman-ordens
+/opt/kalman-ordens/kalman-ordens versao                   # 02ee0f348001
 ```
 
 ## 3. Restart e conferência
@@ -64,12 +79,12 @@ sudo install -o root -g root -m 755 /home/gammaquant/kalman-ordens-v132b/dist/ka
 sudo systemctl restart kalman-ordens
 sleep 8; systemctl is-active kalman-ordens                 # active
 journalctl -u kalman-ordens --since '-1min' --no-pager | grep -E 'subindo|migra|no ar|conector ligado|login|ERROR' | cut -c1-220
-#   bom: "kalman-ordens subindo" versao=d1bad4358664; "migrações: nenhuma pendente";
+#   bom: "kalman-ordens subindo" versao=02ee0f348001; "migrações: nenhuma pendente";
 #        "flexscan: conector ligado" ... webhook_esperado=true (SIMULADOR); "flexscan: login
 #        motivo=partida"; "kalman-ordens no ar"
 #   ruim: o serviço não sobe, ou "migração aplicada" → §5 e me mande o journal
 curl -s 127.0.0.1:9092/saude | jq '{versao, flex: .ambientes.SIMULADOR.flexscan | {janela, logado, ativa_por, webhook_esperado, ultimo_login}}'
-#   versao "d1bad4358664", janela "08:02-18:30", logado true, ativa_por null (sábado: fora da
+#   versao "02ee0f348001", janela "08:02-18:30", logado true, ativa_por null (sábado: fora da
 #   janela), webhook_esperado true, ultimo_login.motivo "partida" e resultado "OK"
 /opt/kalman-ordens/kalman-ordens boleta enviar -uid 5725 -ambiente REAL -lado C -qtd 1 -stop 300 -por 1 \
   -motivo "123456789012345678901" < /dev/null
@@ -135,16 +150,18 @@ qual conferência foi e quantas tentativas houve.
 ## 5. Como voltar
 
 ```bash
-sudo install -o root -g root -m 755 /opt/kalman-ordens/kalman-ordens.93245099bd13 /opt/kalman-ordens/kalman-ordens
+sudo install -o root -g root -m 755 /opt/kalman-ordens/kalman-ordens.$V /opt/kalman-ordens/kalman-ordens
 sudo systemctl restart kalman-ordens
-/opt/kalman-ordens/kalman-ordens versao                   # 93245099bd13
+/opt/kalman-ordens/kalman-ordens versao                   # o $V do §1 (117b8bfefcd4)
 ```
 
-Sem migração nova, o banco serve às duas versões. A v1.31 não lê a `FLEXSCAN_TOLERANCIA_ABERTURA`
-(nem está no arquivo).
+A volta é para o binário que estava instalado (o `$V` do §1), de preferência a v1.31.1, porque a
+v1.31 (`93245099bd13`) não tem os 20858/20859. Sem migração nova, o banco serve às três versões. A
+v1.31 e a v1.31.1 não leem a `FLEXSCAN_TOLERANCIA_ABERTURA` (nem está no arquivo).
 
 ## 6. Depois (eu)
 
 - conferir a versão e o journal; `scripts/instalado-migracoes.sh` e o commit;
-- merge do `v1.32` no `main` e push;
-- remover o worktree `../kalman-ordens-v132b` só depois disso.
+- merge do `v1.32` (que já tem o `v1.31.1`) no `main` e push;
+- remover os worktrees `../kalman-ordens-v132b`, `../kalman-ordens-v132c` e `../kalman-ordens-v1311`
+  só depois disso.
