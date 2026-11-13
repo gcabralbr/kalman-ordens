@@ -243,3 +243,11 @@ Flexscan) e passa a sair como linha da abertura.
 - O `service.env` da .53: nada a mudar para os itens 1, 2 e 4 (`FLEXSCAN_TOLERANCIA_ABERTURA` vale
   08:45 sem estar no arquivo). Depois da v1.32, a ponte REAL/BTG mostra
   `webhook_esperado=false`.
+
+## 6. Inclui a v1.31.1 (13/11)
+
+A v1.32 inclui a correção da v1.31.1 (`SPEC-ORDENS-v1.31.1.md`): o robô e o OMS da DSA nas ordens do
+PnT, com `REAL_PNT_ROBOT_ID` (tag 20858) e `REAL_PNT_ENTERING_FIRM` (tag 20859).
+- Eles vão no D e no G; o F sai sem eles.
+- No PnT/BTG de produção, uma ordem sem eles é recusada com "[DSA-3] Robot not found".
+- O roteiro dela é o 129 aqui (o 128 desta versão já era a consulta de outro dia).

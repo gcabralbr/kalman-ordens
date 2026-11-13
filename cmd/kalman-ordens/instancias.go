@@ -278,6 +278,10 @@ func montarInstancias(lista []*instancia, cfg config.Config, amb config.Ambiente
 			}
 			in.m.Usar(s)
 			in.sessao, in.fix = s, c.Texto("FIX_HOST", "")+":"+c.Texto("FIX_PORTA", "")
+			// v1.31.1: o robô (20858) e o OMS (20859) que vão no D e no G desta sessão
+			slog.Info("pnt: sessão", "ambiente", in.amb, "fix", in.fix, "sender", c.Texto("FIX_SENDER_COMP_ID", ""),
+				"target", c.Texto("FIX_TARGET_COMP_ID", "PNT_DSA"), "robot_id_20858", c.Texto("PNT_ROBOT_ID", ""),
+				"entering_firm_20859", c.Texto("PNT_ENTERING_FIRM", ""))
 		} else if legado || in.amb == dominio.AmbienteReal {
 			slog.Warn("PNT_DESLIGADO: sem sessão FIX nem fonte do PnT; entradas de uid com conector PNT recusadas (CONECTOR_DESLIGADO)", "ambiente", in.amb, "fonte", urlPnT)
 		}
