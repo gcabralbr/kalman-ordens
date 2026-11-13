@@ -56,6 +56,10 @@ falha. O L&S do GQ volta no §7.
 
 ## 2. A sequência, continuando a do Java
 
+> **Em 13/11 este passo não valeu (§8.2).** O store foi montado em `$S`, mas o QuickFIX/Go o lê em
+> `$S/store` (`FileStorePath` = `REAL_FIX_DIR` + `/store`). O logon saiu com 34=1 e o ajuste automático
+> levou a 62. Para o próximo teste, ver §9.1: não se monta store à mão.
+
 Os números saem do fim do `fixpnt.log`, que grava com o horário do cabeçalho FIX em UTC:
 
 | | último | o próximo (o que vai no store) |
@@ -356,3 +360,115 @@ com `pnt` (o 5725 sai de `REAL_UIDS`). O que sobraria é a ponte REAL logando e 
 **Como evitar de vez hoje:** as `REAL_FLEXSCAN_*` vão comentadas no §3. O REAL sobe só com o
 conector PnT (`REAL_FIX_HOST` basta como conector REAL), e a BTG continua conhecida (o 85 é uma das
 corretoras de sempre). Na volta (§7.3), a cópia restaura as linhas.
+
+## 8. O resultado de 13/11
+
+**8.1 O que aconteceu** (tudo na conta 4582351, WINZ26, 1 contrato; horários de Brasília):
+
+| hora | o quê |
+|---|---|
+| 09:31:41 | restart com o REAL (v1.31); logon da `GAMMAQ2` com 34=1, "MsgSeqNum too low, expecting 62"; ajustado e logado (§8.2) |
+| 09:35:58 | boleta 1, a ordem de comunicação: recusada, `[DSA-3] Robot not found` (faltavam o 20858 e o 20859) |
+| 11:00:14 | v1.31.1 (`117b8bfefcd4`) instalada; "pnt: sessão" com `robot_id_20858=BTG_ALGO entering_firm_20859=BTGDAYTRADE`; o logon continuou a sequência do store, sem ajuste |
+| 11:02:06 | boleta 2 (`KM-BOLETA-E-1113110159-1`, compra a 172550): aceita; às 11:02:24, encerrada `CANCELADA` |
+| 11:14:17 | boleta 3: aceita; cancelada pela CLI às 11:16 ("fim do teste"). **A comunicação passou** |
+| 11:21, 11:27 | duas entradas do Kalman recusadas, `ENTRADAS_POR_DIA` (3): as 3 boletas, contando a recusada, ocupavam o limite (§8.3) |
+| 11:28:50 | restart com `REAL_LIMITE_ENTRADAS_DIA=6` |
+| 11:29–11:30 | **op 234750**, compra a 173215; stop na corretora (1014, stop 172715 / limite 172615); saída `MANUAL` **por replace** da 1014 (G, degrau 1) a 173340: **+125 pts** |
+| 11:33–11:36 | **op 234752**, compra; stop na corretora; **ajuste confirmado** (`PROTECAO_AJUSTADA`, stop 173155 → 173555); saída por replace (`SINAL_OPOSTO`) a 173580: **−75 pts** |
+| 11:36–11:40 | **op 234754**, venda (a virada); stop na corretora; ajuste confirmado (stop 174085 → 173835); **o stop executou na corretora** (`STOP_SERVIDOR`) a 173790: **−205 pts** |
+| 11:40, 11:41 | duas entradas recusadas, `ENTRADAS_POR_DIA` (6) |
+| 11:42:19 | fechamento: 1450 desabilitado no REAL, env de volta pela `$B`, `ambientes_permitidos ["SIMULADOR"]` |
+
+Resultado do Kalman: 3 operações, −155 pts (abaixo da perda do dia de 500). Confirmados no REAL:
+- a entrada (D 1031) e a proteção (D 1014) aceitas com o robô e o OMS de day trade;
+- a stop na corretora e o ajuste dela (G);
+- a saída por replace da 1014;
+- a execução do stop pela própria corretora.
+
+O fix-integration do GQ **não** foi religado (o §7.4 não se aplica hoje). Ele estava parado antes do
+teste e só tinha subido para o L&S das 08:19.
+
+**8.2 Por que o store 62/63 não foi usado.** O QuickFIX/Go guarda o store em
+`<REAL_FIX_DIR>/store/` (`pnt/sessao.go`: `FileStorePath = Dir + "/store"`). O §2 gravou os arquivos
+em `$S` mesmo, um nível acima. Na partida, o QuickFIX/Go não achou store em `$S/store`, criou um novo
+(sender 1, target 1) e logou com 34=1, sem `141=Y`. O PnT respondeu "MsgSeqNum too low, expecting 62",
+e o ajuste automático (v1.3) acertou o próximo número para 62 e logou de novo. Do lado de lá, o PnT
+mandou o 35=A com o número dele, maior que 1, e o QuickFIX/Go aceitou o salto (4 mensagens na
+sincronia de 500 ms, nenhum `ResendRequest` do PnT). A prova de que o caminho era o problema: nos
+restarts das 11:00 e das 11:28, o mesmo serviço continuou a sequência do `$S/store` sem ajuste nenhum.
+Os arquivos de `$S` (sem o `store/`) ficaram sobrando e podem ser removidos.
+
+**8.3 O limite de entradas e a boleta.** O contador do dia (`entradasHoje`) é um só por instância e
+conta toda operação do dia, de qualquer módulo. Na partida, ele é recarregado como o número de
+operações do dia (`len(m.ops)`), o que inclui a boleta recusada pelo DSA-3. Por isso as 3 boletas
+encheram o limite de 3 antes da primeira entrada do Kalman. A análise de contar por módulo está no
+§9.2.
+
+## 9. Para o próximo teste REAL pelo PnT
+
+**9.1 A sequência: não montar store à mão.** O §2 sai do roteiro. Em outro dia, o store guardado em
+`$S/store` é de outra sessão (a criação é de 13/11): na partida depois das 08:30, o QuickFIX/Go o zera
+sozinho e loga com 34=1. Daí em diante vale o que funcionou em 13/11 às 09:31:
+- o PnT espera mais que 1 ("too low, expecting N"): o ajuste automático vai para N e loga;
+- o PnT espera exatamente 1 (o Java deslogou com reset, ou houve reset do dia do lado deles): o logon
+  passa direto.
+
+O que olhar no journal: "o PnT espera outra sequência; ajustada" (uma vez) e "conector de volta
+conector=PNT". O plano B (`REAL_FIX_RESET_ON_LOGON=1`, logon com 141=Y, como o Java) continua para o
+caso de recusa de outro tipo ou laço de logon. Se o teste for no mesmo dia em que o Java rodou, vale o
+mesmo: o store do kalman-ordens estará atrasado, e o ajuste cobre. Se for preciso montar o store à mão
+algum dia, ele vai em `$S/store/`, nunca em `$S`.
+
+Continua valendo a regra da sessão única: a `GAMMAQ2` logada em um lado só. Antes do restart com o
+REAL, o fix-integration parado (§1).
+
+**9.2 O limite de entradas por módulo (BOLETA x KALMAN): vale, com o resto global.** O
+`REAL_LIMITE_ENTRADAS_DIA` existe para pegar um laço do cliente automático (o Kalman mandando entradas
+sem parar). A boleta é manual, uma a uma, com o "sim" na CLI. Somar as duas faz o teste da corretora
+consumir o limite do robô, que foi o que aconteceu às 11:21. A proposta, para uma versão futura (ainda
+não implementada):
+- o contador do dia passa a ser por módulo, e cada módulo tem o mesmo teto `LIMITE_ENTRADAS_DIA`
+  (a boleta continua limitada, contra repetição por engano);
+- na partida, a recarga conta as operações do dia por módulo;
+- o `/saude` mostra `entradas_hoje` por módulo;
+- **continuam globais da instância:** a posição máxima, a qtd por ordem, as entradas por minuto e a
+  **perda do dia** (o dinheiro é um só: uma perda da boleta conta para parar o Kalman).
+
+Até lá, no próximo teste: `REAL_LIMITE_ENTRADAS_DIA` = as boletas previstas + as entradas do Kalman
+(por exemplo, 2 + 3 = 5). A boleta recusada pela corretora também conta.
+
+**9.3 O que tem de voltar ao `service.env`.** A cópia `$B` (`service.env.antes-real-pnt-1311`) é a
+base, de novo, com o mesmo método: cópia, arquivo novo ao lado, `diff` filtrado, `cp`. Sobre o awk do
+§3 entram:
+
+| chave | valor | por quê |
+|---|---|---|
+| `AMBIENTES_PERMITIDOS` | `SIM,REAL` | |
+| `REAL_UIDS` | `1450` | |
+| `REAL_FIX_SENDER_COMP_ID` | `GAMMAQ2` | as seis `REAL_FIX_*` digitadas por você (tabela do §3) |
+| `REAL_FIX_TARGET_COMP_ID` | `PNT_DSA_BTG2` | o padrão `PNT_DSA` está errado aqui |
+| `REAL_FIX_HOST` / `REAL_FIX_PORTA` | `192.168.151.13` / `42051` | |
+| `REAL_FIX_USUARIO` / `REAL_FIX_SENHA` | o 553 / o 554 | só você digita |
+| `REAL_PNT_ROBOT_ID` | `BTG_ALGO` | **novo**: sem ele, `[DSA-3] Robot not found` (v1.31.1 ou v1.32) |
+| `REAL_PNT_ENTERING_FIRM` | `BTGDAYTRADE` | **novo**: o OMS de day trade; o `BTGCEDRO` é o do L&S |
+| `REAL_LIMITE_QTD_ORDEM` / `REAL_LIMITE_POSICAO_MAX` | `1` / `1` | |
+| `REAL_LIMITE_ENTRADAS_DIA` | boletas + Kalman (§9.2) | 3 barrou o Kalman em 13/11 |
+| `REAL_LIMITE_PERDA_DIA_PTS` | `500` | |
+| `REAL_PRECOS_URL_PNT` | `http://172.16.110.53:9090` | |
+| `REAL_ORDENS_SENDER_LOCATION` | `172.16.110.1` | o 142 do Java |
+| `REAL_FLEXSCAN_*` | comentadas (`#pnt1311#`) | o REAL só pelo PnT |
+
+E a habilitação de novo (§4): `usuario habilitar -uid 1450 -ambiente REAL -conectores pnt -qtd-max 1
+-posicao-max 1`. Ela foi desfeita no §7.2.
+
+Na partida, confira a linha "pnt: sessão": `robot_id_20858=BTG_ALGO entering_firm_20859=BTGDAYTRADE`.
+Se vier vazio, as duas `REAL_PNT_*` não entraram, e a primeira ordem volta com o DSA-3.
+
+**9.4 A margem no OMS de day trade.** As ordens do Kalman vão para o OMS `BTGDAYTRADE` (o 20859), que
+é separado do `BTGCEDRO` do L&S. Antes do teste, confira com a BTG que a conta 4582351 tem margem
+(garantia) de day trade liberada **nesse OMS** para WIN. A margem que serve ao L&S não prova nada
+para ele.
+
+*A completar com o que houve em 13/11.* O journal não guarda o texto da corretora. A boleta 2 foi
+aceita às 11:02:06 e encerrada `CANCELADA` às 11:02:24, sem ação da CLI.

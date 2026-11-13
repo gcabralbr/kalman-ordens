@@ -27,9 +27,9 @@ pendente". Se aparecer "migração aplicada", pare e me mande o journal.
 **`service.env`:** nada a mudar.
 - A `FLEXSCAN_TOLERANCIA_ABERTURA` vale 08:45 sem estar no arquivo.
 - A janela das 08:02 já foi trocada em 12/11, às 15:37 (`INSTALACAO-2026-11-12-janela.md`).
-- O REAL deve estar desligado (`AMBIENTES_PERMITIDOS=SIM`), pelo fechamento do teste de 13/11 (§7 do
-  `INSTALACAO-2026-11-13-real-pnt-1450.md`). As `REAL_PNT_*` saíram junto. No próximo teste do REAL
-  pelo PnT, elas têm de voltar ao env com as `REAL_FIX_*`.
+- O REAL está desligado (`AMBIENTES_PERMITIDOS=SIM`) desde o fechamento do teste de 13/11, às 11:42
+  (§7 e §8 do `INSTALACAO-2026-11-13-real-pnt-1450.md`). As `REAL_PNT_*` saíram junto. O que volta ao
+  env no próximo teste do REAL pelo PnT está no §9.3 daquele roteiro.
 
 **Quando:** sábado, 14/11, a qualquer hora (decidido em 12/11). O sábado não é dia de pregão, e
 isso muda o que dá para ver no dia:
@@ -55,14 +55,14 @@ curl -s 127.0.0.1:9092/saude | jq '{ambientes_permitidos, posicao: .ambientes.SI
 sha256sum /home/gammaquant/kalman-ordens-v132c/dist/kalman-ordens
 #   c49d718ab48001e10d416912aa10c43c01e7e8365cd684d17a9f0e983a3cbdf1
 /home/gammaquant/kalman-ordens-v132c/dist/kalman-ordens versao   # 02ee0f348001
-ps -eo pid,cmd | grep '[f]ix-integration'                 # o fix-integration do GQ de volta (fechamento de 13/11)
+ps -eo pid,cmd | grep '[f]ix-integration'                 # só para saber: em 13/11 ele ficou parado (só sobe à mão)
 ```
 
 Pare aqui se:
 - a posição, as vivas ou as suspensas não estiverem zeradas;
 - o sha256 for diferente;
-- o REAL ainda estiver permitido. Nesse caso, o restart subiria a sessão `GAMMAQ2` do kalman-ordens
-  junto com a do GQ: feche antes pelo §7 do roteiro do REAL.
+- o REAL ainda estiver permitido. Nesse caso, o restart subiria a sessão `GAMMAQ2` do kalman-ordens,
+  que pode estar em uso pelo fix-integration do GQ: feche antes pelo §7 do roteiro do REAL.
 A `janela` já deve estar `"08:02-18:30"` (trocada na quinta, 12/11, às 15:37). Se não estiver, pare também.
 
 ## 2. Instalar o binário (guardando o atual)
