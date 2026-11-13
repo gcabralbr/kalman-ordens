@@ -113,6 +113,8 @@ func (c Config) Bool(k string, padrao bool) bool {
 // Parametros são os valores que o motor usa, já lidos.
 type Parametros struct {
 	Bolsa, SenderLocationID string
+	// v1.31.1: 20858 e 20859 nas ordens do PnT (PNT_ROBOT_ID, PNT_ENTERING_FIRM; no REAL, as REAL_)
+	RobotID, EnteringFirm string
 	// SPEC-AMBIENTES-v1: o ambiente de cada ordem escolhe a coluna do GQ; a máquina é o teto (Amb).
 	// ContasHML e ContasHMLFlx: as contas de simulador de cada conector (a trava, §4.1 item 8).
 	Amb          Ambientes
@@ -187,6 +189,8 @@ func (c Config) Parametros() Parametros {
 	p := Parametros{
 		Bolsa:               c.Texto("ORDENS_BOLSA", "BVMF"),
 		SenderLocationID:    c.Texto("ORDENS_SENDER_LOCATION", ""),
+		RobotID:             c.Texto("PNT_ROBOT_ID", ""),
+		EnteringFirm:        c.Texto("PNT_ENTERING_FIRM", ""),
 		ContasHML:           listaContas(c.Texto("ORDENS_CONTAS_HML", "")),
 		ConfereConta:        c.Segundos("CONFERE_CONTA_S", 60),
 		CanalForaTolerancia: c.Segundos("CONECTOR_FORA_TOLERANCIA_S", 30),

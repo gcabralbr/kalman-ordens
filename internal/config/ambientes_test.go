@@ -134,3 +134,32 @@ func TestVisao(t *testing.T) {
 		t.Fatalf("equivalência HML: %v %v", v.v, avisos)
 	}
 }
+
+// v1.31.1: o robô e o OMS do PnT (20858/20859) são da sessão do ambiente: no REAL, só das REAL_; a
+// sem prefixo não vaza para o REAL, e a REAL_ não aparece no SIMULADOR.
+func TestVisaoRoboPnT(t *testing.T) {
+	base := map[string]string{"AMBIENTES_PERMITIDOS": "SIM,REAL", "REAL_UIDS": "1450", "REAL_CONTAS": "4582351",
+		"REAL_LIMITE_QTD_ORDEM": "1", "REAL_LIMITE_PERDA_DIA_PTS": "500", "REAL_LIMITE_ENTRADAS_DIA": "3",
+		"REAL_FIX_HOST": "prd", "REAL_FIX_PORTA": "1", "REAL_FIX_SENDER_COMP_ID": "GAMMAQ2",
+		"REAL_PNT_ROBOT_ID": "BTG_ALGO", "REAL_PNT_ENTERING_FIRM": "BTGDAYTRADE"}
+	c := Novo(base)
+	a, _, err := c.LerAmbientes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	real, _ := c.Visao(a, dominio.AmbienteReal)
+	if p := real.Parametros(); p.RobotID != "BTG_ALGO" || p.EnteringFirm != "BTGDAYTRADE" {
+		t.Fatalf("REAL: RobotID %q EnteringFirm %q", p.RobotID, p.EnteringFirm)
+	}
+	sim, _ := c.Visao(a, dominio.AmbienteSimulador)
+	if p := sim.Parametros(); p.RobotID != "" || p.EnteringFirm != "" {
+		t.Fatalf("SIMULADOR com o robô do REAL: %q %q", p.RobotID, p.EnteringFirm)
+	}
+	delete(base, "REAL_PNT_ROBOT_ID")
+	delete(base, "REAL_PNT_ENTERING_FIRM")
+	base["PNT_ROBOT_ID"], base["PNT_ENTERING_FIRM"] = "OUTRO", "OUTRO"
+	c = Novo(base)
+	if real, _ = c.Visao(a, dominio.AmbienteReal); real.Parametros().RobotID != "" || real.Parametros().EnteringFirm != "" {
+		t.Fatalf("a sem prefixo vazou para o REAL: %v", real.v)
+	}
+}
