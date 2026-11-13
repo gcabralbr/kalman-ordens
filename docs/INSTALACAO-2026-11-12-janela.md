@@ -157,4 +157,5 @@ Nos dias anteriores, o login das 08:00:00 ficava sem resposta em 3 s. O das 08:0
 primeira tentativa. O tempo dele, 769 ms, ainda é alto perto dos ~180 ms de um login comum, mas fica
 bem dentro dos 3 s.
 
-08:15/08:30: (a conferir às 08:33)
+08:15/08:30: às 08:15 não houve login (o das 08:02 contou como o da abertura). Às 08:30:00 a
+conferência da abertura deu `presente`, em 39 ms. Até as 08:33, nenhum alerta depois das 08:03.
