@@ -1,4 +1,4 @@
-# REAL pelo PnT, uid 1450, na .53: teste de comunicação (sexta, 13/11)
+# REAL pelo PnT, uid 1450, na .53: comunicação pela boleta e o Kalman (sexta, 13/11)
 
 Este roteiro não instala binário: fica a v1.31 (`93245099bd13`). Mudam só o `service.env`, a habilitação do
 1450 e o store FIX do REAL. No fim, tudo volta ao que era, e o fix-integration do GQ volta a rodar.
@@ -8,7 +8,9 @@ Este roteiro não instala binário: fica a v1.31 (`93245099bd13`). Mudam só o `
 - o kalman-ordens assume a sessão no lugar do fix-integration do GQ (`~/servicos/PNT/BTG`), que fica
   parado durante o teste. Os dois **nunca** podem estar logados ao mesmo tempo;
 - a sequência não é zerada: o kalman-ordens continua a numeração deixada pelo Java;
-- só o 1450, só pelo PnT, com 1 contrato. A Flexscan do REAL fica fora hoje (§3).
+- só o 1450, só pelo PnT, com 1 contrato. A Flexscan do REAL fica fora hoje (§3);
+- depois da ordem de comunicação pela boleta (§6), o Kalman entra no REAL com o ok do usuário na hora
+  (§6.2). A janela do 1450 vai até as 13:35.
 
 **Quando:** com o mercado aberto (entradas das 09:00 às 14:00) e sem ordem viva em nenhum módulo. A
 sessão FIX do REAL do kalman-ordens só loga entre 08:30 e 17:55 (`REAL_FIX_INICIO` e `REAL_FIX_FIM`).
@@ -137,7 +139,7 @@ sudo awk -v OFS='' '
 BEGIN {
   v["AMBIENTES_PERMITIDOS"]="SIM,REAL"; v["REAL_UIDS"]="1450"
   v["REAL_LIMITE_QTD_ORDEM"]="1"; v["REAL_LIMITE_POSICAO_MAX"]="1"; v["REAL_LIMITE_ENTRADAS_DIA"]="3"
-  v["REAL_LIMITE_PERDA_DIA_PTS"]="600"
+  v["REAL_LIMITE_PERDA_DIA_PTS"]="500"
   v["REAL_PRECOS_URL_PNT"]="http://172.16.110.53:9090"; v["REAL_ORDENS_SENDER_LOCATION"]="172.16.110.1"
   v["REAL_FIX_SENDER_COMP_ID"]=""; v["REAL_FIX_TARGET_COMP_ID"]=""; v["REAL_FIX_HOST"]=""
   v["REAL_FIX_PORTA"]=""; v["REAL_FIX_USUARIO"]=""; v["REAL_FIX_SENHA"]=""
@@ -165,8 +167,10 @@ sudo vi $F.novo        # preencha só as seis REAL_FIX_* (abaixo)
 | `REAL_FIX_SENHA` | a senha da sessão (o 554), que só você digita |
 
 **O porquê das outras chaves:**
-- `REAL_LIMITE_PERDA_DIA_PTS=600`: duas stops de 300 em 1 contrato, R$ 120 no WIN. Ao chegar lá, o
+- `REAL_LIMITE_PERDA_DIA_PTS=500` (decidido em 13/11): R$ 100 em 1 contrato de WIN. Ao chegar lá, o
   serviço faz `PARADA BLOQUEAR` sozinho. Isso não zera a posição, mas a stop da corretora já está posta.
+- `REAL_LIMITE_ENTRADAS_DIA=3`: o total do dia na instância REAL, e a entrada da boleta (§6) conta.
+  Sobram 2 entradas para o Kalman até as 13:35. Depois da terceira, a entrada seguinte é recusada.
 - `REAL_ORDENS_SENDER_LOCATION=172.16.110.1`: o 142 que o Java manda em toda ordem. É bom repetir o
   que o PnT já aceita.
 - `REAL_PRECOS_URL_PNT`: a mesma fonte da Flexscan do SIMULADOR (o marketdata da .53).
@@ -253,10 +257,50 @@ posta sozinha, e você sai com `$K boleta encerrar -op $OP -por 1450 -motivo "fi
 - `sudo $K zerar -ambiente REAL -motivo "..."` faz isso e também sai da posição, com uma limitada colada
   no bid/ask e repreçada. Não é ordem a mercado.
 
-**O Kalman no REAL** (ligar o lado REAL do 1450 no admin do Kalman) fica para outro passo, com o seu
-ok: hoje o teste é só de comunicação.
+### 6.2 O Kalman no REAL (só com o ok do usuário, depois do §6 passar)
+
+Condições para começar:
+- a ordem da boleta aceita na BTG e cancelada;
+- a posição REAL 0;
+- `boleta destino` ainda com `pode_enviar` true;
+- antes das 13:35.
+
+**Ligar:** na tela do Kalman do 1450 (WIN), ligue as "ordens REAIS" e confirme a conta 4582351 quando a
+tela pedir. A tela confere o destino no kalman-ordens antes de gravar. Se recusar, o texto diz o
+código, por exemplo `CONECTOR_NAO_HABILITADO` ou `CONFIRMAR_CONTA`.
+
+O Kalman manda 1 contrato fixo, sempre com `stop_pts`. A janela do 1450 vai até as 13:35, e o serviço
+aceita entradas até as 14:00 e zera às 14:30.
+
+**Acompanhar:**
+
+```bash
+journalctl -u kalman --since '-5min' --no-pager | grep -E 'ordens:|REAL' | tail -20 | cut -c1-200
+#   "lado de ordens REAL do usuário 1450 ligado"; nas decisões, o POST da ENTRADA e a resposta
+curl -s 127.0.0.1:9092/saude | jq '.ambientes.REAL | {posicao, limites, alertas_criticos, divergente, parada}'
+curl -s "127.0.0.1:9092/operacoes?dia=$(date +%F)" | jq -c '.[] | {id, modulo, estado, lado, qtd, preco_medio, stop}' 2>/dev/null
+```
+
+Em cada entrada executada, a stop (1014) tem de aparecer na BTG em poucos segundos. Se não aparecer,
+sai o crítico `SEM_PROTECAO` no Telegram.
+
+**Parar na hora:**
+- `sudo $K zerar -ambiente REAL -motivo "..."` sai da posição, com uma limitada colada e repreçada;
+- `sudo $K parar -ambiente REAL -motivo "..."` só barra entradas novas e cancela as vivas.
+
+Desligar as ordens REAIS na tela do Kalman barra decisões novas, mas uma operação viva continua sendo
+gerida até fechar.
 
 ## 7. O fechamento (sempre, mesmo se algo falhar no meio)
+
+**7.0 O Kalman fora do REAL** (até as 13:35, ou antes se algo der errado): desligue as "ordens REAIS"
+do 1450 na tela do Kalman. Com operação viva, espere ela fechar, ou feche com `boleta encerrar` ou
+`zerar -ambiente REAL`. Isso vem **antes** do 7.3: com o REAL tirado do env, um lado REAL ainda ligado
+no Kalman só recebe recusas.
+
+```bash
+journalctl -u kalman --since '-5min' --no-pager | grep -E 'ordens:.*REAL' | tail -5 | cut -c1-200   # desligado
+```
 
 **7.1 Nada vivo:**
 
