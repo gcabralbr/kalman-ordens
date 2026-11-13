@@ -147,3 +147,5 @@ O roteiro 130 (`cenarios/130-entradas-dia-por-modulo.fix`), com `LIMITE_ENTRADAS
 
 Mutação: com o contador somando todos os módulos, o roteiro 130 falha na primeira entrada do Kalman.
 
+Resultado (13/11): a suíte completa nos dois bancos, com `-race`, no worktree limpo `../kalman-ordens-v133`
+(71f1f76), passou na primeira (`var/suite133b-20261113-120125.log`).
