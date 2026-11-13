@@ -1,12 +1,13 @@
 # SPEC kalman-ordens v1.33 — roteiros sem prazo no relógio real (12/11/2026)
 
 Base: v1.32 (branch `v1.32`, d1bad43 + bf66b1e; a instalar em 14/11). Pedido e aprovação de 12/11.
-O serviço não muda de comportamento: só o executor dos roteiros, e dois contadores de observação no
-motor.
+O §1 não muda o comportamento do serviço: só o executor dos roteiros, e dois contadores de observação no
+motor. O §2 (13/11) muda um limite.
 
 | # | o quê | estado |
 |---|---|---|
 | 1 | os roteiros decidem pelo serviço parado, não por um prazo | feito |
+| 2 | `LIMITE_ENTRADAS_DIA` por módulo (BOLETA, KALMAN, ...), o resto global | feito (13/11) |
 
 ## 1. Os roteiros decidem pelo serviço parado
 
@@ -98,3 +99,51 @@ feito com `motor_lento` ativo conta na API curta e não aparece no `/saude`. Nen
   roteiro inteiro leva 0,8 s.
 - A suíte completa nos dois bancos, com `-race`, no worktree limpo `../kalman-ordens-v133` (d0cd493):
   passou na primeira (`var/suite133-20261112-112550.log`).
+
+## 2. As entradas do dia por módulo (13/11/2026)
+
+### 2.1 O caso
+
+No teste REAL do 1450 em 13/11 (`INSTALACAO-2026-11-13-real-pnt-1450.md` §8), o limite era
+`REAL_LIMITE_ENTRADAS_DIA=3`. As 3 boletas do admin (módulo `BOLETA`) encheram esse limite. A
+primeira delas foi recusada pela corretora com o DSA-3, e mesmo assim contou. Às 11:21 e às 11:27, o
+Kalman foi recusado com `ENTRADAS_POR_DIA` sem ter feito nenhuma entrada.
+
+O contador era um só por instância (`entradasHoje`). Na partida, ele era recarregado como o número de
+operações do dia, de qualquer módulo.
+
+### 2.2 A regra nova (aprovada em 13/11)
+
+- **Contagem:** cada módulo tem o próprio contador de entradas do dia, com o mesmo teto
+  `LIMITE_ENTRADAS_DIA` (no REAL, `REAL_LIMITE_ENTRADAS_DIA`). A boleta continua limitada, contra
+  repetição por engano, mas não gasta as entradas do Kalman.
+- **O que conta:** como antes, toda entrada aceita pelo serviço e enviada. A recusada pela corretora
+  conta. A recusada pelo próprio serviço (limite, janela, habilitação etc.) não conta.
+- **Partida:** o contador de cada módulo é recarregado com as operações do dia desse módulo.
+- **Continuam globais da instância:** a posição máxima, a qtd por ordem, as entradas e mensagens por
+  minuto, a parada por recusas de limite e a **perda do dia**. O dinheiro é um só, então uma perda da
+  boleta conta para parar o Kalman.
+- **A recusa:** o código continua `ENTRADAS_POR_DIA`, e o motivo diz o módulo: "limite de entradas por
+  dia do módulo LS (2)". O alerta `LIMITE` diz o mesmo.
+- **`/saude`:** `limites.entradas_hoje` continua com o total da instância, e
+  `limites.entradas_hoje_por_modulo` traz o contador de cada módulo (`{"BOLETA": 3, "KALMAN": 3}`).
+
+### 2.3 Código
+
+`internal/motor`:
+- `entradasHoje` passa a ser `map[string]int`;
+- `verificarLimites` recebe o módulo do pedido;
+- `carregarDia` conta por `op.Modulo`;
+- `saude` mostra o total e o mapa.
+
+### 2.4 Testes
+
+O roteiro 130 (`cenarios/130-entradas-dia-por-modulo.fix`), com `LIMITE_ENTRADAS_DIA=2`:
+- duas entradas do módulo `LS` recusadas pela corretora contam, e a terceira é recusada;
+- o Kalman ainda tem as duas dele, e a terceira dele é recusada;
+- o `/saude` mostra 4 no total, com 2 e 2 por módulo;
+- depois do `reinicia_servico`, os contadores voltam iguais, os dois módulos continuam barrados e um
+  módulo novo (`GQ`) entra.
+
+Mutação: com o contador somando todos os módulos, o roteiro 130 falha na primeira entrada do Kalman.
+

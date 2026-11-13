@@ -461,7 +461,7 @@ type Motor struct {
 	ultimaOpUID      map[int]*operacao
 	enviosRec        []time.Time
 	recusasLimite    []time.Time
-	entradasHoje     int
+	entradasHoje     map[string]int // por módulo (v1.33 §2): LIMITE_ENTRADAS_DIA vale para cada um
 	zeragemFeita     bool
 	jaLogou          bool
 	presaDesde       time.Time // primeiro logon recusado pelo PnT ("already logged on") desde o último logon
@@ -546,7 +546,7 @@ func NovoNoAmbiente(amb string, c config.Config, rel relogio.Relogio, r repo.Rep
 		sinalK:      map[string]int64{},
 		sinaisFila:  map[chaveSinal]int{},
 		aoVivo:      aovivo.Novo(rel),
-		entradasUID: map[int][]time.Time{}, ultimaEntradaUID: map[ladoUID]time.Time{}, ultimaOpUID: map[int]*operacao{},
+		entradasUID: map[int][]time.Time{}, ultimaEntradaUID: map[ladoUID]time.Time{}, ultimaOpUID: map[int]*operacao{}, entradasHoje: map[string]int{},
 		fonte:    estadoFonte{chave: "FONTE_DEGRADADA", chaveTravado: "MERCADO_TRAVADO"},
 		fonteFlx: estadoFonte{chave: "FONTE_DEGRADADA:FLEXSCAN", chaveTravado: "MERCADO_TRAVADO:FLEXSCAN", prefixo: "[flexscan] "},
 	}
@@ -1130,7 +1130,10 @@ func (m *Motor) carregarDia() error {
 	if v, ok, _ := m.repo.LerEstado(m.chaveEstado("zeragem_feita")); ok && v == m.dia {
 		m.zeragemFeita = true
 	}
-	m.entradasHoje = len(m.ops)
+	m.entradasHoje = map[string]int{}
+	for _, op := range m.ops {
+		m.entradasHoje[op.Modulo]++
+	}
 	umMinuto := m.agora().Add(-time.Minute)
 	for _, op := range m.ops {
 		if op.CriadaEm.After(m.ultimaEntrada) {

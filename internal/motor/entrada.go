@@ -123,7 +123,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 		m.al.Emitir("SIMBOLO_INVALIDO", "", fmt.Sprintf("ticker do marketdata %q não é um contrato de WIN: entrada recusada", l.Ticker), 0)
 		return nil, simples("SIMBOLO_INVALIDO", fmt.Sprintf("ticker do marketdata %q não é um contrato de WIN", l.Ticker))
 	}
-	if r := m.verificarLimites(*p.Qtd, l, hab, *p.UID, lado); r != nil {
+	if r := m.verificarLimites(*p.Qtd, l, hab, *p.UID, lado, p.modulo()); r != nil {
 		return nil, r
 	}
 	if r := m.verificarPrecoEntrada(l); r != nil {
@@ -169,7 +169,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	m.ultimaEntrada = agora
 	m.entradasRec = append(m.entradasRec, agora)
 	m.registrarEntradaUID(op)
-	m.entradasHoje++
+	m.entradasHoje[op.Modulo]++
 
 	rp := m.respostaAtual
 	enviar := func() {
@@ -319,7 +319,7 @@ func (m *Motor) contaParaEntrada(uid int, amb string) (usuario.Resolvido, *recus
 	return r, simples(f.Codigo, f.Motivo)
 }
 
-func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitacao, uid int, lado dominio.Lado) *recusa {
+func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitacao, uid int, lado dominio.Lado, modulo string) *recusa {
 	agora := m.agora()
 	h := m.horaDoDia()
 	if h < m.p.JanelaInicio || h >= m.p.JanelaFim {
@@ -357,9 +357,11 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitac
 		m.al.Emitir("LIMITE", "", fmt.Sprintf("limite de mensagens por minuto (%d)", len(m.enviosRec)), 0)
 		return limite("ORDENS_POR_MINUTO", "limite de mensagens por minuto")
 	}
-	if m.entradasHoje >= m.p.EntradasPorDia {
-		m.al.Emitir("LIMITE", "", fmt.Sprintf("limite de entradas por dia (%d)", m.entradasHoje), 0)
-		return limite("ENTRADAS_POR_DIA", "limite de entradas por dia")
+	// v1.33 §2: as entradas do dia contam por módulo (a boleta não gasta as do Kalman); a posição,
+	// a qtd, as entradas por minuto e a perda do dia continuam da instância
+	if n := m.entradasHoje[modulo]; n >= m.p.EntradasPorDia {
+		m.al.Emitir("LIMITE", "", fmt.Sprintf("limite de entradas por dia do módulo %s (%d)", modulo, n), 0)
+		return limite("ENTRADAS_POR_DIA", fmt.Sprintf("limite de entradas por dia do módulo %s (%d)", modulo, n))
 	}
 	// o resultado do dia usa a fonte de cada conector; l (a da entrada) pode ser a da Flexscan
 	if ultimo, ok := m.precoDoDiaFatia(m.lerPrecoDe(dominio.ConectorPnT)); ok {

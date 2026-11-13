@@ -41,6 +41,12 @@ func (m *Motor) saude() Resposta {
 	if m.parada != nil {
 		parada = m.parada
 	}
+	// v1.33 §2: o total continua em entradas_hoje; o limite vale por módulo
+	entradas, porModulo := 0, map[string]int{}
+	for mod, n := range m.entradasHoje {
+		entradas += n
+		porModulo[mod] = n
+	}
 	ult := ""
 	if !m.ultimaEntrada.IsZero() {
 		ult = m.ultimaEntrada.Format(time.RFC3339)
@@ -68,7 +74,8 @@ func (m *Motor) saude() Resposta {
 		"canais":              m.canaisSaude(),
 		"operacoes_suspensas": m.suspensasSaude(),
 		"limites": map[string]any{
-			"entradas_hoje":                m.entradasHoje,
+			"entradas_hoje":                entradas,
+			"entradas_hoje_por_modulo":     porModulo,
 			"entradas_ultimo_minuto":       len(m.entradasRec),
 			"mensagens_ultimo_minuto":      len(m.enviosRec),
 			"recusas_limite_ultimo_minuto": len(m.recusasLimite),

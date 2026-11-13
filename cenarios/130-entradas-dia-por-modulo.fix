@@ -1,0 +1,64 @@
+cenario 130 v1.33 §2: LIMITE_ENTRADAS_DIA por módulo; a recusa da corretora conta; o restart recarrega por módulo
+hora 2026-10-13 10:30:00
+# 13/11 (REAL do 1450): as 3 boletas encheram o limite de 3 e o Kalman foi recusado com
+# ENTRADAS_POR_DIA sem ter entrado nenhuma vez. Agora cada módulo tem o próprio contador, com o
+# mesmo teto; a posição, a qtd, as entradas por minuto e a perda do dia continuam da instância.
+config LIMITE_ENTRADAS_DIA=2
+config LIMITE_POSICAO_MAX=10
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=100
+config LIMITE_MENSAGENS_MIN=100
+config LIMITE_RECUSAS_PARADA=100
+
+executa INICIO
+
+# --- o módulo LS: duas entradas, as duas recusadas pela corretora (contam, como a boleta do DSA-3)
+entrada 1301 C modulo=LS
+resposta aceito=true
+recebe 35=D 11=KM-LS-E-1301-1 38=1 40=2 44=130020 54=1 847=1031
+envia @ER 11=KM-LS-E-1301-1 37=dsa.1301 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Risk rejected: insufficient margin"
+evento ENTRADA_ENCERRADA operacao_id=1301 qtd_final=0 motivo=REJEITADA
+entrada 1302 C modulo=LS
+resposta aceito=true
+recebe 35=D 11=KM-LS-E-1302-1 38=1 40=2 44=130020 54=1 847=1031
+envia @ER 11=KM-LS-E-1302-1 37=dsa.1302 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Risk rejected: insufficient margin"
+evento ENTRADA_ENCERRADA operacao_id=1302 qtd_final=0 motivo=REJEITADA
+entrada 1303 C modulo=LS
+resposta aceito=false codigo=ENTRADAS_POR_DIA "motivo=~do modulo LS (2)"
+evento ALERTA codigo=LIMITE "texto=~limite de entradas por dia do modulo LS (2)"
+nada
+saude limites.entradas_hoje=2 limites.entradas_hoje_por_modulo.LS=2
+
+# --- o Kalman não foi afetado: tem as duas dele
+entrada 1304 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1304-1 38=1 40=2 44=130020 54=1 847=1031
+envia @ER 11=KM-E-1304-1 37=dsa.1304 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Risk rejected: insufficient margin"
+evento ENTRADA_ENCERRADA operacao_id=1304 qtd_final=0 motivo=REJEITADA
+entrada 1305 C
+resposta aceito=true
+recebe 35=D 11=KM-E-1305-1 38=1 40=2 44=130020 54=1 847=1031
+envia @ER 11=KM-E-1305-1 37=dsa.1305 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Risk rejected: insufficient margin"
+evento ENTRADA_ENCERRADA operacao_id=1305 qtd_final=0 motivo=REJEITADA
+entrada 1306 C
+resposta aceito=false codigo=ENTRADAS_POR_DIA "motivo=~do modulo KALMAN (2)"
+nada
+saude limites.entradas_hoje=4 limites.entradas_hoje_por_modulo.LS=2 limites.entradas_hoje_por_modulo.KALMAN=2
+
+# --- o restart recarrega o contador de cada módulo a partir das operações do dia
+reinicia_servico
+aguarda_logon
+avanca 3s
+saude limites.entradas_hoje=4 limites.entradas_hoje_por_modulo.LS=2 limites.entradas_hoje_por_modulo.KALMAN=2
+entrada 1307 C modulo=LS
+resposta aceito=false codigo=ENTRADAS_POR_DIA
+entrada 1308 C
+resposta aceito=false codigo=ENTRADAS_POR_DIA
+# um módulo novo começa do zero
+entrada 1309 C modulo=GQ
+resposta aceito=true
+recebe 35=D 11=KM-GQ-E-1309-1 38=1 40=2 44=130020 54=1 847=1031
+envia @ER 11=KM-GQ-E-1309-1 37=dsa.1309 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Risk rejected: insufficient margin"
+evento ENTRADA_ENCERRADA operacao_id=1309 qtd_final=0 motivo=REJEITADA
+saude limites.entradas_hoje=5 limites.entradas_hoje_por_modulo.GQ=1 posicao=0 parada=null
+nada
