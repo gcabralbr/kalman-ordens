@@ -405,6 +405,23 @@ operações do dia (`len(m.ops)`), o que inclui a boleta recusada pelo DSA-3. Po
 encheram o limite de 3 antes da primeira entrada do Kalman. A análise de contar por módulo está no
 §9.2.
 
+**8.4 Os tempos do PnT no REAL** (pelo journal; o stop da 234754 com os horários do Profit):
+
+| o quê | do pedido à resposta |
+|---|---|
+| entrada 1031 agressiva: decidida → executada | 1,56 s; 0,99 s; 1,36 s |
+| 1014 posta: decidida → aceita (39=0) | 0,23 s; 0,33 s; 0,25 s |
+| ajuste da 1014 (G): decidido → confirmado | 0,09 s; 0,13 s |
+| saída por replace da 1014: decidida → executada | 1,40 s; 1,81 s |
+| stop da 234754: gatilho tocado (11:40:12.838) → 39=B (14.827) → execução no serviço (15.101) | 2,0 s; 2,26 s no total |
+
+Na HML, em 19/10, o mesmo tempo foi 2,13 s. Os acks são rápidos (0,1 a 0,3 s), e toda **execução**
+pelo robô leva de 1 a 1,8 s, inclusive a da entrada 1031, que não tem gatilho nenhum. O stop gasta uns
+0,5 s a mais que isso. O grosso do tempo é o caminho robô → bolsa da DSA, não o gatilho da 1014.
+
+Na 234754 (venda, stop de compra com gatilho 173835 e limite 173935), a execução saiu a 173790,
+45 pts melhor que o gatilho: o preço voltou durante os 2 s. A demora pode custar ou ajudar.
+
 ## 9. Para o próximo teste REAL pelo PnT
 
 **9.1 A sequência: não montar store à mão.** O §2 sai do roteiro. Em outro dia, o store guardado em
@@ -423,11 +440,12 @@ algum dia, ele vai em `$S/store/`, nunca em `$S`.
 Continua valendo a regra da sessão única: a `GAMMAQ2` logada em um lado só. Antes do restart com o
 REAL, o fix-integration parado (§1).
 
-**9.2 O limite de entradas por módulo (BOLETA x KALMAN): vale, com o resto global.** O
+**9.2 O limite de entradas por módulo (BOLETA x KALMAN): aprovado em 13/11, feito na v1.33 §2
+(roteiro 130), ainda não instalado.** O
 `REAL_LIMITE_ENTRADAS_DIA` existe para pegar um laço do cliente automático (o Kalman mandando entradas
 sem parar). A boleta é manual, uma a uma, com o "sim" na CLI. Somar as duas faz o teste da corretora
-consumir o limite do robô, que foi o que aconteceu às 11:21. A proposta, para uma versão futura (ainda
-não implementada):
+consumir o limite do robô, que foi o que aconteceu às 11:21. A regra da v1.33 (SPEC-ORDENS-v1.33 §2;
+só vale depois de instalada):
 - o contador do dia passa a ser por módulo, e cada módulo tem o mesmo teto `LIMITE_ENTRADAS_DIA`
   (a boleta continua limitada, contra repetição por engano);
 - na partida, a recarga conta as operações do dia por módulo;
@@ -465,10 +483,14 @@ E a habilitação de novo (§4): `usuario habilitar -uid 1450 -ambiente REAL -co
 Na partida, confira a linha "pnt: sessão": `robot_id_20858=BTG_ALGO entering_firm_20859=BTGDAYTRADE`.
 Se vier vazio, as duas `REAL_PNT_*` não entraram, e a primeira ordem volta com o DSA-3.
 
-**9.4 A margem no OMS de day trade.** As ordens do Kalman vão para o OMS `BTGDAYTRADE` (o 20859), que
-é separado do `BTGCEDRO` do L&S. Antes do teste, confira com a BTG que a conta 4582351 tem margem
-(garantia) de day trade liberada **nesse OMS** para WIN. A margem que serve ao L&S não prova nada
-para ele.
+**9.4 A margem no OMS de day trade (a lição de 13/11).** As ordens do Kalman vão para o OMS
+`BTGDAYTRADE` (o 20859), que é separado do `BTGCEDRO` do L&S. Em 13/11, a conta 4582351 não estava
+preparada para day trade no REAL: não havia margem alocada nesse OMS.
+- A boleta 2 (11:02:06) foi aceita pelo kalman-ordens e **recusada no registro** por falta de margem,
+  mesmo longe do preço. O drop copy do Profit registrou: "This strategy was changed to Error state,
+  because offer RealOrder Id: 178152086 is Rejected".
+- Para o kalman-ordens, ela apareceu só como `CANCELADA` às 11:02:24, sem o motivo.
 
-*A completar com o que houve em 13/11.* O journal não guarda o texto da corretora. A boleta 2 foi
-aceita às 11:02:06 e encerrada `CANCELADA` às 11:02:24, sem ação da CLI.
+**Antes de qualquer teste REAL:** aloque margem de day trade na conta, no OMS `BTGDAYTRADE`. A margem
+do L&S não serve. A ordem de comunicação (§6) confere isso: ela tem de ficar viva (39=0) até o
+cancelamento.
