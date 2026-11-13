@@ -3,6 +3,7 @@ package motor
 import (
 	"log/slog"
 
+	"gammaquant.com.br/kalman-ordens/internal/alerta"
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
@@ -27,15 +28,22 @@ func (o *OuvinteFlexscan) rotulo() string {
 	return "[flexscan " + o.c.nome + "]"
 }
 
+// origem (v1.34): os alertas da ponte vão ao registro da sessão como FLEXSCAN, com a corretora.
+func (o *OuvinteFlexscan) origem() alerta.Origem {
+	return alerta.Origem{Conector: dominio.ConectorFlexscan, Canal: o.c.nome}
+}
+
 // Logou: a ponte obteve token (no boot ou depois de perder a sessão). Concilia, como o logon FIX.
 func (o *OuvinteFlexscan) Logou() {
 	m := o.m
 	m.entrarFIX(func() {
-		if o.c.jaLogou {
-			m.al.Emitir("SESSAO_VOLTOU", "SESSAO_VOLTOU:"+o.c.chave, o.rotulo()+" sessão voltou (token)", 0)
-		}
+		m.al.ComOrigem(o.origem(), func() {
+			if o.c.jaLogou {
+				m.al.Emitir("SESSAO_VOLTOU", "SESSAO_VOLTOU:"+o.c.chave, o.rotulo()+" sessão voltou (token)", 0)
+			}
+			m.al.Resolver("SESSAO_CAIU:" + o.c.chave)
+		})
 		o.c.jaLogou = true
-		m.al.Resolver("SESSAO_CAIU:" + o.c.chave)
 		m.conciliando = true
 		m.massTentativas = 0
 		m.pedirMassStatus()
@@ -48,7 +56,9 @@ func (o *OuvinteFlexscan) Caiu(motivo string) {
 	m := o.m
 	m.entrarFIX(func() {
 		m.registrarQueda(o.c.chave, motivo)
-		m.al.Emitir("SESSAO_CAIU", "SESSAO_CAIU:"+o.c.chave, o.rotulo()+" sem sessão: "+motivo, 0)
+		m.al.ComOrigem(o.origem(), func() {
+			m.al.Emitir("SESSAO_CAIU", "SESSAO_CAIU:"+o.c.chave, o.rotulo()+" sem sessão: "+motivo, 0)
+		})
 	})
 }
 
@@ -75,7 +85,7 @@ func (o *OuvinteFlexscan) Recebeu(msg pnt.Mensagem) {
 
 // Alertar / Resolver: os alertas da ponte (FLEXSCAN_*), pelo catálogo de sempre.
 func (o *OuvinteFlexscan) Alertar(codigo, chave, texto string) {
-	o.m.entrarFIX(func() { o.m.al.Emitir(codigo, chave, texto, 0) })
+	o.m.entrarFIX(func() { o.m.al.ComOrigem(o.origem(), func() { o.m.al.Emitir(codigo, chave, texto, 0) }) })
 }
 
 // AtualizarAlerta (v1.32 §4): o texto novo de um crítico aberto (as repetições saem com ele).
@@ -84,7 +94,7 @@ func (o *OuvinteFlexscan) AtualizarAlerta(chave, texto string) {
 }
 
 func (o *OuvinteFlexscan) Resolver(chave string) {
-	o.m.entrarFIX(func() { o.m.al.Resolver(chave) })
+	o.m.entrarFIX(func() { o.m.al.ComOrigem(o.origem(), func() { o.m.al.Resolver(chave) }) })
 }
 
 // Registrar: um evento REST ou webhook no kalmanordemevento (no lote da volta), já mascarado.

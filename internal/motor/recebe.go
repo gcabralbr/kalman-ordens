@@ -870,7 +870,7 @@ func (m *Motor) rejeicaoEnviada(msg pnt.Mensagem) {
 // tenta de novo com espera crescente; a 1014 continua protegendo a posição no PnT.
 func (m *Motor) logonRecusado(texto string) {
 	m.v.eventos = append(m.v.eventos, repo.EventoFIX{Direcao: "REC", MsgType: "5", Texto: cortarTexto(texto, 1000), Bruta: texto, Em: m.agora()})
-	m.registrarSessao("LOGON_RECUSADO", texto)
+	m.registrarSessao("LOGON_RECUSADO", texto, origemPnT)
 	if m.presaDesde.IsZero() {
 		m.presaDesde = m.agora()
 	}

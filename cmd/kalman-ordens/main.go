@@ -47,7 +47,11 @@ const ajuda = `uso: kalman-ordens <comando> [opções]
   usuario desabilitar -uid N -motivo X
   historico operacao -id N [-modulo M] [-cru]   linha do tempo da operação (JSON, direto no banco)
   historico dia [-dia D] [-uid N] [-modulo M]   operações do dia
-  historico sessao [-dia D]                     logon, logout, queda, reenvios, conciliações, alertas gerais
+  historico sessao [-dia D] [-ambiente A] [-conector PNT|FLEXSCAN|SERVICO]
+                                                logon, logout, queda, reenvios, conciliações, alertas gerais
+  fio [-dia D] [-ambiente A] [-dir DIR] [-clordid P] [-sem-heartbeat] [-eventos]
+                                                o fio inteiro do PnT no dia, do log de arquivo do QuickFIX
+                                                (senha mascarada; lê o FIX_DIR/REAL_FIX_DIR do service.env, pede sudo)
   quarentena listar                             linhas que o banco recusou por erro de dado (v1.13), pendentes
   quarentena resolver -id N -por UID -motivo X  marca a linha como revisada; sem pendentes, retomar libera
   expurgar [-meses N] [-simular]                apaga o que passou da retenção (timer mensal; EXPURGO_DB_DSN)
@@ -95,6 +99,8 @@ func executar(args []string, saida, erros io.Writer) int {
 		err = cliBoleta(config.DoAmbiente(), args, os.Stdin, saida, time.Now())
 	case "historico":
 		err = cliHistorico(config.DoAmbiente(), args, saida)
+	case "fio":
+		err = cliFio(config.DoAmbiente(), args, saida)
 	case "quarentena":
 		err = cliQuarentena(config.DoAmbiente(), args, saida)
 	case "expurgar":

@@ -16,6 +16,7 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/motor"
+	"gammaquant.com.br/kalman-ordens/internal/repo"
 )
 
 // Handler monta as rotas. espera = quanto o POST /ordens espera o motor antes do 503.
@@ -156,9 +157,9 @@ func Handler(m *motor.Servico, espera time.Duration) http.Handler {
 		if !ok {
 			return
 		}
-		resp, ok := m.ConsultarAoVivo(amb, desde, limite)
-		if !ok {
-			escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "ambiente invalido ou sem instancia nesta maquina"})
+		resp, ind := m.ConsultarAoVivo(amb, desde, limite)
+		if ind != nil {
+			escrever(w, ind.HTTP, ind.Resp) // v1.34: 409 sem a instância ou sem o PnT nela
 			return
 		}
 		escrever(w, http.StatusOK, resp)
@@ -185,12 +186,11 @@ func Handler(m *motor.Servico, espera time.Duration) http.Handler {
 		if !ok {
 			return
 		}
-		// v1.23: ?dia=AAAA-MM-DD — o dia inteiro, do registro (desde e limite não valem)
+		// v1.23: ?dia=AAAA-MM-DD — o dia inteiro, do registro (desde e limite não valem); v1.34: do
+		// banco também com a instância desligada
 		if dia := q.Get("dia"); dia != "" {
-			resp, ok, err := m.TrafegoFlexscanDoDia(amb, q.Get("corretora"), dia)
+			resp, err := m.TrafegoFlexscanDoDia(amb, q.Get("corretora"), dia)
 			switch {
-			case !ok:
-				escrever(w, http.StatusNotFound, motor.Resposta{"erro": "flexscan nao configurada"})
 			case errors.Is(err, motor.ErrCorretora):
 				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": err.Error()})
 			case errors.Is(err, motor.ErrDia):
@@ -203,10 +203,10 @@ func Handler(m *motor.Servico, espera time.Duration) http.Handler {
 			return
 		}
 		// v1.30: ?corretora= (CMC, BTG...) no REAL por corretora
-		resp, ok, err := m.TrafegoFlexscan(amb, q.Get("corretora"), desde, limite)
+		resp, ind, err := m.TrafegoFlexscan(amb, q.Get("corretora"), desde, limite)
 		switch {
-		case !ok:
-			escrever(w, http.StatusNotFound, motor.Resposta{"erro": "flexscan nao configurada"})
+		case ind != nil:
+			escrever(w, ind.HTTP, ind.Resp) // v1.34: 409 sem a instância ou sem a Flexscan nela
 			return
 		case err != nil:
 			escrever(w, http.StatusBadRequest, motor.Resposta{"erro": err.Error()})
@@ -214,9 +214,91 @@ func Handler(m *motor.Servico, espera time.Duration) http.Handler {
 		}
 		escrever(w, http.StatusOK, resp)
 	})
+	// v1.34 (SPEC-ADMIN-CONECTORES-v1 §3.2): ?ambiente= e ?conector= (PNT, FLEXSCAN, SERVICO)
 	mux.HandleFunc("GET /sessao/eventos", func(w http.ResponseWriter, r *http.Request) {
-		l, err := motor.EventosDaSessao(m.Repo(), r.URL.Query().Get("dia"))
+		q := r.URL.Query()
+		amb, ok := ambienteDaQuery(w, q.Get("ambiente"), "")
+		if !ok {
+			return
+		}
+		con, ok := conectorDaQuery(w, q.Get("conector"), true)
+		if !ok {
+			return
+		}
+		l, err := motor.EventosDaSessaoFiltrados(m.Repo(), q.Get("dia"), amb, con)
 		responderHistorico(w, l, err)
+	})
+	// v1.34 (§3.1): por ambiente, a instância (ligada ou não), os conectores e se há histórico
+	mux.HandleFunc("GET /conectores", func(w http.ResponseWriter, r *http.Request) {
+		resp, err := m.Conectores()
+		responderHistorico(w, resp, err)
+	})
+	// v1.34 (§3.3): as ordens do dia como gravadas, com a instância desligada
+	mux.HandleFunc("GET /historico/ordens", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		amb, ok := ambienteDaQuery(w, q.Get("ambiente"), m.PadraoHistorico())
+		if !ok {
+			return
+		}
+		con, ok := conectorDaQuery(w, q.Get("conector"), false)
+		if !ok {
+			return
+		}
+		uid := 0
+		if v := q.Get("uid"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n <= 0 {
+				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "uid invalido"})
+				return
+			}
+			uid = n
+		}
+		dia := diaOuHoje(q.Get("dia"), m)
+		l, err := motor.HistoricoOrdens(m.Repo(), dia, amb, con, uid, q.Get("modulo"))
+		if err == nil {
+			responderHistorico(w, motor.Resposta{"dia": dia, "ambiente": amb, "conector": nuloSeVazio(con),
+				"instancia": m.EstadoInstancia(amb), "ordens": l}, nil)
+			return
+		}
+		responderHistorico(w, nil, err)
+	})
+	// v1.34 (§3.5): o fio do dia gravado (FIX do PnT e HTTP/webhook da Flexscan), paginado por desde
+	mux.HandleFunc("GET /historico/fio", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		amb, ok := ambienteDaQuery(w, q.Get("ambiente"), m.PadraoHistorico())
+		if !ok {
+			return
+		}
+		con, ok := conectorDaQuery(w, q.Get("conector"), false)
+		if !ok {
+			return
+		}
+		f := repo.FiltroFio{Ambiente: amb, Conector: con, ClOrdID: q.Get("clordid")}
+		if q.Has("canal") {
+			c := q.Get("canal")
+			f.Canal = &c
+		}
+		if v := q.Get("desde"); v != "" {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || n < 0 {
+				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "desde invalido"})
+				return
+			}
+			f.DesdeID = n
+		}
+		if v := q.Get("limite"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n <= 0 {
+				escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "limite invalido"})
+				return
+			}
+			f.Limite = n
+		}
+		resp, err := motor.HistoricoFio(m.Repo(), diaOuHoje(q.Get("dia"), m), f)
+		if err == nil {
+			resp["instancia"] = m.EstadoInstancia(amb)
+		}
+		responderHistorico(w, resp, err)
 	})
 	mux.HandleFunc("GET /eventos", func(w http.ResponseWriter, r *http.Request) {
 		desde, _ := strconv.ParseInt(r.URL.Query().Get("desde"), 10, 64)
@@ -354,8 +436,17 @@ func Handler(m *motor.Servico, espera time.Duration) http.Handler {
 	})
 	// ordens no PnT (v1.7 C): um 35=AF por conta, só leitura; intervalo mínimo com cache
 	mux.HandleFunc("GET /pnt/ordens", func(w http.ResponseWriter, r *http.Request) {
+		amb, ok := ambienteDaQuery(w, r.URL.Query().Get("ambiente"), "")
+		if !ok {
+			return
+		}
+		ch, ind := m.ConsultarPnTAssincrono(amb)
+		if ind != nil {
+			escrever(w, ind.HTTP, ind.Resp) // v1.34: 409 sem a instância ou sem o PnT nela
+			return
+		}
 		select {
-		case resp := <-m.ConsultarPnTAssincrono(r.URL.Query().Get("ambiente")):
+		case resp := <-ch:
 			if resp["erro"] != nil {
 				escrever(w, http.StatusServiceUnavailable, resp)
 				return
@@ -486,8 +577,33 @@ func ambienteDaQuery(w http.ResponseWriter, v, padrao string) (string, bool) {
 	}
 	a, err := dominio.LerAmbiente(v)
 	if err != nil {
-		escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "ambiente invalido (SIMULADOR ou REAL)"})
+		escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "ambiente invalido (SIMULADOR ou REAL)", "codigo": motor.AmbienteInvalido})
 		return "", false
 	}
 	return a, true
+}
+
+// conectorDaQuery (v1.34): o ?conector= (PNT, FLEXSCAN; SERVICO só nos eventos da sessão); vazio =
+// todos. Inválido: 400 e ok falso.
+func conectorDaQuery(w http.ResponseWriter, v string, servico bool) (string, bool) {
+	c, ok := motor.ConectorDaQuery(v, servico)
+	if !ok {
+		escrever(w, http.StatusBadRequest, motor.Resposta{"erro": "conector invalido (PNT, FLEXSCAN" + map[bool]string{true: ", SERVICO", false: ""}[servico] + ")"})
+	}
+	return c, ok
+}
+
+// diaOuHoje (v1.34): as rotas de histórico novas usam hoje sem ?dia=.
+func diaOuHoje(v string, m *motor.Servico) string {
+	if v == "" {
+		return m.Hoje()
+	}
+	return v
+}
+
+func nuloSeVazio(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

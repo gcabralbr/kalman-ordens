@@ -288,24 +288,6 @@ func textoOuNulo(s string) any {
 	return s
 }
 
-// EventosDaSessao: GET /sessao/eventos?dia= — logon, logout, queda, logon recusado, ResendRequest,
-// conciliações e alertas sem operação.
-func EventosDaSessao(r repo.Repositorio, dia string) ([]map[string]any, error) {
-	de, ate, err := Dia(dia)
-	if err != nil {
-		return nil, err
-	}
-	es, err := r.SessaoEntre(de, ate)
-	if err != nil {
-		return nil, err
-	}
-	lista := []map[string]any{}
-	for _, e := range es {
-		lista = append(lista, map[string]any{"em": emBR(e.Em), "tipo": e.Tipo, "texto": e.Texto})
-	}
-	return lista, nil
-}
-
 // Repo: o repositório do motor (consultas de histórico pela API).
 func (m *Motor) Repo() repo.Repositorio { return m.repo }
 

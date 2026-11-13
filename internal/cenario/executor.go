@@ -99,6 +99,7 @@ type Executor struct {
 	flxs        map[string]*flxfalso.Falso // v1.26: por ambiente (REAL_FLEXSCAN_URL=falso: a do REAL)
 	alvoFlx     string
 	cfg         config.Config
+	cfgMapa     map[string]string // o que montou o cfg (v1.34: reinicia_servico config=K=V troca chaves)
 	capturas    map[string]string
 	resposta    map[string]any
 	casados     map[int64]bool
@@ -264,6 +265,7 @@ func (e *Executor) preparar() error {
 			}
 		}
 	}
+	e.cfgMapa = v
 	e.cfg = config.Novo(v)
 	for _, p := range e.c.Preparo {
 		if err := e.usuario(p); err != nil {
@@ -722,6 +724,12 @@ func (e *Executor) passo(p roteiro.Passo) error {
 			if v, ok := strings.CutPrefix(a, "salta="); ok {
 				d, _ := roteiro.Duracao(v)
 				e.rel.Avancar(d) // v1.32: com o serviço fora, sem ticks no meio (a noite)
+			}
+			if kv, ok := strings.CutPrefix(a, "config="); ok {
+				// v1.34: o restart com o service.env trocado (ex.: o REAL desligado no fechamento)
+				k, v, _ := strings.Cut(kv, "=")
+				e.cfgMapa[k] = v
+				e.cfg = config.Novo(e.cfgMapa)
 			}
 		}
 		r, err := e.backend.Reabrir(e.falha.Repositorio)

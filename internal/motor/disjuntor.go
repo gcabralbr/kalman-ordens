@@ -156,7 +156,7 @@ func (m *Motor) abrirDisjuntor(texto, porque string) {
 	t := fmt.Sprintf("bolsa indisponível no PnT (%s): %q; entradas novas recusadas, saídas e 1014 em sonda a cada %s",
 		porque, cortarTexto(texto, 200), m.p.DisjuntorSonda)
 	slog.Error("disjuntor: "+t, "desde", agora)
-	m.registrarSessao("BOLSA_FORA", t)
+	m.registrarSessao("BOLSA_FORA", t, origemPnT)
 	m.al.Emitir(chaveDisjuntor, chaveDisjuntor, t, 0)
 }
 
@@ -167,7 +167,7 @@ func (m *Motor) fecharDisjuntor(porque string) {
 	t := fmt.Sprintf("bolsa voltou (%s) depois de %s e %d sonda(s); %d mensagem(ns) retida(s) voltam pela fila (1014 primeiro); entradas novas depois de %s sem rejeição",
 		porque, dur, d.sondas, len(d.retidos), m.p.DisjuntorEstavel)
 	slog.Warn("disjuntor: " + t)
-	m.registrarSessao("BOLSA_VOLTOU", t)
+	m.registrarSessao("BOLSA_VOLTOU", t, origemPnT)
 	m.al.Resolver(chaveDisjuntor)
 	metricas.Disjuntor.Inc("fechou")
 	for _, e := range d.retidos {

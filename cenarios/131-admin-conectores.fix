@@ -1,0 +1,105 @@
+cenario 131 v1.34 (SPEC-ADMIN-CONECTORES-v1): a tela de admin por conector e ambiente; o dia gravado com o REAL (PnT) e o SIMULADOR (Flexscan) ligados; depois do restart com o REAL desligado, o histórico (eventos, ordens, fio) continua do banco e o ao vivo e o consultar agora respondem 409
+hora 2026-11-13 10:00:00
+config ORDENS_AMBIENTE=
+config ORDENS_CONTAS_HML=
+config AMBIENTES_PERMITIDOS=SIM,REAL
+config FLEXSCAN_URL=falso
+config FLEXSCAN_WEBHOOK_URL=https://kalman.exemplo/flexscan/webhook/segredo-do-roteiro-0123456789abcdefghijkl
+config REAL_FIX_HOST=pnt-falso
+config REAL_UIDS=7
+config REAL_CONTAS=12345
+config REAL_LIMITE_QTD_ORDEM=1
+config REAL_LIMITE_PERDA_DIA_PTS=500
+config REAL_LIMITE_ENTRADAS_DIA=10
+config LIMITE_RECUSAS_PARADA=50
+# uid 7: o PnT no REAL (conta 12345); uid 8: a Flexscan no SIMULADOR
+usuario 7 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"12345"}}
+habilita 7 ambiente=REAL conectores=pnt
+usuario 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+saude ambientes.REAL.sessao_logada=true ambientes.SIMULADOR.flexscan.logado=true
+
+# --- o REAL pelo PnT: a entrada recusada pela corretora
+entrada 13101 C ambiente=REAL
+resposta aceito=true ambiente=REAL
+recebe 35=D 11=KM-E-13101-1 1=12345 38=1 40=2 54=1 847=1031
+envia @ER 11=KM-E-13101-1 37=dsa.13101 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Risk rejected: insufficient margin"
+evento ENTRADA_ENCERRADA operacao_id=13101 motivo=REJEITADA
+
+# --- o SIMULADOR pela Flexscan (na partida, a conferência da abertura recadastrou o webhook:
+# FLEXSCAN_WEBHOOK_AUSENTE e o RESOLVIDO, dois alertas sem operação, da ponte)
+evento ALERTA codigo=FLEXSCAN_WEBHOOK_AUSENTE
+entrada 13102 C uid=8 ambiente=SIMULADOR
+resposta aceito=true ambiente=SIMULADOR
+flx_recebe POST name=KM-E-13102-1 account=S-1117150 id=>E1
+flx_altera $E1 status=8 "texto=Conta nao contratada"
+flx_webhook $E1
+avanca 1s
+http GET /ordens/13102
+resposta estado=ENCERRADA_SEM_ENTRADA
+
+# os eventos da sessão, separados por conector e ambiente
+http GET /sessao/eventos?dia=2026-11-13&conector=PNT
+resposta _lista.0.tipo=LOGON _lista.0.ambiente=REAL _lista.0.conector=PNT
+http GET /sessao/eventos?dia=2026-11-13&conector=FLEXSCAN
+resposta _lista.#=3 _lista.0.tipo=ALERTA "_lista.0.texto=~FLEXSCAN_WEBHOOK_AUSENTE" _lista.0.ambiente=SIMULADOR _lista.0.conector=FLEXSCAN
+resposta "_lista.1.texto=RESOLVIDO: FLEXSCAN_WEBHOOK_AUSENTE" _lista.1.conector=FLEXSCAN _lista.1.canal=null "_lista.2.texto=~FLEXSCAN_ESTADO_INESPERADO"
+http GET /sessao/eventos?dia=2026-11-13&conector=SERVICO&ambiente=REAL
+resposta _lista.0.tipo=CONCILIACAO _lista.0.ambiente=REAL
+http GET /sessao/eventos?dia=2026-11-13&ambiente=SIMULADOR&conector=PNT
+resposta _lista.#=0
+http GET /conectores
+resposta ambientes.0.ambiente=SIMULADOR ambientes.0.instancia=LIGADA ambientes.1.ambiente=REAL ambientes.1.instancia=LIGADA ambientes.1.historico=true
+resposta ambientes.1.conectores.0.conector=PNT ambientes.1.conectores.0.estado=NO_AR
+http GET /pnt/ordens?ambiente=SIMULADOR
+resposta _status=409 codigo=CONECTOR_AUSENTE ambiente=SIMULADOR conector=PNT
+
+# --- o fechamento: o REAL fora de AMBIENTES_PERMITIDOS
+reinicia_servico config=AMBIENTES_PERMITIDOS=SIM
+avanca 3s
+saude ambientes_permitidos.#=1 ambientes_permitidos.0=SIMULADOR
+http GET /conectores
+resposta ambientes.1.ambiente=REAL ambientes.1.instancia=DESLIGADA ambientes.1.historico=true ambientes.1.conectores.#=0 "ambientes.1.motivo=~fora de AMBIENTES_PERMITIDOS"
+
+# o histórico do REAL, do banco
+http GET /historico/ordens?dia=2026-11-13&ambiente=REAL
+resposta _status=200 instancia=DESLIGADA ordens.#=1 ordens.0.clordid=KM-E-13101-1 ordens.0.conector=PNT ordens.0.estado=REJEITADA ordens.0.conta=12345
+resposta ordens.0.ultima_mensagem.msgtype=8 ordens.0.ultima_mensagem.ordstatus=8 "ordens.0.ultima_mensagem.texto=~insufficient margin"
+http GET /historico/ordens?dia=2026-11-13&ambiente=SIMULADOR&conector=FLEXSCAN
+resposta instancia=LIGADA ordens.#=1 ordens.0.clordid=KM-E-13102-1 ordens.0.conector=FLEXSCAN
+http GET /historico/fio?dia=2026-11-13&ambiente=REAL&conector=PNT
+resposta instancia=DESLIGADA mais=false mensagens.0.conector=PNT mensagens.0.direcao=ENV mensagens.0.msgtype=D "mensagens.0.fix_raw=~|11=KM-E-13101-1|" mensagens.1.direcao=REC mensagens.1.ordstatus=8
+http GET /historico/fio?dia=2026-11-13&ambiente=REAL&conector=PNT&limite=1
+resposta mensagens.#=1 mais=true
+http GET /historico/fio?dia=2026-11-13&ambiente=SIMULADOR&conector=FLEXSCAN&clordid=KM-E-13102
+resposta mensagens.0.conector=FLEXSCAN mensagens.0.linha.tipo=POST mensagens.0.linha.clordid=KM-E-13102-1
+http GET /historico/fio?dia=2026-11-13&ambiente=REAL&conector=FLEXSCAN
+resposta mensagens.#=0
+http GET /sessao/eventos?dia=2026-11-13&ambiente=REAL&conector=PNT
+resposta _lista.0.tipo=LOGON _lista.0.ambiente=REAL
+
+# o ao vivo e o consultar agora: 409, com o caminho do histórico
+http GET /sessao/ao-vivo?ambiente=REAL
+resposta _status=409 codigo=INSTANCIA_DESLIGADA ambiente=REAL "historico=~/historico/fio?dia=2026-11-13&ambiente=REAL&conector=PNT" ambientes_permitidos.0=SIMULADOR
+http GET /pnt/ordens?ambiente=REAL
+resposta _status=409 codigo=INSTANCIA_DESLIGADA
+http GET /sessao/ao-vivo
+resposta _status=409 codigo=CONECTOR_AUSENTE ambiente=SIMULADOR
+http GET /flexscan/trafego?ambiente=REAL
+resposta _status=409 codigo=INSTANCIA_DESLIGADA conector=FLEXSCAN
+http GET /flexscan/trafego?ambiente=REAL&dia=2026-11-13
+resposta _status=200 ambiente=REAL mensagens.#=0
+http GET /flexscan/trafego?ambiente=SIMULADOR&dia=2026-11-13
+resposta _status=200 mensagens.0.tipo=LOGIN
+
+# parâmetros errados continuam 400
+http GET /sessao/eventos?dia=2026-11-13&ambiente=PAPER
+resposta _status=400 codigo=AMBIENTE_INVALIDO
+http GET /historico/fio?ambiente=REAL&conector=SERVICO
+resposta _status=400
+http GET /historico/ordens?dia=13-11-2026
+resposta _status=400

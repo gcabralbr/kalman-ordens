@@ -1078,7 +1078,7 @@ func (m *Motor) EventoSessao(tipo, texto string) {
 	if m.p.PnTDesligado {
 		return
 	}
-	m.entrarFIX(func() { m.registrarSessao(tipo, texto) })
+	m.entrarFIX(func() { m.registrarSessao(tipo, texto, origemPnT) })
 }
 func (m *Motor) StoreIlegivel(texto string) {
 	if m.p.PnTDesligado {
@@ -1269,7 +1269,7 @@ func (m *Motor) publicar(tipo string, op *operacao, dados map[string]any) {
 
 // publicarAlerta: o alerta só traz o operacao_id; o módulo é o da operação do dia com esse id
 // (com o mesmo id em dois módulos, o primeiro — alerta com módulo próprio é da v2).
-func (m *Motor) publicarAlerta(codigo, texto string, op int64) {
+func (m *Motor) publicarAlerta(codigo, texto string, op int64, o alerta.Origem) {
 	d := map[string]any{"codigo": codigo, "texto": texto}
 	mod := ""
 	if op != 0 {
@@ -1290,13 +1290,43 @@ func (m *Motor) publicarAlerta(codigo, texto string, op int64) {
 		if codigo == "CONCILIACAO" {
 			tipo = "CONCILIACAO"
 		}
-		m.registrarSessao(tipo, codigo+": "+texto)
+		if o.Conector == "" {
+			o.Conector = ConectorDoAlerta(codigo, texto)
+		}
+		m.registrarSessao(tipo, codigo+": "+texto, o)
 	}
 }
 
-// registrarSessao (v1.5 R3): GET /sessao/eventos. Texto em ASCII (v1.4 L1).
-func (m *Motor) registrarSessao(tipo, texto string) {
-	m.v.sessao = append(m.v.sessao, repo.EventoSessao{Tipo: tipo, Texto: alerta.ASCII(texto), Em: m.agora()})
+// registrarSessao (v1.5 R3): GET /sessao/eventos. Texto em ASCII (v1.4 L1). v1.34: com o conector e o
+// canal de quem emitiu; o ambiente é o da instância (montarLote).
+func (m *Motor) registrarSessao(tipo, texto string, o alerta.Origem) {
+	m.v.sessao = append(m.v.sessao, repo.EventoSessao{Tipo: tipo, Texto: alerta.ASCII(texto), Em: m.agora(), Conector: o.Conector, Canal: o.Canal})
+}
+
+// Os conectores do registro da sessão (v1.34, SPEC-ADMIN-CONECTORES-v1 §3): SERVICO é o que não é de
+// conector (conciliação, limites, configuração, parada).
+const ConectorServico = "SERVICO"
+
+var (
+	origemPnT    = alerta.Origem{Conector: dominio.ConectorPnT}
+	alertasDoPnT = map[string]bool{"SESSAO_CAIU": true, "SESSAO_VOLTOU": true, "SESSAO_REJEITOU_MENSAGEM": true, "MENSAGEM_ILEGIVEL": true,
+		"SESSAO_PRESA_NO_PNT": true, "FIX_STORE_ILEGIVEL": true, "MASS_STATUS_REJEITADO": true, "RECUSA_PNT": true,
+		"PNT_BOLSA_INDISPONIVEL": true, "PENDENTE_39A": true}
+)
+
+// ConectorDoAlerta: o conector de um alerta emitido sem origem, pelo código (o RESOLVIDO, pelo código
+// que ele resolve: "CODIGO" ou "CODIGO: chave"). Os da ponte Flexscan saem com a origem (OuvinteFlexscan).
+func ConectorDoAlerta(codigo, texto string) string {
+	if codigo == "RESOLVIDO" {
+		codigo, _, _ = strings.Cut(texto, ":")
+	}
+	switch {
+	case alertasDoPnT[codigo]:
+		return dominio.ConectorPnT
+	case strings.HasPrefix(codigo, "FLEXSCAN_"), codigo == "RECUSA_FLEXSCAN":
+		return dominio.ConectorFlexscan
+	}
+	return ConectorServico
 }
 
 // ---------------------------------------------------------------- utilitários
@@ -1512,35 +1542,8 @@ func (m *Motor) TrafegoFlexscanDoDia(corretora, dia string) (map[string]any, boo
 	if c == nil {
 		return nil, err != nil, err
 	}
-	de, ate, err := Dia(dia)
-	if err != nil {
-		return nil, true, err
-	}
-	evs, err := m.repo.EventosFlexscanEntre(de, ate, LimiteEventosDiaFlexscan, m.amb, c.nome)
-	if err != nil {
-		return nil, true, err
-	}
-	ops, _, err := m.repo.CarregarDia(dia)
-	if err != nil {
-		return nil, true, err
-	}
-	donos := map[string]int{}
-	for _, o := range ops {
-		donos[o.Modulo+"/"+strconv.FormatInt(o.OperacaoID, 10)] = o.UID
-	}
-	ls := flexscan.LinhasDoRegistro(evs)
-	for i := range ls {
-		ls[i].Seq = int64(i + 1)
-	}
-	preencherOperacao(ls, func(mod string, op int64) (int, bool) {
-		uid, ok := donos[mod+"/"+strconv.FormatInt(op, 10)]
-		return uid, ok
-	})
-	if ls == nil {
-		ls = []flexscan.LinhaTrafego{}
-	}
-	return map[string]any{"dia": dia, "mensagens": ls, "ultimo_seq": len(ls), "eventos": len(evs),
-		"cortado": len(evs) >= LimiteEventosDiaFlexscan}, true, nil
+	r, err := trafegoDoDia(m.repo, m.amb, c.nome, dia)
+	return r, true, err
 }
 
 // mesmaOperacao (v1.21.1): a operação de um webhook com vários retratos, se todos forem dela.

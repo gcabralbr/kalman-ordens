@@ -23,7 +23,7 @@ func TestASCII(t *testing.T) {
 func TestEmitirEmASCII(t *testing.T) {
 	var pub string
 	n := &notifTeste{}
-	a := Novo(n, func(_, texto string, _ int64) { pub = texto }, nil, 0)
+	a := Novo(n, func(_, texto string, _ int64, _ Origem) { pub = texto }, nil, 0)
 	a.Emitir("RECUSA_PNT", "", "recusa: |meio − preco| não", 0)
 	if pub != "recusa: |meio - preco| nao" || n.ultimo != pub {
 		t.Fatalf("publicado %q, Telegram %q", pub, n.ultimo)

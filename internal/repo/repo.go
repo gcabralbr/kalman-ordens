@@ -90,6 +90,11 @@ type Repositorio interface {
 	// EventosFlexscanEntre (28/10): os eventos da ponte Flexscan (msgtype FLX-*) em [de, ate), os
 	// limite mais recentes, em ordem; o tráfego da aba "Flexscan ao vivo" recarregado na partida.
 	EventosFlexscanEntre(de, ate time.Time, limite int, ambiente, canal string) ([]EventoFIX, error)
+	// EventosFio (v1.34, GET /historico/fio): os eventos gravados em [de, ate) do ambiente, em ordem
+	// de id, a partir de f.DesdeID (exclusive), no máximo f.Limite.
+	EventosFio(de, ate time.Time, f FiltroFio) ([]EventoFIX, error)
+	// AmbienteTemOperacao (v1.34, GET /conectores): alguma operação gravada no ambiente, qualquer dia.
+	AmbienteTemOperacao(ambiente string) (bool, error)
 	PublicadosDaOperacao(modulo string, operacaoID int64) ([]Publicado, error)
 	// PublicadosEntre: [de, ate); tipo vazio = todos.
 	PublicadosEntre(de, ate time.Time, tipo string) ([]Publicado, error)
@@ -406,4 +411,73 @@ func (m *Memoria) EventosFlexscanEntre(de, ate time.Time, limite int, amb, canal
 		es = es[len(es)-limite:]
 	}
 	return es, nil
+}
+
+// FiltroFio (v1.34, SPEC-ADMIN-CONECTORES-v1 §3.5): o fio do dia gravado em kalmanordemevento.
+type FiltroFio struct {
+	Ambiente string
+	Conector string  // PNT (msgtype sem FLX-), FLEXSCAN (FLX-*); vazio = os dois
+	Canal    *string // a corretora da ponte Flexscan ("" = a ponte única); nil = todos
+	ClOrdID  string  // prefixo do ClOrdID (KM-P-234754 pega as versões -1, -2...)
+	DesdeID  int64
+	Limite   int // 0 = LimiteFioPadrao; no máximo LimiteFioMax
+}
+
+const (
+	LimiteFioPadrao = 500
+	LimiteFioMax    = 2000
+)
+
+func (f FiltroFio) limite() int {
+	switch {
+	case f.Limite <= 0:
+		return LimiteFioPadrao
+	case f.Limite > LimiteFioMax:
+		return LimiteFioMax
+	}
+	return f.Limite
+}
+
+func (f FiltroFio) aceita(e EventoFIX) bool {
+	flx := strings.HasPrefix(e.MsgType, "FLX-")
+	switch {
+	case e.ID <= f.DesdeID, dominio.AmbienteDe(e.Ambiente) != dominio.AmbienteDe(f.Ambiente):
+		return false
+	case f.Conector == dominio.ConectorPnT && flx, f.Conector == dominio.ConectorFlexscan && !flx:
+		return false
+	case f.Canal != nil && e.Canal != *f.Canal:
+		return false
+	}
+	return strings.HasPrefix(e.ClOrdID, f.ClOrdID)
+}
+
+func ordenarPorID(es []EventoFIX) {
+	sort.SliceStable(es, func(i, j int) bool { return es[i].ID < es[j].ID })
+}
+
+func (m *Memoria) EventosFio(de, ate time.Time, f FiltroFio) ([]EventoFIX, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var es []EventoFIX
+	for _, e := range m.eventos {
+		if !e.Em.Before(de) && e.Em.Before(ate) && f.aceita(e) {
+			es = append(es, e)
+		}
+	}
+	ordenarPorID(es)
+	if len(es) > f.limite() {
+		es = es[:f.limite()]
+	}
+	return es, nil
+}
+
+func (m *Memoria) AmbienteTemOperacao(amb string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, o := range m.ops {
+		if dominio.AmbienteDe(o.Ambiente) == dominio.AmbienteDe(amb) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

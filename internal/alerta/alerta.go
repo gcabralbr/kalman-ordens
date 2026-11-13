@@ -52,12 +52,17 @@ type Notificador interface {
 	Notificar(codigo, texto string)
 }
 
+// Origem (v1.34, SPEC-ADMIN-CONECTORES-v1 §3.2): o conector (PNT, FLEXSCAN) e o canal (a corretora
+// da ponte Flexscan no REAL) de quem emitiu. Vazia: o motor decide pelo código.
+type Origem struct{ Conector, Canal string }
+
 // Publicador grava o evento ALERTA para o gestor.
-type Publicador func(codigo, texto string, operacaoID int64)
+type Publicador func(codigo, texto string, operacaoID int64, o Origem)
 
 type critico struct {
 	codigo, texto string
 	operacao      int64
+	origem        Origem    // a de quem emitiu: o RESOLVIDO sai com ela
 	desde         time.Time // a emissão: a repetição espaça depois de curtaAte
 	proximo       time.Time
 }
@@ -71,6 +76,15 @@ type Alertas struct {
 	curtaAte  time.Duration // 0 = sempre a repeticao
 	longa     time.Duration
 	ativos    map[string]*critico
+	origem    Origem // a de quem emite agora (ComOrigem)
+}
+
+// ComOrigem: as emissões e resoluções dentro de f saem com a origem o.
+func (a *Alertas) ComOrigem(o Origem, f func()) {
+	ant := a.origem
+	a.origem = o
+	defer func() { a.origem = ant }()
+	f()
 }
 
 func Novo(n Notificador, p Publicador, rel relogio.Relogio, repeticao time.Duration) *Alertas {
@@ -97,9 +111,9 @@ func (a *Alertas) Emitir(codigo, chave, texto string, operacaoID int64) {
 			return
 		}
 		agora := a.rel.Agora()
-		a.ativos[chave] = &critico{codigo: codigo, texto: texto, operacao: operacaoID, desde: agora, proximo: agora.Add(a.repeticao)}
+		a.ativos[chave] = &critico{codigo: codigo, texto: texto, operacao: operacaoID, origem: a.origem, desde: agora, proximo: agora.Add(a.repeticao)}
 	}
-	a.enviar(codigo, texto, operacaoID)
+	a.enviar(codigo, texto, operacaoID, a.origem)
 }
 
 // Atualizar (v1.32 §4): troca o texto de um crítico aberto (as repetições seguintes saem com ele,
@@ -121,7 +135,11 @@ func (a *Alertas) Resolver(chave string) {
 	if chave != c.codigo {
 		texto = fmt.Sprintf("%s: %s", c.codigo, chave)
 	}
-	a.enviar("RESOLVIDO", texto, c.operacao)
+	o := c.origem
+	if o == (Origem{}) {
+		o = a.origem
+	}
+	a.enviar("RESOLVIDO", texto, c.operacao, o)
 }
 
 // Ativo diz se a condição está aberta.
@@ -157,11 +175,11 @@ func (a *Alertas) Tick() {
 	}
 }
 
-func (a *Alertas) enviar(codigo, texto string, op int64) {
+func (a *Alertas) enviar(codigo, texto string, op int64, o Origem) {
 	metricas.Alertas.Inc(codigo) // só o que sai (um crítico já ativo não conta de novo)
 	slog.Warn("ALERTA", "codigo", codigo, "texto", texto, "operacao", op)
 	a.notif.Notificar(codigo, texto)
 	if a.publicar != nil {
-		a.publicar(codigo, texto, op)
+		a.publicar(codigo, texto, op, o)
 	}
 }

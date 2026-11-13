@@ -470,14 +470,18 @@ func conferir(p Passo, capturas map[string]bool) error {
 			return fmt.Errorf("%s: %w", p.Origem, err)
 		}
 	case "reinicia_servico":
-		// v1.32: reinicia_servico [salta=DUR] — o relógio pula com o serviço fora (o dia seguinte)
+		// v1.32: reinicia_servico [salta=DUR] — o relógio pula com o serviço fora (o dia seguinte);
+		// v1.34: [config=CHAVE=VALOR ...] — sobe com a chave trocada (vazio apaga)
 		for _, a := range p.Args {
 			k, v, ok := strings.Cut(a, "=")
-			if !ok || k != "salta" {
-				return fmt.Errorf("%s: reinicia_servico aceita só salta=DUR", p.Origem)
-			}
-			if _, err := Duracao(v); err != nil {
-				return fmt.Errorf("%s: %w", p.Origem, err)
+			switch {
+			case ok && k == "salta":
+				if _, err := Duracao(v); err != nil {
+					return fmt.Errorf("%s: %w", p.Origem, err)
+				}
+			case ok && k == "config" && strings.Contains(v, "="):
+			default:
+				return fmt.Errorf("%s: reinicia_servico aceita salta=DUR e config=CHAVE=VALOR", p.Origem)
 			}
 		}
 	case "preco":

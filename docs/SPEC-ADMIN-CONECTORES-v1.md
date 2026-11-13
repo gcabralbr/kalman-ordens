@@ -1,4 +1,4 @@
-# SPEC admin por conector e ambiente — v1 (13/11/2026, proposta, sem código)
+# SPEC admin por conector e ambiente — v1 (13/11/2026; aprovada e feita na v1.34)
 
 Para a tela `kalman-admin.html` (KalmanWIN) servir aos dois conectores (PnT e Flexscan) nos dois
 ambientes (SIMULADOR e REAL), inclusive com uma instância desligada (o REAL fora de
@@ -177,3 +177,15 @@ abas de histórico.
 - Compatível: sem os parâmetros novos, `/sessao/eventos` e `/flexscan/trafego` respondem como hoje,
   com campos a mais. Só mudam os códigos HTTP do §3.6. A tela atual trata 503/400 como erro genérico,
   e 409 cai no mesmo caminho até ela ser atualizada.
+
+## 6. Aprovação e implementação (13/11)
+
+A SPEC foi aprovada com as três decisões do §5: v1.34; o log do QuickFIX fora da API, com o comando
+`kalman-ordens fio` na CLI; a consulta na API da Flexscan fora.
+
+A implementação e os pontos que ela decidiu estão em `SPEC-ORDENS-v1.34.md` §1.3:
+- o `historico` do `/conectores` é "há operação gravada";
+- as linhas antigas da sessão só aparecem sem o filtro de ambiente;
+- os alertas da fonte de preço ficam `SERVICO`;
+- a linha da Flexscan no fio é `{seq, conector, canal, linha}`.
+

@@ -163,9 +163,9 @@ func (r *MariaDB) GravarLote(l *Lote) error {
 	}
 	var ses [][]any
 	for _, e := range l.Sessao {
-		ses = append(ses, []any{cortar(e.Tipo, 16), cortar(e.Texto, 1000), utc(e.Em)})
+		ses = append(ses, []any{cortar(e.Tipo, 16), cortar(e.Texto, 1000), utc(e.Em), nulo(e.Ambiente), nulo(e.Conector), nulo(e.Canal)})
 	}
-	if err := inserir(tx, "INSERT INTO kalmanordemsessao (tipo, texto, em)", 3, ses, ""); err != nil {
+	if err := inserir(tx, "INSERT INTO kalmanordemsessao (tipo, texto, em, ambiente, conector, canal)", 6, ses, ""); err != nil {
 		return err
 	}
 	var ped [][]any

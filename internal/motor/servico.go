@@ -318,26 +318,42 @@ func (s *Servico) comPnT(amb string) (*Motor, bool) {
 	return s.principal, true
 }
 
-// ConsultarPnTAssincrono: GET /pnt/ordens[?ambiente=].
-func (s *Servico) ConsultarPnTAssincrono(amb string) <-chan Resposta {
-	m, ok := s.comPnT(amb)
-	if !ok {
-		ch := make(chan Resposta, 1)
-		ch <- Resposta{"erro": "AMBIENTE_NAO_PERMITIDO", "motivo": "ambiente " + amb + " sem instancia nesta maquina"}
-		return ch
+// pntDe (v1.34, SPEC-ADMIN-CONECTORES-v1 §3.6): a instância com a sessão FIX do ambiente (já
+// validado; vazio = a que tiver), ou o que falta: a instância (INSTANCIA_DESLIGADA) ou o PnT nela
+// (CONECTOR_AUSENTE).
+func (s *Servico) pntDe(amb string) (*Motor, *Indisponivel) {
+	if amb == "" {
+		m, _ := s.comPnT("")
+		amb = m.amb
 	}
-	return m.ConsultarPnTAssincrono()
+	m, ind := s.instanciaDe(amb, dominio.ConectorPnT)
+	if ind != nil {
+		return nil, ind
+	}
+	if m.fix == nil || m.p.PnTDesligado {
+		return nil, s.indisponivel(ConectorAusente, amb, dominio.ConectorPnT, "o PnT esta desligado nesta instancia (PNT_DESLIGADO)")
+	}
+	return m, nil
+}
+
+// ConsultarPnTAssincrono: GET /pnt/ordens[?ambiente=] (o 35=AF pela sessão viva).
+func (s *Servico) ConsultarPnTAssincrono(amb string) (<-chan Resposta, *Indisponivel) {
+	m, ind := s.pntDe(amb)
+	if ind != nil {
+		return nil, ind
+	}
+	return m.ConsultarPnTAssincrono(), nil
 }
 
 // ConsultarAoVivo: GET /sessao/ao-vivo[?ambiente=]; sem o parâmetro, a instância com a sessão FIX.
-func (s *Servico) ConsultarAoVivo(amb string, desde int64, limite int) (map[string]any, bool) {
-	m, ok := s.comPnT(amb)
-	if !ok {
-		return nil, false
+func (s *Servico) ConsultarAoVivo(amb string, desde int64, limite int) (map[string]any, *Indisponivel) {
+	m, ind := s.pntDe(amb)
+	if ind != nil {
+		return nil, ind
 	}
 	r := m.ConsultarAoVivo(desde, limite)
 	r["ambiente"] = m.amb
-	return r, true
+	return r, nil
 }
 
 // flexscanDo: GET /flexscan/trafego[?ambiente=]; sem o parâmetro, o SIMULADOR (como antes).
@@ -352,31 +368,45 @@ func (s *Servico) flexscanDo(amb string) (*Motor, bool) {
 	return ms[0], true
 }
 
-// TrafegoFlexscan: o buffer da ponte do ambiente. ok falso: sem instância ou sem Flexscan.
-// v1.30: ?corretora= escolhe a ponte no modo por corretora (erro: corretora inválida, 400).
-func (s *Servico) TrafegoFlexscan(amb, corretora string, desde int64, limite int) (map[string]any, bool, error) {
+// TrafegoFlexscan: o buffer da ponte do ambiente (ao vivo). v1.34: sem a instância,
+// INSTANCIA_DESLIGADA; sem a Flexscan nela, CONECTOR_AUSENTE (409). v1.30: ?corretora= escolhe a
+// ponte no modo por corretora (erro: corretora inválida, 400).
+func (s *Servico) TrafegoFlexscan(amb, corretora string, desde int64, limite int) (map[string]any, *Indisponivel, error) {
 	m, ok := s.flexscanDo(amb)
 	if !ok {
-		return nil, false, nil
+		_, ind := s.instanciaDe(amb, dominio.ConectorFlexscan)
+		return nil, ind, nil
 	}
 	r, ok, err := m.TrafegoFlexscan(corretora, desde, limite)
-	if ok && err == nil {
+	if !ok {
+		return nil, s.indisponivel(ConectorAusente, m.amb, dominio.ConectorFlexscan, "a Flexscan nao esta configurada nesta instancia"), nil
+	}
+	if err == nil {
 		r["ambiente"] = m.amb
 	}
-	return r, ok, err
+	return r, nil, err
 }
 
-// TrafegoFlexscanDoDia: o dia inteiro, do registro do ambiente.
-func (s *Servico) TrafegoFlexscanDoDia(amb, corretora, dia string) (map[string]any, bool, error) {
-	m, ok := s.flexscanDo(amb)
-	if !ok {
-		return nil, false, nil
+// TrafegoFlexscanDoDia: o dia inteiro, do registro do ambiente. v1.34: do banco também sem a
+// instância ou sem a Flexscan nela (a corretora é o nome gravado no canal).
+func (s *Servico) TrafegoFlexscanDoDia(amb, corretora, dia string) (map[string]any, error) {
+	if amb == "" {
+		amb = s.principal.amb
 	}
-	r, ok, err := m.TrafegoFlexscanDoDia(corretora, dia)
-	if ok && err == nil {
-		r["ambiente"] = m.amb
+	if m := s.motores[amb]; m != nil {
+		r, ok, err := m.TrafegoFlexscanDoDia(corretora, dia)
+		if ok {
+			if err == nil {
+				r["ambiente"] = m.amb
+			}
+			return r, err
+		}
 	}
-	return r, ok, err
+	r, err := TrafegoFlexscanDoDiaSemInstancia(s.Repo(), amb, corretora, dia)
+	if err == nil {
+		r["ambiente"] = amb
+	}
+	return r, err
 }
 
 // BancadaPosicoes: a bancada da HML (só na instância com o PnT; recusada com o REAL permitido).

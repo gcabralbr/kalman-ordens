@@ -14,12 +14,13 @@ import (
 )
 
 func (r *MariaDB) RegistrarSessao(e EventoSessao) error {
-	_, err := r.db.Exec("INSERT INTO kalmanordemsessao (tipo, texto, em) VALUES (?,?,?)", e.Tipo, cortar(e.Texto, 1000), utc(e.Em))
+	_, err := r.db.Exec("INSERT INTO kalmanordemsessao (tipo, texto, em, ambiente, conector, canal) VALUES (?,?,?,?,?,?)",
+		e.Tipo, cortar(e.Texto, 1000), utc(e.Em), nulo(e.Ambiente), nulo(e.Conector), nulo(e.Canal))
 	return err
 }
 
 func (r *MariaDB) SessaoEntre(de, ate time.Time) ([]EventoSessao, error) {
-	rows, err := r.db.Query("SELECT tipo, texto, em FROM kalmanordemsessao WHERE em >= ? AND em < ? ORDER BY em, id", de.UTC(), ate.UTC())
+	rows, err := r.db.Query("SELECT tipo, texto, em, ambiente, conector, canal FROM kalmanordemsessao WHERE em >= ? AND em < ? ORDER BY em, id", de.UTC(), ate.UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -27,9 +28,11 @@ func (r *MariaDB) SessaoEntre(de, ate time.Time) ([]EventoSessao, error) {
 	var es []EventoSessao
 	for rows.Next() {
 		var e EventoSessao
-		if err := rows.Scan(&e.Tipo, &e.Texto, &e.Em); err != nil {
+		var amb, con, canal sql.NullString
+		if err := rows.Scan(&e.Tipo, &e.Texto, &e.Em, &amb, &con, &canal); err != nil {
 			return nil, err
 		}
+		e.Ambiente, e.Conector, e.Canal = amb.String, con.String, canal.String
 		es = append(es, e)
 	}
 	return es, rows.Err()
@@ -48,7 +51,7 @@ func (r *MariaDB) DiaDaOperacao(mod string, op int64) (string, bool, error) {
 }
 
 const colunasEvento = `id, ordem_id, modulo, direcao, msgtype, exectype, ordstatus, clordid, orderid37, execid, lastqty, lastpx,
-	cumqty, avgpx, texto, codigo, fix_raw, em`
+	cumqty, avgpx, texto, codigo, fix_raw, em, ambiente, canal`
 
 func (r *MariaDB) eventosFIX(where string, args ...any) ([]EventoFIX, error) {
 	rows, err := r.db.Query("SELECT "+colunasEvento+" FROM kalmanordemevento WHERE "+where+" ORDER BY em, id", args...)
@@ -60,12 +63,12 @@ func (r *MariaDB) eventosFIX(where string, args ...any) ([]EventoFIX, error) {
 	for rows.Next() {
 		var e EventoFIX
 		var ordem, lq, cq sql.NullInt64
-		var et, st, cl, id37, ex, lp, ap, tx, cod, raw sql.NullString
-		if err := rows.Scan(&e.ID, &ordem, &e.Modulo, &e.Direcao, &e.MsgType, &et, &st, &cl, &id37, &ex, &lq, &lp, &cq, &ap, &tx, &cod, &raw, &e.Em); err != nil {
+		var et, st, cl, id37, ex, lp, ap, tx, cod, raw, canal sql.NullString
+		if err := rows.Scan(&e.ID, &ordem, &e.Modulo, &e.Direcao, &e.MsgType, &et, &st, &cl, &id37, &ex, &lq, &lp, &cq, &ap, &tx, &cod, &raw, &e.Em, &e.Ambiente, &canal); err != nil {
 			return nil, err
 		}
 		e.OrdemID, e.ExecType, e.OrdStatus, e.ClOrdID, e.OrderID, e.ExecID = ordem.Int64, et.String, st.String, cl.String, id37.String, ex.String
-		e.Texto, e.Codigo, e.Bruta = tx.String, cod.String, raw.String
+		e.Texto, e.Codigo, e.Bruta, e.Canal = tx.String, cod.String, raw.String, canal.String
 		if lq.Valid {
 			v := int(lq.Int64)
 			e.LastQty = &v
@@ -212,4 +215,33 @@ func (r *MariaDB) EventosFlexscanEntre(de, ate time.Time, limite int, amb, canal
 	// v1.30: o canal (a corretora); vazio = a ponte única (canal NULL)
 	return r.eventosFIX(`id IN (SELECT id FROM (SELECT id FROM kalmanordemevento WHERE em >= ? AND em < ? AND msgtype LIKE 'FLX-%' AND ambiente = ?
 		AND COALESCE(canal, '') = ? ORDER BY id DESC LIMIT ?) ultimos)`, de.UTC(), ate.UTC(), dominio.AmbienteDe(amb), canal, limite)
+}
+
+func (r *MariaDB) EventosFio(de, ate time.Time, f FiltroFio) ([]EventoFIX, error) {
+	cond := "em >= ? AND em < ? AND ambiente = ? AND id > ?"
+	args := []any{de.UTC(), ate.UTC(), dominio.AmbienteDe(f.Ambiente), f.DesdeID}
+	switch f.Conector {
+	case dominio.ConectorPnT:
+		cond += " AND msgtype NOT LIKE 'FLX-%'"
+	case dominio.ConectorFlexscan:
+		cond += " AND msgtype LIKE 'FLX-%'"
+	}
+	if f.Canal != nil {
+		cond += " AND COALESCE(canal, '') = ?"
+		args = append(args, *f.Canal)
+	}
+	if f.ClOrdID != "" {
+		cond += " AND clordid LIKE ?"
+		args = append(args, strings.NewReplacer("%", `\%`, "_", `\_`).Replace(f.ClOrdID)+"%")
+	}
+	args = append(args, f.limite())
+	es, err := r.eventosFIX("id IN (SELECT id FROM (SELECT id FROM kalmanordemevento WHERE "+cond+" ORDER BY id LIMIT ?) primeiros)", args...)
+	ordenarPorID(es)
+	return es, err
+}
+
+func (r *MariaDB) AmbienteTemOperacao(amb string) (bool, error) {
+	var tem bool
+	err := r.db.QueryRow("SELECT EXISTS(SELECT 1 FROM kalmanordemoperacao WHERE ambiente = ?)", dominio.AmbienteDe(amb)).Scan(&tem)
+	return tem, err
 }

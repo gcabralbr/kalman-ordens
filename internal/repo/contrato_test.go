@@ -3,6 +3,7 @@ package repo
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -414,7 +415,9 @@ func TestContratoHistorico(t *testing.T) {
 				t.Fatalf("PublicadosEntre ALERTA: %d", len(ps))
 			}
 
-			for _, e := range []EventoSessao{{"LOGON", "logon aceito", em}, {"QUEDA", "caiu", em.Add(time.Second)}, {"LOGON", "ontem", em.Add(-24 * time.Hour)}} {
+			for _, e := range []EventoSessao{{Tipo: "LOGON", Texto: "logon aceito", Em: em},
+				{Tipo: "QUEDA", Texto: "caiu", Em: em.Add(time.Second), Ambiente: "REAL", Conector: "FLEXSCAN", Canal: "BTG"},
+				{Tipo: "LOGON", Texto: "ontem", Em: em.Add(-24 * time.Hour)}} {
 				if err := r.RegistrarSessao(e); err != nil {
 					t.Fatal(err)
 				}
@@ -444,7 +447,8 @@ func TestContratoHistorico(t *testing.T) {
 				t.Fatalf("PedidosDaOperacao KALMAN: %d", len(ps))
 			}
 			ss, err := r.SessaoEntre(em.Add(-time.Hour), em.Add(time.Hour))
-			if err != nil || len(ss) != 2 || ss[0].Tipo != "LOGON" || ss[1].Tipo != "QUEDA" || ss[1].Texto != "caiu" || !ss[1].Em.Equal(em.Add(time.Second)) {
+			if err != nil || len(ss) != 2 || ss[0].Tipo != "LOGON" || ss[0].Ambiente != "" || ss[0].Conector != "" || ss[1].Tipo != "QUEDA" || ss[1].Texto != "caiu" ||
+				!ss[1].Em.Equal(em.Add(time.Second)) || ss[1].Ambiente != "REAL" || ss[1].Conector != "FLEXSCAN" || ss[1].Canal != "BTG" {
 				t.Fatalf("SessaoEntre: %+v %v", ss, err)
 			}
 		})
@@ -679,6 +683,61 @@ func TestContratoAmbiente(t *testing.T) {
 			hs, err := r.Habilitacoes()
 			if err != nil || len(hs) != 2 || hs[0].Ambiente != dominio.AmbienteSimulador || hs[1].Ambiente != dominio.AmbienteReal {
 				t.Fatalf("habilitações: %+v %v", hs, err)
+			}
+		})
+	}
+}
+
+// v1.34 (SPEC-ADMIN-CONECTORES-v1 §3.5): o fio do dia gravado, por ambiente, conector, canal e
+// prefixo do ClOrdID, em ordem de id e paginado por desde.
+func TestContratoFio(t *testing.T) {
+	for nome, novo := range backends(t) {
+		t.Run(nome, func(t *testing.T) {
+			r := novo(t)
+			em := time.Date(2026, 11, 13, 14, 0, 0, 0, time.UTC)
+			evs := []EventoFIX{
+				{Direcao: "ENV", MsgType: "D", ClOrdID: "KM-E-1-1", Ambiente: "REAL", Bruta: "35=D", Em: em},
+				{Direcao: "REC", MsgType: "8", ClOrdID: "KM-E-1-1", OrderID: "o1", ExecID: "x1", Ambiente: "REAL", Em: em.Add(time.Second)},
+				{Direcao: "ENV", MsgType: "FLX-POST", ClOrdID: "KM-E-2-1", Ambiente: "REAL", Canal: "BTG", Em: em.Add(2 * time.Second)},
+				{Direcao: "ENV", MsgType: "FLX-POST", ClOrdID: "KM-E-3-1", Ambiente: "REAL", Em: em.Add(3 * time.Second)},
+				{Direcao: "ENV", MsgType: "D", ClOrdID: "KM-P-1-1", Ambiente: "SIMULADOR", Em: em.Add(4 * time.Second)},
+				{Direcao: "ENV", MsgType: "D", ClOrdID: "KM-P-1-2", Ambiente: "REAL", Em: em.Add(-24 * time.Hour)},
+			}
+			for _, e := range evs {
+				if _, err := r.RegistrarEvento(e); err != nil {
+					t.Fatal(err)
+				}
+			}
+			de, ate := em.Add(-time.Hour), em.Add(time.Hour)
+			ids := func(es []EventoFIX) string {
+				var l []string
+				for _, e := range es {
+					l = append(l, e.ClOrdID+"/"+e.Canal)
+				}
+				return strings.Join(l, " ")
+			}
+			btg, unica := "BTG", ""
+			for _, c := range []struct {
+				f    FiltroFio
+				quer string
+			}{
+				{FiltroFio{Ambiente: "REAL"}, "KM-E-1-1/ KM-E-1-1/ KM-E-2-1/BTG KM-E-3-1/"},
+				{FiltroFio{Ambiente: "REAL", Conector: "PNT"}, "KM-E-1-1/ KM-E-1-1/"},
+				{FiltroFio{Ambiente: "REAL", Conector: "FLEXSCAN"}, "KM-E-2-1/BTG KM-E-3-1/"},
+				{FiltroFio{Ambiente: "REAL", Conector: "FLEXSCAN", Canal: &btg}, "KM-E-2-1/BTG"},
+				{FiltroFio{Ambiente: "REAL", Conector: "FLEXSCAN", Canal: &unica}, "KM-E-3-1/"},
+				{FiltroFio{Ambiente: "SIMULADOR", ClOrdID: "KM-P-1"}, "KM-P-1-1/"},
+				{FiltroFio{Ambiente: "REAL", Limite: 1}, "KM-E-1-1/"},
+			} {
+				es, err := r.EventosFio(de, ate, c.f)
+				if err != nil || ids(es) != c.quer {
+					t.Fatalf("%+v: %q %v, quer %q", c.f, ids(es), err, c.quer)
+				}
+			}
+			todos, _ := r.EventosFio(de, ate, FiltroFio{Ambiente: "REAL"})
+			resto, _ := r.EventosFio(de, ate, FiltroFio{Ambiente: "REAL", DesdeID: todos[1].ID})
+			if ids(resto) != "KM-E-2-1/BTG KM-E-3-1/" || todos[0].Bruta != "35=D" || todos[0].Ambiente != "REAL" {
+				t.Fatalf("desde: %q %+v", ids(resto), todos[0])
 			}
 		})
 	}

@@ -9,6 +9,9 @@ type EventoSessao struct {
 	Tipo  string // LOGON | LOGOUT | QUEDA | LOGON_RECUSADO | RESEND | CONCILIACAO | ALERTA
 	Texto string
 	Em    time.Time
+	// v1.34 (0018): o ambiente da instância, o conector de quem emitiu (PNT, FLEXSCAN, SERVICO) e o
+	// canal (a corretora da ponte Flexscan no REAL). Vazios nas linhas de antes da 0018.
+	Ambiente, Conector, Canal string
 }
 
 func (m *Memoria) RegistrarSessao(e EventoSessao) error {

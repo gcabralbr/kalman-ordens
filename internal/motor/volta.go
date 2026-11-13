@@ -270,6 +270,9 @@ func (m *Motor) montarLote() *repo.Lote {
 	for i := range m.v.eventos {
 		m.v.eventos[i].Ambiente = m.amb // v1.26 (0015): o evento é do ambiente da instância
 	}
+	for i := range m.v.sessao {
+		m.v.sessao[i].Ambiente = m.amb // v1.34 (0018)
+	}
 	l := &repo.Lote{Eventos: m.v.eventos, Publicados: m.v.publicados, Estados: m.v.estados, Sessao: m.v.sessao}
 	m.v.eventos, m.v.publicados, m.v.estados, m.v.sessao = nil, nil, nil, nil
 	m.v.muPedidos.Lock()

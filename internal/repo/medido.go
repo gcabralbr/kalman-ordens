@@ -115,6 +115,12 @@ func (m *Medido) EventosFIXDasOrdens(ids []int64) ([]EventoFIX, error) {
 func (m *Medido) EventosFlexscanEntre(de, ate time.Time, limite int, amb, canal string) ([]EventoFIX, error) {
 	return medir("EventosFlexscanEntre", func() ([]EventoFIX, error) { return m.Base.EventosFlexscanEntre(de, ate, limite, amb, canal) })
 }
+func (m *Medido) EventosFio(de, ate time.Time, f FiltroFio) ([]EventoFIX, error) {
+	return medir("EventosFio", func() ([]EventoFIX, error) { return m.Base.EventosFio(de, ate, f) })
+}
+func (m *Medido) AmbienteTemOperacao(amb string) (bool, error) {
+	return medir("AmbienteTemOperacao", func() (bool, error) { return m.Base.AmbienteTemOperacao(amb) })
+}
 func (m *Medido) PublicadosDaOperacao(mod string, id int64) ([]Publicado, error) {
 	return medir("PublicadosDaOperacao", func() ([]Publicado, error) { return m.Base.PublicadosDaOperacao(mod, id) })
 }
