@@ -137,4 +137,24 @@ depois de alguns pregões sem problema.
 - a v1.32 entra no sábado, 14/11 (`INSTALACAO-2026-11-14-v1.32.md`);
 - segunda, 16/11, é a segunda vez do teste, já com a linha única `FLEXSCAN_ABERTURA`.
 
-**Resultado de 13/11:** (a preencher depois da conferência das 08:05)
+**Resultado de 13/11: passou.** Conferido às 08:05.
+
+| hora | o que houve |
+|---|---|
+| 01:37:51 | "flexscan: sem sessão até a abertura" (token vencido fora da janela), sem alerta |
+| 08:02:00.031 | agenda `ativa por=janela` |
+| 08:02:00.800 | `LOGIN reconexao OK`, status 200, em 769 ms; token até 18:02 |
+| 08:02:00.863 | conferência: `ausente`, em 29 ms (a limpeza da madrugada) |
+| 08:02:01.000 | recadastro (`order.all,algo.changed`), em 136 ms |
+| 08:02:01.010 | conferência: `presente`, em 10 ms |
+
+No Telegram:
+- `FLEXSCAN_WEBHOOK_AUSENTE` às 08:02:01.000 e `RESOLVIDO` às 08:02:01.011, o esperado com a v1.31;
+- a `CONCILIACAO` (0 ordens, posição 0) às 08:02:03;
+- **nenhum `FLEXSCAN_LOGIN`.**
+
+Nos dias anteriores, o login das 08:00:00 ficava sem resposta em 3 s. O das 08:02:00 passou na
+primeira tentativa. O tempo dele, 769 ms, ainda é alto perto dos ~180 ms de um login comum, mas fica
+bem dentro dos 3 s.
+
+08:15/08:30: (a conferir às 08:33)
