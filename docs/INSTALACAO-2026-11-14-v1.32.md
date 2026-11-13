@@ -1,5 +1,8 @@
 # v1.32 (com a v1.31.1) na .53 — instalação (sábado, 14/11, sem pregão)
 
+> **Substituído em 13/11 pelo `INSTALACAO-2026-11-14-v1.34.md`:** no sábado entra direto a v1.34
+> (`911caf424346`), que contém a v1.31.1, a v1.32 e a v1.33. Este roteiro não é mais seguido.
+
 O binário é o do worktree limpo `../kalman-ordens-v132c`, commit `02ee0f348001`: a v1.32 com o
 merge da v1.31.1 (13/11). A suíte completa passou nele em 13/11
 (`var/suite132m-20261113-103322.log`).
