@@ -900,6 +900,8 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return e.eventos(p)
 	case "alerta", "sem_alerta":
 		return e.alerta(p)
+	case "telegram":
+		return e.telegram(p.Args)
 	}
 	if strings.HasPrefix(p.Verbo, "flx_") {
 		return e.flexscan(p)
@@ -1206,6 +1208,32 @@ func (e *Executor) conferirASCII() error {
 		if err := soASCII("Telegram", t); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// telegram (v1.36): telegram CODIGO = N — quantas mensagens do código foram ao Telegram desde o
+// início do roteiro, com as repetições dos críticos (o evento ALERTA não se repete; o "uma vez" do
+// REAL_CADASTRO_INUTILIZAVEL só se prova aqui).
+func (e *Executor) telegram(args []string) error {
+	if len(args) != 3 || args[1] != "=" {
+		return fmt.Errorf("telegram CODIGO = N")
+	}
+	quer, err := strconv.Atoi(args[2])
+	if err != nil {
+		return fmt.Errorf("telegram CODIGO = N: %v", err)
+	}
+	e.ocioso()
+	e.notif.mu.Lock()
+	defer e.notif.mu.Unlock()
+	var achou []string
+	for _, t := range e.notif.n {
+		if strings.HasPrefix(t, args[0]+": ") {
+			achou = append(achou, t)
+		}
+	}
+	if len(achou) != quer {
+		return fmt.Errorf("telegram %s: %d mensagem(ns), esperava %d: %v", args[0], len(achou), quer, achou)
 	}
 	return nil
 }

@@ -4,9 +4,6 @@ config ORDENS_AMBIENTE=
 config AMBIENTES_PERMITIDOS=SIM,REAL
 config FLEXSCAN_URL=falso
 config REAL_FLEXSCAN_URL=falso
-config REAL_LIMITE_QTD_ORDEM=1
-config REAL_LIMITE_PERDA_DIA_PTS=300
-config REAL_LIMITE_ENTRADAS_DIA=10
 config LIMITE_INTERVALO_ENTRADAS_S=0
 config LIMITE_ENTRADAS_MIN=10
 config LIMITE_RECUSAS_PARADA=50
@@ -14,11 +11,11 @@ config LIMITE_RECUSAS_PARADA=50
 usuario 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
 usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
 habilita 8 conectores=flexscan
-aprova 8 conta=715124 corretora=88 conector=flexscan
-# v1.35 (REAL_UIDS e REAL_CONTAS não existem mais): uid 10 aprovado numa conta e com outra no GQ;
+aprova 8
+# v1.36: uid 10 aprovado, com uma corretora que o sistema não atende no cadastro do GQ (inutilizável);
 # uid 11 só no SIMULADOR, sem aprovação no REAL
-usuario 10 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715125"}}
-aprova 10 conta=715124 corretora=88 conector=flexscan
+usuario 10 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":107,"CCONroConta":"715125"}}
+aprova 10
 usuario 11 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
 habilita 11 conectores=flexscan
 
@@ -64,15 +61,17 @@ entrada 11901 C uid=8 ambiente=REAL
 resposta aceito=false codigo=AMBIENTE_DIVERGENTE
 flx_nada
 
-# --- o teto do REAL: uid sem aprovação, conta do GQ diferente da aprovada, 2 contratos
+# --- o REAL: uid sem aprovação, cadastro do GQ inutilizável (corretora 107), e uma segunda entrada
+# do uid 8 com a 11902 aberta (v1.36: sem QTD_MAXIMA no REAL; a trava é a de uma operação aberta)
 entrada 11903 C uid=11 ambiente=REAL
 resposta aceito=false codigo=REAL_SEM_APROVACAO
 alerta REAL_RECUSA_ESTADO
 entrada 11904 C uid=10 ambiente=REAL
-resposta aceito=false codigo=REAL_CONTA_DIVERGENTE "motivo=~aprovada FLEXSCAN / Capital (88) / conta 715124, atual FLEXSCAN / Capital (88) / conta 715125"
-alerta REAL_CONTA_DIVERGENTE
+resposta aceito=false codigo=REAL_CADASTRO_INUTILIZAVEL causa=CORRETORA_NAO_ATENDIDA "motivo=~corretora 107 nao atendida"
+alerta REAL_CADASTRO_INUTILIZAVEL
 entrada 11905 C uid=8 ambiente=REAL qtd=2
-resposta aceito=false codigo=QTD_MAXIMA
+resposta aceito=false codigo=UID_COM_OPERACAO_ABERTA
+alerta UID_COM_OPERACAO_ABERTA
 flx_nada
 
 # --- o retrato da ordem do REAL entregue no caminho do webhook do SIMULADOR: a ponte do simulador
@@ -88,12 +87,10 @@ evento SAIDA_EXECUTADA operacao_id=11902 origem=STOP_SERVIDOR
 evento ZERADA operacao_id=11902 ambiente=REAL
 avanca 1s
 saude ambientes.REAL.posicao=0 ambientes.SIMULADOR.posicao=1
-# a perda do dia do REAL (-510 pts, acima do REAL_LIMITE_PERDA_DIA_PTS=300) para só o REAL; o
-# SIMULADOR (-10 pts, limite 1500) segue
-saude ambientes.REAL.parada.modo=BLOQUEAR ambientes.REAL.parada.origem=auto ambientes.REAL.limites.resultado_dia_pts=-510
+# v1.36 (D7): a perda do dia do REAL (-510 pts) não para o REAL (sem a Parada automática por perda; o
+# disjuntor é do Kalman, por usuário); cada ambiente com o seu resultado
+saude ambientes.REAL.parada=null ambientes.REAL.limites.resultado_dia_pts=-510
 saude ambientes.SIMULADOR.parada=null parada=null ambientes.SIMULADOR.limites.resultado_dia_pts=-10
-entrada 11906 C uid=8 ambiente=REAL
-resposta aceito=false codigo=PARADA
 
 # --- a parada e a retomada só do REAL pelo admin: o SIMULADOR segue
 http POST /parada {"modo":"BLOQUEAR","origem":"ADMIN","motivo":"teste","por":12,"ambiente":"REAL"}
@@ -113,11 +110,11 @@ resposta aceito=true ambientes.SIMULADOR.codigo=RETOMADO ambientes.REAL.codigo=R
 saude parada=null ambientes.REAL.parada=null
 
 # --- restart: cada operação volta na sua instância (a do SIMULADOR protegida, a do REAL zerada); a
-# perda do dia do REAL, recontada na partida, para de novo só o REAL
+# perda do dia do REAL é recontada na partida (v1.36: sem Parada por ela)
 reinicia_servico
 aguarda_logon
 avanca 3s
-saude ambientes.SIMULADOR.posicao=1 ambientes.REAL.posicao=0 parada=null ambientes.REAL.parada.origem=auto ambientes.REAL.limites.resultado_dia_pts=-510
+saude ambientes.SIMULADOR.posicao=1 ambientes.REAL.posicao=0 parada=null ambientes.REAL.parada=null ambientes.REAL.limites.resultado_dia_pts=-510
 http GET /ordens/11902
 resposta ambiente=REAL estado=ZERADA
 # a saída do SIMULADOR, com o ambiente gravado

@@ -1,33 +1,36 @@
-cenario 126 O REAL por corretora sem o guarda-chuva da corretora do usuário (v1.30): só a CMC configurada; o usuário da BTG recebe CORRETORA_SEM_CREDENCIAL no /destino e na entrada; o da CMC segue normal
+cenario 126 O REAL por corretora sem o guarda-chuva da corretora do usuário (v1.30): só a CMC configurada; o usuário da BTG recebe, desde a v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE §3), REAL_CADASTRO_INUTILIZAVEL com causa CORRETORA_NAO_ATENDIDA no /destino e na entrada, e um alerta só (o da corretora não declarada também); o da CMC segue normal
 hora 2026-10-30 10:00:00
 config ORDENS_AMBIENTE=
 config AMBIENTES_PERMITIDOS=REAL
 config REAL_FLEXSCAN_CORRETORAS=88:CMC
 config REAL_FLEXSCAN_CMC_URL=falso
 config REAL_FLEXSCAN_CMC_CONTAS=715124
-config REAL_LIMITE_QTD_ORDEM=1
-config REAL_LIMITE_PERDA_DIA_PTS=3000
-config REAL_LIMITE_ENTRADAS_DIA=10
 usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
 usuario 9 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"9001"}}
-aprova 8 conta=715124 corretora=88 conector=flexscan
-aprova 9 conta=9001 corretora=85 conector=flexscan
+aprova 8
+aprova 9
 # uid 10: CORSeqId 77, não declarado em REAL_FLEXSCAN_CORRETORAS nem das de sempre
 usuario 10 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":77,"CCONroConta":"7001"}}
-aprova 10 conta=7001 corretora=77 conector=flexscan
+aprova 10
 
 preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
 aguarda_logon
 avanca 3s
 alerta CONCILIACAO
+# o 1º passe do verificador na partida: um alerta para cada aprovado com o cadastro inutilizável
+evento ALERTA codigo=REAL_CADASTRO_INUTILIZAVEL "texto=~uid 9: cadastro do GQ nao utilizavel: corretora 85 sem credencial Flexscan nesta maquina (CORRETORA_NAO_ATENDIDA). Entradas REAL recusadas ate o cadastro ser corrigido. (visto na partida)"
+evento ALERTA codigo=REAL_CADASTRO_INUTILIZAVEL "texto=~uid 10: cadastro do GQ nao utilizavel: corretora 77 nao atendida"
 http GET /usuarios/9/destino?ambiente=REAL
-resposta ambientes.REAL.codigo=CORRETORA_SEM_CREDENCIAL ambientes.REAL.pode_enviar=false ambientes.REAL.corretora=BTG
+resposta ambientes.REAL.codigo=REAL_CADASTRO_INUTILIZAVEL ambientes.REAL.causa=CORRETORA_NAO_ATENDIDA "ambientes.REAL.motivo=~corretora 85 sem credencial Flexscan" ambientes.REAL.pode_enviar=false
 entrada 12601 C uid=9 ambiente=REAL
-resposta aceito=false codigo=CORRETORA_SEM_CREDENCIAL
+resposta aceito=false codigo=REAL_CADASTRO_INUTILIZAVEL causa=CORRETORA_NAO_ATENDIDA
+entrada 12603 C uid=9 ambiente=REAL
+resposta aceito=false codigo=REAL_CADASTRO_INUTILIZAVEL
+sem_alerta REAL_CADASTRO_INUTILIZAVEL
 flx_ambiente REAL:CMC
 flx_nada
 http GET /usuarios/10/destino?ambiente=REAL
-resposta ambientes.REAL.codigo=DESTINO_INVALIDO "ambientes.REAL.motivo=~outra entra em REAL_FLEXSCAN_CORRETORAS"
+resposta ambientes.REAL.codigo=REAL_CADASTRO_INUTILIZAVEL ambientes.REAL.causa=CORRETORA_NAO_ATENDIDA "ambientes.REAL.motivo=~corretora 77 nao atendida"
 http GET /usuarios/8/destino?ambiente=REAL
 resposta ambientes.REAL.pode_enviar=true
 entrada 12602 C uid=8 ambiente=REAL

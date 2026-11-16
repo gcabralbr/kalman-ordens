@@ -303,6 +303,47 @@ A atualização das telas (CC do Kalman) faz isto:
 - mostra o cadastro do GQ só como informação, com a causa em vermelho;
 - mapeia `REAL_CADASTRO_INUTILIZAVEL`.
 
+### 5.1 `GET /usuarios/{uid}/real` (a ficha, v1.36)
+
+O exemplo que o roteiro 132 confere (`contrato`). O 1450 aprovado, com o cadastro do GQ que o
+sistema não atende (corretora 107). `aprovado` sem conta e sem limites; `limites_instancia` e
+`divergencia` sempre `null`; o `gq` só como informação, com a causa em `erro`.
+
+```json
+{"uid": 1450, "estado": "APROVADO", "versao": 8,
+ "acoes": ["bloquear", "revogar"],
+ "aprovado": {"conector": null, "corretora_codigo": null, "corretora": null, "conta": null,
+              "qtd_max_ordem": null, "posicao_max": null,
+              "por": "admin:1450", "em": "2026-11-17T18:20:01.123-03:00", "motivo": "fase 1"},
+ "gq": {"conector": "PNT", "corretora_codigo": 107, "corretora": null, "conta": "4582351",
+        "lido_em": "2026-11-18T10:01:12.004-03:00", "valido": false,
+        "erro": {"codigo": "REAL_CADASTRO_INUTILIZAVEL", "causa": "CORRETORA_NAO_ATENDIDA",
+                 "motivo": "cadastro do GQ nao utilizavel: corretora 107 nao atendida pelo PnT (so BTG, 85)"}},
+ "divergencia": null,
+ "ultima_mudanca": {"evento": "APROVAR", "origem": "TELA", "por": "admin:1450", "em": "2026-11-17T18:20:01.123-03:00",
+                    "motivo": "fase 1"},
+ "limites_instancia": null,
+ "posicao": {"instancia": "LIGADA", "total": 1,
+             "operacoes": [{"operacao_id": 234754, "modulo": "KALMAN", "conta": "4582351", "simbolo": "WINZ26", "posicao": 1,
+                            "stop_corretora": {"estado": "VIVA", "preco_stop": 173835, "...": "§5.5 da v1.35"}}]},
+ "historico": [{"id": 90, "evento": "APROVAR", "estado_antes": "REVOGADO", "estado": "APROVADO", "versao": 8,
+                "conector": null, "corretora_codigo": null, "conta": null, "qtd_max_ordem": null, "posicao_max": null,
+                "gq": null, "origem": "TELA", "por": "admin:1450", "motivo": "fase 1",
+                "em": "2026-11-17T18:20:01.123-03:00"}]}
+```
+
+### 5.2 `GET /usuarios/real` (a lista, v1.36)
+
+`conector`/`corretora`/`conta` são os do GQ lidos agora; `cadastro_utilizavel` diz se o sistema os
+atende; `qtd_max_ordem`, `posicao_max` e `divergente_desde` sempre `null`.
+
+```json
+{"usuarios": [{"uid": 1450, "estado": "APROVADO", "conector": "PNT", "corretora_codigo": 85, "corretora": "BTG",
+               "conta": "4582351", "cadastro_utilizavel": true, "qtd_max_ordem": null, "posicao_max": null,
+               "versao": 8, "origem": "TELA", "alterado_por": "admin:1450", "alterado_em": "2026-11-17T18:20:01.123-03:00",
+               "divergente_desde": null}]}
+```
+
 ## 6. A regra de repetição dos alertas críticos
 
 **A regra atual** (v1.15, `internal/alerta`) vale para todo crítico:

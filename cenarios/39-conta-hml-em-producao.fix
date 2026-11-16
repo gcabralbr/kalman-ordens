@@ -1,13 +1,15 @@
 cenario 39 Instância PRODUCAO: conta de HML recusada (trava cruzada); conta real aceita, vai no 1 e no 116
 hora 2026-10-13 10:10:00
 # SPEC v1.2 U1, U3: em PRODUCAO o serviço lê usutxtconfigprd, e a conta NÃO pode estar em
-# ORDENS_CONTAS_HML → CONTA_AMBIENTE + alerta crítico (resolvido na próxima entrada válida do uid).
+# ORDENS_CONTAS_HML. v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE §3): é cadastro inutilizável —
+# REAL_CADASTRO_INUTILIZAVEL com causa CONTA_INVALIDA e o alerta uma vez (sem o crítico que repetia),
+# resolvido quando o cadastro volta a ser usável.
 # No logon, a conta de HML do uid habilitado também não entra no mass status: nenhum AF sai.
 config ORDENS_AMBIENTE=PRODUCAO
-# SPEC-AMBIENTES-v1: a equivalência PRODUCAO é o REAL; v1.35: a aprovação do REAL (aqui, com a conta
-# que o GQ tem, de HML: a trava cruzada recusa mesmo aprovada)
-aprova 7 conta=12345 corretora=85
-usuario 7 prd {"Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+# SPEC-AMBIENTES-v1: a equivalência PRODUCAO é o REAL; v1.35: a aprovação do REAL (v1.36: sem conta;
+# a do GQ é de HML: a trava cruzada recusa mesmo aprovada)
+aprova 7
+usuario 7 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"12345"}}
 
 preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
 aguarda_logon
@@ -17,16 +19,17 @@ nada 35=AF
 saude sessao_logada=true conciliando=false ambiente=PRODUCAO
 
 entrada 3901 C
-resposta aceito=false codigo=CONTA_AMBIENTE
-alerta CONTA_AMBIENTE
+resposta aceito=false codigo=REAL_CADASTRO_INUTILIZAVEL causa=CONTA_INVALIDA "motivo=~conta 12345 invalida no REAL"
+alerta REAL_CADASTRO_INUTILIZAVEL
+sem_alerta CONTA_AMBIENTE
 nada
 
-# a conta real no GQ e aprovada pelo admin
-usuario 7 prd {"Robo":{"CORSeqId":85,"CCONroConta":"7654321"}}
-aprova 7 conta=7654321 corretora=85
+# a conta real no GQ (sem nova aprovação: a conta é livre); a volta do verificador dá o RESOLVIDO
+usuario 7 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"7654321"}}
+avanca 31s
+alerta RESOLVIDO
 entrada 3902 C
 resposta aceito=true
 recebe 35=D 11=KM-E-3902-1 1=7654321 116=7654321 55=WINZ26 847=1031
-alerta RESOLVIDO
 http GET /ordens/3902
 resposta conta=7654321 destino=85 simbolo=WINZ26

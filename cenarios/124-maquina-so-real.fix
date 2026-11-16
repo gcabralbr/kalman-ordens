@@ -1,15 +1,12 @@
-cenario 124 A máquina só com o REAL (a .51, v1.29, SPEC-AMBIENTES D2 revisada): no SIMULADOR todo usuário é paper — o /destino mostra o paper como paper e recusa com clareza a configuração de SIMULADOR que aponta para um conector; o REAL segue normal
+cenario 124 A máquina só com o REAL (a .51, v1.29, SPEC-AMBIENTES D2 revisada): no SIMULADOR todo usuário é paper — o /destino mostra o paper como paper e recusa com clareza a configuração de SIMULADOR que aponta para um conector; o REAL segue normal; v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE D7): a máquina só REAL sobe sem nenhum REAL_LIMITE_*, e a aprovação sem conta
 hora 2026-10-30 10:00:00
 config ORDENS_AMBIENTE=
 config AMBIENTES_PERMITIDOS=REAL
 config REAL_FLEXSCAN_URL=falso
-config REAL_LIMITE_QTD_ORDEM=1
-config REAL_LIMITE_PERDA_DIA_PTS=300
-config REAL_LIMITE_ENTRADAS_DIA=10
 # uid 8: a configuração de SIMULADOR aponta para a Flexscan (o simulador dela); a de REAL, a Capital
 usuario 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
 usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
-aprova 8 conta=715124 corretora=88 conector=flexscan
+aprova 8
 # uid 9: o paper do GQ no SIMULADOR
 usuario 9 hml {"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}
 

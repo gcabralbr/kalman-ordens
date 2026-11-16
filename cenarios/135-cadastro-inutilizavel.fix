@@ -1,0 +1,90 @@
+cenario 135 v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE D10, §3): o cadastro do GQ que o sistema não atende — a entrada REAL recusada com REAL_CADASTRO_INUTILIZAVEL e a causa; o alerta UMA vez (sem repetição em 5 min, nem com novas entradas, nem quando a causa muda); bloquear com o alerta aberto dá o RESOLVIDO "fora do APROVADO"; desbloquear com o cadastro ainda ruim é uma ocorrência nova; o restart alerta uma vez de novo, "visto na partida"; pelo PnT só BTG; sem Robo.Conector; a volta dá o RESOLVIDO e a entrada passa na conta do GQ
+hora 2026-11-17 10:00:00
+config ORDENS_AMBIENTE=
+config ORDENS_CONTAS_HML=
+config AMBIENTES_PERMITIDOS=REAL
+config REAL_FIX_HOST=pnt-falso
+usuario 7 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"12345"}}
+aprova 7
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+sem_alerta REAL_CADASTRO_INUTILIZAVEL
+
+# --- corretora 107 no GQ (o cache de 30 s): o verificador alerta uma vez; a entrada recusa com a causa
+gq 7 prd {"Robo":{"Conector":"PNT","CORSeqId":107,"CCONroConta":"12345"}}
+avanca 31s
+entrada 13501 C ambiente=REAL
+resposta aceito=false codigo=REAL_CADASTRO_INUTILIZAVEL causa=CORRETORA_NAO_ATENDIDA "motivo=cadastro do GQ nao utilizavel: corretora 107 nao atendida pelo PnT (so BTG, 85)"
+evento ALERTA codigo=REAL_CADASTRO_INUTILIZAVEL "texto=uid 7: cadastro do GQ nao utilizavel: corretora 107 nao atendida pelo PnT (so BTG, 85) (CORRETORA_NAO_ATENDIDA). Entradas REAL recusadas ate o cadastro ser corrigido."
+http GET /usuarios/7/destino?ambiente=REAL
+resposta ambientes.REAL.pode_enviar=false ambientes.REAL.codigo=REAL_CADASTRO_INUTILIZAVEL ambientes.REAL.causa=CORRETORA_NAO_ATENDIDA
+saude alertas_criticos.REAL_CADASTRO_INUTILIZAVEL:7=REAL_CADASTRO_INUTILIZAVEL
+nada 35=D
+
+# --- sem repetição: 5 min de relógio (dez voltas do verificador) e mais duas entradas recusadas
+avanca 300s
+entrada 13502 C ambiente=REAL
+resposta aceito=false codigo=REAL_CADASTRO_INUTILIZAVEL
+entrada 13503 C ambiente=REAL
+resposta aceito=false codigo=REAL_CADASTRO_INUTILIZAVEL
+avanca 31s
+sem_alerta REAL_CADASTRO_INUTILIZAVEL
+# no Telegram (com as repetições que um crítico teria): uma mensagem só
+telegram REAL_CADASTRO_INUTILIZAVEL = 1
+
+# --- a causa muda (conta vazia): a recusa diz a nova; nenhuma mensagem nova
+gq 7 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":""}}
+avanca 31s
+entrada 13504 C ambiente=REAL
+resposta aceito=false codigo=REAL_CADASTRO_INUTILIZAVEL causa=CONTA_INVALIDA "motivo=~conta vazia"
+avanca 31s
+sem_alerta REAL_CADASTRO_INUTILIZAVEL
+sem_alerta RESOLVIDO
+telegram REAL_CADASTRO_INUTILIZAVEL = 1
+
+# --- bloquear com o alerta aberto: RESOLVIDO "fora do APROVADO"; desbloquear com o cadastro ainda
+# ruim é uma ocorrência nova (uma mensagem)
+http POST /usuarios/7/real/bloquear {"por":1450,"motivo":"conferir o cadastro","versao":1}
+resposta _status=200 codigo=BLOQUEADO
+evento ALERTA codigo=RESOLVIDO "texto=REAL_CADASTRO_INUTILIZAVEL: REAL_CADASTRO_INUTILIZAVEL:7 (uid fora do APROVADO)"
+saude alertas_criticos.REAL_CADASTRO_INUTILIZAVEL:7=null
+entrada 13505 C ambiente=REAL
+resposta aceito=false codigo=REAL_BLOQUEADO
+http POST /usuarios/7/real/desbloquear {"por":1450,"motivo":"volta","versao":2}
+resposta _status=200 codigo=DESBLOQUEADO "motivo=~cadastro do GQ nao utilizavel: hoje conta vazia"
+evento ALERTA codigo=REAL_CADASTRO_INUTILIZAVEL "texto=~uid 7: cadastro do GQ nao utilizavel: conta vazia"
+
+# --- o restart com o cadastro ainda ruim: uma mensagem de novo, "visto na partida"; uma só
+reinicia_servico
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+evento ALERTA codigo=REAL_CADASTRO_INUTILIZAVEL "texto=~(CONTA_INVALIDA). Entradas REAL recusadas ate o cadastro ser corrigido. (visto na partida)"
+avanca 61s
+sem_alerta REAL_CADASTRO_INUTILIZAVEL
+telegram REAL_CADASTRO_INUTILIZAVEL = 3
+
+# --- pelo PnT só BTG (a Capital, 88, recusa); sem Robo.Conector: CONECTOR_NAO_ATENDIDO; sem mensagem
+gq 7 prd {"Robo":{"Conector":"PNT","CORSeqId":88,"CCONroConta":"12345"}}
+avanca 31s
+entrada 13506 C ambiente=REAL
+resposta aceito=false codigo=REAL_CADASTRO_INUTILIZAVEL causa=CORRETORA_NAO_ATENDIDA "motivo=~corretora 88 nao atendida pelo PnT"
+gq 7 prd {"Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
+avanca 31s
+entrada 13507 C ambiente=REAL
+resposta aceito=false codigo=REAL_CADASTRO_INUTILIZAVEL causa=CONECTOR_NAO_ATENDIDO "motivo=~sem Robo.Conector"
+sem_alerta REAL_CADASTRO_INUTILIZAVEL
+
+# --- o cadastro volta a ser usável: RESOLVIDO na volta do verificador e a entrada passa
+gq 7 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"12345"}}
+avanca 31s
+evento ALERTA codigo=RESOLVIDO "texto=REAL_CADASTRO_INUTILIZAVEL: REAL_CADASTRO_INUTILIZAVEL:7"
+entrada 13508 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13508-1 1=12345 116=12345 847=1031
+# ao todo, três ocorrências (107; o desbloquear; a partida) e dois RESOLVIDO
+telegram REAL_CADASTRO_INUTILIZAVEL = 3
+telegram RESOLVIDO = 2

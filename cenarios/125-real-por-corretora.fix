@@ -9,11 +9,6 @@ config REAL_FLEXSCAN_XP_URL=falso
 config REAL_FLEXSCAN_XP_CONTAS=7001
 config REAL_FLEXSCAN_CMC_CONTAS=715124
 config REAL_FLEXSCAN_BTG_CONTAS=9001,9002
-config REAL_LIMITE_QTD_ORDEM=1
-config REAL_LIMITE_POSICAO_MAX=3
-config REAL_LIMITE_PERDA_DIA_PTS=3000
-config REAL_LIMITE_ENTRADAS_DIA=10
-config REAL_LIMITE_ENTRADAS_MIN=10
 config LIMITE_INTERVALO_ENTRADAS_S=0
 # uid 8: Capital (88) → CMC; uid 9: BTG (85) → BTG; uid 11: Capital numa conta fora da lista da CMC (a
 # corretora sem guarda-chuva: roteiro 126)
@@ -22,10 +17,10 @@ usuario 9 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"9001"}
 usuario 11 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715999"}}
 # uid 10: a corretora 77, que o serviço só conhece por estar declarada em REAL_FLEXSCAN_CORRETORAS
 usuario 10 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":77,"CCONroConta":"7001"}}
-aprova 10 conta=7001 corretora=77 conector=flexscan
-aprova 8 conta=715124 corretora=88 conector=flexscan
-aprova 9 conta=9001 corretora=85 conector=flexscan
-aprova 11 conta=715999 corretora=88 conector=flexscan
+aprova 10
+aprova 8
+aprova 9
+aprova 11
 
 preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
 aguarda_logon
@@ -34,13 +29,15 @@ alerta CONCILIACAO
 saude ambientes.REAL.flexscan_corretoras.CMC.logado=true ambientes.REAL.flexscan_corretoras.BTG.logado=true ambientes.REAL.flexscan_corretoras.CMC.corretora_codigo=88
 saude ambientes.REAL.canais.FLEXSCAN:CMC.estado=NO_AR ambientes.REAL.canais.FLEXSCAN:BTG.estado=NO_AR ambientes.REAL.canais.PNT.estado=DESLIGADO
 
-# --- conta fora da lista do guarda-chuva: recusa clara no /destino e na entrada
+# --- conta fora da lista do guarda-chuva: v1.36 (P3), cadastro inutilizável — recusa clara no
+# /destino e na entrada, e o alerta uma vez (o verificador)
 http GET /usuarios/11/destino?ambiente=REAL
-resposta ambientes.REAL.codigo=CONTA_FORA_DA_CORRETORA "ambientes.REAL.motivo=~REAL_FLEXSCAN_CMC_CONTAS" ambientes.REAL.pode_enviar=false
+resposta ambientes.REAL.codigo=REAL_CADASTRO_INUTILIZAVEL ambientes.REAL.causa=CONTA_INVALIDA "ambientes.REAL.motivo=~conta 715999 fora do guarda-chuva Flexscan da Capital" ambientes.REAL.pode_enviar=false
 http GET /usuarios/8/destino?ambiente=REAL
 resposta ambientes.REAL.pode_enviar=true ambientes.REAL.canal=NO_AR ambientes.REAL.conta=715124
 entrada 12502 C uid=11 ambiente=REAL
-resposta aceito=false codigo=CONTA_FORA_DA_CORRETORA
+resposta aceito=false codigo=REAL_CADASTRO_INUTILIZAVEL causa=CONTA_INVALIDA
+alerta REAL_CADASTRO_INUTILIZAVEL
 
 # --- a do uid 8 pela CMC, a do 9 pela BTG; nada na outra
 entrada 12503 C uid=8 ambiente=REAL
@@ -65,10 +62,9 @@ evento PROTEGIDA operacao_id=12504
 flx_ambiente REAL:CMC
 flx_nada
 
-# --- o uid 8 muda de corretora no GQ (BTG, conta 9002) e o admin aprova o cadastro novo (v1.35): a
-# saída da 12503 sai pela CMC, na conta gravada na operação, nunca na do cadastro novo
+# --- o uid 8 muda de corretora no GQ (BTG, conta 9002; v1.36: sem nova aprovação, a conta é livre):
+# a saída da 12503 sai pela CMC, na conta gravada na operação, nunca na do cadastro novo
 usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"9002"}}
-aprova 8 conta=9002 corretora=85 conector=flexscan
 preco bid=130100 ask=130105 preco=130100
 saida 12503 V SINAL_OPOSTO uid=8 ambiente=REAL
 resposta aceito=true

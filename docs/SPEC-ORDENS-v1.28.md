@@ -243,15 +243,19 @@ O contrato da SPEC-AMBIENTES-v1 §4.3 com `canal`: o estado do conector resolvid
 conector). Fora do ar, `pode_enviar` é falso com `SEM_SESSAO`, o que a entrada daria. **O Kalman
 não pede entrada, saída nem ajuste enquanto o canal estiver fora.**
 
+v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE §3.2): o campo `causa` — `null`, ou, com
+`codigo=REAL_CADASTRO_INUTILIZAVEL`, o porquê (`CADASTRO_ILEGIVEL`, `SEM_CADASTRO`,
+`CONECTOR_NAO_ATENDIDO`, `CORRETORA_NAO_ATENDIDA`, `CONTA_INVALIDA`).
+
 ```json
 {"uid": 5725, "ambientes": {
   "SIMULADOR": {"destino": "CONECTOR", "conector": "FLEXSCAN", "corretora": "BTG", "corretora_codigo": 85,
                 "conta": "S-1117150", "habilitado": true, "permitido": true, "pode_enviar": true,
-                "codigo": null, "motivo": null, "rotulo": "Simulador · Flexscan", "canal": "NO_AR"},
+                "codigo": null, "motivo": null, "causa": null, "rotulo": "Simulador · Flexscan", "canal": "NO_AR"},
   "REAL":      {"destino": null, "conector": null, "corretora": null, "corretora_codigo": null,
                 "conta": null, "habilitado": false, "permitido": false, "pode_enviar": false,
                 "codigo": "AMBIENTE_NAO_PERMITIDO", "motivo": "REAL nao permitido nesta maquina",
-                "rotulo": null, "canal": null}}}
+                "causa": null, "rotulo": null, "canal": null}}}
 ```
 
 ### 3.3 `GET /ordens/{id}`
