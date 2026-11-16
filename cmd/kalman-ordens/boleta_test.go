@@ -22,7 +22,7 @@ func TestBoletaCLI(t *testing.T) {
 		case r.Method == "GET" && r.URL.Path == "/usuarios/5725/destino":
 			io.WriteString(w, `{"uid":5725,"ambientes":{"REAL":{"pode_enviar":true,"corretora":"BTG","corretora_codigo":85,"conta":"4582351","codigo":null}}}`)
 		case r.Method == "GET" && r.URL.Path == "/usuarios/8/destino":
-			io.WriteString(w, `{"uid":8,"ambientes":{"REAL":{"pode_enviar":false,"codigo":"REAL_UID_NAO_PERMITIDO","motivo":"uid 8 fora de REAL_UIDS"}}}`)
+			io.WriteString(w, `{"uid":8,"ambientes":{"REAL":{"pode_enviar":false,"codigo":"REAL_SEM_APROVACAO","motivo":"REAL nao aprovado para este usuario"}}}`)
 		case r.Method == "POST" && r.URL.Path == "/ordens":
 			var p map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&p)
@@ -63,7 +63,7 @@ func TestBoletaCLI(t *testing.T) {
 		t.Fatalf("cancelar com motivo longo: %v", err)
 	}
 	// o uid que não pode enviar
-	if err := cliBoleta(cfg, []string{"destino", "-uid", "8", "-ambiente", "REAL"}, nil, &saida, agora); err == nil || !strings.Contains(err.Error(), "REAL_UID_NAO_PERMITIDO") {
+	if err := cliBoleta(cfg, []string{"destino", "-uid", "8", "-ambiente", "REAL"}, nil, &saida, agora); err == nil || !strings.Contains(err.Error(), "REAL_SEM_APROVACAO") {
 		t.Fatalf("uid sem permissão: %v", err)
 	}
 	// com "sim": o corpo do módulo BOLETA, o operacao_id MMDDHHMMSS do fuso do pregão

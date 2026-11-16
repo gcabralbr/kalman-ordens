@@ -1,4 +1,4 @@
-cenario 119 Os dois ambientes ao mesmo tempo (v1.26, SPEC-AMBIENTES-v1 §10): uma instância por ambiente, cada uma com a sua Flexscan (duas falsas) — o mesmo uid com posição no SIMULADOR e no REAL, cada ordem na conta e na Flexscan do seu ambiente; a entrada repetida com outro ambiente (AMBIENTE_DIVERGENTE de ponta a ponta); o teto do REAL (uid sem habilitação no REAL, quantidade); o retrato do REAL no caminho do webhook do SIMULADOR não vira fill; a parada só do REAL e a das duas; o restart recarrega cada operação na sua instância; o tráfego por ambiente
+cenario 119 Os dois ambientes ao mesmo tempo (v1.26, SPEC-AMBIENTES-v1 §10): uma instância por ambiente, cada uma com a sua Flexscan (duas falsas) — o mesmo uid com posição no SIMULADOR e no REAL, cada ordem na conta e na Flexscan do seu ambiente; a entrada repetida com outro ambiente (AMBIENTE_DIVERGENTE de ponta a ponta); o teto do REAL (uid sem aprovação, conta divergente do aprovado, quantidade); o retrato do REAL no caminho do webhook do SIMULADOR não vira fill; a parada só do REAL e a das duas; o restart recarrega cada operação na sua instância; o tráfego por ambiente
 hora 2026-10-30 10:00:00
 config ORDENS_AMBIENTE=
 config AMBIENTES_PERMITIDOS=SIM,REAL
@@ -14,9 +14,11 @@ config LIMITE_RECUSAS_PARADA=50
 usuario 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
 usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
 habilita 8 conectores=flexscan
-habilita 8 ambiente=REAL conectores=flexscan
-# uid 11: habilitado só no SIMULADOR (v1.35: REAL_UIDS e REAL_CONTAS não existem mais; quem opera no
-# REAL é a habilitação REAL, e a conta é conferida com a aprovação)
+aprova 8 conta=715124 corretora=88 conector=flexscan
+# v1.35 (REAL_UIDS e REAL_CONTAS não existem mais): uid 10 aprovado numa conta e com outra no GQ;
+# uid 11 só no SIMULADOR, sem aprovação no REAL
+usuario 10 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715125"}}
+aprova 10 conta=715124 corretora=88 conector=flexscan
 usuario 11 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
 habilita 11 conectores=flexscan
 
@@ -62,9 +64,13 @@ entrada 11901 C uid=8 ambiente=REAL
 resposta aceito=false codigo=AMBIENTE_DIVERGENTE
 flx_nada
 
-# --- o teto do REAL: uid sem habilitação no REAL, 2 contratos
+# --- o teto do REAL: uid sem aprovação, conta do GQ diferente da aprovada, 2 contratos
 entrada 11903 C uid=11 ambiente=REAL
-resposta aceito=false codigo=UID_NAO_HABILITADO
+resposta aceito=false codigo=REAL_SEM_APROVACAO
+alerta REAL_RECUSA_ESTADO
+entrada 11904 C uid=10 ambiente=REAL
+resposta aceito=false codigo=REAL_CONTA_DIVERGENTE "motivo=~aprovada FLEXSCAN / Capital (88) / conta 715124, atual FLEXSCAN / Capital (88) / conta 715125"
+alerta REAL_CONTA_DIVERGENTE
 entrada 11905 C uid=8 ambiente=REAL qtd=2
 resposta aceito=false codigo=QTD_MAXIMA
 flx_nada

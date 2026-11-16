@@ -4,8 +4,9 @@ hora 2026-10-13 10:10:00
 # ORDENS_CONTAS_HML → CONTA_AMBIENTE + alerta crítico (resolvido na próxima entrada válida do uid).
 # No logon, a conta de HML do uid habilitado também não entra no mass status: nenhum AF sai.
 config ORDENS_AMBIENTE=PRODUCAO
-# SPEC-AMBIENTES-v1: a equivalência PRODUCAO é o REAL; a habilitação é a do REAL
-habilita 7 ambiente=REAL
+# SPEC-AMBIENTES-v1: a equivalência PRODUCAO é o REAL; v1.35: a aprovação do REAL (aqui, com a conta
+# que o GQ tem, de HML: a trava cruzada recusa mesmo aprovada)
+aprova 7 conta=12345 corretora=85
 usuario 7 prd {"Robo":{"CORSeqId":85,"CCONroConta":"12345"}}
 
 preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
@@ -20,7 +21,9 @@ resposta aceito=false codigo=CONTA_AMBIENTE
 alerta CONTA_AMBIENTE
 nada
 
+# a conta real no GQ e aprovada pelo admin
 usuario 7 prd {"Robo":{"CORSeqId":85,"CCONroConta":"7654321"}}
+aprova 7 conta=7654321 corretora=85
 entrada 3902 C
 resposta aceito=true
 recebe 35=D 11=KM-E-3902-1 1=7654321 116=7654321 55=WINZ26 847=1031

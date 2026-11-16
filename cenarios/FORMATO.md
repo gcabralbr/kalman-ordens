@@ -34,6 +34,7 @@ dois está errado e a correção é discutida, não contornada no código.
 | `usuario UID hml\|prd JSON` | a configuração do usuário no GQ (`usutxtconfig` / `usutxtconfigprd`; o JSON é o resto da linha, cru); `usuario UID ausente` apaga a linha. No `_comum.fix` e no cabeçalho vale antes de o serviço subir; no corpo, na hora |
 | `gq UID hml\|prd JSON` | (v1.29) como `usuario`, só no corpo, mas sem avisar o serviço: o GQ gravou e o cache do motor só vê na recarga (`CACHE_USUARIOS_S`) ou no `/destino` |
 | `habilita UID [posicao_max=N] [qtd_max=N]` / `desabilita UID` | a habilitação do uid (o que a CLI faria); mesma regra de quando vale |
+| `aprova UID conta=C corretora=N [conector=pnt] [qtd_max=1] [posicao_max=1] [estado=APROVADO]` | (v1.35) a aprovação do REAL do uid como a tela deixaria (a linha REAL com o estado; `habilitado` só com APROVADO); mesma regra de quando vale |
 
 ## Relógio e preço
 

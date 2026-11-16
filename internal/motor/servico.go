@@ -51,6 +51,11 @@ func NovoServico(ms ...*Motor) *Servico {
 		}
 	}
 	s.principal = s.lista[0]
+	// v1.35: o avaliador das aprovações do REAL roda na principal, com ou sem a instância REAL
+	s.principal.aval = &avaliador{}
+	for _, m := range s.lista {
+		m.avalHost, m.realInst = s.principal, s.motores[dominio.AmbienteReal]
+	}
 	if len(s.lista) > 1 {
 		metricas.DefinirFilas(func() [3]int {
 			var r [3]int

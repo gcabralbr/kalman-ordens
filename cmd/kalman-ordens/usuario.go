@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"gammaquant.com.br/kalman-ordens/internal/aprovacao"
 	"gammaquant.com.br/kalman-ordens/internal/config"
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
@@ -19,16 +20,18 @@ import (
 // com o HTTP: não há endpoint que altere habilitação. Sem DB_DSN no ambiente, lê o service.env
 // (-env), que só root e o grupo kalman-ordens leem.
 //
-// A habilitação é por (uid, ambiente) (SPEC-AMBIENTES-v1 §4.2): -ambiente REAL mexe só na do REAL;
-// sem a flag, o SIMULADOR. Habilitar o SIMULADOR nunca habilita o REAL.
+// A habilitação é por (uid, ambiente) (SPEC-AMBIENTES-v1 §4.2). v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1
+// §6): habilitar e desabilitar são só do SIMULADOR; o REAL é a aprovação do admin pela tela. Pela CLI,
+// no REAL, só a revogação de emergência (só restringe; origem CLI no histórico).
 //
 //	kalman-ordens usuario listar
 //	kalman-ordens usuario conferir    -uid N
-//	kalman-ordens usuario habilitar   -uid N -motivo X [-ambiente SIMULADOR|REAL] [-posicao-max N] [-qtd-max N] [-conectores pnt,flexscan]
-//	kalman-ordens usuario desabilitar -uid N -motivo X [-ambiente SIMULADOR|REAL]
+//	kalman-ordens usuario habilitar   -uid N -motivo X [-posicao-max N] [-qtd-max N] [-conectores pnt,flexscan]
+//	kalman-ordens usuario desabilitar -uid N -motivo X
+//	kalman-ordens usuario revogar     -uid N -motivo X   (REAL)
 func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usuario listar | conferir | habilitar | desabilitar")
+		return fmt.Errorf("usuario listar | conferir | habilitar | desabilitar | revogar")
 	}
 	acao, args := args[0], args[1:]
 	fs := flag.NewFlagSet("usuario "+acao, flag.ContinueOnError)
@@ -68,8 +71,12 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 			return err
 		}
 		for _, h := range hs {
-			fmt.Fprintf(saida, "uid=%d ambiente=%s habilitado=%v posicao_max=%d qtd_max=%d conectores=%s por=%s em=%s motivo=%q\n",
-				h.UID, dominio.AmbienteDe(h.Ambiente), h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, h.ConectoresTexto(), h.Por, h.Em.Format(time.RFC3339), h.Motivo)
+			fmt.Fprintf(saida, "uid=%d ambiente=%s habilitado=%v posicao_max=%d qtd_max=%d conectores=%s",
+				h.UID, dominio.AmbienteDe(h.Ambiente), h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, h.ConectoresTexto())
+			if dominio.AmbienteDe(h.Ambiente) == dominio.AmbienteReal {
+				fmt.Fprintf(saida, " estado=%s corretora=%d conta=%s versao=%d origem=%s", h.EstadoReal(), h.Corretora, h.Conta, h.Versao, h.Origem)
+			}
+			fmt.Fprintf(saida, " por=%s em=%s motivo=%q\n", h.Por, h.Em.Format(time.RFC3339), h.Motivo)
 		}
 		return nil
 	case "conferir":
@@ -77,9 +84,17 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 			return err
 		}
 		return conferirUsuario(r, cfg, *uid, saida)
+	case "revogar":
+		if err := precisaUID(); err != nil {
+			return err
+		}
+		return revogarReal(r, *uid, *motivo, saida)
 	case "habilitar", "desabilitar":
 		if err := precisaUID(); err != nil {
 			return err
+		}
+		if amb == dominio.AmbienteReal {
+			return fmt.Errorf("usuario %s -ambiente REAL: use a tela (kalman-admin); a aprovacao do REAL e por /usuarios/%d/real (SPEC-REAL-PELA-TELA-F1). Pela CLI, so a emergencia: usuario revogar -uid %d -motivo ...", acao, *uid, *uid)
 		}
 		if *motivo == "" {
 			return fmt.Errorf("usuario %s exige -motivo", acao)
@@ -122,7 +137,36 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 		}
 		return nil
 	}
-	return fmt.Errorf("usuario %s: ação desconhecida (listar | conferir | habilitar | desabilitar)", acao)
+	return fmt.Errorf("usuario %s: ação desconhecida (listar | conferir | habilitar | desabilitar | revogar)", acao)
+}
+
+// revogarReal (SPEC-TECNICA-REAL-PELA-TELA-F1 §6, decisão 4): a revogação de emergência do REAL, com
+// a tela fora do ar. Só restringe (APROVADO, BLOQUEADO ou CONTA_DIVERGENTE → REVOGADO); sem versão
+// (vale sobre o que estiver); entra no histórico com origem CLI e o usuário do sistema. Não zera:
+// a posição aberta segue (Parada ou encerrar). O serviço vê em até CACHE_USUARIOS_S.
+func revogarReal(r *repo.MariaDB, uid int, motivo string, saida io.Writer) error {
+	p := aprovacao.Pedido{Acao: aprovacao.AcaoRevogar, Por: quem(), Origem: dominio.OrigemCLI, Motivo: motivo}
+	var rec *aprovacao.Recusa
+	t, err := r.TransicaoReal(uid, func(antes dominio.Habilitacao, existia bool) (dominio.Habilitacao, string, bool, error) {
+		h, ev, rc := aprovacao.Decidir(antes, existia, p, usuario.Cadastro{}, nil, aprovacao.Instancia{}, time.Now())
+		if rc != nil {
+			rec = rc
+			return h, "", false, nil
+		}
+		return h, ev, true, nil
+	})
+	switch {
+	case err != nil:
+		return err
+	case rec != nil && rec.Codigo == "TRANSICAO_INVALIDA":
+		fmt.Fprintf(saida, "uid=%d ambiente=REAL estado=%s: nada a revogar\n", uid, t.Antes.EstadoReal())
+		return nil
+	case rec != nil:
+		return fmt.Errorf("revogar: %s", rec.Motivo)
+	}
+	fmt.Fprintf(saida, "uid=%d ambiente=REAL %s -> %s versao=%d origem=CLI por=%s (o servico ve em ate 30 s; a posicao aberta segue: Parada ou encerrar)\n",
+		uid, t.Antes.EstadoReal(), t.Depois.Estado, t.Depois.Versao, t.Depois.Por)
+	return nil
 }
 
 // cliMigrar: aplica as migrações pendentes, registra em kalmanordem_migracao e sai — sem FIX nem

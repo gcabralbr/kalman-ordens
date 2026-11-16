@@ -243,6 +243,14 @@ func (m *Motor) verificarHabilitacao(p Pedido, amb string) (dominio.Habilitacao,
 		m.al.Emitir("USUARIO_CONFIG", "", fmt.Sprintf("habilitação do uid %d ilegível: %v", *p.UID, err), 0)
 		return h, simples("CONFIG_USUARIO_INDISPONIVEL", "habilitação ilegível")
 	}
+	if amb == dominio.AmbienteReal {
+		// v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1 §2.1): no REAL, o estado da aprovação
+		if r := recusaAprovacao(h, ok); r != nil {
+			m.avisarRecusaEstado(*p.UID, h, r)
+			return h, r
+		}
+		return h, nil
+	}
 	if !ok || !h.Habilitado {
 		return h, m.naoHabilitado(*p.UID, amb)
 	}
@@ -287,9 +295,20 @@ func (m *Motor) contaDoUsuario(uid int, amb string) (usuario.Resolvido, *usuario
 	}
 	// SPEC-FLEXSCAN-v1 §14.3: o GQ escolhe o conector (Robo.Conector) entre os da habilitação do
 	// ambiente; a corretora (CORSeqId) não decide
-	h, _, err := m.habilitacaoDo(uid, amb)
+	h, existia, err := m.habilitacaoDo(uid, amb)
 	if err != nil {
 		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONFIG_USUARIO_INDISPONIVEL", Motivo: "habilitação ilegível: " + err.Error(), Alerta: "USUARIO_CONFIG"}
+	}
+	if amb == dominio.AmbienteReal {
+		// v1.35 (§2.1 item 3): o cadastro do GQ conferido com o aprovado; a conta que vale é a aprovada
+		if f := cadastroReal(h, existia, texto); f != nil {
+			return usuario.Resolvido{}, f
+		}
+		r, f := usuario.ResolverCom(m.regras(amb), texto, h.Conectores)
+		if f == nil && existia && h.Conta != "" {
+			r.Conta, r.Destino = h.Conta, h.Corretora
+		}
+		return r, f
 	}
 	return usuario.ResolverCom(m.regras(amb), texto, h.Conectores)
 }
@@ -298,11 +317,12 @@ func (m *Motor) contaDoUsuario(uid int, amb string) (usuario.Resolvido, *usuario
 // crítica por uid e se resolve na próxima entrada válida do mesmo uid.
 func (m *Motor) contaParaEntrada(uid int, amb string) (usuario.Resolvido, *recusa) {
 	r, f := m.contaDoUsuario(uid, amb)
+	if f != nil && (f.Codigo == recusaContaDivergente || f.Codigo == recusaCadastroIlegivel) {
+		m.cutucarAvaliador(uid) // o avaliador grava a transição e alerta
+	}
 	chave := "CONTA_AMBIENTE:" + strconv.Itoa(uid)
-	chaveReal := "REAL_CONTA_NAO_PERMITIDA:" + strconv.Itoa(uid)
 	if f == nil {
 		m.al.Resolver(chave)
-		m.al.Resolver(chaveReal)
 		return r, nil
 	}
 	texto := fmt.Sprintf("entrada do uid %d recusada (%s): %s", uid, f.Codigo, f.Motivo)
@@ -311,8 +331,6 @@ func (m *Motor) contaParaEntrada(uid int, amb string) (usuario.Resolvido, *recus
 		slog.Info("entrada recusada pela configuração do usuário", "uid", uid, "codigo", f.Codigo, "motivo", f.Motivo)
 	case "CONTA_AMBIENTE":
 		m.al.Emitir("CONTA_AMBIENTE", chave, texto, 0)
-	case "REAL_CONTA_NAO_PERMITIDA":
-		m.al.Emitir("REAL_CONTA_NAO_PERMITIDA", chaveReal, texto, 0)
 	default:
 		m.al.Emitir(f.Alerta, "", texto, 0)
 	}

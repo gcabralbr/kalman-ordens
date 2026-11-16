@@ -55,7 +55,7 @@ var verbos = map[string]int{
 	"entrada":           -1, "saida": -1, "stop": -1, "http": -1, "http_async": -1, "http_aguarda": 0, "metrica": -1, "resposta": -1, "saude": -1,
 	"evento": -1, "sem_evento": -1, "conta_eventos": -1, "alerta": 1, "sem_alerta": 1,
 	"aguarda_logon": -1, "derruba_sessao": 0, "reinicia_servico": -1, "banco_erro_dado": -1, "banco_descarta": 0, "quarentena_resolver": -1, "motor_lento": 0, "motor_normal": 0, "corrompe": -1,
-	"usuario": -1, "habilita": -1, "desabilita": 1, "gq": -1,
+	"usuario": -1, "habilita": -1, "desabilita": 1, "gq": -1, "aprova": -1,
 	"pnt_recusa_logon": 1, "pnt_aceita_logon": 0, "aguarda_recusas": 1, "pnt_espera_seq": 1, "pnt_esquece": 1,
 	"corrompe_store": 0, "descarta": -1, "sinal": -1,
 	// SPEC-FLEXSCAN-v1: a Flexscan falsa (config FLEXSCAN_URL=falso)
@@ -65,7 +65,7 @@ var verbos = map[string]int{
 }
 
 // verbosDePreparo também valem no _comum.fix e no cabeçalho (Cenario.Preparo).
-var verbosDePreparo = map[string]bool{"usuario": true, "habilita": true, "desabilita": true}
+var verbosDePreparo = map[string]bool{"usuario": true, "habilita": true, "desabilita": true, "aprova": true}
 
 // passoUsuario: usuario UID hml|prd JSON (o resto da linha, cru) | usuario UID ausente.
 func passoUsuario(texto, origem string) (Passo, error) {
@@ -216,7 +216,7 @@ func (l *leitor) definicoes(ls []linha) error {
 				return fmt.Errorf("%s: config CHAVE=valor", ls[i].origem)
 			}
 			l.config[k] = v
-		case "usuario", "habilita", "desabilita":
+		case "usuario", "habilita", "desabilita", "aprova":
 			p, err := passoPreparo(ls[i].texto, ls[i].origem, toks)
 			if err != nil {
 				return err
@@ -249,7 +249,7 @@ func (l *leitor) definicoes(ls []linha) error {
 			l.blocos[toks[1]] = b
 			i = j
 		default:
-			return fmt.Errorf("%s: só config, usuario, habilita, modelo e bloco no arquivo comum", ls[i].origem)
+			return fmt.Errorf("%s: só config, usuario, habilita, aprova, modelo e bloco no arquivo comum", ls[i].origem)
 		}
 	}
 	return nil

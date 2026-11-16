@@ -10,11 +10,11 @@ config REAL_LIMITE_PERDA_DIA_PTS=3000
 config REAL_LIMITE_ENTRADAS_DIA=10
 usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
 usuario 9 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"9001"}}
-habilita 8 ambiente=REAL conectores=flexscan
-habilita 9 ambiente=REAL conectores=flexscan
+aprova 8 conta=715124 corretora=88 conector=flexscan
+aprova 9 conta=9001 corretora=85 conector=flexscan
 # uid 10: CORSeqId 77, não declarado em REAL_FLEXSCAN_CORRETORAS nem das de sempre
 usuario 10 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":77,"CCONroConta":"7001"}}
-habilita 10 ambiente=REAL conectores=flexscan
+aprova 10 conta=7001 corretora=77 conector=flexscan
 
 preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
 aguarda_logon

@@ -122,11 +122,13 @@ func (m *Motor) destinoDaEntrada(uid int, amb string) map[string]any {
 	d["permitido"] = m.p.Amb.Permitidos[amb]
 	// §4.1 item 3
 	falhar(m.teto(amb, uid, false))
-	// item 5: a habilitação do ambiente (verificarHabilitacao)
+	// item 5: a habilitação do ambiente (verificarHabilitacao); v1.35: no REAL, o estado da aprovação
 	h, ok, err := m.habilitacaoDo(uid, amb)
 	switch {
 	case err != nil:
 		falhar(simples("CONFIG_USUARIO_INDISPONIVEL", "habilitação ilegível"))
+	case amb == dominio.AmbienteReal:
+		falhar(recusaAprovacao(h, ok))
 	case !ok || !h.Habilitado:
 		falhar(m.naoHabilitado(uid, amb))
 	}

@@ -396,13 +396,20 @@ type Parada struct {
 type Motor struct {
 	// amb (SPEC-AMBIENTES-v1 §2, v1.26): o ambiente desta instância; os conectores, a posição, a
 	// parada e os limites são dele. Os IDs são atribuídos num contador comum às instâncias.
-	amb    string
-	ids    *contadorIDs
-	donos  *sync.Map // chaveOperacao → ambiente da instância dona (comum às instâncias; servico.go)
-	p      config.Parametros
-	rel    relogio.Relogio
-	repo   repo.Repositorio
-	precos preco.Fonte
+	amb   string
+	ids   *contadorIDs
+	donos *sync.Map // chaveOperacao → ambiente da instância dona (comum às instâncias; servico.go)
+	// v1.35 (aprovacao.go): o avaliador das aprovações do REAL roda numa instância só (a principal,
+	// avalHost; aval != nil nela); realInst é a instância REAL (nil sem o REAL permitido)
+	aval     *avaliador
+	avalHost *Motor
+	realInst *Motor
+	// as recusas por estado já avisadas (uid:estado:versão), uma vez cada
+	avisosEstado map[string]bool
+	p            config.Parametros
+	rel          relogio.Relogio
+	repo         repo.Repositorio
+	precos       preco.Fonte
 	// FONTE_DEGRADADA e MERCADO_TRAVADO (fonte.go)
 	fonte estadoFonte
 	fix   Envio

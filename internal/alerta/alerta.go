@@ -28,7 +28,7 @@ var Catalogo = map[string]bool{
 	"DUPLICADA_DIFERENTE": false, "LIMITE": false, "PARADA": false, "RETOMADA": false, "ZERAGEM": false,
 	"SIMBOLO_DIVERGENTE_COM_POSICAO": true, "CONTRATO_VIGENTE": false, "SIMBOLO_INVALIDO": false,
 	"USUARIO_CONFIG": false, "CONTA_AMBIENTE": true,
-	"AMBIENTE_NAO_PERMITIDO": true, "REAL_UID_NAO_PERMITIDO": true, "REAL_CONTA_NAO_PERMITIDA": true, "AMBIENTE_PEDIDO_DIVERGENTE": true, "CONTA_ALTERADA_COM_POSICAO": true, "SAIDA_DIVERGENTE_NAO_EXECUTOU": true,
+	"AMBIENTE_NAO_PERMITIDO": true, "AMBIENTE_PEDIDO_DIVERGENTE": true, "CONTA_ALTERADA_COM_POSICAO": true, "SAIDA_DIVERGENTE_NAO_EXECUTOU": true,
 	"SAIDA_BLOQUEADA_PRECO_ANTIGO": true, "FIM_DIA_POSICAO": true, "RESUMO_DIA": false,
 	"VIRADA_COM_OPERACAO": true, "ERRO_INTERNO": true, "RESOLVIDO": false,
 	"PNT_BOLSA_INDISPONIVEL": true,
@@ -45,6 +45,8 @@ var Catalogo = map[string]bool{
 	"OPERACAO_DE_OUTRO_DIA": false,
 	// v1.32 §4: a linha única da abertura da Flexscan (login e recadastro que se resolveram sozinhos)
 	"FLEXSCAN_ABERTURA": false,
+	// v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1): a aprovação do REAL pela tela
+	"REAL_CONTA_DIVERGENTE": true, "REAL_CADASTRO_ILEGIVEL": true, "REAL_RECUSA_ESTADO": false,
 }
 
 // Notificador entrega o alerta para fora (Telegram). Não pode bloquear.

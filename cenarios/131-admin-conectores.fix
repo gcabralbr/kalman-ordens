@@ -12,7 +12,7 @@ config REAL_LIMITE_ENTRADAS_DIA=10
 config LIMITE_RECUSAS_PARADA=50
 # uid 7: o PnT no REAL (conta 12345); uid 8: a Flexscan no SIMULADOR
 usuario 7 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"12345"}}
-habilita 7 ambiente=REAL conectores=pnt
+aprova 7 conta=12345 corretora=85 conector=pnt
 usuario 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
 habilita 8 conectores=flexscan
 

@@ -346,24 +346,20 @@ func TestUsuarioHabilitarPreservaLimites(t *testing.T) {
 	passo("habilitar", "-uid", "1451", "-motivo", "novo", "-conectores", "pnt")
 	confere(1451, true, 0, 0)
 
-	// v1.26 (29/10): a linha nova exige -conectores (a do REAL do 5725 nascia PNT sem ninguém pedir);
-	// o conferir não inventa conector para o ambiente sem linha
-	err = cliUsuario(cfg, []string{"habilitar", "-uid", "1451", "-ambiente", "REAL", "-motivo", "real"}, &saida)
+	// v1.26 (29/10): a linha nova exige -conectores; o conferir não inventa conector para o ambiente
+	// sem linha. v1.35: o REAL não é mais pela CLI (TestUsuarioRealPelaCLI)
+	err = cliUsuario(cfg, []string{"habilitar", "-uid", "1452", "-motivo", "novo"}, &saida)
 	if err == nil || !strings.Contains(err.Error(), "exige -conectores") {
-		t.Fatalf("linha nova do REAL sem -conectores: %v", err)
+		t.Fatalf("linha nova sem -conectores: %v", err)
 	}
-	if _, ok, _ := r.Habilitacao(1451, "REAL"); ok {
-		t.Fatal("a linha do REAL foi gravada assim mesmo")
+	if _, ok, _ := r.Habilitacao(1452, ""); ok {
+		t.Fatal("a linha foi gravada assim mesmo")
 	}
 	saida.Reset()
 	passo("conferir", "-uid", "1451")
 	if !strings.Contains(saida.String(), "ambiente=REAL habilitado=false conectores=sem_linha") {
 		t.Fatalf("conferir sem a linha do REAL: %q", saida.String())
 	}
-	passo("habilitar", "-uid", "1451", "-ambiente", "REAL", "-motivo", "real", "-conectores", "flexscan")
-	if h, ok, _ := r.Habilitacao(1451, "REAL"); !ok || !h.Habilitado || h.ConectoresTexto() != "FLEXSCAN" {
-		t.Fatalf("REAL com -conectores flexscan: %+v %v", h, ok)
-	}
 	// desabilitar uma linha que não existe não precisa do conector (nasce desligada)
-	passo("desabilitar", "-uid", "1452", "-ambiente", "REAL", "-motivo", "x")
+	passo("desabilitar", "-uid", "1453", "-motivo", "x")
 }

@@ -22,10 +22,10 @@ usuario 9 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"9001"}
 usuario 11 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715999"}}
 # uid 10: a corretora 77, que o serviço só conhece por estar declarada em REAL_FLEXSCAN_CORRETORAS
 usuario 10 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":77,"CCONroConta":"7001"}}
-habilita 10 ambiente=REAL conectores=flexscan
-habilita 8 ambiente=REAL conectores=flexscan
-habilita 9 ambiente=REAL conectores=flexscan
-habilita 11 ambiente=REAL conectores=flexscan
+aprova 10 conta=7001 corretora=77 conector=flexscan
+aprova 8 conta=715124 corretora=88 conector=flexscan
+aprova 9 conta=9001 corretora=85 conector=flexscan
+aprova 11 conta=715999 corretora=88 conector=flexscan
 
 preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
 aguarda_logon

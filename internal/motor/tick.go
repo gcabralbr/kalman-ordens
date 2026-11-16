@@ -23,6 +23,7 @@ func (m *Motor) tick() {
 	m.tickDisjuntor()
 	m.fecharConsultaSePronta(true)
 	m.recarregarUsuarios(m.agora())
+	m.tickAvaliador(m.agora())
 	m.atualizarMetricas()
 	agora := m.agora()
 	m.observarPreco()

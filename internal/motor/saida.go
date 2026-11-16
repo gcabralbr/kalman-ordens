@@ -512,6 +512,11 @@ func (m *Motor) conferirConta(op *operacao) {
 	if op.Conta == "" || op.Estado.Final() || op.posicao() == 0 {
 		return
 	}
+	if dominio.AmbienteDe(op.Ambiente) == dominio.AmbienteReal {
+		// v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1 §3.2): no REAL, o REAL_CONTA_DIVERGENTE do avaliador
+		// traz a posição; este não sai, para não duplicar
+		return
+	}
 	r, f := m.contaDoUsuario(op.UID, dominio.AmbienteDe(op.Ambiente))
 	if f != nil && f.Codigo == "CONFIG_USUARIO_INDISPONIVEL" {
 		return

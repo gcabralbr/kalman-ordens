@@ -9,7 +9,7 @@ config REAL_LIMITE_ENTRADAS_DIA=10
 # uid 8: a configuração de SIMULADOR aponta para a Flexscan (o simulador dela); a de REAL, a Capital
 usuario 8 hml {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"S-1117150"}}
 usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":88,"CCONroConta":"715124"}}
-habilita 8 ambiente=REAL conectores=flexscan
+aprova 8 conta=715124 corretora=88 conector=flexscan
 # uid 9: o paper do GQ no SIMULADOR
 usuario 9 hml {"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}
 

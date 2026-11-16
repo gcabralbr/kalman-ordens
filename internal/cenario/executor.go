@@ -327,8 +327,48 @@ func (e *Executor) usuario(p roteiro.Passo) error {
 			}
 		}
 		return e.repo.GravarHabilitacao(h)
+	case "aprova":
+		return e.aprova(uid, p)
 	}
 	return fmt.Errorf("verbo %s", p.Verbo)
+}
+
+// aprova (v1.35, SPEC-TECNICA-REAL-PELA-TELA-F1): a linha REAL já aprovada, como a tela deixaria
+// (o que o roteiro testa é o efeito dela): aprova UID conta=C corretora=N [conector=pnt]
+// [qtd_max=1] [posicao_max=1] [estado=APROVADO|BLOQUEADO|REVOGADO|CONTA_DIVERGENTE|SEM_APROVACAO].
+func (e *Executor) aprova(uid int, p roteiro.Passo) error {
+	agora := e.rel.Agora()
+	h := dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteReal, QtdMaxOrdem: 1, PosicaoMax: 1, Conectores: []string{dominio.ConectorPnT},
+		Por: "roteiro", Motivo: p.Origem, Em: agora, AprovacaoReal: dominio.AprovacaoReal{Estado: dominio.EstadoAprovado, Versao: 1,
+			AprovadoPor: "roteiro", AprovadoEm: agora, AprovadoMotivo: p.Origem, Origem: dominio.OrigemTela}}
+	for _, a := range p.Args[1:] {
+		k, v, _ := strings.Cut(a, "=")
+		var err error
+		switch k {
+		case "conta":
+			h.Conta = v
+		case "corretora":
+			h.Corretora, err = strconv.Atoi(v)
+		case "conector":
+			h.Conectores, err = dominio.LerConectores(v)
+		case "qtd_max":
+			h.QtdMaxOrdem, err = strconv.Atoi(v)
+		case "posicao_max":
+			h.PosicaoMax, err = strconv.Atoi(v)
+		case "estado":
+			h.Estado = v
+		default:
+			err = fmt.Errorf("desconhecido")
+		}
+		if err != nil {
+			return fmt.Errorf("aprova UID conta=C corretora=N [conector=pnt] [qtd_max=N] [posicao_max=N] [estado=E]: %s", a)
+		}
+	}
+	if h.Conta == "" || h.Corretora == 0 {
+		return fmt.Errorf("aprova %d: conta= e corretora= obrigatórios", uid)
+	}
+	h.Habilitado = h.Estado == dominio.EstadoAprovado
+	return e.repo.GravarHabilitacao(h)
 }
 
 // instancias: as instâncias do motor como o servir as monta (v1.26): na equivalência
@@ -803,7 +843,7 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		}
 		e.ocioso()
 		return nil
-	case "usuario", "habilita", "desabilita":
+	case "usuario", "habilita", "desabilita", "aprova":
 		if err := e.usuario(p); err != nil {
 			return err
 		}

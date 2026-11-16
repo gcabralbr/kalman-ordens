@@ -66,8 +66,9 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `USUARIO_CONFIG` | configuração do usuário no GQ inutilizável na entrada: JSON inválido, sem `Robo`, uid sem linha em `acusuario`, corretora desconhecida ou o simulador do GQ, conta fora da regra do conector, `acusuario` ou habilitação ilegíveis | não |
 | `CONTA_AMBIENTE` | trava da conta por ambiente (SPEC-AMBIENTES-v1 §4.1): no SIMULADOR, conta fora da lista de simulador do conector (`ORDENS_CONTAS_HML`, `FLEXSCAN_CONTAS_HML`); no REAL, conta de qualquer lista de simulador; por uid, resolvido na próxima entrada válida dele | sim |
 | `AMBIENTE_NAO_PERMITIDO` | (SPEC-AMBIENTES-v1 §3) entrada REAL numa máquina sem o REAL em `AMBIENTES_PERMITIDOS` (o SIMULADOR fora dela é só recusa) | sim |
-| `REAL_UID_NAO_PERMITIDO` | (SPEC-AMBIENTES-v1 §3) entrada REAL de uid fora de `REAL_UIDS` | sim |
-| `REAL_CONTA_NAO_PERMITIDA` | (SPEC-AMBIENTES-v1 §3) entrada REAL com a conta do `usutxtconfigprd` fora de `REAL_CONTAS` | sim |
+| `REAL_CONTA_DIVERGENTE` | (v1.35, SPEC-TECNICA-REAL-PELA-TELA-F1 §3.2) o cadastro do GQ (`usutxtconfigprd`: conector, corretora ou conta) deixou de bater com o aprovado: o uid vai para CONTA_DIVERGENTE e as entradas REAL novas são recusadas; o texto traz aprovado × atual e a posição aberta (que segue na conta da operação); por uid; resolve quando o cadastro volta ao aprovado, numa nova aprovação ou quando o admin bloqueia/revoga e o cadastro volta. Substitui, no REAL, o `CONTA_ALTERADA_COM_POSICAO` | sim |
+| `REAL_CADASTRO_ILEGIVEL` | (v1.35, §3.1) a `usutxtconfigprd` de um uid com aprovação não se lê (vazia, JSON inválido, sem `Robo.CORSeqId` ou sem conta): entradas REAL recusadas, a posição aberta segue na conta da operação; por uid; resolve quando a coluna volta a ser lida | sim |
+| `REAL_RECUSA_ESTADO` | (v1.35, §2.1) entrada REAL recusada pelo estado da aprovação (sem aprovação, bloqueado, revogado, conta divergente): a tela deveria ter desabilitado o "Enviar ordens"; uma vez por uid, estado e versão | não |
 | `AMBIENTE_PEDIDO_DIVERGENTE` | (SPEC-AMBIENTES-v1 §1.2) saída ou ajuste do stop com `ambiente` diferente do gravado na operação: executado no gravado (nunca recusa a saída); por operação | sim |
 | `CONECTOR_FORA_COM_POSICAO` | (v1.28) o conector da operação está fora do ar há mais de `CONECTOR_FORA_TOLERANCIA_S` com posição ou ordem viva: a operação fica SUSPENSA; o texto traz corretora, conta, lado, quantidade, preço médio, a stop que segue valendo e a orientação de sair pela corretora (home broker, Profit, mesa); resolve na volta (vira `OPERACAO_SUSPENSA`) ou ao zerar | sim |
 | `OPERACAO_SUSPENSA` | (v1.28) o conector voltou e a operação segue SUSPENSA: a conciliação sugere o caso (ex.: "stop cancelada fora sem fill: provável zeragem manual") e o admin confirma a posição na corretora (`kalman-ordens operacao confirmar`); resolve com ENCERRADA_FORA, RETOMADA ou ZERADA | sim |
@@ -97,7 +98,7 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 
 | Código | Quando | Por limite | Alerta |
 |---|---|---|---|
-| `UID_NAO_HABILITADO` | ENTRADA de uid sem habilitação ativa em `kalmanordemusuario` (só a CLI altera) | não | — |
+| `UID_NAO_HABILITADO` | ENTRADA do SIMULADOR de uid sem habilitação ativa em `kalmanordemusuario` (só a CLI altera); no REAL, desde a v1.35, os códigos `REAL_*` da aprovação | não | — |
 | `CONFIG_USUARIO_INDISPONIVEL` | `acusuario` ou a habilitação ilegíveis (banco) | não | `USUARIO_CONFIG` |
 | `CONFIG_USUARIO_INVALIDA` | JSON do ambiente inválido, sem `Robo.CORSeqId`, uid sem linha em `acusuario`, ou 9999 sem a conta QUANT no SIMULADOR | não | `USUARIO_CONFIG` |
 | `CONECTOR_NAO_HABILITADO` | (SPEC-FLEXSCAN-v1 §14.3) o `Robo.Conector` do GQ não está entre os `conectores` da habilitação do uid | não | — |
@@ -110,8 +111,11 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `AMBIENTE_AUSENTE` | (SPEC-AMBIENTES-v1 §1.3) pedido sem `ambiente` e sem `AMBIENTE_PADRAO` | não | — |
 | `AMBIENTE_INVALIDO` | `ambiente` diferente de `SIMULADOR` e `REAL` | não | — |
 | `AMBIENTE_NAO_PERMITIDO` | o ambiente fora de `AMBIENTES_PERMITIDOS` | não | `AMBIENTE_NAO_PERMITIDO` (crítico), se REAL |
-| `REAL_UID_NAO_PERMITIDO` | REAL com uid fora de `REAL_UIDS` | não | `REAL_UID_NAO_PERMITIDO` (crítico) |
-| `REAL_CONTA_NAO_PERMITIDA` | REAL com a conta fora de `REAL_CONTAS` | não | `REAL_CONTA_NAO_PERMITIDA` (crítico) |
+| `REAL_SEM_APROVACAO` | (v1.35) REAL de uid sem aprovação do admin (sem linha REAL, ou `SEM_APROVACAO`) | não | `REAL_RECUSA_ESTADO` |
+| `REAL_BLOQUEADO` | (v1.35) REAL de uid bloqueado pelo admin; o motivo traz o do bloqueio | não | `REAL_RECUSA_ESTADO` |
+| `REAL_REVOGADO` | (v1.35) REAL de uid revogado: só uma nova aprovação | não | `REAL_RECUSA_ESTADO` |
+| `REAL_CONTA_DIVERGENTE` | (v1.35) REAL com o cadastro do GQ diferente do aprovado (aprovado × atual no motivo) | não | `REAL_CONTA_DIVERGENTE` (crítico, pelo avaliador) |
+| `REAL_CADASTRO_ILEGIVEL` | (v1.35) REAL com a `usutxtconfigprd` ilegível | não | `REAL_CADASTRO_ILEGIVEL` (crítico, pelo avaliador) |
 | `AMBIENTE_DIVERGENTE` | entrada repetida (mesmo `operacao_id`) com outro ambiente | não | — |
 | `CONTA_INVALIDA` | `Robo.CCONroConta` ausente; pela regra do conector da habilitação: PnT só dígitos (o simulador usa `QUANT`); Flexscan até 20 letras, dígitos e hífen | não | `USUARIO_CONFIG` |
 | `CONTA_AMBIENTE` | trava da conta por ambiente (SPEC-AMBIENTES-v1 §4.1 item 8) | não | `CONTA_AMBIENTE` (crítico) |
