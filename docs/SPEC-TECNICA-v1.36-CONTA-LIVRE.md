@@ -85,12 +85,25 @@ As recusas `QTD_MAXIMA`, `POSICAO_MAXIMA`, `ENTRADAS_POR_DIA`, `ENTRADAS_POR_MIN
 - A virada de mão não muda. O Kalman já manda a entrada oposta depois do `ZERADA`
   (`entrada.go:419`), e nesse momento a operação anterior já é final.
 - Na prática, ela substitui o `posicao_max=1` por uid da v1.35, que saiu com o D7.
-- Proposta de recusa: `UID_COM_OPERACAO_ABERTA`, com o `operacao_id` da aberta no `motivo`. Não
-  emite alerta (o Kalman já faz uma operação por vez) e não conta para o `LIMITE_RECUSAS_PARADA`,
-  como as recusas por uid de hoje.
+- A recusa é `UID_COM_OPERACAO_ABERTA`, com o `operacao_id` da aberta no `motivo`. Ela **não conta**
+  para o `LIMITE_RECUSAS_PARADA`.
+- **Ela gera alerta de defeito no Telegram, uma vez por operação** (George, 16/11): uma segunda
+  entrada com a primeira aberta é defeito do sistema.
+  - O alerta `UID_COM_OPERACAO_ABERTA` é não crítico e entra no catálogo e no `ALERTAS.md`.
+  - A chave é o `operacao_id` da operação aberta. Repetir a entrada com a mesma operação aberta não
+    gera mensagem nova; outra operação aberta depois gera.
+  - O controle fica em memória, como o `REAL_RECUSA_ESTADO`.
 
-**Saem também, as "travas de estratégia"** (P5, George em 16/11). O que entra nesse grupo está no
-§10, P5: **a confirmar**.
+**Saem também as travas de estratégia** (P5, George em 16/11). Todas valem só para a entrada:
+- `LIMITE_ENTRADAS_MIN_UID`, `LIMITE_INTERVALO_UID_S` e a exceção da virada `LIMITE_VIRADA_S`
+  (`verificarLimitesUID`);
+- `LIMITE_INTERVALO_ENTRADAS_S`;
+- `LIMITE_BOOK_DESCOLADO_PTS` (`entrada.go:519`, recusa `BOOK_DESCOLADO`). O Kalman já tem a própria
+  trava de book descolado, configurável no gestor, e o serviço não deve ter uma segunda regra que
+  recuse uma entrada que o Kalman decidiu.
+
+**No REAL ficam só três travas:** `LIMITE_MENSAGENS_MIN`, as 50 recusas e uma operação aberta por
+uid. O SIMULADOR continua com todas (P7).
 
 **Como sai, no código:**
 - a visão do REAL (`config.Visao`) deixa de copiar os `REAL_LIMITE_*` para os `LIMITE_*`;
@@ -226,8 +239,12 @@ O **136** prova isto, sem `REAL_LIMITE_*` no env:
 - 31 entradas no dia;
 - 51 recusas em 1 min ainda dão a Parada BLOQUEAR;
 - `LIMITE_MENSAGENS_MIN` ainda recusa;
-- uma segunda entrada do mesmo uid com a operação aberta dá `UID_COM_OPERACAO_ABERTA`, inclusive
-  pela boleta; depois do `ZERADA`, a virada de mão passa;
+- uma segunda entrada do mesmo uid com a operação aberta dá `UID_COM_OPERACAO_ABERTA` com um
+  alerta. A terceira, com a mesma operação aberta, não dá alerta. Vale inclusive pela boleta. Depois
+  do `ZERADA`, a virada de mão passa, e a próxima entrada duplicada alerta de novo;
+- 4 entradas do mesmo uid em 1 min, sem intervalo, passam (sem `LIMITE_ENTRADAS_MIN_UID`/`INTERVALO_UID`);
+- uma entrada com o book descolado em mais de 150 pts passa (sem `BOOK_DESCOLADO`);
+- as recusas `UID_COM_OPERACAO_ABERTA` não ligam a Parada das 50 recusas;
 - com `REAL_LIMITE_*` no env, o aviso de "ignorada" aparece na partida.
 
 O verbo `aprova` dos roteiros passa a aceitar `conta=`/`corretora=`/`qtd_max=` só para simular uma
@@ -480,16 +497,12 @@ As telas F1 continuam funcionando (§5), então a instalação não depende do C
 - **P4.** `CONTA_DIVERGENTE` na instalação passa a `APROVADO` (0020).
 
 **Novas, do D7:**
-- **P5 (respondida em parte).** O George decidiu "sem as travas de estratégia, com a trava nova de
-  uma operação aberta por usuário" (§2). **A confirmar:** quais saem como "de estratégia". Leitura
-  proposta:
-  - saem do REAL: `LIMITE_ENTRADAS_MIN_UID` (3), `LIMITE_INTERVALO_UID_S` (30 s), a exceção da virada
-    (`LIMITE_VIRADA_S`) e o `LIMITE_INTERVALO_ENTRADAS_S` da instância;
-  - fica o `LIMITE_BOOK_DESCOLADO_PTS` (150), que é sanidade do preço, não estratégia.
-- **P6 e P7: a resposta não chegou ao CC do kalman-ordens** (nem no chat nem no disco em 16/11).
-  Valem as propostas até a confirmação:
-  - P6: os `REAL_LIMITE_*` no env são ignorados com aviso, sem recusar a subida;
-  - P7: os limites do SIMULADOR ficam como estão.
+- **P5.** Saem do REAL `LIMITE_ENTRADAS_MIN_UID`, `LIMITE_INTERVALO_UID_S`, `LIMITE_VIRADA_S`,
+  `LIMITE_INTERVALO_ENTRADAS_S` e `LIMITE_BOOK_DESCOLADO_PTS`. Ficam só `LIMITE_MENSAGENS_MIN`, as 50
+  recusas e a trava de uma operação aberta por uid. Essa trava gera um alerta de defeito por operação
+  e não conta para as 50 recusas (§2).
+- **P6.** Os `REAL_LIMITE_*` no env são ignorados com aviso, sem impedir a subida.
+- **P7.** Os limites do SIMULADOR ficam como estão.
 
 **Também decidido em 16/11:**
 - o cadastro sem `Robo.Conector` é inutilizável (conector obrigatório, §3.1);
