@@ -340,7 +340,8 @@ func (m *Motor) observarPrecoFlexscan() {
 }
 
 func (m *Motor) verificarPerdaDoDia() {
-	if m.parada != nil {
+	// v1.36 §2 (D7): no REAL, sem a Parada automática por perda do dia (o disjuntor é do Kalman, por uid)
+	if m.parada != nil || m.amb == dominio.AmbienteReal {
 		return
 	}
 	px, ok := m.precoDoDia(m.precos.Ler())

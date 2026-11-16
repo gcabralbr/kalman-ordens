@@ -9,6 +9,7 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 	"gammaquant.com.br/kalman-ordens/internal/metricas"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
+	"gammaquant.com.br/kalman-ordens/internal/usuario"
 )
 
 // Servico (SPEC-AMBIENTES-v1 §2, v1.26): as instâncias do motor, uma por ambiente, atrás da mesma
@@ -31,6 +32,8 @@ type Servico struct {
 	principal *Motor   // o SIMULADOR, se houver: os campos de hoje do /saude, o banco, os recusados
 	donos     *sync.Map
 	avisadas  sync.Map // v1.32: as operações de outro dia não finais já alertadas (OPERACAO_DE_OUTRO_DIA)
+	// v1.36 §3.1: o que a máquina atenderia no REAL (do env), para a ficha sem a instância REAL
+	rgReal *usuario.RegrasReal
 }
 
 // NovoServico junta as instâncias (não inicia); no máximo uma por ambiente.
@@ -51,7 +54,7 @@ func NovoServico(ms ...*Motor) *Servico {
 		}
 	}
 	s.principal = s.lista[0]
-	// v1.35: o avaliador das aprovações do REAL roda na principal, com ou sem a instância REAL
+	// v1.35: o verificador das aprovações do REAL roda na principal (v1.36: só com a instância REAL)
 	s.principal.aval = &avaliador{}
 	for _, m := range s.lista {
 		m.avalHost, m.realInst = s.principal, s.motores[dominio.AmbienteReal]

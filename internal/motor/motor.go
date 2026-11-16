@@ -30,6 +30,7 @@ import (
 	"gammaquant.com.br/kalman-ordens/internal/pregao"
 	"gammaquant.com.br/kalman-ordens/internal/relogio"
 	"gammaquant.com.br/kalman-ordens/internal/repo"
+	"gammaquant.com.br/kalman-ordens/internal/usuario"
 	"gammaquant.com.br/kalman-ordens/pnt"
 )
 
@@ -406,10 +407,14 @@ type Motor struct {
 	realInst *Motor
 	// as recusas por estado já avisadas (uid:estado:versão), uma vez cada
 	avisosEstado map[string]bool
-	p            config.Parametros
-	rel          relogio.Relogio
-	repo         repo.Repositorio
-	precos       preco.Fonte
+	// v1.36: as operações abertas (id interno) cuja entrada duplicada já alertou UID_COM_OPERACAO_ABERTA
+	avisosOpAberta map[int64]bool
+	// v1.36 §3.1: o que a máquina atenderia no REAL (do env), na instância que não é a REAL
+	rgRealEnv *usuario.RegrasReal
+	p         config.Parametros
+	rel       relogio.Relogio
+	repo      repo.Repositorio
+	precos    preco.Fonte
 	// FONTE_DEGRADADA e MERCADO_TRAVADO (fonte.go)
 	fonte estadoFonte
 	fix   Envio
@@ -1484,6 +1489,7 @@ func chaveOp(prefixo string, op *operacao) string {
 type recusa struct {
 	codigo, motivo string
 	porLimite      bool
+	causa          string // v1.36: o porquê do REAL_CADASTRO_INUTILIZAVEL (o campo `causa` da resposta)
 }
 
 func simples(c, m string) *recusa { return &recusa{codigo: c, motivo: m} }

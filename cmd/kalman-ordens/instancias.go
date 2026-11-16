@@ -293,5 +293,7 @@ func montarInstancias(lista []*instancia, cfg config.Config, amb config.Ambiente
 		}
 	}
 	out.servico = motor.NovoServico(ms...)
+	// v1.36: a ficha do REAL sem a instância REAL mostra o cadastro pelo que a máquina atenderia
+	out.servico.DefinirRegrasReal(motor.RegrasRealDoEnv(cfg))
 	return out, nil
 }

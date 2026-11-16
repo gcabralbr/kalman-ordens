@@ -513,8 +513,8 @@ func (m *Motor) conferirConta(op *operacao) {
 		return
 	}
 	if dominio.AmbienteDe(op.Ambiente) == dominio.AmbienteReal {
-		// v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1 §3.2): no REAL, o REAL_CONTA_DIVERGENTE do avaliador
-		// traz a posição; este não sai, para não duplicar
+		// v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE D6): no REAL, trocar a conta no GQ não gera alerta; a
+		// posição segue na conta gravada na operação (o cadastro inutilizável alerta pelo verificador)
 		return
 	}
 	r, f := m.contaDoUsuario(op.UID, dominio.AmbienteDe(op.Ambiente))

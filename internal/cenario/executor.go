@@ -334,11 +334,13 @@ func (e *Executor) usuario(p roteiro.Passo) error {
 }
 
 // aprova (v1.35, SPEC-TECNICA-REAL-PELA-TELA-F1): a linha REAL já aprovada, como a tela deixaria
-// (o que o roteiro testa é o efeito dela): aprova UID conta=C corretora=N [conector=pnt]
-// [qtd_max=1] [posicao_max=1] [estado=APROVADO|BLOQUEADO|REVOGADO|CONTA_DIVERGENTE|SEM_APROVACAO].
+// (o que o roteiro testa é o efeito dela): aprova UID [estado=APROVADO|BLOQUEADO|REVOGADO|
+// CONTA_DIVERGENTE|SEM_APROVACAO]. v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE): a aprovação não tem conta,
+// conector nem limites; conta=C corretora=N [conector=pnt] [qtd_max=N] [posicao_max=N] simulam uma
+// linha gravada pela v1.35 (que a v1.36 ignora).
 func (e *Executor) aprova(uid int, p roteiro.Passo) error {
 	agora := e.rel.Agora()
-	h := dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteReal, QtdMaxOrdem: 1, PosicaoMax: 1, Conectores: []string{dominio.ConectorPnT},
+	h := dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteReal,
 		Por: "roteiro", Motivo: p.Origem, Em: agora, AprovacaoReal: dominio.AprovacaoReal{Estado: dominio.EstadoAprovado, Versao: 1,
 			AprovadoPor: "roteiro", AprovadoEm: agora, AprovadoMotivo: p.Origem, Origem: dominio.OrigemTela}}
 	for _, a := range p.Args[1:] {
@@ -361,11 +363,8 @@ func (e *Executor) aprova(uid int, p roteiro.Passo) error {
 			err = fmt.Errorf("desconhecido")
 		}
 		if err != nil {
-			return fmt.Errorf("aprova UID conta=C corretora=N [conector=pnt] [qtd_max=N] [posicao_max=N] [estado=E]: %s", a)
+			return fmt.Errorf("aprova UID [estado=E] [conta=C corretora=N conector=pnt qtd_max=N posicao_max=N]: %s", a)
 		}
-	}
-	if h.Conta == "" || h.Corretora == 0 {
-		return fmt.Errorf("aprova %d: conta= e corretora= obrigatórios", uid)
 	}
 	h.Habilitado = h.Estado == dominio.EstadoAprovado
 	return e.repo.GravarHabilitacao(h)
@@ -457,6 +456,7 @@ func (e *Executor) subir() error {
 		svc.pontes[amb], svc.receptores[amb], svc.caminhos[amb] = ponte, rec, prefixo+c.Texto("FLEXSCAN_WEBHOOK_SEGREDO", "")
 	}
 	sv := motor.NovoServico(ms...)
+	sv.DefinirRegrasReal(motor.RegrasRealDoEnv(e.cfg))
 	if err := sv.Iniciar(); err != nil {
 		return err
 	}

@@ -141,14 +141,15 @@ func cliUsuario(cfg config.Config, args []string, saida io.Writer) error {
 }
 
 // revogarReal (SPEC-TECNICA-REAL-PELA-TELA-F1 §6, decisão 4): a revogação de emergência do REAL, com
-// a tela fora do ar. Só restringe (APROVADO, BLOQUEADO ou CONTA_DIVERGENTE → REVOGADO); sem versão
+// a tela fora do ar. Só restringe (APROVADO ou BLOQUEADO → REVOGADO; v1.36: o CONTA_DIVERGENTE que
+// sobrar vale como APROVADO); sem versão
 // (vale sobre o que estiver); entra no histórico com origem CLI e o usuário do sistema. Não zera:
 // a posição aberta segue (Parada ou encerrar). O serviço vê em até CACHE_USUARIOS_S.
 func revogarReal(r *repo.MariaDB, uid int, motivo string, saida io.Writer) error {
 	p := aprovacao.Pedido{Acao: aprovacao.AcaoRevogar, Por: quem(), Origem: dominio.OrigemCLI, Motivo: motivo}
 	var rec *aprovacao.Recusa
 	t, err := r.TransicaoReal(uid, func(antes dominio.Habilitacao, existia bool) (dominio.Habilitacao, string, bool, error) {
-		h, ev, rc := aprovacao.Decidir(antes, existia, p, usuario.Cadastro{}, nil, aprovacao.Instancia{}, time.Now())
+		h, ev, rc := aprovacao.Decidir(antes, existia, p, time.Now())
 		if rc != nil {
 			rec = rc
 			return h, "", false, nil
@@ -159,13 +160,13 @@ func revogarReal(r *repo.MariaDB, uid int, motivo string, saida io.Writer) error
 	case err != nil:
 		return err
 	case rec != nil && rec.Codigo == "TRANSICAO_INVALIDA":
-		fmt.Fprintf(saida, "uid=%d ambiente=REAL estado=%s: nada a revogar\n", uid, t.Antes.EstadoReal())
+		fmt.Fprintf(saida, "uid=%d ambiente=REAL estado=%s: nada a revogar\n", uid, t.Antes.EstadoVigente())
 		return nil
 	case rec != nil:
 		return fmt.Errorf("revogar: %s", rec.Motivo)
 	}
 	fmt.Fprintf(saida, "uid=%d ambiente=REAL %s -> %s versao=%d origem=CLI por=%s (o servico ve em ate 30 s; a posicao aberta segue: Parada ou encerrar)\n",
-		uid, t.Antes.EstadoReal(), t.Depois.Estado, t.Depois.Versao, t.Depois.Por)
+		uid, t.Antes.EstadoVigente(), t.Depois.Estado, t.Depois.Versao, t.Depois.Por)
 	return nil
 }
 

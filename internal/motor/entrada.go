@@ -71,6 +71,9 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 	if m.operacaoJaExistiu(p.modulo(), *p.OperacaoID) {
 		return nil, simples("DUPLICADA", "operação já recebida (outro dia)")
 	}
+	if r := m.recusaOperacaoAberta(*p.UID); r != nil {
+		return nil, r
+	}
 	if m.parada != nil {
 		return nil, simples("PARADA", "serviço em parada "+m.parada.Modo+": "+m.parada.Motivo)
 	}
@@ -268,7 +271,8 @@ func (m *Motor) naoHabilitado(uid int, amb string) *recusa {
 // pntDesligadoAntes: o uid só habilitado no PnT, com o PnT desligado nesta instância, nem chega à
 // conta (sem CONTA_AMBIENTE); com os dois conectores, a escolha do GQ decide depois da conta.
 func (m *Motor) pntDesligadoAntes(hab dominio.Habilitacao) *recusa {
-	if !m.p.PnTDesligado || slices.Contains(hab.Conectores, dominio.ConectorFlexscan) {
+	// v1.36: no REAL o conector vem do cadastro do GQ (o PnT desligado é cadastro inutilizável)
+	if m.amb == dominio.AmbienteReal || !m.p.PnTDesligado || slices.Contains(hab.Conectores, dominio.ConectorFlexscan) {
 		return nil
 	}
 	if m.amb == dominio.AmbienteSimulador && !m.p.Amb.PnTNoSimulador() {
@@ -289,36 +293,34 @@ func (m *Motor) contaDoUsuario(uid int, amb string) (usuario.Resolvido, *usuario
 	if !achou {
 		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONFIG_USUARIO_INVALIDA", Motivo: fmt.Sprintf("uid %d sem linha em acusuario", uid), Alerta: "USUARIO_CONFIG"}
 	}
-	texto := hml
 	if amb == dominio.AmbienteReal {
-		texto = prd
+		// v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE §3.1): conta, corretora e conector do cadastro do GQ,
+		// sem nada aprovado; inutilizável = REAL_CADASTRO_INUTILIZAVEL com a causa
+		r, f := usuario.CadastroReal(prd, m.regrasReal())
+		if f != nil {
+			return usuario.Resolvido{}, falhaCadastro(f)
+		}
+		return r, nil
 	}
+	texto := hml
 	// SPEC-FLEXSCAN-v1 §14.3: o GQ escolhe o conector (Robo.Conector) entre os da habilitação do
 	// ambiente; a corretora (CORSeqId) não decide
-	h, existia, err := m.habilitacaoDo(uid, amb)
+	h, _, err := m.habilitacaoDo(uid, amb)
 	if err != nil {
 		return usuario.Resolvido{}, &usuario.Falha{Codigo: "CONFIG_USUARIO_INDISPONIVEL", Motivo: "habilitação ilegível: " + err.Error(), Alerta: "USUARIO_CONFIG"}
-	}
-	if amb == dominio.AmbienteReal {
-		// v1.35 (§2.1 item 3): o cadastro do GQ conferido com o aprovado; a conta que vale é a aprovada
-		if f := cadastroReal(h, existia, texto); f != nil {
-			return usuario.Resolvido{}, f
-		}
-		r, f := usuario.ResolverCom(m.regras(amb), texto, h.Conectores)
-		if f == nil && existia && h.Conta != "" {
-			r.Conta, r.Destino = h.Conta, h.Corretora
-		}
-		return r, f
 	}
 	return usuario.ResolverCom(m.regras(amb), texto, h.Conectores)
 }
 
 // contaParaEntrada: contaDoUsuario com os alertas da entrada. A trava cruzada (CONTA_AMBIENTE) é
-// crítica por uid e se resolve na próxima entrada válida do mesmo uid.
+// crítica por uid e se resolve na próxima entrada válida do mesmo uid. v1.36: no REAL, o cadastro
+// inutilizável não alerta aqui (o verificador alerta uma vez); só o cutuca.
 func (m *Motor) contaParaEntrada(uid int, amb string) (usuario.Resolvido, *recusa) {
 	r, f := m.contaDoUsuario(uid, amb)
-	if f != nil && (f.Codigo == recusaContaDivergente || f.Codigo == recusaCadastroIlegivel) {
-		m.cutucarAvaliador(uid) // o avaliador grava a transição e alerta
+	if f != nil && f.Codigo == recusaInutilizavel {
+		m.cutucarAvaliador(uid)
+		slog.Info("entrada REAL recusada pelo cadastro do GQ", "uid", uid, "causa", f.Causa, "motivo", f.Motivo)
+		return r, &recusa{codigo: f.Codigo, motivo: f.Motivo, causa: f.Causa}
 	}
 	chave := "CONTA_AMBIENTE:" + strconv.Itoa(uid)
 	if f == nil {
@@ -337,11 +339,43 @@ func (m *Motor) contaParaEntrada(uid int, amb string) (usuario.Resolvido, *recus
 	return r, simples(f.Codigo, f.Motivo)
 }
 
+// recusaOperacaoAberta (v1.36 §2, SPEC-TECNICA-v1.36-CONTA-LIVRE): no REAL, uma operação aberta
+// por uid — qualquer módulo, toda operação não final. A segunda entrada é defeito do sistema: alerta
+// uma vez por operação aberta e não conta para a Parada das recusas.
+func (m *Motor) recusaOperacaoAberta(uid int) *recusa {
+	if m.amb != dominio.AmbienteReal {
+		return nil
+	}
+	var aberta *operacao
+	for _, op := range m.ops {
+		if op.UID == uid && !op.Estado.Final() && (aberta == nil || op.CriadaEm.Before(aberta.CriadaEm)) {
+			aberta = op
+		}
+	}
+	if aberta == nil {
+		return nil
+	}
+	texto := fmt.Sprintf("uid %d ja tem a operacao %d aberta (%s, %s): uma operacao aberta por usuario no REAL", uid, aberta.OperacaoID, aberta.Modulo, aberta.Estado)
+	if m.avisosOpAberta == nil {
+		m.avisosOpAberta = map[int64]bool{}
+	}
+	if !m.avisosOpAberta[aberta.ID] {
+		m.avisosOpAberta[aberta.ID] = true
+		m.al.Emitir("UID_COM_OPERACAO_ABERTA", "", "defeito: entrada REAL recusada: "+texto, aberta.OperacaoID)
+	}
+	return simples(recusaOperacaoAberta, texto)
+}
+
 func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitacao, uid int, lado dominio.Lado, modulo string) *recusa {
 	agora := m.agora()
 	h := m.horaDoDia()
 	if h < m.p.JanelaInicio || h >= m.p.JanelaFim {
 		return limite("FORA_JANELA", "fora da janela de entradas")
+	}
+	if m.amb == dominio.AmbienteReal {
+		// v1.36 §2 (D7): no REAL, sem limites de negócio nem de estratégia; ficam as mensagens por
+		// minuto, as 50 recusas e uma operação aberta por uid
+		return m.limiteMensagens(agora)
 	}
 	if qtd > m.p.QtdMaxOrdem {
 		return limite("QTD_MAXIMA", fmt.Sprintf("qtd %d > %d", qtd, m.p.QtdMaxOrdem))
@@ -370,10 +404,8 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitac
 	if len(m.entradasRec) >= m.p.EntradasPorMinuto {
 		return limite("ENTRADAS_POR_MINUTO", "limite de entradas por minuto")
 	}
-	m.enviosRec = aparar(m.enviosRec, agora.Add(-time.Minute))
-	if len(m.enviosRec) >= m.p.MensagensPorMinuto {
-		m.al.Emitir("LIMITE", "", fmt.Sprintf("limite de mensagens por minuto (%d)", len(m.enviosRec)), 0)
-		return limite("ORDENS_POR_MINUTO", "limite de mensagens por minuto")
+	if r := m.limiteMensagens(agora); r != nil {
+		return r
 	}
 	// v1.33 §2: as entradas do dia contam por módulo (a boleta não gasta as do Kalman); a posição,
 	// a qtd, as entradas por minuto e a perda do dia continuam da instância
@@ -388,6 +420,16 @@ func (m *Motor) verificarLimites(qtd int, l preco.Leitura, hab dominio.Habilitac
 			m.ativarParada("BLOQUEAR", "auto", "perda do dia "+r.String()+" pts")
 			return limite("PERDA_DIARIA", "perda do dia "+r.String()+" pts")
 		}
+	}
+	return nil
+}
+
+// limiteMensagens: LIMITE_MENSAGENS_MIN, a trava contra defeito que vale nos dois ambientes.
+func (m *Motor) limiteMensagens(agora time.Time) *recusa {
+	m.enviosRec = aparar(m.enviosRec, agora.Add(-time.Minute))
+	if len(m.enviosRec) >= m.p.MensagensPorMinuto {
+		m.al.Emitir("LIMITE", "", fmt.Sprintf("limite de mensagens por minuto (%d)", len(m.enviosRec)), 0)
+		return limite("ORDENS_POR_MINUTO", "limite de mensagens por minuto")
 	}
 	return nil
 }
@@ -516,7 +558,8 @@ func (m *Motor) verificarPrecoEntrada(l preco.Leitura) *recusa {
 		return limite("BOOK_INVALIDO", "bid >= ask")
 	}
 	meio := l.Bid.Add(*l.Ask).Div(decimal.NewFromInt(2))
-	if meio.Sub(*l.Preco).Abs().GreaterThan(decimal.NewFromInt(m.p.BookDescoladoPts)) {
+	// v1.36 §2: no REAL, sem o BOOK_DESCOLADO (o Kalman tem a própria trava, no gestor)
+	if m.amb != dominio.AmbienteReal && meio.Sub(*l.Preco).Abs().GreaterThan(decimal.NewFromInt(m.p.BookDescoladoPts)) {
 		return limite("BOOK_DESCOLADO", "|meio − preco| = "+meio.Sub(*l.Preco).Abs().String())
 	}
 	return nil
@@ -547,7 +590,11 @@ func (m *Motor) recusar(p Pedido, r *recusa) Resposta {
 		}
 	}
 	metricas.Recusas.Inc(p.Papel, r.codigo)
-	return Resposta{"aceito": false, "codigo": r.codigo, "motivo": alerta.ASCII(r.motivo)}
+	resp := Resposta{"aceito": false, "codigo": r.codigo, "motivo": alerta.ASCII(r.motivo)}
+	if r.causa != "" {
+		resp["causa"] = r.causa // v1.36 §3.2
+	}
+	return resp
 }
 
 func (m *Motor) novaOrdem(op *operacao, papel dominio.Papel, lado dominio.Lado, qtd, estrategia int) *ordem {

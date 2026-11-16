@@ -182,9 +182,6 @@ type Parametros struct {
 	FonteJanelaInicio, FonteJanelaFim, FonteDegradada time.Duration
 	// 24/10: a janela do FONTE_DEGRADADA só vale em dia de pregão (seg–sex, fora dos feriados)
 	FeriadosArq string
-	// v1.35: os REAL_LIMITE_* do env, com ou sem o REAL permitido (a aprovação confere os limites
-	// do uid com eles, SPEC-TECNICA-REAL-PELA-TELA-F1 §5.3)
-	LimitesReal LimitesReal
 }
 
 // Parametros lê tudo com os padrões da SPEC (v1 + v1.1).
@@ -270,7 +267,6 @@ func (c Config) Parametros() Parametros {
 	p.FonteJanelaInicio, p.FonteJanelaFim = c.Intervalo("FONTE_JANELA", "09:00-18:25")
 	p.FonteDegradada = c.Segundos("FONTE_DEGRADADA_S", 30)
 	p.FeriadosArq = c.Texto("FERIADOS_ARQ", "/var/lib/kalman/feriados.json")
-	p.LimitesReal = c.LimitesReal()
 	return p
 }
 

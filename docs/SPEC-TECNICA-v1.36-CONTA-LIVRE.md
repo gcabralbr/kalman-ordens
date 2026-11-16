@@ -174,7 +174,9 @@ O SIMULADOR não muda.
 
 O alerta é `REAL_CADASTRO_INUTILIZAVEL`, com uma chave por uid. Quem o emite é o **verificador**,
 que substitui o avaliador:
-- roda na instância principal a cada `CACHE_USUARIOS_S` (30 s), com ou sem a instância REAL;
+- roda na instância principal a cada `CACHE_USUARIOS_S` (30 s), **só com a instância REAL na
+  máquina** (E1, 16/11: com o REAL fora de `AMBIENTES_PERMITIDOS` ninguém entra no REAL, e o alerta
+  seria ruído na .53 de hoje; a ficha e a lista mostram o cadastro pelas regras do env);
 - olha só as linhas REAL em `APROVADO`;
 - só lê; não grava nada no banco.
 
@@ -194,7 +196,8 @@ A entrada recusada não alerta. Ela só cutuca o verificador, para o alerta não
   manda o `RESOLVIDO`;
 - o `Tick` não repete;
 - o alerta aparece em `/saude` `alertas_criticos` enquanto está aberto;
-- o `docs/ALERTAS.md` ganha a coluna "repete".
+- o `docs/ALERTAS.md` define "uma vez" no cabeçalho (a tabela continua com a coluna "crítico", que o
+  teste do catálogo confere).
 
 No REAL, o cadastro ruim deixa de emitir o `USUARIO_CONFIG`, que hoje sai a cada entrada recusada, e
 o `CONTA_AMBIENTE`, um crítico que repete. Os dois continuam no SIMULADOR.
