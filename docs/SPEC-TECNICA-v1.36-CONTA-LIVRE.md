@@ -77,13 +77,20 @@ As recusas `QTD_MAXIMA`, `POSICAO_MAXIMA`, `ENTRADAS_POR_DIA`, `ENTRADAS_POR_MIN
 |---|---|---|
 | mensagens por minuto | `LIMITE_MENSAGENS_MIN` (3000) | `ORDENS_POR_MINUTO` + alerta `LIMITE` |
 | recusas em 1 minuto | `LIMITE_RECUSAS_PARADA` (50) | Parada BLOQUEAR automática |
+| **uma operação aberta por uid** (nova, P5) | sem chave | no REAL, a entrada de um uid que já tem operação não final na instância REAL é recusada |
 
-Outras que hoje valem no REAL e são contra defeito, não de negócio. Proponho manter (P5):
-- **o laço de reentrada por uid:** `LIMITE_ENTRADAS_MIN_UID` (3) e `LIMITE_INTERVALO_UID_S` (30 s),
-  com a exceção da virada `LIMITE_VIRADA_S`. Um defeito que repete entradas trava só aquele uid;
-- **o book descolado:** `LIMITE_BOOK_DESCOLADO_PTS` (150);
-- **o intervalo da instância:** `LIMITE_INTERVALO_ENTRADAS_S` (0, desligado). Proponho tirar do REAL:
-  com vários usuários, ele vira regra de negócio.
+**A trava nova: uma operação aberta por uid** (P5, George em 16/11).
+- Vale para qualquer módulo, inclusive a boleta: a conta é a mesma.
+- Conta toda operação não final: com posição, com a entrada trabalhando, ou em saída.
+- A virada de mão não muda. O Kalman já manda a entrada oposta depois do `ZERADA`
+  (`entrada.go:419`), e nesse momento a operação anterior já é final.
+- Na prática, ela substitui o `posicao_max=1` por uid da v1.35, que saiu com o D7.
+- Proposta de recusa: `UID_COM_OPERACAO_ABERTA`, com o `operacao_id` da aberta no `motivo`. Não
+  emite alerta (o Kalman já faz uma operação por vez) e não conta para o `LIMITE_RECUSAS_PARADA`,
+  como as recusas por uid de hoje.
+
+**Saem também, as "travas de estratégia"** (P5, George em 16/11). O que entra nesse grupo está no
+§10, P5: **a confirmar**.
 
 **Como sai, no código:**
 - a visão do REAL (`config.Visao`) deixa de copiar os `REAL_LIMITE_*` para os `LIMITE_*`;
@@ -215,12 +222,12 @@ O **135** prova isto:
 O **136** prova isto, sem `REAL_LIMITE_*` no env:
 - o REAL sobe;
 - `qtd=2` é aceito;
-- duas posições do mesmo uid;
 - perda acima de 1500 pts sem Parada;
 - 31 entradas no dia;
 - 51 recusas em 1 min ainda dão a Parada BLOQUEAR;
 - `LIMITE_MENSAGENS_MIN` ainda recusa;
-- o laço por uid (P5) ainda recusa;
+- uma segunda entrada do mesmo uid com a operação aberta dá `UID_COM_OPERACAO_ABERTA`, inclusive
+  pela boleta; depois do `ZERADA`, a virada de mão passa;
 - com `REAL_LIMITE_*` no env, o aviso de "ignorada" aparece na partida.
 
 O verbo `aprova` dos roteiros passa a aceitar `conta=`/`corretora=`/`qtd_max=` só para simular uma
@@ -473,11 +480,18 @@ As telas F1 continuam funcionando (§5), então a instalação não depende do C
 - **P4.** `CONTA_DIVERGENTE` na instalação passa a `APROVADO` (0020).
 
 **Novas, do D7:**
-- **P5. Travas contra defeito além das duas citadas.** Proponho manter no REAL:
-  - o laço de reentrada por uid: `LIMITE_ENTRADAS_MIN_UID`, `LIMITE_INTERVALO_UID_S` e a virada;
-  - o `LIMITE_BOOK_DESCOLADO_PTS`.
+- **P5 (respondida em parte).** O George decidiu "sem as travas de estratégia, com a trava nova de
+  uma operação aberta por usuário" (§2). **A confirmar:** quais saem como "de estratégia". Leitura
+  proposta:
+  - saem do REAL: `LIMITE_ENTRADAS_MIN_UID` (3), `LIMITE_INTERVALO_UID_S` (30 s), a exceção da virada
+    (`LIMITE_VIRADA_S`) e o `LIMITE_INTERVALO_ENTRADAS_S` da instância;
+  - fica o `LIMITE_BOOK_DESCOLADO_PTS` (150), que é sanidade do preço, não estratégia.
+- **P6 e P7: a resposta não chegou ao CC do kalman-ordens** (nem no chat nem no disco em 16/11).
+  Valem as propostas até a confirmação:
+  - P6: os `REAL_LIMITE_*` no env são ignorados com aviso, sem recusar a subida;
+  - P7: os limites do SIMULADOR ficam como estão.
 
-  Proponho tirar o `LIMITE_INTERVALO_ENTRADAS_S` da instância (hoje 0).
-- **P6. `REAL_LIMITE_*` no env:** proponho ignorá-los com um aviso, em vez de recusar a subida. O env
-  não muda, e a volta é só o binário.
-- **P7. SIMULADOR:** proponho deixar os limites do SIMULADOR como estão (D7 vale para o REAL).
+**Também decidido em 16/11:**
+- o cadastro sem `Robo.Conector` é inutilizável (conector obrigatório, §3.1);
+- a folga de até 24 pts do `AJUSTE_DEGRAU_MIN_PTS=25` na stop do disjuntor é aceita, e nada muda no
+  serviço (§7.1).
