@@ -258,6 +258,30 @@ estes códigos.
 | `JA_DESBLOQUEADO` | aceito: já estava habilitado; nada gravado |
 | `SEM_HABILITACAO_PREVIA` | recusa: `habilitado: true` para uid sem linha (a 1ª habilitação é pela CLI) |
 | `CAMPO_INVALIDO` | recusa: `habilitado`, `motivo` ou `por` ausente; campo desconhecido; uid inválido |
+| `USE_APROVACAO_REAL` | (v1.35) 409: `?ambiente=REAL` — o REAL é a aprovação, pelas rotas `/usuarios/{uid}/real/*`; nada gravado |
+
+## Aprovação do REAL pela tela (v1.35, SPEC-TECNICA-REAL-PELA-TELA-F1 §5)
+
+`POST /usuarios/{uid}/real/{aprovar|bloquear|desbloquear|revogar|limites}` → `{aceito, codigo, motivo,
+estado, versao}`. Nenhum gera alerta por si (o `REAL_CONTA_DIVERGENTE` do desbloquear sai pelo
+avaliador).
+
+| Código | HTTP | Quando |
+|---|---|---|
+| `APROVADO` | 200 | aceito: aprovado com o cadastro do GQ e os limites |
+| `BLOQUEADO` | 200 | aceito: entradas novas recusadas; posição, 1014 e saídas seguem |
+| `DESBLOQUEADO` | 200 | aceito: de volta a APROVADO |
+| `CONTA_DIVERGENTE` | 200 | aceito (desbloquear): o cadastro do GQ mudou durante o bloqueio; aprovado × atual no motivo |
+| `REVOGADO` | 200 | aceito: só uma nova aprovação |
+| `LIMITES_ALTERADOS` | 200 | aceito: os limites do uid, com a versão nova |
+| `CAMPO_INVALIDO` | 400 | uid, JSON, ação, `motivo` (3 a 200), `por`, `versao`, limites, `visto` |
+| `TRANSICAO_INVALIDA` | 409 | a ação não se aplica ao estado atual |
+| `VERSAO_MUDOU` | 409 | a linha mudou depois da ficha que a tela mostrou |
+| `CADASTRO_MUDOU` | 409 | aprovar: o cadastro do GQ não é mais o `visto` |
+| `CADASTRO_INVALIDO` | 422 | aprovar: o cadastro do GQ não serve para o REAL (ilegível, sem linha, corretora desconhecida, conta de simulador) |
+| `LIMITE_ACIMA_DA_INSTANCIA` | 422 | limites do uid acima dos `REAL_LIMITE_QTD_ORDEM`/`_POSICAO_MAX` |
+| `LIMITES_INSTANCIA_AUSENTES` | 422 | sem `REAL_LIMITE_QTD_ORDEM` ou `REAL_LIMITE_POSICAO_MAX` no env |
+| `CONFIG_USUARIO_INDISPONIVEL` | 503 | o banco do serviço ou o do GQ não respondeu |
 
 ## Rejeições e avisos conhecidos do PnT
 
