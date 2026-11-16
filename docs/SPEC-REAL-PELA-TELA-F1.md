@@ -8,7 +8,7 @@ O REAL passa a ser ligado, aprovado e acompanhado pela tela, sem CLI nem service
 
 Esta SPEC cobre só o que precisa estar pronto antes do 1º dia REAL do 1450:
 
-1. Habilitar o usuário e aprovar a conta dele pela tela do admin, no lugar do `REAL_UIDS` e do `REAL_CONTAS`.
+1. Liberar o usuário no REAL pela tela do admin, no lugar do `REAL_UIDS` e do `REAL_CONTAS`.
 2. Limites por usuário pela tela do admin.
 3. A stop que está de fato na corretora visível na tela do usuário.
 
@@ -36,37 +36,37 @@ O cadastro já existe: conta, corretora e conector de cada usuário vêm da `usu
 
 ## Decisões
 
-Decidido com o George em 16/11.
+Decidido com o George em 16/11. D3, D6 e D10 foram revistos no fim da tarde, depois do teste de aceitação: no processo da GammaQuant, a conta é cadastrada pela API de cadastro da corretora, e o usuário pode trocá-la quando quiser.
 
 | # | Decisão |
 | --- | --- |
 | D1 | O REAL opera pela .53. A .51 fica fora desta fase. |
 | D2 | Tudo o que é por usuário se faz pela tela. No env ficam só o interruptor geral (`AMBIENTES_PERMITIDOS`) e os limites da instância (`REAL_LIMITE_*`). |
-| D3 | A habilitação no REAL exige aprovação do admin, gravada por usuário com a conta, a corretora e o conector aprovados. |
-| D4 | `REAL_UIDS` e `REAL_CONTAS` deixam de existir. Uma só fonte de verdade: a aprovação. |
+| D3 | O admin libera o REAL por usuário (aprovação), com limites, quem, quando e motivo, e histórico. **A aprovação não envolve a conta.** Mais adiante, a liberação passa a ser automática. |
+| D4 | `REAL_UIDS` e `REAL_CONTAS` deixam de existir. Uma só fonte de verdade: a aprovação do usuário. |
 | D5 | Nenhuma habilitação antiga vale. O 1450 é aprovado de novo pela tela; o 5725 (REAL Flexscan desde 03/11) deixa de ser candidato. |
-| D6 | Se o cadastro do GQ deixar de bater com o aprovado, o REAL do usuário para de aceitar entradas até nova aprovação. |
+| D6 | **A conta vem do cadastro do GQ a cada entrada**, sem comparação com nenhuma conta aprovada e sem estado de divergência. O usuário pode trocar a conta quando quiser; a operação aberta termina na conta em que entrou. |
 | D7 | Limites por usuário na aprovação: contratos por ordem 1 e posição máxima 1 nesta fase. A perda diária por usuário segue a do perfil no Kalman. |
 | D8 | A tela do usuário mostra a stop que está na corretora, além da stop do gestor. |
 | D9 | O Kalman é day trade e zera no mesmo dia. Day Trade × Position é só o OMS (20859) e fica para a etapa dos beta testers. |
+| D10 | **Cadastro inutilizável** (corretora que o kalman-ordens não conhece, conector não permitido ao usuário, conta vazia ou JSON ilegível) recusa a entrada com o motivo e avisa **uma vez** no Telegram, com um RESOLVIDO quando o cadastro voltar a ser usável. |
 
 ## Fluxo de habilitação
 
-O usuário cadastra a conta no GQ, o admin aprova no kalman-admin e o usuário liga o envio do dia na tela dele.
+A conta é cadastrada no GQ pela API de cadastro da corretora, o admin libera o usuário no kalman-admin e o usuário liga o envio do dia na tela dele.
 
-1. O usuário preenche corretora, conta e conector no GQ, como hoje.
-2. O admin abre a ficha do usuário no kalman-admin, vê o que está no GQ e clica em "Aprovar REAL", com motivo obrigatório.
-3. A aprovação grava, por uid: conector, corretora, conta, limites, quem aprovou, quando e o motivo. Cada mudança entra num histórico; nada é apagado.
-4. O usuário liga "Enviar ordens" na tela dele, com a confirmação da conta, como já funciona. A ativação continua valendo só para o dia.
+1. A conta, a corretora e o conector do usuário ficam no GQ, preenchidos pela API de cadastro da corretora. O usuário pode trocar quando quiser.
+2. O admin abre a ficha do usuário no kalman-admin e clica em "Aprovar REAL", com motivo obrigatório e os limites.
+3. A aprovação grava, por uid: limites, quem aprovou, quando e o motivo. Cada mudança entra num histórico; nada é apagado. Nenhuma conta é gravada na aprovação.
+4. O usuário liga "Enviar ordens" na tela dele, com a confirmação da conta que está no GQ naquele momento ("ordens REAIS na conta X da corretora Y"). A ativação continua valendo só para o dia.
 
 Estados da aprovação no REAL:
 
 | Estado | Novas entradas | Posição aberta | Como sai do estado |
 | --- | --- | --- | --- |
 | SEM\_APROVACAO | recusa | não se aplica | admin aprova |
-| APROVADO | aceita, se o usuário ligou o envio | gerida normalmente | admin bloqueia ou revoga; troca de cadastro no GQ |
+| APROVADO | aceita, se o usuário ligou o envio e o cadastro é usável | gerida normalmente | admin bloqueia ou revoga |
 | BLOQUEADO | recusa | gerida até sair (1014 e saídas seguem) | admin desbloqueia |
-| CONTA\_DIVERGENTE | recusa | gerida até sair, na conta da operação | admin aprova o novo cadastro, ou o usuário volta ao aprovado |
 | REVOGADO | recusa | gerida até sair | só nova aprovação |
 
 Regras:
@@ -74,19 +74,19 @@ Regras:
 - Bloquear, revogar e aprovar pedem motivo e ficam no histórico.
 - Revogar ou bloquear não zera. Para zerar, o admin usa o encerrar da operação ou a Parada, como hoje.
 - Só quem já tem perfil de admin no kalman-admin vê e usa esses botões.
-- Uma recusa por estado aparece na tela do usuário com o motivo em português claro ("REAL não aprovado", "conta alterada, aguardando aprovação").
+- Uma recusa aparece na tela do usuário com o motivo em português claro ("REAL não aprovado", "REAL bloqueado pelo admin", "cadastro do GQ não utilizável: corretora 107 não atendida").
 
-## Troca de conta no GQ
+## Conta e cadastro do GQ
 
-A conta que vale para mandar ordem é sempre a aprovada; o cadastro do GQ só é comparado com ela, nunca usado no lugar dela.
+A conta que vale é a que está no cadastro do GQ no momento da entrada. Quem garante que ela é do usuário é a API de cadastro da corretora, não o Kalman.
 
-- O kalman-ordens compara conector, corretora e conta da `usutxtconfigprd` com os aprovados a cada entrada e a cada leitura do cache (30 s).
-- Diferença em qualquer um dos três: o uid vai para CONTA\_DIVERGENTE, sai alerta crítico no Telegram (uid, aprovado × atual, se há posição) e a ficha do admin mostra os dois lados.
-- Posição aberta continua na conta em que entrou: a 1014, os ajustes e a saída vão para a conta gravada na operação, nunca para a do cadastro novo.
-- Se o usuário voltar o cadastro ao aprovado, o estado volta a APROVADO sozinho. Qualquer outro caminho pede nova aprovação do admin.
-- O alerta `CONTA_ALTERADA_COM_POSICAO` atual é incorporado a este, sem duplicar mensagens.
+- A cada entrada, o kalman-ordens lê conector, corretora e conta da `usutxtconfigprd` (cache de 30 s) e usa o que estiver lá.
+- Trocar a conta no GQ não bloqueia nada e não gera alerta. A próxima entrada já vai para a conta nova.
+- Posição aberta continua na conta em que entrou: a 1014, os ajustes e a saída vão para a conta gravada na operação, nunca para a do cadastro novo. Isso já é assim hoje (conta fixada na entrada) e tem roteiro na suíte.
+- Cadastro inutilizável recusa a entrada com o motivo (D10): corretora que o kalman-ordens não conhece, conector fora dos permitidos ao usuário, conta vazia ou JSON ilegível. O alerta sai uma vez, e o RESOLVIDO quando o cadastro voltar a ser usável.
+- As corretoras conhecidas são do sistema, não do usuário: hoje 85 (BTG) e 88 (Capital). Pelo PnT, só BTG. Uma corretora nova pela Flexscan entra numa chave do env, porque depende de integração.
 
-Pergunta para o CC do ordens: hoje as ordens de uma operação aberta já usam a conta gravada nela, ou releem o cadastro? Se releem, isso precisa mudar nesta entrega.
+Removido nesta revisão: a conta gravada na aprovação, a comparação a cada 30 s, o estado CONTA\_DIVERGENTE e o alerta `REAL_CONTA_DIVERGENTE`, que estão na v1.35 instalada e nas telas F1.
 
 ## Limites e env
 
@@ -115,18 +115,17 @@ A ficha do usuário no kalman-admin ganha o bloco de aprovação do REAL, e a te
 
 **Ficha do usuário (kalman-admin), lado REAL**
 
-- Cadastro atual no GQ: conector, corretora, conta.
-- Aprovado: conector, corretora, conta, limites, por quem, quando, motivo.
-- Estado (tabela da seção Fluxo), com destaque quando for CONTA\_DIVERGENTE mostrando aprovado × atual.
+- Cadastro atual no GQ, só para informação: conector, corretora, conta. Se o cadastro for inutilizável, o motivo em vermelho.
+- Aprovação: estado, limites, por quem, quando, motivo. Sem conta aprovada e sem comparação.
 - Botões conforme o estado: Aprovar, Bloquear, Desbloquear, Revogar, Alterar limites. Todos pedem motivo e confirmação.
-- Histórico da aprovação, mais recente primeiro.
+- Histórico da aprovação, mais recente primeiro. As linhas de CONTA\_DIVERGENTE gravadas no teste de 16/11 continuam no histórico, só como registro.
 - O que já existe na ficha continua: posição, PnL do dia, operação viva, SUSPENSA com Confirmar posição, canal e destino.
 
 **Tela do usuário (kalmanops)**
 
 - Ao lado da stop do gestor, um cartão "Stop na corretora" com o preço da 1014 vigente e o estado: VIVA, AJUSTANDO (replace em curso) ou DESPROTEGIDA (posição sem 1014 viva).
 - DESPROTEGIDA aparece em vermelho e também gera alerta.
-- Se o usuário não está aprovado, está bloqueado ou com conta divergente, o "Enviar ordens" fica desabilitado com o motivo, como já acontece com `pode_enviar=false`.
+- Se o usuário não está aprovado, está bloqueado ou revogado, ou o cadastro é inutilizável, o "Enviar ordens" fica desabilitado com o motivo, como já acontece com `pode_enviar=false`.
 - A confirmação ao ligar continua: "ordens REAIS na conta X da corretora Y".
 
 Fonte da stop na corretora: o kalman-ordens já guarda o `preco_stop_ajustado` e o piso; a tela lê pelo mesmo caminho da ficha. O CC do Kalman confirma o campo exato.
@@ -155,11 +154,12 @@ O 1º dia REAL do 1450 só acontece com todos os itens abaixo marcados.
 **Pela tela, fora do pregão (sem ordem real)**
 
 - [ ] 1450 sem aprovação: "Enviar ordens" desabilitado com o motivo.
-- [ ] Admin aprova o 1450 com conta 4582351 e limites 1/1; histórico mostra quem, quando e motivo.
-- [ ] Trocar a conta no GQ: estado vai para CONTA\_DIVERGENTE, alerta chega no Telegram, ficha mostra aprovado × atual. Voltar a conta: estado volta a APROVADO.
+- [x] Admin aprova o 1450 com limites 1/1; histórico mostra quem, quando e motivo (feito em 16/11 às 15:46).
+- [ ] Trocar a conta no GQ: nada bloqueia, nenhum alerta, a ficha mostra o cadastro novo só como informação.
+- [ ] Cadastro inutilizável (por exemplo, corretora 107): entrada recusada com o motivo, alerta uma vez só, RESOLVIDO ao voltar.
 - [ ] Bloquear, desbloquear, revogar e reaprovar, cada um com motivo no histórico.
-- [ ] 5725 aparece como SEM\_APROVACAO.
-- [ ] `REAL_UIDS`/`REAL_CONTAS` no env impedem a subida com mensagem clara.
+- [x] 5725 aparece como SEM\_APROVACAO (16/11).
+- [x] `REAL_UIDS`/`REAL_CONTAS` fora do env; a CLI recusa aprovar (instalação da v1.35, 16/11).
 
 **No REAL, 1 contrato, com margem alocada**
 
@@ -188,5 +188,9 @@ Cartão de emergência (pela tela): Parada zerar tudo no admin → conferir posi
 
 **Em aberto**
 
-- `REAL_LIMITE_ENTRADAS_DIA` e `REAL_LIMITE_ENTRADAS_MIN`: valores a partir do histórico do 1450.
+- **Ajuste no que já está instalado (revisão de D3, D6 e D10):** a v1.35 do kalman-ordens e as telas F1 têm a conta aprovada, a comparação e o CONTA\_DIVERGENTE. A revisão sai numa v1.36 e numa atualização das telas, com SPEC técnica curta antes.
+- **Alerta repetido:** o `REAL_CONTA_DIVERGENTE` repetiu 5 vezes em \~2 min no teste. Confirmar a regra de repetição dos alertas críticos antes dos beta testers; o D10 pede um só.
+- **Liberação automática** do usuário no REAL, no lugar da aprovação do admin: definir depois, com o critério.
+- **Dois usuários na mesma conta:** o 1450 (PnT) e o 5725 (Flexscan) têm hoje a conta 4582351 no GQ. Com a conta livre, cada um com posição máxima 1 daria 2 contratos na mesma conta. Decidir antes de liberar o segundo usuário.
+- `REAL_LIMITE_ENTRADAS_DIA` e `REAL_LIMITE_ENTRADAS_MIN`: 30 e 2 nesta fase; revisar a cada etapa.
 - O SIMULADOR continua com a habilitação por CLI; decidir depois se segue o mesmo fluxo da tela.
