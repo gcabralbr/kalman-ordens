@@ -485,16 +485,26 @@ func HabilitacaoDoUsuario(r interface {
 	if err != nil {
 		return nil, err
 	}
+	var resp Resposta
 	if !ok {
-		return Resposta{"uid": uid, "ambiente": amb, "existe": false, "habilitado": false, "posicao_max": nil, "qtd_max_ordem": nil,
-			"conectores": nil, "por": nil, "motivo": nil, "em": nil}, nil
+		resp = Resposta{"uid": uid, "ambiente": amb, "existe": false, "habilitado": false, "posicao_max": nil, "qtd_max_ordem": nil,
+			"conectores": nil, "por": nil, "motivo": nil, "em": nil}
+	} else {
+		cs := h.Conectores
+		if len(cs) == 0 {
+			cs = dominio.ConectoresPadrao
+		}
+		resp = Resposta{"uid": uid, "ambiente": amb, "existe": true, "habilitado": h.Habilitado, "posicao_max": h.PosicaoMax, "qtd_max_ordem": h.QtdMaxOrdem,
+			"conectores": cs, "por": h.Por, "motivo": h.Motivo, "em": emBROuNulo(h.Em)}
 	}
-	cs := h.Conectores
-	if len(cs) == 0 {
-		cs = dominio.ConectoresPadrao
+	if amb == dominio.AmbienteReal {
+		// v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1 §5.4): no REAL, o estado da aprovação e a versão
+		resp["estado"], resp["versao"] = dominio.EstadoSemAprovacao, 0
+		if ok {
+			resp["estado"], resp["versao"] = h.EstadoReal(), h.Versao
+		}
 	}
-	return Resposta{"uid": uid, "ambiente": amb, "existe": true, "habilitado": h.Habilitado, "posicao_max": h.PosicaoMax, "qtd_max_ordem": h.QtdMaxOrdem,
-		"conectores": cs, "por": h.Por, "motivo": h.Motivo, "em": emBROuNulo(h.Em)}, nil
+	return resp, nil
 }
 
 // AlterarHabilitacaoAssincrono: POST /usuarios/{uid}/habilitacao, na fila do motor.

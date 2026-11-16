@@ -137,7 +137,7 @@ func (m *Motor) descrever(op *operacao) Resposta {
 		"uid": op.UID, "conta": op.Conta, "destino": op.Destino, "conector": op.conector(), "ambiente": dominio.AmbienteDe(op.Ambiente), "simbolo": op.Simbolo,
 		"preco_medio_entrada": pe, "preco_medio_saida": ps, "motivo_saida": op.MotivoSaida, "origem_saida": op.OrigemSaida,
 		"pnl_pts": op.PnL, "preco_stop_ajustado": op.StopAjustado, "stop_origem": op.stopOrigem(), "ordens": os, "sinal": sinalDe(op),
-		"suspensa": suspensaDe(op)}
+		"suspensa": suspensaDe(op), "stop_corretora": m.stopCorretora(op)}
 }
 
 // suspensaDe (v1.28 §3): nulo = a operação não está suspensa.

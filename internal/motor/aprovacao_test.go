@@ -147,3 +147,30 @@ func TestAvaliadorDoReal(t *testing.T) {
 		t.Fatalf("sem RESOLVIDO: %v", n.textos)
 	}
 }
+
+// §5.5: os estados do cartão que o roteiro 134 não alcança — DESPROTEGIDA (posição sem 1014 e sem
+// saída: a recriação é na mesma volta, então só aqui), SAINDO pela operação em CANCELANDO_PROTECAO,
+// e a 1014 disparada (a filha no mercado) ainda VIVA.
+func TestStopCorretoraSemStop(t *testing.T) {
+	rel := relogio.NovoControlado(time.Date(2026, 11, 17, 13, 0, 0, 0, time.UTC))
+	m := &Motor{rel: rel}
+	entrada := &ordem{Ordem: dominio.Ordem{Papel: dominio.Entrada, Lado: dominio.Compra, Qtd: 1, QtdExec: 1, Estado: dominio.Executada}}
+	op := &operacao{ordens: []*ordem{entrada}}
+	op.Estado = dominio.PosicionadaSemProtecao
+	op.semProtecaoDesde = rel.Agora()
+	r := m.stopCorretora(op)
+	if r["estado"] != "DESPROTEGIDA" || r["desde"] != "2026-11-17T10:00:00.000-03:00" || r["clordid"] != nil || r["preco_stop"] != nil {
+		t.Fatalf("DESPROTEGIDA: %v", r)
+	}
+	op.Estado = dominio.CancelandoProtecao
+	if r := m.stopCorretora(op); r["estado"] != "SAINDO" || r["desde"] != nil {
+		t.Fatalf("SAINDO: %v", r)
+	}
+	op.Estado = dominio.Protegida
+	p := &ordem{Ordem: dominio.Ordem{Papel: dominio.Protecao, Lado: dominio.Venda, Qtd: 1, Estado: dominio.Ativa, ClOrdAtual: "KM-P-1-1", Stop: 129510, StopLim: 129410}}
+	p.disparadaEm = rel.Agora()
+	op.ordens = append(op.ordens, p)
+	if r := m.stopCorretora(op); r["estado"] != "VIVA" || r["disparada"] != true || r["preco_stop"] != int64(129510) || r["orderid37"] != nil {
+		t.Fatalf("disparada: %v", r)
+	}
+}

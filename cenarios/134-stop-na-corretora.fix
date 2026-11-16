@@ -1,0 +1,67 @@
+cenario 134 v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1 §5.5): o cartão "Stop na corretora" ao longo da operação no REAL — a 1014 enviada (AJUSTANDO), aceita (VIVA, com o preço confirmado), o ajuste em curso (AJUSTANDO, com o preço pedido) e confirmado, a saída (SAINDO, cor neutra, enquanto o cancelamento da 1014 e a saída correm) e a zerada (SEM_POSICAO); o mesmo pelo GET /usuarios/{uid}/stop
+hora 2026-11-17 10:00:00
+config ORDENS_AMBIENTE=
+config ORDENS_CONTAS_HML=
+config AMBIENTES_PERMITIDOS=REAL
+config REAL_FIX_HOST=pnt-falso
+config REAL_LIMITE_QTD_ORDEM=1
+config REAL_LIMITE_PERDA_DIA_PTS=600
+config REAL_LIMITE_ENTRADAS_DIA=30
+usuario 7 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"12345"}}
+aprova 7 conta=12345 corretora=85 conector=pnt
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+
+entrada 13401 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13401-1 847=1031
+http GET /ordens/13401
+resposta stop_corretora.estado=SEM_POSICAO stop_corretora.clordid=null
+envia @ER 11=KM-E-13401-1 37=dsa.13401 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-E-13401-1 37=dsa.13401 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+recebe 35=D 11=KM-P-13401-1 847=1014 20828=129510 20829=129410
+
+# --- a 1014 enviada, ainda sem a confirmação da corretora
+http GET /ordens/13401
+resposta stop_corretora.estado=AJUSTANDO stop_corretora.clordid=KM-P-13401-1 stop_corretora.preco_stop=129510 stop_corretora.desde=* stop_corretora.disparada=false
+envia @ER 11=KM-P-13401-1 37=dsa.13401.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=13401
+
+# --- VIVA, com o preço confirmado
+http GET /ordens/13401
+resposta stop_corretora.estado=VIVA stop_corretora.clordid=KM-P-13401-1 stop_corretora.orderid37=dsa.13401.P stop_corretora.preco_stop=129510 stop_corretora.preco_limite=129410 stop_corretora.qtd=1 stop_corretora.preco_stop_pedido=null stop_corretora.desde=null
+http GET /usuarios/7/stop
+resposta _status=200 uid=7 ambiente=REAL operacoes.#=1 operacoes.0.operacao_id=13401 operacoes.0.posicao=1 operacoes.0.simbolo=WINZ26 operacoes.0.stop_corretora.estado=VIVA
+
+# --- o ajuste em curso: o preço confirmado ainda é o antigo, o pedido aparece à parte
+stop 13401 preco=129800
+resposta aceito=true situacao=ENVIADO
+recebe 35=G 11=KM-P-13401-2 41=KM-P-13401-1 847=1014 20828=129800 20829=129700
+http GET /ordens/13401
+resposta stop_corretora.estado=AJUSTANDO stop_corretora.preco_stop=129510 stop_corretora.preco_stop_pedido=129800 stop_corretora.preco_limite_pedido=129700 stop_corretora.desde=*
+envia @ER 11=KM-P-13401-2 41=KM-P-13401-1 37=dsa.13401.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+evento PROTECAO_AJUSTADA operacao_id=13401 preco_stop=129800
+http GET /ordens/13401
+resposta stop_corretora.estado=VIVA stop_corretora.clordid=KM-P-13401-2 stop_corretora.preco_stop=129800 stop_corretora.preco_stop_pedido=null
+
+# --- a saída: SAINDO (neutro) com o cancelamento da 1014 em curso e depois com a ordem de saída viva
+preco bid=130100 ask=130105 preco=130100
+saida 13401 V SINAL_OPOSTO ambiente=REAL
+resposta aceito=true
+recebe 35=F 11=KM-P-13401-3 41=KM-P-13401-2
+http GET /ordens/13401
+resposta stop_corretora.estado=SAINDO stop_corretora.clordid=null stop_corretora.preco_stop=null
+envia @ER 11=KM-P-13401-3 41=KM-P-13401-2 37=dsa.13401.P 150=4 39=4 54=2 38=1 44=129700 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-13401-1 847=1031
+http GET /ordens/13401
+resposta stop_corretora.estado=SAINDO posicao=1
+envia @ER 11=KM-S-13401-1 37=dsa.13401.S 150=0 39=0 54=2 38=1 44=130050 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-S-13401-1 37=dsa.13401.S 150=F 39=2 54=2 38=1 44=130050 847=1031 32=1 31=130100 14=1 151=0 6=130100
+evento ZERADA operacao_id=13401
+http GET /ordens/13401
+resposta stop_corretora.estado=SEM_POSICAO
+http GET /usuarios/7/stop?ambiente=REAL
+resposta operacoes.#=0

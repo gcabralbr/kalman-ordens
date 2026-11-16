@@ -1,0 +1,99 @@
+cenario 132 v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1 §5): as rotas da aprovação do REAL com o REAL fora de AMBIENTES_PERMITIDOS (a aceitação fora do pregão) — a ficha, a lista, as ações do admin com as recusas (campos, versão, cadastro que mudou ou não serve, limites acima da instância, transição inválida), o GQ trocado durante o bloqueio, o desbloquear que volta divergente com o crítico [REAL], o aprovar do cadastro novo com o RESOLVIDO, o histórico, a rota antiga e a stop sem a instância
+hora 2026-11-17 18:40:00
+config ORDENS_AMBIENTE=
+config ORDENS_CONTAS_HML=
+config AMBIENTES_PERMITIDOS=SIM
+config REAL_LIMITE_QTD_ORDEM=1
+config REAL_LIMITE_POSICAO_MAX=1
+config REAL_LIMITE_PERDA_DIA_PTS=600
+config REAL_LIMITE_ENTRADAS_DIA=30
+config REAL_LIMITE_ENTRADAS_MIN=2
+usuario 1450 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"4582351"}}
+
+avanca 1s
+
+# --- sem aprovação: a lista vazia e a ficha com o GQ lido agora
+http GET /usuarios/real
+resposta _status=200 usuarios.#=0
+http GET /usuarios/1450/real
+resposta _status=200 uid=1450 estado=SEM_APROVACAO versao=0 aprovado=null ultima_mudanca=null divergencia=null acoes.#=1 acoes.0=aprovar historico.#=0
+resposta gq.conector=PNT gq.corretora_codigo=85 gq.corretora=BTG gq.conta=4582351 gq.valido=true gq.erro=null
+resposta limites_instancia.qtd_ordem=1 limites_instancia.posicao_max=1 limites_instancia.perda_dia_pts=600 limites_instancia.entradas_dia=30 limites_instancia.entradas_min=2
+resposta posicao.instancia=DESLIGADA posicao.operacoes=null
+http GET /usuarios/1450/real?historico=0
+resposta _status=400 codigo=CAMPO_INVALIDO
+
+# --- as recusas do aprovar
+http POST /usuarios/1450/real/aprovar {"por":1450,"motivo":"fase 1","versao":0,"qtd_max_ordem":1,"posicao_max":1}
+resposta _status=400 codigo=CAMPO_INVALIDO "motivo=~visto"
+http POST /usuarios/1450/real/aprovar {"motivo":"fase 1","versao":0,"visto":{"conector":"PNT","corretora_codigo":85,"conta":"4582351"},"qtd_max_ordem":1,"posicao_max":1}
+resposta _status=400 codigo=CAMPO_INVALIDO "motivo=~por"
+http POST /usuarios/1450/real/aprovar {"por":1450,"motivo":"ok","versao":0,"visto":{"conector":"PNT","corretora_codigo":85,"conta":"4582351"},"qtd_max_ordem":1,"posicao_max":1}
+resposta _status=400 codigo=CAMPO_INVALIDO "motivo=~3 a 200"
+http POST /usuarios/1450/real/aprovar {"por":1450,"motivo":"fase 1","versao":1,"visto":{"conector":"PNT","corretora_codigo":85,"conta":"4582351"},"qtd_max_ordem":1,"posicao_max":1}
+resposta _status=409 codigo=VERSAO_MUDOU
+http POST /usuarios/1450/real/aprovar {"por":1450,"motivo":"fase 1","versao":0,"visto":{"conector":"PNT","corretora_codigo":85,"conta":"1234567"},"qtd_max_ordem":1,"posicao_max":1}
+resposta _status=409 codigo=CADASTRO_MUDOU "motivo=~agora PNT / BTG (85) / conta 4582351, a tela viu PNT / BTG (85) / conta 1234567"
+http POST /usuarios/1450/real/aprovar {"por":1450,"motivo":"fase 1","versao":0,"visto":{"conector":"PNT","corretora_codigo":85,"conta":"4582351"},"qtd_max_ordem":2,"posicao_max":1}
+resposta _status=422 codigo=LIMITE_ACIMA_DA_INSTANCIA "motivo=~2/1 acima dos da instancia 1/1"
+http POST /usuarios/1450/real/zerar {"por":1450,"motivo":"fase 1","versao":0}
+resposta _status=400 codigo=CAMPO_INVALIDO
+http POST /usuarios/1450/real/bloquear {"por":1450,"motivo":"antes de aprovar","versao":0}
+resposta _status=409 codigo=TRANSICAO_INVALIDA "motivo=~SEM_APROVACAO"
+
+# --- aprovar e bloquear
+http POST /usuarios/1450/real/aprovar {"por":1450,"motivo":"fase 1, conta conferida na BTG","versao":0,"visto":{"conector":"PNT","corretora_codigo":85,"conta":"4582351"},"qtd_max_ordem":1,"posicao_max":1}
+resposta _status=200 aceito=true codigo=APROVADO estado=APROVADO versao=1 "motivo=uid 1450 aprovado no REAL: PNT / BTG (85) / conta 4582351, limites 1/1"
+evento ADMIN_ACAO acao=REAL_APROVAR uid=1450 ambiente=REAL por=admin:1450
+http POST /usuarios/1450/real/bloquear {"por":1450,"motivo":"conta em revisao","versao":1}
+resposta _status=200 codigo=BLOQUEADO estado=BLOQUEADO versao=2
+http POST /usuarios/1450/real/aprovar {"por":1450,"motivo":"de novo","versao":2,"visto":{"conector":"PNT","corretora_codigo":85,"conta":"4582351"},"qtd_max_ordem":1,"posicao_max":1}
+resposta _status=409 codigo=TRANSICAO_INVALIDA estado=BLOQUEADO versao=2
+
+# --- o GQ muda durante o bloqueio: o avaliador guarda o que viu, sem alerta (o estado do admin vale)
+gq 1450 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"1234567"}}
+avanca 31s
+sem_alerta REAL_CONTA_DIVERGENTE
+http GET /usuarios/1450/real
+resposta estado=BLOQUEADO versao=3 divergencia.campos.0=conta gq.conta=1234567 aprovado.conta=4582351 ultima_mudanca.origem=SERVICO
+
+# --- desbloquear com o GQ diferente: volta CONTA_DIVERGENTE, com o crítico [REAL]
+http POST /usuarios/1450/real/desbloquear {"por":1450,"motivo":"revisao feita","versao":3}
+resposta _status=200 codigo=CONTA_DIVERGENTE estado=CONTA_DIVERGENTE versao=4 "motivo=~aprovada PNT / BTG (85) / conta 4582351, atual PNT / BTG (85) / conta 1234567"
+evento ALERTA codigo=REAL_CONTA_DIVERGENTE "texto=~[REAL] uid 1450: cadastro do GQ diferente do aprovado."
+http GET /usuarios/1450/real
+resposta estado=CONTA_DIVERGENTE versao=4 acoes.#=4 acoes.0=aprovar divergencia.campos.#=1 divergencia.desde=*
+contrato docs/SPEC-TECNICA-REAL-PELA-TELA-F1.md 5.1
+
+# --- aprovar o cadastro novo: APROVADO e o RESOLVIDO
+http POST /usuarios/1450/real/aprovar {"por":1450,"motivo":"conta nova conferida","versao":4,"visto":{"conector":"PNT","corretora_codigo":85,"conta":"1234567"},"qtd_max_ordem":1,"posicao_max":1}
+resposta _status=200 codigo=APROVADO estado=APROVADO versao=5
+alerta RESOLVIDO
+http POST /usuarios/1450/real/limites {"por":1450,"motivo":"fase 1: 1 e 1","versao":5,"qtd_max_ordem":1,"posicao_max":1}
+resposta _status=200 codigo=LIMITES_ALTERADOS estado=APROVADO versao=6
+http POST /usuarios/1450/real/revogar {"por":1450,"motivo":"fim do teste","versao":6}
+resposta _status=200 codigo=REVOGADO estado=REVOGADO versao=7
+
+# --- a lista e o histórico
+http GET /usuarios/real
+resposta usuarios.#=1 usuarios.0.uid=1450 usuarios.0.estado=REVOGADO usuarios.0.conta=1234567 usuarios.0.versao=7 usuarios.0.origem=TELA
+contrato docs/SPEC-TECNICA-REAL-PELA-TELA-F1.md 5.2
+http GET /usuarios/1450/real?historico=3
+resposta historico.#=3 historico.0.evento=REVOGAR historico.0.estado_antes=APROVADO historico.0.origem=TELA historico.0.por=admin:1450 historico.1.evento=LIMITES historico.2.evento=APROVAR
+http GET /usuarios/1450/real?historico=200
+resposta historico.#=7 historico.6.evento=APROVAR historico.6.estado_antes=SEM_APROVACAO historico.4.evento=DIVERGENCIA historico.4.gq.conta=1234567
+
+# --- o GQ ilegível: a ficha diz, o aprovar recusa
+gq 1450 prd {"Robo":
+http GET /usuarios/1450/real
+resposta gq.valido=false gq.erro.codigo=REAL_CADASTRO_ILEGIVEL gq.conta=null divergencia=null
+http POST /usuarios/1450/real/aprovar {"por":1450,"motivo":"de novo","versao":7,"visto":{"conector":"PNT","corretora_codigo":85,"conta":"1234567"},"qtd_max_ordem":1,"posicao_max":1}
+resposta _status=422 codigo=CADASTRO_INVALIDO estado=REVOGADO versao=7
+
+# --- a rota antiga no REAL e a stop sem a instância REAL
+http POST /usuarios/1450/habilitacao?ambiente=REAL {"habilitado":true,"motivo":"x","por":1450}
+resposta _status=409 codigo=USE_APROVACAO_REAL
+http GET /usuarios/1450/habilitacao?ambiente=REAL
+resposta estado=REVOGADO versao=7 habilitado=false
+http GET /usuarios/1450/stop
+resposta _status=409 codigo=INSTANCIA_DESLIGADA ambiente=REAL

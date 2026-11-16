@@ -11,6 +11,7 @@ import (
 	"net/http/pprof"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
@@ -421,6 +422,10 @@ func Handler(m *motor.Servico, espera time.Duration) http.Handler {
 			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "uid invalido"}
 		case errAmb != nil:
 			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "AMBIENTE_INVALIDO", "motivo": "ambiente invalido (SIMULADOR ou REAL)"}
+		case amb == dominio.AmbienteReal:
+			// v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1 §5.4): o REAL é a aprovação, pelas rotas /real
+			status, resp = http.StatusConflict, motor.Resposta{"aceito": false, "codigo": "USE_APROVACAO_REAL",
+				"motivo": "no REAL, use POST /usuarios/{uid}/real/bloquear ou /desbloquear"}
 		case err != nil:
 			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()}
 		default:
@@ -433,6 +438,54 @@ func Handler(m *motor.Servico, espera time.Duration) http.Handler {
 		}
 		m.RegistrarPedidoHTTP("HABILITACAO", "", 0, uid, "", corpo, status, resp)
 		escrever(w, status, resp)
+	})
+	// v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1 §5): a aprovação do REAL pela tela
+	mux.HandleFunc("GET /usuarios/real", func(w http.ResponseWriter, r *http.Request) {
+		l, err := m.ListaReal()
+		responderReal(w, l, err)
+	})
+	mux.HandleFunc("GET /usuarios/{uid}/real", func(w http.ResponseWriter, r *http.Request) {
+		uid, err := strconv.Atoi(r.PathValue("uid"))
+		n, okN := motor.HistoricoPadrao(r.URL.Query().Get("historico"))
+		if err != nil || uid <= 0 || !okN {
+			escrever(w, http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "uid ou historico (1 a 200) invalido"})
+			return
+		}
+		f, err := m.FichaReal(uid, n)
+		responderReal(w, f, err)
+	})
+	mux.HandleFunc("POST /usuarios/{uid}/real/{acao}", func(w http.ResponseWriter, r *http.Request) {
+		corpo, _ := io.ReadAll(io.LimitReader(r.Body, limiteCorpo))
+		uid, errUID := strconv.Atoi(r.PathValue("uid"))
+		var p motor.PedidoAcaoReal
+		status, resp := http.StatusOK, motor.Resposta(nil)
+		switch err := decodificar(corpo, &p); {
+		case errUID != nil || uid <= 0:
+			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "uid invalido"}
+		case err != nil:
+			status, resp = http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": err.Error()}
+		default:
+			status, resp = m.AcaoReal(uid, r.PathValue("acao"), p)
+		}
+		m.RegistrarPedidoHTTP("REAL_"+strings.ToUpper(r.PathValue("acao")), "", 0, max(uid, 0), "", corpo, status, resp)
+		escrever(w, status, resp)
+	})
+	mux.HandleFunc("GET /usuarios/{uid}/stop", func(w http.ResponseWriter, r *http.Request) {
+		uid, err := strconv.Atoi(r.PathValue("uid"))
+		if err != nil || uid <= 0 {
+			escrever(w, http.StatusBadRequest, motor.Resposta{"aceito": false, "codigo": "CAMPO_INVALIDO", "motivo": "uid invalido"})
+			return
+		}
+		amb, ok := ambienteDaQuery(w, r.URL.Query().Get("ambiente"), dominio.AmbienteReal)
+		if !ok {
+			return
+		}
+		resp, ind := m.StopDoUsuario(uid, amb)
+		if ind != nil {
+			escrever(w, ind.HTTP, ind.Resp)
+			return
+		}
+		escrever(w, http.StatusOK, resp)
 	})
 	// ordens no PnT (v1.7 C): um 35=AF por conta, só leitura; intervalo mínimo com cache
 	mux.HandleFunc("GET /pnt/ordens", func(w http.ResponseWriter, r *http.Request) {
@@ -594,6 +647,15 @@ func conectorDaQuery(w http.ResponseWriter, v string, servico bool) (string, boo
 }
 
 // diaOuHoje (v1.34): as rotas de histórico novas usam hoje sem ?dia=.
+// responderReal: 200, ou 503 CONFIG_USUARIO_INDISPONIVEL (o banco do serviço ou do GQ).
+func responderReal(w http.ResponseWriter, r motor.Resposta, err error) {
+	if err != nil {
+		escrever(w, http.StatusServiceUnavailable, motor.Resposta{"aceito": false, "codigo": "CONFIG_USUARIO_INDISPONIVEL", "motivo": "banco do servico ou do GQ indisponivel"})
+		return
+	}
+	escrever(w, http.StatusOK, r)
+}
+
 func diaOuHoje(v string, m *motor.Servico) string {
 	if v == "" {
 		return m.Hoje()
