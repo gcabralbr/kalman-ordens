@@ -4,9 +4,9 @@ O roteiro é para o George ler antes de rodar. Os comandos com `sudo` estão sep
 de **S1** a **S17**, e a lista completa está no §10. Os comandos sem `sudo` (curl e `versao`) só
 leem.
 
-**Quando:** depois do fechamento. Pode ser hoje, 16/11, a partir das 18:45, ou em qualquer noite
-antes do primeiro pregão REAL. Não pode rodar com o pregão aberto, nem com o REAL ligado.
-O motivo está no §0.2. A data no nome do arquivo é a da preparação.
+**Quando:** hoje à tarde, 16/11, **depois da zeragem das 14:30**, com a conferência do §1 zerada:
+posição 0, nada vivo e nada suspenso. O George confirmou que depois das 14:00 nada roda no SIMULADOR
+e não há operação aberta. Não pode rodar com o REAL ligado. O motivo está no §0.2.
 
 **Uma janela só, do §1 ao §7.** Os comandos usam as variáveis de shell `$V`, `$DB`, `$T`, `$C` e
 `$F`, que só existem na janela do terminal onde foram criadas. Rode tudo, do §1 ao §7, na mesma
@@ -68,7 +68,7 @@ SPEC técnica:
   pelo caminho real (SPEC técnica §7.3, como foi refeita hoje).
 - **O aprovar, bloquear e revogar pela rota.** Também ficam para a instalação das telas.
 
-### 0.2 Quem é afetado, e por que precisa esperar o fechamento
+### 0.2 Quem é afetado, e por que depois da zeragem das 14:30
 
 | quem | durante a instalação | depois |
 |---|---|---|
@@ -79,15 +79,18 @@ SPEC técnica:
 | **REAL** | já está desligado (`AMBIENTES_PERMITIDOS=SIM`) | 1450, 5725 e qualquer outra linha REAL ficam em `SEM_APROVACAO`. Para religar o REAL, é preciso aprovar pela tela (D5). É o desejado |
 | fix-integration do GQ, md (marketdata) | não são tocados | — |
 
-**Precisa esperar o fechamento**, mesmo com o REAL desligado:
-- o SIMULADOR é a instância que reinicia. Com o pregão aberto, uma entrada, uma stop ou uma saída da
-  Flexscan pode cair justo nos 2 a 3 minutos parados, com posição aberta e sem o serviço olhando;
-- no pregão há também o relogin da Flexscan no meio do dia;
-- a regra da SPEC funcional (passo 3: "instalação do backend fora do pregão") e a de não fazer
-  restart do kalman-ordens no pregão continuam valendo.
+**Por que depois da zeragem das 14:30.** O SIMULADOR é a instância que reinicia. Com operação
+aberta, uma entrada, uma stop ou uma saída da Flexscan poderia cair justo nos 2 a 3 minutos parados,
+com posição aberta e sem o serviço olhando.
 
-Janela boa: **depois das 18:45**, com a janela da Flexscan (08:02–18:30) já fechada, e **antes das
-08:00** do dia seguinte. Evite também o horário das 08:45, quando sobem a principal e as sombras.
+O George confirmou que, depois das 14:00, nada roda no SIMULADOR e não há operação aberta. Depois da
+zeragem das 14:30, com o §1 zerado (posição 0, nada vivo e nada suspenso), esse risco não existe,
+mesmo com o pregão da B3 ainda aberto. O REAL está desligado, então não há conta real envolvida.
+A regra "instalação do backend fora do pregão" da SPEC funcional (passo 3) fica dispensada só nesta
+instalação, por decisão do George em 16/11, pelo mesmo motivo.
+
+O único efeito de estar dentro da janela da Flexscan (08:02–18:30) é o relogin da partida, descrito
+no §6. Se o §1 não vier zerado, **não instale**: espere zerar ou deixe para depois das 18:45.
 
 ### 0.3 A volta para a v1.34: até onde é simples
 
@@ -154,7 +157,7 @@ Pare aqui se:
 - o sha256 ou a versão não baterem;
 - o REAL estiver em `ambientes_permitidos`;
 - o banco não estiver em 18;
-- o pregão estiver aberto.
+- ainda não tiver passado a zeragem das 14:30.
 
 ## 2. O `service.env` (com o serviço ainda no ar; vale na partida do §6)
 
@@ -272,20 +275,39 @@ journalctl -u kalman-ordens --since '-1min' --no-pager | grep -E 'subindo|migra|
 #         "avaliador do REAL: ..." (não deve aparecer com todos em SEM_APROVACAO)
 curl -s 127.0.0.1:9092/saude | jq '{versao, ambientes_permitidos,
   posicao: .ambientes.SIMULADOR.posicao, suspensas: .ambientes.SIMULADOR.operacoes_suspensas,
-  flex: .ambientes.SIMULADOR.flexscan | {janela, logado, ativa_por, webhook_esperado, ultimo_login, ordens_vivas}}'
+  flex: .ambientes.SIMULADOR.flexscan | {janela, logado, ativa_por, webhook_esperado, ultimo_login,
+  webhook_conferido_em, webhook_recadastrado_em, webhook_faltas_seguidas, ordens_vivas}}'
 #   versao "09872ead98f2", ["SIMULADOR"], posicao 0, suspensas [], janela "08:02-18:30",
-#   logado true, ultimo_login partida/OK, ordens_vivas 0
+#   logado true, ativa_por "janela", ultimo_login partida/OK, ordens_vivas 0,
+#   webhook_conferido_em = agora (a conferência pedida pelo login), webhook_faltas_seguidas 0,
+#   webhook_recadastrado_em o de hoje de manhã (08:02), não o de agora
 ```
 
-**O login da partida precisa dar OK.** Fora da janela, a partida loga mesmo assim, como no sábado,
-14/11. Se o `ultimo_login` não vier `partida`/`OK`, espere um minuto e reinicie de novo com o S11b:
+**O relogin da Flexscan dentro da janela (08:02–18:30).** É o mesmo da instalação da janela, em 12/11
+às 15:37: agenda `ativa por=janela`, `LOGIN partida OK` e a conferência do webhook `presente` logo
+depois. O cuidado a mais está em dois pontos:
+- **Depois das 08:45 não há tolerância.** A `FLEXSCAN_TOLERANCIA_ABERTURA` vale só para a abertura.
+  Às 14:30, um login da partida que falhe dá o **crítico `FLEXSCAN_LOGIN` na hora** no Telegram, e
+  a ponte tenta de novo sozinha. Sem operação e sem ordem viva, nada fica exposto, mas o SIMULADOR
+  fica sem Flexscan até um login dar certo.
+- **A conferência do webhook roda logo depois do login.** O webhook foi cadastrado às 08:02 e deve
+  estar `presente`, sem recadastro. Se a Flexscan o tiver limpado no meio do dia, sai o crítico
+  `FLEXSCAN_WEBHOOK_AUSENTE` com "recadastrado" e, em seguida, o `RESOLVIDO`. Isso não é defeito da
+  v1.35, mas me mande o texto.
+
+**O login da partida precisa dar OK.** Se o `ultimo_login` não vier `partida`/`OK`, ou se vier o
+`FLEXSCAN_LOGIN`:
+1. olhe primeiro se a ponte já se recuperou sozinha: `logado true` no `/saude` um minuto depois, e o
+   `RESOLVIDO` do `FLEXSCAN_LOGIN`;
+2. se não, reinicie de novo com o **S11b**:
 ```bash
 sudo systemctl restart kalman-ordens
 ```
-Se falhar outra vez, me mande o journal. A falha é da Flexscan, e voltar de versão não resolve.
+Se falhar outra vez, me mande o journal. A falha é da Flexscan, e voltar de versão não resolve: a
+v1.34 faria o mesmo login.
 
-**No Telegram:** nenhum crítico e nenhum `REAL_*`. O que já aparece num restart comum continua
-igual.
+**No Telegram:** só a `CONCILIACAO` da partida (0 ordens, posição 0), como em 12/11. Nenhum crítico e
+nenhum `REAL_*`.
 
 ## 7. A conferência desta instalação (REAL desligado)
 
