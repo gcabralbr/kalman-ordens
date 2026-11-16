@@ -226,159 +226,191 @@ Fora da conta, uma observação para a D9: o **20858/20859** (`RobotID`, `Enteri
 (`m.p.RobotID`, `motor.go:191`), não da operação. Para o Day Trade × Position dos beta testers, o
 OMS terá de ser congelado na operação, como a conta.
 
-## 5. Rotas novas
+## 5. Rotas novas — o contrato (E3, referência para as telas)
 
-Valem para todas:
-- JSON, textos de resposta em ASCII;
-- `por` é o uid do admin, que o proxy do KalmanWIN preenche e confere o perfil, como nas ações de
-  hoje (`servico.py:1288`);
-- `motivo` é obrigatório nas escritas, com 3 a 200 caracteres;
-- as rotas escrevem no banco pelo avaliador do serviço (§3.1), com ou sem a instância REAL;
-- toda escrita roda numa transação com `SELECT … FOR UPDATE` na linha, confere a `versao` mandada
-  (`409 VERSAO_MUDOU` se outra pessoa mudou antes), grava a linha e o histórico, invalida o cache
-  do uid (`invalidarUsuario`) e publica `ADMIN_ACAO`.
+Este é o contrato que o CC do Kalman usa nas telas. As rotas são do kalman-ordens (`127.0.0.1:9092`)
+e chegam às telas pelo proxy do KalmanWIN; os nomes das rotas do proxy (`/gq/admin-...`) são do CC
+do Kalman. Os exemplos são os da implementação; os roteiros 132 e 134 conferem a forma.
 
-Erros comuns:
+**Valem para todas:**
+- JSON; os textos (`motivo`, `texto`) em ASCII, prontos para a tela mostrar;
+- datas em RFC 3339 com milissegundos, no fuso de Brasília (`2026-11-17T18:20:01.123-03:00`);
+  `null` quando não há;
+- o REAL é implícito nas rotas `/real`; elas funcionam **com ou sem o REAL em
+  `AMBIENTES_PERMITIDOS`** (a aprovação é feita fora do pregão, com o REAL desligado);
+- `por` é o **uid do admin** (inteiro), que o proxy preenche depois de conferir o perfil de admin,
+  como nas ações de hoje (`servico.py:1288`); gravado como `admin:<uid>`;
+- `motivo` obrigatório nas escritas: de 3 a 200 caracteres;
+- `versao` obrigatória nas escritas: a da ficha que a tela mostrou. Se outra pessoa (ou o avaliador)
+  mudou a linha depois, `409 VERSAO_MUDOU` e a tela recarrega a ficha;
+- toda escrita roda numa transação com a linha travada (`FOR UPDATE`), grava a linha e uma linha
+  no histórico (`origem=TELA`), invalida o cache do uid e publica o evento `ADMIN_ACAO`
+  (`{"acao": "REAL_APROVAR", "uid", "ambiente": "REAL", "motivo", "por"}`, e assim por ação).
+
+**Erros** (corpo sempre `{"aceito": false, "codigo", "motivo"}`; nas escritas, também `estado` e
+`versao` atuais quando a linha existe):
 
 | HTTP | `codigo` | quando |
 |---|---|---|
-| 400 | `CAMPO_INVALIDO` | uid, motivo, `por`, limites |
-| 409 | `TRANSICAO_INVALIDA` | ação não permitida no estado (motivo traz o estado atual) |
+| 400 | `CAMPO_INVALIDO` | uid não positivo, JSON inválido, ação desconhecida, `motivo` fora de 3–200, `por` ausente, `versao` ausente, limites ausentes ou ≤ 0, `visto` ausente no aprovar, `historico` fora de 1–200 |
+| 409 | `TRANSICAO_INVALIDA` | a ação não se aplica ao estado atual (o motivo diz o estado) |
 | 409 | `VERSAO_MUDOU` | a `versao` mandada não é a atual |
-| 409 | `CADASTRO_MUDOU` | aprovar: o GQ agora não é o que o admin viu |
-| 422 | `CADASTRO_INVALIDO` | aprovar: a `prd` não resolve (corretora desconhecida, conta de simulador, conector desconhecido) |
-| 422 | `LIMITE_ACIMA_DA_INSTANCIA` | limite do uid maior que o `REAL_LIMITE_*` da instância |
+| 409 | `CADASTRO_MUDOU` | aprovar: o cadastro do GQ agora não é o `visto` (o motivo traz os dois) |
+| 409 | `USE_APROVACAO_REAL` | a rota antiga `POST /usuarios/{uid}/habilitacao?ambiente=REAL` (§5.4) |
+| 422 | `CADASTRO_INVALIDO` | aprovar: o cadastro do GQ não serve para o REAL (ilegível, uid sem linha no GQ, corretora desconhecida, conta de simulador, conector desconhecido) |
+| 422 | `LIMITE_ACIMA_DA_INSTANCIA` | aprovar/limites: `qtd_max_ordem > REAL_LIMITE_QTD_ORDEM` ou `posicao_max > REAL_LIMITE_POSICAO_MAX` |
 | 422 | `LIMITES_INSTANCIA_AUSENTES` | aprovar/limites sem `REAL_LIMITE_QTD_ORDEM` ou `REAL_LIMITE_POSICAO_MAX` no env |
-| 503 | `CONFIG_USUARIO_INDISPONIVEL` | banco do GQ ou do serviço ilegível |
+| 503 | `CONFIG_USUARIO_INDISPONIVEL` | o banco do serviço ou o do GQ não respondeu |
 
-Transições do admin:
+**Transições do admin** (`acoes` da ficha lista as possíveis no estado atual):
 
 | ação | de | para |
 |---|---|---|
 | `aprovar` | `SEM_APROVACAO`, `REVOGADO`, `CONTA_DIVERGENTE` | `APROVADO` |
 | `bloquear` | `APROVADO`, `CONTA_DIVERGENTE` | `BLOQUEADO` |
-| `desbloquear` | `BLOQUEADO` | `APROVADO`, ou `CONTA_DIVERGENTE` se o GQ já difere (com o alerta) |
+| `desbloquear` | `BLOQUEADO` | `APROVADO`, ou `CONTA_DIVERGENTE` se o GQ já difere do aprovado |
 | `revogar` | `APROVADO`, `BLOQUEADO`, `CONTA_DIVERGENTE` | `REVOGADO` |
-| `limites` | `APROVADO`, `BLOQUEADO`, `CONTA_DIVERGENTE` | o mesmo, com versão nova |
+| `limites` | `APROVADO`, `BLOQUEADO`, `CONTA_DIVERGENTE` | o mesmo estado, com a versão nova |
 
-`aprovar` em `BLOQUEADO` é recusado: primeiro desbloquear (funcional: sai só por desbloquear). Nenhuma
-ação zera ou cancela ordem (funcional: revogar ou bloquear não zera).
+Nenhuma ação zera nem cancela ordem (funcional: revogar ou bloquear não zera). `aprovar` em
+`BLOQUEADO` é `TRANSICAO_INVALIDA`: primeiro desbloquear.
 
-### 5.1 `GET /usuarios/{uid}/real?historico=50` — a ficha
+### 5.1 `GET /usuarios/{uid}/real?historico=20` — a ficha
+
+`historico`: quantas linhas do histórico, de 1 a 200 (padrão 20), da mais recente para a mais antiga.
 
 ```json
 {"uid": 1450, "estado": "CONTA_DIVERGENTE", "versao": 4,
+ "acoes": ["aprovar", "bloquear", "revogar", "limites"],
  "aprovado": {"conector": "PNT", "corretora_codigo": 85, "corretora": "BTG", "conta": "4582351",
               "qtd_max_ordem": 1, "posicao_max": 1,
-              "por": "1450", "em": "2026-11-17T18:20:01.123-03:00", "motivo": "fase 1, conta conferida na BTG"},
+              "por": "admin:1450", "em": "2026-11-17T18:20:01.123-03:00", "motivo": "fase 1, conta conferida na BTG"},
  "gq": {"conector": "PNT", "corretora_codigo": 85, "corretora": "BTG", "conta": "1234567",
-        "lido_em": "2026-11-18T10:01:12.004-03:00", "erro": null},
+        "lido_em": "2026-11-18T10:01:12.004-03:00", "valido": true, "erro": null},
  "divergencia": {"desde": "2026-11-18T10:00:41.870-03:00", "campos": ["conta"]},
- "ultima_mudanca": {"evento": "DIVERGENCIA", "por": "servico", "em": "...", "motivo": "..."},
- "acoes": ["aprovar", "bloquear", "revogar", "limites"],
+ "ultima_mudanca": {"evento": "DIVERGENCIA", "origem": "SERVICO", "por": "servico", "em": "2026-11-18T10:00:41.870-03:00",
+                    "motivo": "cadastro do GQ diferente do aprovado: PNT / BTG (85) / conta 1234567"},
  "limites_instancia": {"qtd_ordem": 1, "posicao_max": 1, "perda_dia_pts": 600, "entradas_dia": 30, "entradas_min": 2},
- "posicao": {"total": 1, "operacoes": [{"operacao_id": 234754, "modulo": "KALMAN", "conta": "4582351", "posicao": 1}]},
+ "posicao": {"instancia": "LIGADA", "total": 1,
+             "operacoes": [{"operacao_id": 234754, "modulo": "KALMAN", "conta": "4582351", "simbolo": "WINZ26", "posicao": 1,
+                            "stop_corretora": {"estado": "VIVA", "preco_stop": 173835, "...": "§5.5"}}]},
  "historico": [{"id": 88, "evento": "DIVERGENCIA", "estado_antes": "APROVADO", "estado": "CONTA_DIVERGENTE", "versao": 4,
                 "conector": "PNT", "corretora_codigo": 85, "conta": "4582351", "qtd_max_ordem": 1, "posicao_max": 1,
                 "gq": {"conector": "PNT", "corretora_codigo": 85, "conta": "1234567"},
-                "por": "servico", "motivo": "cadastro do GQ diferente do aprovado", "em": "..."}]}
+                "origem": "SERVICO", "por": "servico", "motivo": "cadastro do GQ diferente do aprovado: PNT / BTG (85) / conta 1234567",
+                "em": "2026-11-18T10:00:41.870-03:00"}]}
 ```
 
-- Sem linha REAL: `estado` vem `SEM_APROVACAO`, com `aprovado: null` e `versao: 0`.
-- O `gq` é relido na hora (como o `/destino`, `ambiente.go:96`).
-- `posicao` vem da instância REAL quando existe; sem ela, vem `null` e `instancia: "DESLIGADA"`.
-- `limites_instancia` vem do env, com ou sem o REAL permitido; a chave ausente vem `null`.
-- `historico` vem do mais recente para o mais antigo.
+- **Sem linha REAL:** `estado` `SEM_APROVACAO`, `versao` 0, `aprovado` e `ultima_mudanca` `null`,
+  `historico` `[]`, `acoes` `["aprovar"]`. A linha da migração (`SEM_APROVACAO`, origem
+  `MIGRACAO`) traz `aprovado: null` também (nunca houve aprovação) e o histórico com ela.
+- **`gq`** é relido do GQ na hora (como o `/destino`). `valido: false` com `erro`
+  (`{"codigo": "REAL_CADASTRO_ILEGIVEL" | "CADASTRO_INVALIDO", "motivo"}`) quando a coluna não se lê
+  ou não serve para o REAL; os campos que se leram aparecem, os outros `null`. Uid sem linha no GQ:
+  todos `null`, `valido: false`. `conector` sem `Robo.Conector` no GQ: `null` (vale o aprovado).
+- **`divergencia`:** `null` quando o GQ é o aprovado (ou não há aprovado). `campos` entre `conector`,
+  `corretora`, `conta`. `desde` é o da linha (`null` se o avaliador ainda não passou).
+- **`limites_instancia`:** do env, com ou sem o REAL permitido; a chave ausente vem `null`.
+- **`posicao`:** da instância REAL; sem ela, `{"instancia": "DESLIGADA", "total": null,
+  "operacoes": null}`.
+- **`historico[].gq`:** `null` quando a linha não tinha divergência; `por` como gravado
+  (`admin:<uid>`, `servico`, `migracao-0019`, o usuário do sistema na CLI).
 
 ### 5.2 `GET /usuarios/real` — a lista
 
-Ela existe já nesta fase porque a tela do admin precisa achar quem tem linha. A tela da lista
-completa é dos beta testers:
+Só os uids com linha REAL (o 1450 e o 5725 aparecem como `SEM_APROVACAO` depois da 0019), em ordem
+de uid:
 
 ```json
-{"usuarios": [{"uid": 1450, "estado": "APROVADO", "conta": "4582351", "corretora": "BTG", "conector": "PNT",
-               "qtd_max_ordem": 1, "posicao_max": 1, "versao": 3, "alterado_em": "...", "divergente": false}]}
+{"usuarios": [{"uid": 1450, "estado": "APROVADO", "conector": "PNT", "corretora_codigo": 85, "corretora": "BTG",
+               "conta": "4582351", "qtd_max_ordem": 1, "posicao_max": 1, "versao": 3, "origem": "TELA",
+               "alterado_por": "admin:1450", "alterado_em": "2026-11-17T18:20:01.123-03:00", "divergente_desde": null}]}
 ```
 
-Ela traz só os uids com linha REAL. O 5725 aparece como `SEM_APROVACAO` depois da 0019.
+`conector`, `corretora_codigo`, `corretora` e `conta` vêm `null` sem aprovação.
 
 ### 5.3 Escritas: `POST /usuarios/{uid}/real/{acao}`
 
 `acao` ∈ `aprovar`, `bloquear`, `desbloquear`, `revogar`, `limites`.
 
 ```json
-// aprovar
+// aprovar: o "visto" é o cadastro do GQ que a ficha mostrou (gq.conector, gq.corretora_codigo, gq.conta)
 {"por": 1450, "motivo": "fase 1, conta conferida na BTG", "versao": 2,
  "visto": {"conector": "PNT", "corretora_codigo": 85, "conta": "4582351"},
  "qtd_max_ordem": 1, "posicao_max": 1}
 // bloquear | desbloquear | revogar
-{"por": 1450, "motivo": "...", "versao": 3}
+{"por": 1450, "motivo": "conta em revisao", "versao": 3}
 // limites
-{"por": 1450, "motivo": "...", "versao": 3, "qtd_max_ordem": 1, "posicao_max": 1}
+{"por": 1450, "motivo": "fase 1: 1 e 1", "versao": 3, "qtd_max_ordem": 1, "posicao_max": 1}
 ```
 
 Resposta 200:
 
 ```json
-{"aceito": true, "codigo": "APROVADO", "motivo": "uid 1450 aprovado no REAL: PNT / BTG / 4582351, limites 1/1",
+{"aceito": true, "codigo": "APROVADO", "motivo": "uid 1450 aprovado no REAL: PNT / BTG (85) / conta 4582351, limites 1/1",
  "estado": "APROVADO", "versao": 3}
 ```
 
-- **`aprovar`** relê o GQ na hora. O `visto` tem de ser igual ao relido, senão `409 CADASTRO_MUDOU`
-  com o atual no motivo: o admin aprova o que viu, nunca o que mudou depois.
-- **A conta aprovada é sempre a do GQ.** Não existe aprovar uma conta digitada.
-- **Os limites** são obrigatórios na `aprovar` e na `limites`, maiores que 0 e **no máximo os da
-  instância** (decisão 5): `qtd_max_ordem ≤ REAL_LIMITE_QTD_ORDEM` e `posicao_max ≤
-  REAL_LIMITE_POSICAO_MAX`, senão `422 LIMITE_ACIMA_DA_INSTANCIA` com os dois valores no motivo.
-  Os `REAL_LIMITE_*` são lidos do env **também com o REAL fora do `AMBIENTES_PERMITIDOS`** (hoje
-  eles só são lidos com o REAL permitido). Sem eles no env, a aprovação é recusada com
-  `422 LIMITES_INSTANCIA_AUSENTES`.
+| ação | `codigo` de sucesso |
+|---|---|
+| aprovar | `APROVADO` |
+| bloquear | `BLOQUEADO` |
+| desbloquear | `DESBLOQUEADO`, ou `CONTA_DIVERGENTE` (o GQ já difere: o motivo traz aprovado × atual e o alerta sai) |
+| revogar | `REVOGADO` |
+| limites | `LIMITES_ALTERADOS` |
 
-Códigos de sucesso: `APROVADO`, `BLOQUEADO`, `DESBLOQUEADO` (ou `CONTA_DIVERGENTE` no desbloquear),
-`REVOGADO`, `LIMITES_ALTERADOS`.
+- **`aprovar`** relê o GQ na hora e resolve a coluna como a entrada resolveria (corretora conhecida,
+  conta pela regra do conector, nunca conta de simulador). O `visto` tem de ser igual ao relido
+  (`visto.conector` `null` = o GQ não diz o conector), senão `409 CADASTRO_MUDOU`: o admin aprova o
+  que viu, nunca o que mudou depois. **A conta aprovada é sempre a do GQ**; não existe aprovar uma
+  conta digitada. Sem `Robo.Conector` no GQ, o conector aprovado é o PnT.
+- **Limites** (aprovar e limites): obrigatórios, maiores que 0 e no máximo os da instância (decisão 5).
 
-### 5.4 A rota antiga `POST /usuarios/{uid}/habilitacao?ambiente=REAL`
+### 5.4 A rota antiga `/usuarios/{uid}/habilitacao` no REAL
 
-Ela responde `409 USE_APROVACAO_REAL` ("no REAL, use /usuarios/{uid}/real/bloquear|desbloquear") e
-não grava nada. Hoje o proxy chama essa rota com o ambiente (`admin.py:541`). Assim o botão
-"bloquear usuário" da tela atual falha de forma explícita, em vez de mexer num `habilitado` que
-deixou de mandar. No SIMULADOR, ela continua igual. O `GET` da mesma rota no REAL passa a trazer
-`estado` e `aprovado`, sem mudar os campos de hoje.
+`POST /usuarios/{uid}/habilitacao?ambiente=REAL` responde `409 USE_APROVACAO_REAL` ("no REAL, use
+POST /usuarios/{uid}/real/bloquear ou /desbloquear") e não grava nada. O "bloquear/desbloquear
+usuário" da tela atual (`admin.py:541`) passa a falhar de forma explícita no REAL até a tela usar as
+rotas do §5.3; no SIMULADOR, nada muda. O `GET` da mesma rota no REAL continua com os campos de hoje
+e ganha `estado` e `versao`.
 
-### 5.5 A stop na corretora: `stop_corretora` em cada operação
+### 5.5 A stop na corretora: `stop_corretora`
 
-É um campo novo em `descrever(op)` (`saude.go:127`). Ele aparece em `GET /ordens/{id}`,
-`GET /operacoes` e no `/saude`, os caminhos que a ficha e a tela do usuário já leem. O CC do
-Kalman confirma qual dos três usa.
+Em cada operação do `GET /ordens/{id}`, do `GET /operacoes`, do `/saude` (operações vivas) e da
+ficha (§5.1):
 
 ```json
-"stop_corretora": {"estado": "VIVA", "clordid": "KM-P-234754-2", "orderid37": "dsa.…",
+"stop_corretora": {"estado": "VIVA", "clordid": "KM-P-234754-2", "orderid37": "dsa.234754.P",
                    "preco_stop": 173835, "preco_limite": 173735, "qtd": 1,
-                   "preco_stop_pedido": null, "disparada": false, "desde": "2026-11-17T10:31:02.441-03:00"}
+                   "preco_stop_pedido": null, "preco_limite_pedido": null, "disparada": false, "desde": null}
 ```
 
-| `estado` | regra (sobre a 1014 viva `p = op.viva(Protecao)`) | cor sugerida |
+| `estado` | regra (`p` = a 1014 viva da operação) | cor (decisão 2) |
 |---|---|---|
-| `VIVA` | `p` confirmada (`ATIVA`/`PENDENTE`/`PARCIAL`) e `p.pend == semPendencia` | normal |
-| `AJUSTANDO` | `p.pend == pendReplace` (o `G` saiu e não foi confirmado), ou `p` em `ENVIANDO`/`SEM_CONFIRMACAO` | amarelo |
-| `DESPROTEGIDA` | `posição ≠ 0`, nenhuma 1014 viva e **nenhuma saída em curso** | vermelho |
-| `SAINDO` | `posição ≠ 0`, sem 1014 viva, com saída em curso (a stop foi cancelada de propósito para sair) | neutra (decisão 2) |
-| `SEM_POSICAO` | `posição == 0` | — |
+| `VIVA` | `p` aceita pela corretora (`ATIVA`, `PENDENTE`, `PARCIAL`) e sem replace em curso | normal |
+| `AJUSTANDO` | `p` com replace (`35=G`) em curso, ou enviada e ainda sem confirmação (`ENVIANDO`, `SEM_CONFIRMACAO`) | amarela |
+| `SAINDO` | posição ≠ 0, sem 1014 viva, com saída em curso (ordem de saída viva ou a operação em `CANCELANDO_PROTECAO`/`SAINDO`) | neutra |
+| `DESPROTEGIDA` | posição ≠ 0, sem 1014 viva e sem saída em curso | vermelha |
+| `SEM_POSICAO` | posição = 0 | — |
 
-- `preco_stop` e `preco_limite` são os **confirmados pela corretora** (`o.Stop` e `o.StopLim`, que
-  só mudam no `39=5`, `recebe.go:517`).
-- Em `AJUSTANDO`, `preco_stop_pedido` traz o pedido (`o.stopPend`).
-- `disparada` é `!p.disparadaEm.IsZero()`: a filha já está no mercado.
-- `desde`: em `DESPROTEGIDA`, é `op.semProtecaoDesde`.
-- **O alerta da `DESPROTEGIDA`** já existe: `SEM_PROTECAO`, crítico depois de 2 s, e
-  `PROTECAO_RECRIADA`. Não entra alerta novo.
+- `preco_stop` e `preco_limite`: os **confirmados pela corretora** (mudam só no `39=5`); em
+  `AJUSTANDO` por replace, `preco_stop_pedido` e `preco_limite_pedido` trazem o pedido.
+- `disparada`: a 1014 já disparou (a filha está no mercado).
+- `desde`: em `DESPROTEGIDA`, desde quando a posição está sem 1014; em `AJUSTANDO`, desde o pedido;
+  `null` nos outros.
+- Sem 1014 (`SAINDO`, `DESPROTEGIDA`, `SEM_POSICAO`): `clordid`, `orderid37`, os preços e `qtd` vêm
+  `null`.
+- O alerta da `DESPROTEGIDA` já existe (`SEM_PROTECAO`, crítico depois de 2 s); não há alerta novo.
 
-Também entra `GET /usuarios/{uid}/stop?ambiente=REAL`, com o `stop_corretora` das operações vivas
-do uid, para a tela do usuário não precisar filtrar `/operacoes`:
+`GET /usuarios/{uid}/stop?ambiente=REAL` (padrão REAL): as operações não finais do uid com posição
+ou ordem viva na instância do ambiente, para a tela do usuário não filtrar `/operacoes`:
 
 ```json
-{"uid": 1450, "ambiente": "REAL", "operacoes": [{"operacao_id": 234754, "modulo": "KALMAN", "posicao": 1, "stop_corretora": {}}]}
+{"uid": 1450, "ambiente": "REAL", "operacoes": [{"operacao_id": 234754, "modulo": "KALMAN", "simbolo": "WINZ26",
+  "posicao": 1, "stop_corretora": {"estado": "VIVA", "preco_stop": 173835, "...": "como acima"}}]}
 ```
+
+Sem a instância do ambiente: `409 INSTANCIA_DESLIGADA` (o mesmo da v1.34, com o `historico`).
 
 ## 6. Fim do `REAL_UIDS` e do `REAL_CONTAS`
 
@@ -427,7 +459,7 @@ filtrado, `cp`).
 
 ### 7.2 Roteiros (`cenarios/*.fix`, PnT e Flexscan falsos)
 
-- **132-aprovacao-real:** sem linha → `REAL_SEM_APROVACAO` na entrada e no `/destino`; aprovar com
+- **132-aprovacao-real:** as rotas do §5 (ficha, lista, escritas, a antiga com 409) e sem linha → `REAL_SEM_APROVACAO` na entrada e no `/destino`; aprovar com
   `visto` errado → `CADASTRO_MUDOU`; aprovar → entrada aceita com a conta aprovada; bloquear →
   `REAL_BLOQUEADO`, e a 1014 e a saída da operação aberta seguem; desbloquear; revogar →
   `REAL_REVOGADO`; aprovar de novo; limites 1/1 → a 2ª entrada barra em `POSICAO_MAXIMA`.
