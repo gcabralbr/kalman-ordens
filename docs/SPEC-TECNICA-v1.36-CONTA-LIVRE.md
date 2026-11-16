@@ -1,291 +1,430 @@
-# SPEC técnica v1.36: a conta livre (revisão de D3, D6 e D10)
+# SPEC técnica v1.36: a conta livre e o REAL sem limites de negócio
 
-16/11/2026, para o George aprovar antes de codar. Base: `SPEC-REAL-PELA-TELA-F1.md`, com D3, D6 e D10
-revistas no fim da tarde de 16/11, e a v1.35 instalada (`09872ead98f2`). A SPEC técnica da v1.35
-(`SPEC-TECNICA-REAL-PELA-TELA-F1.md`) continua valendo no que esta não muda.
+16/11/2026, para o George aprovar antes de codar.
 
-Em uma frase: a aprovação passa a dizer só "este uid pode usar o REAL". Ela guarda limites, quem,
-quando, motivo e histórico. A conta, a corretora e o conector vêm do cadastro do GQ a cada entrada,
-sem comparação. O cadastro inutilizável recusa a entrada e avisa uma vez.
+**Revisão 2.**
+- Entram o D7 (sem limites de negócio) e as respostas ao §10, da revisão anterior: P1 a P4.
+- O D11 está no §7, só leitura.
+- A SPEC funcional com D2, D3, D7, D11 e D12 revistos não está no disco: nem o `docs/` do
+  `main` nem o da `v1.36` têm D11/D12. Esta revisão segue o que o George escreveu no pedido. Falta
+  conferir contra o texto quando ele for salvo.
+
+Base:
+- `SPEC-REAL-PELA-TELA-F1.md`;
+- a v1.35 instalada (`09872ead98f2`);
+- a SPEC técnica da v1.35 (`SPEC-TECNICA-REAL-PELA-TELA-F1.md`), que continua valendo no que esta não
+  muda.
+
+Em resumo:
+- **Aprovação:** diz só "este uid pode usar o REAL". Guarda quem, quando, motivo e histórico. Sem
+  conta e sem limites.
+- **Cadastro:** conta, corretora e conector vêm do GQ a cada entrada, sem comparação. O cadastro que
+  o sistema não atende recusa a entrada e avisa uma vez.
+- **Travas:** no REAL ficam só as travas contra defeito.
 
 ## 1. O que sai da v1.35
 
 | sai | onde está hoje | na v1.36 |
 |---|---|---|
-| conta e corretora na aprovação | `aprovar` grava `corretora`/`conta` com o que o GQ tinha; a entrada manda nessa conta | `aprovar` não grava conta nem corretora. A entrada usa a do GQ |
+| conta e corretora na aprovação | `aprovar` grava `corretora`/`conta` do GQ; a entrada manda nessa conta | `aprovar` não grava conta nem corretora. A entrada usa a do GQ |
+| conector na aprovação (`conectores`) | o `aprovar` grava o conector do GQ; a entrada recusa outro (`CONECTOR_NAO_HABILITADO`) | no REAL, a coluna é ignorada (P1). O conector é o do GQ, se a máquina o atende (§3.1) |
 | o `visto` do aprovar | `CADASTRO_MUDOU` (409) se o GQ mudou entre a ficha e o clique | aceito e ignorado (a tela F1 manda). Sem `CADASTRO_MUDOU` |
-| a comparação a cada 30 s | `aprovacao.DecidirCadastro` grava a transição pelo avaliador | sai. O verificador do §2.3 só lê, não grava nada |
+| limites na aprovação (`qtd_max_ordem`, `posicao_max`) | obrigatórios no `aprovar`; a ação `limites`; conferidos contra a instância | saem (D7). O `aprovar` aceita e ignora; a ação `limites` sai das ações e da rota |
+| `REAL_LIMITE_*` | os 5 obrigatórios com o REAL permitido; viram os `LIMITE_*` da instância REAL | não são exigidos nem aplicados (§2) |
+| a comparação a cada 30 s | `aprovacao.DecidirCadastro` grava a transição pelo avaliador | sai. O verificador do §3.3 só lê, não grava nada |
 | o estado `CONTA_DIVERGENTE` | transição automática, `habilitado=0` | não é mais gerado. Fica como valor antigo no histórico |
-| o alerta `REAL_CONTA_DIVERGENTE` | crítico por uid, repete | sai do catálogo |
-| a recusa `REAL_CONTA_DIVERGENTE` | entrada e `/destino` | sai |
+| o alerta e a recusa `REAL_CONTA_DIVERGENTE` | crítico por uid, repete; entrada e `/destino` | saem do catálogo |
 | `desbloquear` que volta divergente | resposta `codigo=CONTA_DIVERGENTE` | `desbloquear` sempre volta a `APROVADO` |
-| `REAL_CADASTRO_ILEGIVEL` (recusa e alerta) | só o JSON ilegível | absorvido por `REAL_CADASTRO_INUTILIZAVEL` (§2) |
+| `REAL_CADASTRO_ILEGIVEL` (recusa e alerta) | só o JSON ilegível | absorvido por `REAL_CADASTRO_INUTILIZAVEL` (§3) |
 
-**As colunas não saem.** As colunas `corretora`, `conta`, `gq_conector`, `gq_corretora`, `gq_conta`
-e `divergente_desde` da `kalmanordemusuario` e da `...hist` ficam no banco, e a v1.36 deixa de usá-las:
-- o `aprovar` grava `NULL` nelas;
-- as outras ações (`bloquear`, `limites`...) copiam o que estava lá, como a v1.35 já fazia;
+**As colunas não saem.** Na `kalmanordemusuario` e na `...hist` ficam `corretora`, `conta`, `gq_*`,
+`divergente_desde`, `conectores`, `qtd_max_ordem` e `posicao_max`. No REAL, a v1.36 deixa de usá-las:
+- o `aprovar` grava `NULL` (ou 0, nas que são `NOT NULL`);
+- as outras ações copiam o que estava lá, como a v1.35 já fazia;
 - a leitura ignora essas colunas.
 
-As linhas antigas do histórico, inclusive as de `CONTA_DIVERGENTE` do teste de 16/11, saem na ficha
-como estão, só como registro.
+As linhas antigas do histórico saem na ficha como estão, só como registro. Isso inclui as de
+`CONTA_DIVERGENTE` do teste de 16/11. O SIMULADOR continua com `conectores` e os limites por uid da
+CLI, como hoje.
 
-**O conector continua na aprovação.** A coluna `conectores` é "conector permitido ao usuário" (D10).
-O 1450 tem `PNT` e o 5725 tem `FLEXSCAN`. Detalhe e pergunta no §8 (P1).
+**Um uid em `CONTA_DIVERGENTE` na instalação: passa a `APROVADO` (P4).**
+- Hoje não há nenhum: o 1450 está `APROVADO` v5 e o 5725 está em `SEM_APROVACAO`.
+- Pode aparecer até a instalação, porque o avaliador da v1.35 roda com o REAL desligado.
+- Quem faz a troca é a migração **0020**: `UPDATE` da linha REAL em `CONTA_DIVERGENTE` para
+  `APROVADO` com `habilitado=1`, e uma linha `MIGRACAO` no histórico ("v1.36: a conta é livre (D6);
+  CONTA_DIVERGENTE extinto").
+- A 0020 é idempotente e não muda o esquema.
+- O "Enviar ordens" do dia continua desligado até o usuário ligar.
+- O crítico `REAL_CONTA_DIVERGENTE` em memória some com o restart, sem `RESOLVIDO`; o roteiro de
+  instalação avisa.
 
-**Um uid em `CONTA_DIVERGENTE` na instalação:**
-- hoje não há nenhum: o 1450 está `APROVADO` v5 e o 5725 está em `SEM_APROVACAO`;
-- pode aparecer até a instalação, porque o avaliador da v1.35 roda com o REAL desligado e o 1450
-  pode trocar a conta no GQ.
+O `CONTA_ALTERADA_COM_POSICAO` continua fora do REAL (D6) e no SIMULADOR, como hoje. A posição aberta
+segue na conta gravada na operação; isso já era assim (§4, roteiro 133).
 
-A migração **0020** trata esse caso:
-- passa toda linha REAL em `CONTA_DIVERGENTE` para `APROVADO`, com `habilitado=1`;
-- grava uma linha `MIGRACAO` no histórico: "v1.36: a conta é livre (D6); CONTA_DIVERGENTE extinto";
-- é idempotente, como a 0019;
-- não muda o esquema: é só `UPDATE` + `INSERT` no histórico.
+## 2. D7: o REAL sem limites de negócio
 
-Por que `APROVADO`: o admin aprovou o uid, e a única coisa que o tirou do estado foi a conta, que
-deixou de importar. O "Enviar ordens" do dia continua desligado até o usuário ligar.
+**Saem, só no REAL:**
+- da instância: contratos por ordem, posição máxima, perda do dia, entradas por dia e entradas por
+  minuto;
+- por uid: os limites da aprovação.
 
-O crítico `REAL_CONTA_DIVERGENTE` em memória some com o restart, sem `RESOLVIDO`. O roteiro de
-instalação avisa isso.
+As recusas `QTD_MAXIMA`, `POSICAO_MAXIMA`, `ENTRADAS_POR_DIA`, `ENTRADAS_POR_MINUTO` e
+`PERDA_DIARIA` deixam de sair no REAL. A **Parada automática por perda do dia** também sai (§7).
 
-O `CONTA_ALTERADA_COM_POSICAO` continua fora do REAL (D6: trocar a conta não gera alerta) e
-continua no SIMULADOR, como hoje. A posição aberta segue na conta gravada na operação; isso já era
-assim e não muda (§3, roteiro 133).
+**Ficam (travas contra defeito):**
 
-## 2. D10: o cadastro inutilizável
+| trava | chave | o que faz |
+|---|---|---|
+| mensagens por minuto | `LIMITE_MENSAGENS_MIN` (3000) | `ORDENS_POR_MINUTO` + alerta `LIMITE` |
+| recusas em 1 minuto | `LIMITE_RECUSAS_PARADA` (50) | Parada BLOQUEAR automática |
 
-### 2.1 O que é inutilizável
+Outras que hoje valem no REAL e são contra defeito, não de negócio. Proponho manter (P5):
+- **o laço de reentrada por uid:** `LIMITE_ENTRADAS_MIN_UID` (3) e `LIMITE_INTERVALO_UID_S` (30 s),
+  com a exceção da virada `LIMITE_VIRADA_S`. Um defeito que repete entradas trava só aquele uid;
+- **o book descolado:** `LIMITE_BOOK_DESCOLADO_PTS` (150);
+- **o intervalo da instância:** `LIMITE_INTERVALO_ENTRADAS_S` (0, desligado). Proponho tirar do REAL:
+  com vários usuários, ele vira regra de negócio.
 
-A regra é uma só, `cadastroUtilizavel(uid)`. A entrada, o `/destino`, a ficha e o verificador
-chamam a mesma função, para que a recusa e o alerta nunca discordem. Ela lê a `usutxtconfigprd`
-pelo cache de 30 s e resolve como a entrada REAL resolveria.
+**Como sai, no código:**
+- a visão do REAL (`config.Visao`) deixa de copiar os `REAL_LIMITE_*` para os `LIMITE_*`;
+- a instância REAL passa a pular essas cinco conferências. Não basta deixar 0: hoje 0 recusaria tudo,
+  com `qtd > 0`;
+- o `config.LerAmbientes` deixa de exigir os `REAL_LIMITE_*` com o REAL permitido.
 
-| causa (texto em `motivo`) | código técnico (`causa`) | hoje |
+**Os `REAL_LIMITE_*` que estiverem no env:** proponho ignorá-los, com um aviso na partida ("ignorada:
+D7, sem limites de negócio no REAL"). Não recusar a subida (P6). Assim o `service.env` da .53 não muda
+na instalação, e a volta para a v1.35, que exige essas chaves com o REAL ligado, é só a troca do
+binário.
+
+**O SIMULADOR não muda:** continua com os `LIMITE_*` e a perda do dia de 1500 pts (P7).
+
+**O que isso significa:**
+- O Kalman manda 1 contrato fixo. Sem `QTD_MAXIMA`, uma `qtd` errada vinda do Kalman vai como veio;
+  a única barreira passa a ser o lado do Kalman.
+- No 1450 e no 5725 na mesma conta (§8), o teto de 1 contrato da instância deixa de existir.
+
+## 3. D10: o cadastro inutilizável
+
+### 3.1 O que é inutilizável
+
+A regra é uma só, `cadastroUtilizavel(uid)`. A entrada, o `/destino`, a ficha e o verificador chamam a
+mesma função, para que a recusa e o alerta nunca discordem. Ela lê a `usutxtconfigprd` pelo cache de
+30 s e resolve com a **visão do REAL lida do env**, mesmo com o REAL fora de `AMBIENTES_PERMITIDOS`.
+Assim a resposta é a que a instância REAL daria.
+
+O conector e a corretora vêm do GQ (P1). O cadastro é inutilizável quando o sistema não os atende:
+
+| causa (texto em `motivo`) | `causa` | hoje |
 |---|---|---|
 | JSON vazio ou ilegível, sem `Robo.CORSeqId` | `CADASTRO_ILEGIVEL` | igual |
 | uid sem linha em `acusuario` | `SEM_CADASTRO` | igual |
+| sem `Robo.Conector` (o GX grava desde 23/10) | `CONECTOR_NAO_ATENDIDO` | **novo**: hoje vale o conector único da habilitação |
+| conector que a máquina não tem no REAL: PnT sem `REAL_FIX_HOST` ou com `REAL_PNT_DESLIGADO`; Flexscan sem Flexscan REAL | `CONECTOR_NAO_ATENDIDO` | igual (`CONECTOR_NAO_CONFIGURADO`) |
 | corretora que o kalman-ordens não conhece (nem 85/88 nem `REAL_FLEXSCAN_CORRETORAS`), ou 9999 no REAL | `CORRETORA_NAO_ATENDIDA` | igual |
-| **PnT com corretora diferente de 85** ("pelo PnT, só BTG") | `CORRETORA_NAO_ATENDIDA` | **novo**: hoje passa e a BTG recusaria |
+| **PnT com corretora diferente de 85** (pelo PnT, só BTG) | `CORRETORA_NAO_ATENDIDA` | **novo**: hoje passa e a BTG recusaria |
 | Flexscan por corretora sem credencial nesta máquina | `CORRETORA_NAO_ATENDIDA` | igual (`CORRETORA_SEM_CREDENCIAL`) |
-| conector fora dos permitidos ao uid, ou sem `Robo.Conector` com dois permitidos | `CONECTOR_NAO_PERMITIDO` | igual |
-| conector que a máquina não tem (Flexscan sem URL) | `CONECTOR_NAO_PERMITIDO` | igual |
 | conta vazia, fora da regra do conector, ou de simulador no REAL | `CONTA_INVALIDA` | igual |
-| conta fora da lista do guarda-chuva Flexscan (`REAL_FLEXSCAN_<C>_CONTAS`) | `CONTA_INVALIDA` | igual. Não está na lista do D10, mas a Flexscan recusaria; ver P3 |
+| conta fora do guarda-chuva Flexscan (`REAL_FLEXSCAN_<C>_CONTAS`) (P3) | `CONTA_INVALIDA` | igual (`CONTA_FORA_DA_CORRETORA`) |
 
 O banco indisponível (`CONFIG_USUARIO_INDISPONIVEL`) não é cadastro inutilizável: continua como hoje.
 
-### 2.2 Os códigos de recusa (entrada e `/destino`, só REAL)
+### 3.2 Os códigos de recusa (entrada e `/destino`, só REAL)
 
 | código | quando | muda? |
 |---|---|---|
 | `AMBIENTE_NAO_PERMITIDO` | REAL fora de `AMBIENTES_PERMITIDOS` (o teto vem primeiro) | não |
 | `REAL_SEM_APROVACAO` / `REAL_BLOQUEADO` / `REAL_REVOGADO` | pelo estado | não |
-| **`REAL_CADASTRO_INUTILIZAVEL`** | aprovado, mas o cadastro não serve. `motivo`: "cadastro do GQ nao utilizavel: corretora 107 nao atendida"; campo novo `causa` com o código técnico | **novo** |
+| **`REAL_CADASTRO_INUTILIZAVEL`** | aprovado, mas o cadastro não serve | **novo** |
 
-Ordem: teto → estado → cadastro. Um uid bloqueado com o cadastro ruim recebe `REAL_BLOQUEADO`.
+O `motivo` do `REAL_CADASTRO_INUTILIZAVEL` diz a causa, por exemplo "cadastro do GQ nao utilizavel:
+corretora 107 nao atendida". O campo novo `causa` traz o código do §3.1.
 
-O código único substitui, **só no REAL**, os códigos que a entrada devolvia por cadastro:
-`DESTINO_INVALIDO`, `CONECTOR_NAO_HABILITADO`, `CONECTOR_INDEFINIDO`, `CONECTOR_NAO_CONFIGURADO`,
-`CONTA_INVALIDA`, `CONTA_AMBIENTE`, `CONFIG_USUARIO_INVALIDA`, `CORRETORA_SEM_CREDENCIAL`,
-`CONTA_FORA_DA_CORRETORA` e `REAL_CADASTRO_ILEGIVEL`. O antigo vai em `causa`. O SIMULADOR não muda.
+A ordem é teto → estado → cadastro. Um uid bloqueado com o cadastro ruim recebe `REAL_BLOQUEADO`.
 
-### 2.3 Quando sai o alerta e quando sai o RESOLVIDO
+O código único substitui, **só no REAL**, os que a entrada devolvia por cadastro:
+- `DESTINO_INVALIDO`;
+- `CONECTOR_NAO_HABILITADO`, `CONECTOR_INDEFINIDO` e `CONECTOR_NAO_CONFIGURADO`;
+- `CONTA_INVALIDA`, `CONTA_AMBIENTE` e `CONFIG_USUARIO_INVALIDA`;
+- `CORRETORA_SEM_CREDENCIAL` e `CONTA_FORA_DA_CORRETORA`;
+- `REAL_CADASTRO_ILEGIVEL`.
+
+O SIMULADOR não muda.
+
+### 3.3 Quando sai o alerta e quando sai o RESOLVIDO
 
 O alerta é `REAL_CADASTRO_INUTILIZAVEL`, com uma chave por uid. Quem o emite é o **verificador**,
 que substitui o avaliador:
-- roda na instância principal a cada `CACHE_USUARIOS_S` (30 s), como hoje, com ou sem a instância
-  REAL;
+- roda na instância principal a cada `CACHE_USUARIOS_S` (30 s), com ou sem a instância REAL;
 - olha só as linhas REAL em `APROVADO`;
 - só lê; não grava nada no banco.
 
-A entrada recusada não alerta. Ela só cutuca o verificador (como a v1.35 já faz), para o alerta não
-esperar 30 s.
+A entrada recusada não alerta. Ela só cutuca o verificador, para o alerta não esperar 30 s.
 
 | evento | Telegram |
 |---|---|
-| uid `APROVADO` e o cadastro passa a inutilizável | **uma** mensagem: uid, a causa, o cadastro lido e "posicao aberta segue na conta da operacao" quando houver |
+| uid `APROVADO` e o cadastro passa a inutilizável | **uma** mensagem: uid, a causa e o cadastro lido. Quando houver posição aberta, acrescenta "posicao aberta segue na conta da operacao" |
 | continua inutilizável (passes seguintes, novas entradas recusadas) | nada |
-| muda a causa, ainda inutilizável (ex.: corretora 107 → conta vazia) | nada. O texto guardado é atualizado e a ficha mostra a causa atual |
+| muda a causa, ainda inutilizável | nada. O texto guardado é atualizado e a ficha mostra a causa atual |
 | volta a ser utilizável | `RESOLVIDO: REAL_CADASTRO_INUTILIZAVEL: uid 1450` |
-| o uid sai do `APROVADO` (bloqueado, revogado) com o alerta aberto | `RESOLVIDO ... (uid fora do APROVADO)`, para não ficar aberto para sempre |
-| restart com o cadastro ainda inutilizável | **uma** mensagem de novo, com "(visto na partida)" (ver P2) |
+| o uid sai do `APROVADO` com o alerta aberto | `RESOLVIDO ... (uid fora do APROVADO)` |
+| restart com o cadastro ainda inutilizável | **uma** mensagem de novo, com "(visto na partida)" (P2: em memória) |
 
-**Um só por ocorrência** vem de uma classe nova no pacote `alerta`, a "uma vez":
-- o alerta é guardado pela chave, como um crítico: a segunda emissão é ignorada e o `Resolver` manda
-  o `RESOLVIDO`;
-- o `Tick` não repete o alerta;
-- ele aparece em `/saude` `alertas_criticos` enquanto está aberto;
+**A classe nova "uma vez", no pacote `alerta`:**
+- o alerta é guardado pela chave, como um crítico: uma segunda emissão é ignorada, e o `Resolver`
+  manda o `RESOLVIDO`;
+- o `Tick` não repete;
+- o alerta aparece em `/saude` `alertas_criticos` enquanto está aberto;
 - o `docs/ALERTAS.md` ganha a coluna "repete".
 
-No REAL, o cadastro ruim deixa de emitir os alertas antigos:
-- o `USUARIO_CONFIG`, que hoje sai a cada entrada recusada;
-- o `CONTA_AMBIENTE`, um crítico que repete.
+No REAL, o cadastro ruim deixa de emitir o `USUARIO_CONFIG`, que hoje sai a cada entrada recusada, e
+o `CONTA_AMBIENTE`, um crítico que repete. Os dois continuam no SIMULADOR.
 
-Os dois continuam valendo no SIMULADOR.
-
-O `REAL_RECUSA_ESTADO` continua: um aviso por uid, estado e versão quando uma entrada chega num
-estado que a tela já desabilita.
-
-## 3. Roteiros afetados
+## 4. Roteiros afetados
 
 | roteiro | o que muda |
 |---|---|
-| **133** troca de conta com posição | reescrito. O uid 7 está em `APROVADO`, com posição na conta 12345, e troca para 7654321 no GQ: nenhum alerta, nem `REAL_CONTA_DIVERGENTE` nem `CONTA_ALTERADA_COM_POSICAO`; o `/destino` diz `pode_enviar=true` com a conta 7654321. O ajuste da stop (35=G), a 1014 recriada, o cancelamento (35=F) e a saída (35=D) continuam com `1=12345`/`116=12345`. Depois de `ZERADA`, a entrada nova sai com `1=7654321`. Restart com a posição aberta: a operação volta na 12345. |
-| **119** dois ambientes | o uid 10 (aprovado, com outra conta no GQ) passa a entrar na conta do GQ. Ele vira um caso de cadastro inutilizável (corretora 107): `REAL_CADASTRO_INUTILIZAVEL` com `causa=CORRETORA_NAO_ATENDIDA` |
-| **125** REAL por corretora | sai o `aprova 8 conta=9002` depois da troca: a troca para a BTG/9002 já vale sozinha. A saída da 12503 continua pela CMC/715124. A conta fora do guarda-chuva (uid 11) passa a `REAL_CADASTRO_INUTILIZAVEL` com `causa=CONTA_INVALIDA` |
-| **126** corretora sem credencial | `CORRETORA_SEM_CREDENCIAL` → `REAL_CADASTRO_INUTILIZAVEL` com `causa=CORRETORA_NAO_ATENDIDA` |
-| **132** rotas da aprovação | sai o bloco do GQ trocado durante o bloqueio, do desbloquear divergente e do aprovar do cadastro novo. Sai o `CADASTRO_MUDOU`. O `aprovar` sem `visto` passa a ser aceito. O aprovar com o cadastro inutilizável é aceito, com o aviso (§4). A ficha tem `aprovado` sem conta |
-| **39** conta HML em produção | na equivalência `ORDENS_AMBIENTE` (REAL): `CONTA_AMBIENTE` → `REAL_CADASTRO_INUTILIZAVEL`, `causa=CONTA_INVALIDA`, sem o crítico que repete |
-| **135 (novo)** cadastro inutilizável | uid aprovado com corretora 107: <ul><li>entrada recusada com o motivo;</li><li>**um** alerta, sem repetição em 5 min de relógio;</li><li>duas entradas a mais sem alerta novo;</li><li>a causa muda para conta vazia: sem mensagem;</li><li>o cadastro volta: `RESOLVIDO` e a entrada passa;</li><li>de novo inutilizável e restart: uma mensagem "(visto na partida)";</li><li>bloquear com o alerta aberto: `RESOLVIDO (uid fora do APROVADO)`;</li><li>PnT com corretora 88: `CORRETORA_NAO_ATENDIDA`.</li></ul> |
-| **134** stop na corretora, 118, 124 | sem mudança esperada; a suíte confirma |
+| **133** troca de conta com posição | reescrito. Ver abaixo |
+| **119** dois ambientes | o uid 10 vira o caso da corretora 107 (`REAL_CADASTRO_INUTILIZAVEL`, `CORRETORA_NAO_ATENDIDA`). A `entrada 11905 ... qtd=2` deixa de dar `QTD_MAXIMA` no REAL e passa a ser aceita. O SIMULADOR continua recusando |
+| **125** REAL por corretora | sai o `aprova 8 conta=9002` depois da troca. A saída da 12503 continua pela CMC/715124. A conta fora do guarda-chuva passa a `REAL_CADASTRO_INUTILIZAVEL`/`CONTA_INVALIDA` |
+| **126** corretora sem credencial | `CORRETORA_SEM_CREDENCIAL` → `REAL_CADASTRO_INUTILIZAVEL`/`CORRETORA_NAO_ATENDIDA` |
+| **132** rotas da aprovação | saem o GQ trocado durante o bloqueio, o desbloquear divergente, o `CADASTRO_MUDOU`, a ação `limites` e as recusas `LIMITE_ACIMA_DA_INSTANCIA`/`LIMITES_INSTANCIA_AUSENTES`. O `aprovar` sem `visto` e sem limites passa a ser aceito. O aprovar com o cadastro inutilizável é aceito, com o aviso. A ficha não tem conta nem limites |
+| **39** conta HML em produção | `CONTA_AMBIENTE` → `REAL_CADASTRO_INUTILIZAVEL`/`CONTA_INVALIDA`, sem o crítico que repete |
+| **124, 127, 131, 134** e os outros que têm `config REAL_LIMITE_*` | as linhas de config ficam e passam a ser ignoradas. O 124 passa a provar também que a máquina só REAL sobe sem elas |
+| **135 (novo)** cadastro inutilizável | ver abaixo |
+| **136 (novo)** REAL sem limites de negócio | ver abaixo |
 
-O verbo `aprova` dos roteiros passa a aceitar `conta=`/`corretora=` só para simular uma linha
-gravada pela v1.35 (o 133 usa isso para provar que a conta antiga é ignorada). Sem eles, ele grava
-como a v1.36 grava.
+O **133** reescrito prova isto:
+- o uid 7 está em `APROVADO`, com posição na conta 12345, e troca para 7654321 no GQ;
+- nenhum alerta;
+- o `/destino` diz `pode_enviar=true` com a 7654321;
+- o ajuste, a 1014 recriada, o 35=F e a saída continuam com `1=12345`/`116=12345`;
+- depois de `ZERADA`, a entrada sai com `1=7654321`;
+- restart com posição: a operação volta na 12345.
 
-## 4. O contrato das rotas (para o CC do Kalman)
+O **135** prova isto:
+- a corretora 107 recusa a entrada com o motivo;
+- **um** alerta só, sem repetição em 5 min de relógio;
+- duas entradas a mais, sem alerta novo;
+- a causa muda para conta vazia, e não sai mensagem;
+- a volta dá `RESOLVIDO` e a entrada passa;
+- de novo inutilizável e restart: uma mensagem "(visto na partida)";
+- bloquear com o alerta aberto dá `RESOLVIDO (uid fora do APROVADO)`;
+- PnT com corretora 88 dá `CORRETORA_NAO_ATENDIDA`;
+- sem `Robo.Conector` dá `CONECTOR_NAO_ATENDIDO`.
+
+O **136** prova isto, sem `REAL_LIMITE_*` no env:
+- o REAL sobe;
+- `qtd=2` é aceito;
+- duas posições do mesmo uid;
+- perda acima de 1500 pts sem Parada;
+- 31 entradas no dia;
+- 51 recusas em 1 min ainda dão a Parada BLOQUEAR;
+- `LIMITE_MENSAGENS_MIN` ainda recusa;
+- o laço por uid (P5) ainda recusa;
+- com `REAL_LIMITE_*` no env, o aviso de "ignorada" aparece na partida.
+
+O verbo `aprova` dos roteiros passa a aceitar `conta=`/`corretora=`/`qtd_max=` só para simular uma
+linha gravada pela v1.35. Sem eles, grava como a v1.36.
+
+Unitários com `REAL_LIMITE_*`: `internal/config/ambientes_test.go` e
+`cmd/kalman-ordens/instancias_test.go`.
+
+## 5. O contrato das rotas (para o CC do Kalman)
 
 **`GET /usuarios/{uid}/real` (a ficha):**
-- `aprovado`: continua um objeto sempre que houve aprovação, com `qtd_max_ordem`, `posicao_max`,
-  `por`, `em`, `motivo` e o novo `conectores` (lista). Os campos `conector`, `corretora_codigo`,
-  `corretora` e `conta` passam a vir `null`.
-- `divergencia`: sempre `null`. O campo fica no corpo nesta versão e sai na próxima.
-- `gq`: igual, só informação. O `erro` ganha o `causa` do §2.1 e `codigo=REAL_CADASTRO_INUTILIZAVEL`.
-- `historico[]`: igual. Os campos `conta` e `gq` vêm `null` nas linhas novas e preenchidos nas
-  antigas.
-- `acoes`: `CONTA_DIVERGENTE` some dos estados. As ações por estado são as mesmas, sem ele.
+- `aprovado`: continua um objeto sempre que houve aprovação, com `por`, `em` e `motivo`. Os campos
+  `conector`, `corretora_codigo`, `corretora`, `conta`, `qtd_max_ordem` e `posicao_max` vêm `null`.
+- `limites_instancia`: `null`.
+- `divergencia`: sempre `null`. O campo fica nesta versão e sai na próxima.
+- `gq`: igual, só informação. O `erro` traz `codigo=REAL_CADASTRO_INUTILIZAVEL` e a `causa`.
+- `historico[]`: igual. As linhas novas trazem `conta`/`gq`/limites `null`; as antigas, preenchidos.
+- `acoes`: sem `limites`. Sem o estado `CONTA_DIVERGENTE`.
 
 **`POST /usuarios/{uid}/real/aprovar`:**
-- corpo: `por`, `motivo`, `versao`, `qtd_max_ordem`, `posicao_max` e o opcional `conectores`;
-- o `visto` é aceito e ignorado;
-- sem `CADASTRO_MUDOU` e sem `CADASTRO_INVALIDO`. O aprovar com o cadastro inutilizável é
-  aceito, e o `motivo` da resposta avisa: "aprovado; cadastro do GQ hoje nao utilizavel: ... (entradas
-  recusadas ate corrigir)";
-- os outros `POST` (`bloquear`, `desbloquear`, `revogar`, `limites`) não mudam. O `desbloquear`
-  sempre responde `DESBLOQUEADO`, e o `limites` aceita o `conectores` opcional.
+- o corpo é `por`, `motivo` e `versao`;
+- `visto`, `qtd_max_ordem` e `posicao_max` são aceitos e ignorados;
+- sem `CADASTRO_MUDOU`, `CADASTRO_INVALIDO`, `LIMITE_ACIMA_DA_INSTANCIA` e
+  `LIMITES_INSTANCIA_AUSENTES`;
+- o aprovar com o cadastro inutilizável é aceito. O `motivo` da resposta avisa: "aprovado; cadastro
+  do GQ hoje nao utilizavel: ...".
 
-**`GET /usuarios/real` (a lista):** `conector`/`corretora`/`conta` passam a ser os do GQ lidos agora,
-e não mais os aprovados. O `divergente_desde` vem sempre `null`. Campo novo `cadastro_utilizavel`
-(bool).
+**`POST /usuarios/{uid}/real/limites`:** sai. Responde `400 CAMPO_INVALIDO`, como uma ação
+desconhecida. Os outros `POST` não mudam, e o `desbloquear` sempre responde `DESBLOQUEADO`.
+
+**`GET /usuarios/real` (a lista):**
+- `conector`/`corretora`/`conta` são os do GQ lidos agora;
+- `qtd_max_ordem`/`posicao_max` e `divergente_desde` vêm `null`;
+- campo novo: `cadastro_utilizavel` (bool).
 
 **`GET /usuarios/{uid}/destino`:** no REAL, `codigo=REAL_CADASTRO_INUTILIZAVEL` com `causa` e
 `motivo`.
 
-**As telas F1 instaladas hoje (`06faeef`) não quebram com a v1.36.** Elas ficam com campos vazios
-até serem atualizadas. Conferi no código delas:
+**As telas F1 instaladas hoje (`06faeef`) não quebram.** Elas mostram campos vazios até serem
+atualizadas. Conferi no código delas:
 
 | onde | com a v1.36 |
 |---|---|
-| ficha, quadro "Aprovado" | mostra conector/corretora/conta como "—"; limites, por, em e motivo continuam |
-| ficha, destaque de divergência | nunca aparece (o estado não existe mais) |
-| botão Aprovar | continua mandando o `visto`, que a v1.36 ignora; aprova normalmente |
-| tela do usuário, motivo do "Enviar ordens" | `REAL_CADASTRO_INUTILIZAVEL` não está no mapa das F1, então ela mostra o `motivo` do serviço (ASCII, legível). O texto de `REAL_CONTA_DIVERGENTE` fica morto |
-| histórico | igual. As linhas `DIVERGENCIA`/`VOLTOU` de 16/11 continuam com os rótulos que já têm |
+| ficha, quadro "Aprovado" | conector/corretora/conta como "—" e a linha "limites:" com os números em branco; por, em e motivo continuam |
+| ficha, "Limites da instância" | "—" em todos |
+| botão "Alterar limites" | some, porque `acoes` não traz mais `limites` |
+| modal do Aprovar | continua pedindo limites > 0 e mandando o `visto`; a v1.36 ignora os dois e aprova |
+| destaque de divergência | nunca aparece |
+| tela do usuário, motivo do "Enviar ordens" | `REAL_CADASTRO_INUTILIZAVEL` cai no `motivo` do serviço (ASCII, legível) |
 
 A atualização das telas (CC do Kalman) faz isto:
-- tira o quadro "Aprovado × GQ" e mostra o cadastro do GQ só como informação, com a causa em
-  vermelho;
-- tira o `visto`;
-- mapeia `REAL_CADASTRO_INUTILIZAVEL`;
-- opcional: mostra os `conectores`.
+- tira o quadro "Aprovado × GQ", os limites, o modal de limites e o `visto`;
+- mostra o cadastro do GQ só como informação, com a causa em vermelho;
+- mapeia `REAL_CADASTRO_INUTILIZAVEL`.
 
-## 5. A regra de repetição dos alertas críticos
+## 6. A regra de repetição dos alertas críticos
 
 **A regra atual** (v1.15, `internal/alerta`) vale para todo crítico:
 - a 1ª mensagem sai na emissão;
 - repete a cada 30 s (`ALERTA_REPETICAO_S`) até completar 2 min (`ALERTA_REPETICAO_CURTA_S`);
-- depois, a cada 5 min (`ALERTA_REPETICAO_LONGA_S`), até o `Resolver`.
+- depois, a cada 5 min (`ALERTA_REPETICAO_LONGA_S`), até o `Resolver`, com "(continua desde
+  HH:MM:SS)".
 
-Cada repetição traz "(continua desde HH:MM:SS)". O estado fica em memória: um restart esquece e emite
-de novo se a condição continuar.
+O estado fica em memória.
 
-**As 5 mensagens em ~2 min do teste** são exatamente essa regra: T0, +30, +60, +90 e +120 s. Não foi
-defeito de chave nem emissão duplicada. A próxima seria em T0+7 min; a conta voltou antes, e saiu o
-`RESOLVIDO`.
+**As 5 mensagens em ~2 min do teste** são essa regra: T0, +30, +60, +90 e +120 s. Não foi defeito. A
+próxima seria em T0+7 min, e a conta voltou antes.
 
 **O que muda:**
-- a classe nova "uma vez" (§2.3) para as condições de cadastro por uid: o
-  `REAL_CADASTRO_INUTILIZAVEL`;
-- os críticos de operação continuam repetindo como hoje: `SEM_PROTECAO`, `STOP_FURADO`,
-  `SAIDA_ESGOTOU`, `FLEXSCAN_LOGIN` e os demais. Eles pedem ação imediata, e a repetição é o que
-  garante que alguém vê;
-- com os beta testers, o que escala é o que é por uid. Hoje só o `CONTA_AMBIENTE` e o
-  `REAL_CONTA_DIVERGENTE` eram críticos por uid, e no REAL os dois saem.
+- a classe "uma vez" (§3.3) para o `REAL_CADASTRO_INUTILIZAVEL`;
+- os críticos de operação (`SEM_PROTECAO`, `STOP_FURADO`, `SAIDA_ESGOTOU`, `FLEXSCAN_LOGIN`...)
+  continuam repetindo, porque pedem ação imediata;
+- os únicos críticos por uid do REAL eram o `CONTA_AMBIENTE` e o `REAL_CONTA_DIVERGENTE`, e os dois
+  saem do REAL.
 
-## 6. Registro: 1450 e 5725 na mesma conta 4582351 (sem mudança)
+## 7. D11, só leitura: o encerrar por disjuntor e o que depende da perda do dia
+
+**Hoje a principal não manda nada ao kalman-ordens no disjuntor.** No KalmanWIN (`usuarios.py`,
+`_checar_disjuntor`), o disjuntor do usuário (`pnl_dia <= -limite_dia` do perfil):
+- só marca `u.disjuntor`, gravado em `kalmanposicao.KPIndDisjuntor`;
+- impede o Kalman de **abrir** posição nova;
+- deixa a stop, o alvo e a zeragem da posição aberta valendo ("sair é decisão explícita, não efeito
+  colateral").
+
+O kalman-ordens não sabe que o disjuntor abriu.
+
+**Se a principal passar a encerrar no disjuntor**, há dois caminhos que já existem, sem mudança no
+kalman-ordens:
+
+1. **Saída do gestor:** `POST /ordens` ou `/sinais`, tipo saída, com `motivo` livre (ex.: `DISJUNTOR`)
+   — `pedirSaida`, `saida.go`.
+   - Confere o uid da operação, o canal (`CONECTOR_FORA`/`OPERACAO_SUSPENSA` recusam na hora) e o
+     lado (reduce-only).
+   - A entrada viva é cancelada.
+   - **A 1014:**
+     - no PnT com `SAIDA_POR_REPLACE=1`, o replace da 1014 é a própria saída;
+     - senão, o 35=F da 1014 e depois a saída 35=D limitada, com repreço até `MAX_REPRECO_SAIDA`;
+     - na Flexscan, o `DELETE` da stop e depois o `POST` da saída.
+   - Tudo na conta e no canal gravados na operação.
+   - Saída já em curso (stop, parada): responde `aceito` com `ja_em_saida`.
+   - O `motivo` vai para `MotivoSaida` e não tem tratamento especial.
+2. **Encerrar da operação:** `POST /operacoes/{id}/encerrar` (`motivo`, `por`). Faz o mesmo caminho
+   com a origem `ADMIN`. É o da tela, não o do gestor.
+
+**Bloqueio do dia por uid: não existe no kalman-ordens.** O que bloqueia entradas é:
+- o estado da aprovação (`BLOQUEADO` e `REVOGADO`, permanentes até o admin);
+- a Parada, que é **da instância inteira**, todos os uids.
+
+Se o D11 pedir "o uid não entra mais hoje" do lado do kalman-ordens, isso é novo. Hoje ele vale só
+pelo lado do Kalman: o disjuntor persistido não manda entrada.
+
+**O que depende do `REAL_LIMITE_PERDA_DIA_PTS` hoje:**
+- `config.LerAmbientes`: é obrigatório com o REAL permitido e tem de ser maior que zero, senão o
+  serviço não sobe.
+- `config.Visao`: vira o `LIMITE_PERDA_DIA_PTS` da instância REAL, que é usado em dois lugares:
+  - **na entrada** (`entrada.go`, `verificarLimites`): o resultado do dia da instância, realizado mais
+    aberto pelo último preço, `<= -600` recusa com `PERDA_DIARIA` e liga a **Parada BLOQUEAR
+    automática**;
+  - **a cada tick** (`tick.go`, `verificarPerdaDoDia`): a mesma conta, sem precisar de entrada, liga a
+    Parada BLOQUEAR automática.
+- A Parada fica gravada (`kalmanordemestado`, chave `REAL:parada`). **Ela sobrevive ao restart e à
+  virada do dia; só sai pelo `POST /retomar`.**
+- Na ficha da v1.35, `limites_instancia.perda_dia_pts`, que as telas F1 mostram.
+- Os avisos de chave ignorada (`avisosReal`).
+
+**Nada mais depende dele:**
+- nenhum alerta próprio além do `PARADA`;
+- a stop e a saída não dependem dele;
+- o PnL que vai ao Kalman não depende dele.
+
+Com o D7, a Parada automática por perda sai do REAL. A proteção por perda passa a ser só o disjuntor
+do Kalman, por uid. A Parada manual e a das 50 recusas continuam.
+
+## 8. Registro: 1450 e 5725 na mesma conta 4582351 (sem mudança)
 
 Hoje o 5725 está em `SEM_APROVACAO`. Se os dois forem aprovados:
-- **Com os limites de hoje, no máximo 1 contrato na conta.** O `REAL_LIMITE_POSICAO_MAX=1` é da
-  instância REAL e soma todos os uids. O segundo a entrar com o primeiro posicionado recebe
-  `POSICAO_MAXIMA`. Entradas no dia (30) e perda do dia (600 pts) também são da instância,
-  compartilhadas.
-- **O 5725 entra pela Flexscan.** Se a instância REAL da .53 não tiver Flexscan REAL configurada, a
-  entrada dele cai em `REAL_CADASTRO_INUTILIZAVEL` (`CONECTOR_NAO_PERMITIDO`). Isso só muda com a
-  Flexscan REAL ligada.
-- **Com o teto da instância em 2** (a SPEC prevê "1 por usuário aprovado"), seriam 2 contratos na
-  mesma conta por dois canais. A BTG compensa as posições na conta, mas o kalman-ordens vê duas
-  operações, cada uma com a sua 1014. Com lados opostos:
-  - a conta fica zerada na BTG com duas stops vivas;
-  - uma stop que dispara abre posição real;
+- **Com o D7, não há mais o teto de 1 contrato da instância.** Os dois podem ter posição ao mesmo
+  tempo na mesma conta, por dois canais: o 1450 pelo PnT e o 5725 pela Flexscan.
+- **O 5725 depende da Flexscan REAL ligada na máquina.** Sem ela, a entrada dele cai em
+  `REAL_CADASTRO_INUTILIZAVEL` (`CONECTOR_NAO_ATENDIDO`).
+- **Com os dois posicionados:**
+  - a BTG compensa as posições na conta, e o kalman-ordens vê duas operações, cada uma com a sua 1014;
+  - com lados opostos, a conta fica zerada na BTG com duas stops vivas, e uma stop que dispara abre
+    posição real;
   - a conciliação por conta conta as ordens do outro canal como "outros sistemas";
   - a margem é uma só.
 
 A decisão fica para antes do segundo usuário. Uma saída simples seria "uma conta, um uid no REAL":
-recusar a entrada se outro uid tem operação viva na mesma conta.
+recusar a entrada se outro uid tem operação viva na mesma conta. Ela seria uma trava contra defeito
+de cadastro, não um limite de negócio.
 
-## 7. Estimativa, instalação e volta
+## 9. Estimativa, instalação e volta
 
-**Etapas** (uma branch, `v1.36`, como na v1.35; cada uma só começa com o rc=0 da anterior e o seu
-ok):
+**Etapas:** uma branch, `v1.36`. Cada etapa só começa com o rc=0 da anterior e o seu ok.
 
 | etapa | o quê | tempo |
 |---|---|---|
-| E1 | `aprovacao` sem conta e sem `DecidirCadastro`; `cadastroUtilizavel`; o verificador; a classe "uma vez" no `alerta` e o `ALERTAS.md`; a 0020; a regra "PnT só BTG"; a entrada e o `/destino`; as rotas (§4); unitários | ~1 sessão |
-| E2 | os roteiros do §3 (133, 119, 125, 126, 132, 39 e o 135 novo) e a suíte completa (~20 min) | ~meia sessão |
-| E3 | roteiro de instalação para o George e o binário | ~1 h |
+| E1 | aprovação sem conta, conector e limites; `cadastroUtilizavel` e o verificador; a classe "uma vez" e o `ALERTAS.md`; a 0020; "PnT só BTG"; o REAL sem os `REAL_LIMITE_*` (visão, partida, as cinco conferências, a Parada por perda); a entrada, o `/destino` e as rotas (§5); unitários | ~1 sessão e meia |
+| E2 | os roteiros do §4 (133, 119, 125, 126, 132, 39, 124 e os novos 135 e 136) e a suíte completa (~20 min) | ~meia sessão |
+| E3 | roteiro de instalação e o binário | ~1 h |
 
-**Instalação: o mesmo desenho da v1.35.**
+**Instalação: o mesmo desenho da v1.35, uns 10 min.**
 - Restart da principal (SIMULADOR, o papel do Ferro, sombras), depois da zeragem das 14:30 ou fora
   do pregão, com o REAL desligado.
-- Uns 10 min: cópia das `kalmanordem*`, a 0020, conferências.
-- Antes, conferir quantas linhas REAL estão em `CONTA_DIVERGENTE` (esperado 0).
+- Cópia das `kalmanordem*` e a 0020.
+- O `service.env` não muda: os `REAL_LIMITE_*` ficam, ignorados (P6).
+- Antes, conferir as linhas REAL em `CONTA_DIVERGENTE` (esperado 0).
 - Depois, conferir:
-  - 1450 `APROVADO`, com a ficha mostrando `aprovado.conta=null`;
+  - 1450 `APROVADO`, com a ficha mostrando `aprovado.conta=null` e os limites `null`;
   - 5725 em `SEM_APROVACAO`;
   - nenhum alerta `REAL_*`;
+  - o aviso dos `REAL_LIMITE_*` ignorados no log;
   - `/saude` normal.
 - O relogin da Flexscan, como no §6 do roteiro da v1.35.
 
-As telas F1 continuam funcionando (§4), então a instalação não depende do CC do Kalman. A aceitação
-pela tela (o checklist da SPEC funcional: trocar a conta sem bloqueio, corretora 107 com um alerta
-só) vem logo depois, com o REAL ainda desligado.
+As telas F1 continuam funcionando (§5), então a instalação não depende do CC do Kalman.
 
-**A volta para a v1.35 (`09872ead98f2`) é simples:**
-- é só a troca do binário: a 0020 não muda o esquema, e a v1.35 ignora a linha 0020 na
-  `kalmanordem_migracao`;
-- o 1450, aprovado na v1.35 com a conta 4582351 gravada, volta como estava, se ninguém o aprovou de
-  novo na v1.36;
-- **depois de um aprovar feito na v1.36**, a linha fica com `conta NULL`. Na v1.35, o avaliador
-  compara e põe esse uid em `CONTA_DIVERGENTE`, com o crítico repetindo. É o lado seguro: as entradas
-  ficam recusadas. Sai com um aprovar pela tela F1. O roteiro de instalação deixa isso escrito.
+**A volta para a v1.35 (`09872ead98f2`) é simples: só a troca do binário.**
+- A 0020 não muda o esquema.
+- O env ainda tem os `REAL_LIMITE_*`, que a v1.35 exige.
+- O 1450, aprovado na v1.35 com a conta gravada, volta como estava.
+- **Depois de um aprovar feito na v1.36**, a linha fica com `conta NULL` e limites 0. Na v1.35:
+  - o avaliador põe esse uid em `CONTA_DIVERGENTE`, com o crítico repetindo. É o lado seguro: as
+    entradas ficam recusadas, e sai com um aprovar pela tela F1;
+  - os limites 0 do uid não valem, mas os da instância voltam a valer.
 
-## 8. Perguntas para o George
+  O roteiro deixa isso escrito.
 
-- **P1. Conector permitido ao usuário.** Proposta: a coluna `conectores` da aprovação.
-  - O `aprovar` e o `limites` aceitam `conectores` opcional. Sem ele, vale o conector do GQ na hora
-    da aprovação, como a v1.35 fazia; o 1450 continua com `PNT`.
-  - A alternativa é "permitido = os conectores que a máquina tem", sem lista por uid. Ela é mais
-    simples, mas o 1450 poderia ir pela Flexscan só trocando o GQ.
-  - Recomendo a lista por uid.
-- **P2. O alerta "uma vez" depois de um restart.** Proposta: em memória, com no máximo uma mensagem
-  a mais por restart ("visto na partida"). Restart só acontece em instalação, fora do pregão.
-  - A alternativa é guardar no banco: uma tabela de avisos abertos na 0020. Isso garante um alerta
-    só mesmo com restart, custa mais meia etapa e não atrapalha a volta.
-  - Recomendo a memória.
-- **P3. Conta fora do guarda-chuva Flexscan** (`REAL_FLEXSCAN_<C>_CONTAS`). Proposta: tratar como
-  cadastro inutilizável (`CONTA_INVALIDA`), porque a Flexscan recusaria a ordem. Não está na lista do
-  D10.
-- **P4. `CONTA_DIVERGENTE` na instalação → `APROVADO`** (0020, §1). A alternativa conservadora é
-  `BLOQUEADO`, que pede um desbloquear do admin. Recomendo `APROVADO`.
+## 10. Decisões
+
+**Respondidas pelo George em 16/11:**
+- **P1.** Sem lista de conectores por usuário. Conector e corretora vêm do GQ; o cadastro é
+  inutilizável se o sistema não os atende. Pelo PnT, só BTG. Daí sai a regra de que o cadastro sem
+  `Robo.Conector` é inutilizável (§3.1). Antes, ele usava o conector único da habilitação.
+- **P2.** Alerta "uma vez" em memória, com no máximo uma mensagem a mais por restart.
+- **P3.** Conta fora do guarda-chuva da Flexscan é cadastro inutilizável.
+- **P4.** `CONTA_DIVERGENTE` na instalação passa a `APROVADO` (0020).
+
+**Novas, do D7:**
+- **P5. Travas contra defeito além das duas citadas.** Proponho manter no REAL:
+  - o laço de reentrada por uid: `LIMITE_ENTRADAS_MIN_UID`, `LIMITE_INTERVALO_UID_S` e a virada;
+  - o `LIMITE_BOOK_DESCOLADO_PTS`.
+
+  Proponho tirar o `LIMITE_INTERVALO_ENTRADAS_S` da instância (hoje 0).
+- **P6. `REAL_LIMITE_*` no env:** proponho ignorá-los com um aviso, em vez de recusar a subida. O env
+  não muda, e a volta é só o binário.
+- **P7. SIMULADOR:** proponho deixar os limites do SIMULADOR como estão (D7 vale para o REAL).
