@@ -5,8 +5,13 @@ de **S1** a **S17**, e a lista completa está no §10. Os comandos sem `sudo` (c
 leem.
 
 **Quando:** depois do fechamento. Pode ser hoje, 16/11, a partir das 18:45, ou em qualquer noite
-antes do primeiro pregão REAL. Não pode rodar com o pregão aberto, nem com o REAL desligado.
+antes do primeiro pregão REAL. Não pode rodar com o pregão aberto, nem com o REAL ligado.
 O motivo está no §0.2. A data no nome do arquivo é a da preparação.
+
+**Uma janela só, do §1 ao §7.** Os comandos usam as variáveis de shell `$V`, `$DB`, `$T`, `$C` e
+`$F`, que só existem na janela do terminal onde foram criadas. Rode tudo, do §1 ao §7, na mesma
+janela, sem fechá-la e sem trocar de usuário. Os comandos da volta (§9, S16 e S17) não dependem
+dessas variáveis: usam o nome explícito do binário e o caminho da cópia anotado no S7.
 
 **Quanto tempo:** de 30 a 40 minutos ao todo. O serviço fica parado de 2 a 3 minutos, do S6 ao S11
 (cópia do banco, binário, 0019 e partida).
@@ -161,26 +166,36 @@ sudo awk -F= '/^[[:space:]]*(REAL_UIDS|REAL_CONTAS)=/ {print NR": "$1"=(valor oc
               /^[[:space:]]*(AMBIENTES_PERMITIDOS|REAL_LIMITE_[A-Z_]+)=/ {print NR": "$0}' /etc/kalman-ordens/service.env
 ```
 
-**S5**: comentar `REAL_UIDS`/`REAL_CONTAS` e acertar os dois limites (decisão 6 do §9 da SPEC
-técnica: `ENTRADAS_DIA=30`, `ENTRADAS_MIN=2`).
+**S5**: comentar `REAL_UIDS`/`REAL_CONTAS` e deixar os cinco limites do REAL exatamente nos
+valores da SPEC funcional e da decisão 6 do §9 da SPEC técnica: `QTD_ORDEM=1`, `POSICAO_MAX=1`,
+`PERDA_DIA_PTS=600`, `ENTRADAS_DIA=30` e `ENTRADAS_MIN=2`. Cada um é trocado se existir e
+acrescentado se faltar.
 ```bash
 F=/etc/kalman-ordens/service.env
-sudo sed -i -E 's/^[[:space:]]*(REAL_UIDS|REAL_CONTAS)=/# v1.35 D4, nao existe mais: &/;
-                s/^[[:space:]]*REAL_LIMITE_ENTRADAS_DIA=.*/REAL_LIMITE_ENTRADAS_DIA=30/;
-                s/^[[:space:]]*REAL_LIMITE_ENTRADAS_MIN=.*/REAL_LIMITE_ENTRADAS_MIN=2/' $F
-sudo grep -q '^REAL_LIMITE_ENTRADAS_DIA=' $F || echo 'REAL_LIMITE_ENTRADAS_DIA=30' | sudo tee -a $F >/dev/null
-sudo grep -q '^REAL_LIMITE_ENTRADAS_MIN=' $F || echo 'REAL_LIMITE_ENTRADAS_MIN=2'  | sudo tee -a $F >/dev/null
+sudo sed -i -E 's/^[[:space:]]*(REAL_UIDS|REAL_CONTAS)=/# v1.35 D4, nao existe mais: &/' $F
+for kv in REAL_LIMITE_QTD_ORDEM=1 REAL_LIMITE_POSICAO_MAX=1 REAL_LIMITE_PERDA_DIA_PTS=600 \
+          REAL_LIMITE_ENTRADAS_DIA=30 REAL_LIMITE_ENTRADAS_MIN=2; do
+  k=${kv%%=*}
+  if sudo grep -qE "^[[:space:]]*$k=" $F; then
+    sudo sed -i -E "s/^[[:space:]]*$k=.*/$kv/" $F
+  else
+    echo "$kv" | sudo tee -a $F >/dev/null
+  fi
+done
 sudo stat -c '%a %U:%G' $F                                   # o mesmo do S4
 sudo grep -cE '^[[:space:]]*(REAL_UIDS|REAL_CONTAS)=' $F     # 0
 sudo grep -E '^(AMBIENTES_PERMITIDOS|REAL_LIMITE_[A-Z_]+)=' $F
-#   AMBIENTES_PERMITIDOS=SIM; REAL_LIMITE_ENTRADAS_DIA=30; REAL_LIMITE_ENTRADAS_MIN=2; as outras
-#   REAL_LIMITE_* como estavam (as da fase 1: QTD_ORDEM 1, POSICAO_MAX 1, PERDA_DIA_PTS)
+#   AMBIENTES_PERMITIDOS=SIM
+#   REAL_LIMITE_QTD_ORDEM=1
+#   REAL_LIMITE_POSICAO_MAX=1
+#   REAL_LIMITE_PERDA_DIA_PTS=600
+#   REAL_LIMITE_ENTRADAS_DIA=30
+#   REAL_LIMITE_ENTRADAS_MIN=2
+#   (cada chave uma vez só; a ordem pode ser outra)
 ```
 
-Com o REAL desligado, os `REAL_LIMITE_*` só aparecem na ficha, como os limites da instância, e
-servem de teto para a aprovação futura. Se a `REAL_LIMITE_QTD_ORDEM` ou a `REAL_LIMITE_PERDA_DIA_PTS`
-estiverem ausentes, não precisa pôr agora: com o REAL desligado, a v1.35 sobe sem elas. Mas me avise,
-porque elas são obrigatórias para religar o REAL.
+Com o REAL desligado, os `REAL_LIMITE_*` só aparecem na ficha, como os limites da instância (§7.1),
+e servem de teto para a aprovação futura.
 
 ## 3. Parar o serviço e copiar o banco
 
@@ -199,6 +214,10 @@ sudo sh -c "zcat $C | tail -1"                                            # -- D
 sudo sh -c "zcat $C | grep -c 'INSERT INTO .kalmanordemusuario.'"         # > 0
 ```
 
+**Anote o caminho completo da cópia**, o que o `echo $C` mostrou (por exemplo,
+`/var/backups/kalman-ordens/antes-0019-20261116-184712.sql.gz`). O S17 usa esse caminho, e o `$C`
+não existe mais numa janela nova.
+
 Sem "Dump completed", **não siga**: volte com `sudo systemctl start kalman-ordens` (a v1.34 está
 intacta, e o env do §2 serve a ela) e me mande a saída.
 
@@ -206,7 +225,8 @@ intacta, e o env do §2 serve a ela) e me mande a saída.
 
 **S8**: guardar a v1.34.
 ```bash
-sudo cp -a /opt/kalman-ordens/kalman-ordens /opt/kalman-ordens/kalman-ordens.$V
+sudo cp -a /opt/kalman-ordens/kalman-ordens /opt/kalman-ordens/kalman-ordens.911caf424346
+/opt/kalman-ordens/kalman-ordens.911caf424346 versao      # 911caf424346
 ```
 
 **S9**: instalar a v1.35.
@@ -279,7 +299,8 @@ for u in 1450 5725; do curl -s "127.0.0.1:9092/usuarios/$u/real" | jq -c '{uid, 
   gq: (.gq | {conector, corretora_codigo, valido}), limites_instancia, posicao: .posicao.instancia,
   hist: [.historico[] | {evento, estado_antes, origem}]}'; done
 #   estado SEM_APROVACAO, acoes ["aprovar"], gq.valido true (o cadastro atual do GQ, só leitura),
-#   limites_instancia com entradas_dia 30 e entradas_min 2, posicao DESLIGADA,
+#   limites_instancia {qtd_ordem 1, posicao_max 1, perda_dia_pts 600, entradas_dia 30,
+#   entradas_min 2} (os do S5), posicao DESLIGADA,
 #   hist[0] = {MIGRACAO, HABILITADO_V134 ou DESABILITADO_V134, MIGRACAO}
 ```
 
@@ -363,7 +384,7 @@ crítico e sem nenhum `REAL_*`. Me mande a linha, ou o texto de qualquer `FLEXSC
 
 **S16**:
 ```bash
-sudo install -o root -g root -m 755 /opt/kalman-ordens/kalman-ordens.$V /opt/kalman-ordens/kalman-ordens
+sudo install -o root -g root -m 755 /opt/kalman-ordens/kalman-ordens.911caf424346 /opt/kalman-ordens/kalman-ordens
 sudo systemctl restart kalman-ordens       # (start, se estiver parado)
 /opt/kalman-ordens/kalman-ordens versao   # 911caf424346
 ```
@@ -382,10 +403,13 @@ desfazer o D5 exatamente.
   S7** (operações, sessão, eventos).
 - Antes, volte a v1.34 (S16) com o serviço parado.
 
-**S17**:
+**S17**: troque `<CAMINHO-ANOTADO-NO-S7>` pelo caminho completo da cópia. O nome do banco é lido
+de novo, como no S1, e só o nome aparece.
 ```bash
 sudo systemctl stop kalman-ordens
-sudo sh -c "zcat $C | mysql '$DB'"
+sudo ls -l <CAMINHO-ANOTADO-NO-S7>
+DB=$(sudo sed -n 's#^DB_DSN=.*)/\([^?"]*\).*#\1#p' /etc/kalman-ordens/service.env | tail -1); echo $DB
+sudo sh -c "zcat <CAMINHO-ANOTADO-NO-S7> | mysql '$DB'"
 sudo mysql "$DB" -e "SELECT COUNT(*), MAX(versao) FROM kalmanordem_migracao"   # 18 | 18
 sudo systemctl start kalman-ordens
 ```
@@ -398,10 +422,10 @@ sudo systemctl start kalman-ordens
 | S2 | 1 | o banco antes (migrações, usuários, histórico) | não |
 | S3 | 1 | guarda o `usuario listar` em `/var/backups/kalman-ordens/` | grava um arquivo |
 | S4 | 2 | cópia do `service.env` e o que tem de REAL nele (valores das listas ocultos) | grava a cópia |
-| S5 | 2 | comenta `REAL_UIDS`/`REAL_CONTAS`; `REAL_LIMITE_ENTRADAS_DIA=30`, `_MIN=2` | **muda o env** |
+| S5 | 2 | comenta `REAL_UIDS`/`REAL_CONTAS`; os cinco `REAL_LIMITE_*` em 1, 1, 600, 30 e 2 (troca ou acrescenta) | **muda o env** |
 | S6 | 3 | para o serviço | **para o SIMULADOR** |
 | S7 | 3 | dump das `kalmanordem*` | grava a cópia |
-| S8 | 4 | guarda o binário da v1.34 | grava a cópia |
+| S8 | 4 | guarda o binário da v1.34 em `/opt/kalman-ordens/kalman-ordens.911caf424346` | grava a cópia |
 | S9 | 4 | instala a v1.35 | **troca o binário** |
 | S10 | 5 | `migrar` (0019) e a conferência no banco | **muda o banco** |
 | S11 | 6 | sobe o serviço (S11b: restart, só se o login falhar) | sobe o SIMULADOR |
@@ -409,8 +433,8 @@ sudo systemctl start kalman-ordens
 | S13 | 7.2 | `usuario listar` do REAL | não |
 | S14 | 7.2 | opcional: a recusa das chaves extintas, com a cópia do env | não |
 | S15 | 7.3 | compara as linhas do SIMULADOR com o S3 | não |
-| S16 | 9.1 | volta: binário da v1.34 e restart | só se precisar |
-| S17 | 9.2 | volta: restaurar o dump | só falando comigo |
+| S16 | 9.1 | volta: o `kalman-ordens.911caf424346` de volta e restart | só se precisar |
+| S17 | 9.2 | volta: restaurar o dump pelo caminho anotado no S7 | só falando comigo |
 
 ## 11. Depois (eu)
 
