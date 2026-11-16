@@ -354,6 +354,59 @@ pelo lado do Kalman: o disjuntor persistido não manda entrada.
 Com o D7, a Parada automática por perda sai do REAL. A proteção por perda passa a ser só o disjuntor
 do Kalman, por uid. A Parada manual e a das 50 recusas continuam.
 
+### 7.1 O disjuntor por usuário do CC do Kalman: o que toca o kalman-ordens
+
+O CC do Kalman vai implementar o D11. Só confirmado aqui; a v1.36 não muda nada por causa disso.
+
+**1. A saída do disjuntor, com `motivo=PERDA_DIA_USUARIO`, pelo pedido de saída de hoje.**
+
+O motivo não tem tratamento especial no serviço:
+- `pedirSaida` (`internal/motor/saida.go:15`) só limita o tamanho a 60 caracteres
+  (`dominio.MaxMotivoSaida`, `internal/dominio/dominio.go:327`) e o grava em `MotivoSaida`;
+- a única comparação de motivo no motor é `SINAL_OPOSTO`, na virada de mão
+  (`internal/motor/entrada.go:419`).
+
+Não há confusão com o disjuntor de bolsa (`PNT_BOLSA_INDISPONIVEL`):
+- ele só olha o texto `58` das rejeições do PnT, contra `DISJUNTOR_TEXTOS`
+  (`internal/motor/disjuntor.go:48`);
+- ele não lê o motivo de pedido nenhum;
+- ele não bloqueia saídas.
+
+A saída segue o caminho do §7: conta e canal da operação, e a 1014 cancelada ou substituída pela
+saída.
+
+**2. A stop no nível do disjuntor (D-a).**
+
+A rota é `POST /operacoes/{id}/stop` (`internal/api/api.go:80`, `ajustarStop` em
+`internal/motor/ajuste.go:80`), com `preco_stop` (ou `stop_pts`) e o `origem` opcional. Para o
+disjuntor, sugiro `origem=PERDA_DIA_USUARIO`; o padrão é `^[A-Z][A-Z0-9_]{1,19}$`, `ajuste.go:35`.
+
+Ela aceita apertar ou afrouxar a qualquer momento em que a 1014 está viva. **Não existe piso nem
+regra de "só aperta" no serviço:** vale o último ajuste recebido (`ajuste.go:150`;
+`calcularStop`, `internal/motor/protecao.go:202`). **Quem garante "o mais apertado entre a stop do
+gestor e a do disjuntor" é o Kalman**: um ajuste do TRSP mais frouxo, mandado depois, desfaz a stop do
+disjuntor.
+
+O que pode atrasar ou recusar o ajuste:
+
+| regra | onde | efeito |
+|---|---|---|
+| 1014 ocupada (envio, replace ou cancel sem resposta) | `ajuste.go:155` | aceito como `AGUARDANDO`; sai quando a 1014 libera |
+| diferença menor que `AJUSTE_DEGRAU_MIN_PTS` (25) para a stop na corretora | `ajuste.go:157` | `IGNORADO`: grava o preço, mas não manda o replace. **Pode deixar a stop até 24 pts mais frouxa que o nível do disjuntor** |
+| `REPLACES_1014_MAX` (100) menos a reserva de 5 para a saída | `ajuste.go:117` | `PROTECAO_LIMITE_REPLACES` (recusa) |
+| sem 1014 viva: antes do fill da entrada, entre o fill e a 1014, ou operação em saída | `ajuste.go:107`, `:111` | `SEM_PROTECAO` (recusa) |
+| a stop já disparou na corretora | `ajuste.go:114` | `PROTECAO_DISPARADA` (recusa) |
+| sem bid/ask recente do símbolo (`IDADE_MAX_PRECO`) | `ajuste.go:139` | `SEM_PRECO` (recusa) |
+| o preço já passou do bid (comprado) ou do ask (vendido) | `ajuste.go:144`, `:147` | `STOP_ALEM_DO_PRECO` (recusa). Nesse caso o Kalman manda a saída |
+| canal fora ou operação suspensa | `ajuste.go:104` | `CONECTOR_FORA` / `OPERACAO_SUSPENSA` (recusa) |
+
+**Não atrasam o ajuste:**
+- o `LIMITE_MENSAGENS_MIN`, que só é conferido na entrada (`entrada.go:374`);
+- o limitador de taxa da sessão: a 1014 tem prioridade, e só as entradas esperam
+  (`internal/motor/volta.go:23`, `:472`).
+
+Não há intervalo mínimo entre replaces além de "um pedido por vez".
+
 ## 8. Registro: 1450 e 5725 na mesma conta 4582351 (sem mudança)
 
 Hoje o 5725 está em `SEM_APROVACAO`. Se os dois forem aprovados:
