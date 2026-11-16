@@ -65,8 +65,10 @@ evento PROTEGIDA operacao_id=12504
 flx_ambiente REAL:CMC
 flx_nada
 
-# --- o uid 8 muda de corretora no GQ (BTG, conta 9002): a saída da 12503 sai pela CMC, na conta gravada
+# --- o uid 8 muda de corretora no GQ (BTG, conta 9002) e o admin aprova o cadastro novo (v1.35): a
+# saída da 12503 sai pela CMC, na conta gravada na operação, nunca na do cadastro novo
 usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"9002"}}
+aprova 8 conta=9002 corretora=85 conector=flexscan
 preco bid=130100 ask=130105 preco=130100
 saida 12503 V SINAL_OPOSTO uid=8 ambiente=REAL
 resposta aceito=true
