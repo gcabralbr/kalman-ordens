@@ -315,6 +315,26 @@ Nenhuma ação zera nem cancela ordem (funcional: revogar ou bloquear não zera)
   "operacoes": null}`.
 - **`historico[].gq`:** `null` quando a linha não tinha divergência; `por` como gravado
   (`admin:<uid>`, `servico`, `migracao-0019`, o usuário do sistema na CLI).
+- **As linhas anteriores à 0019** (gravadas pela CLI da v1.34 e anteriores, `habilitar`/`desabilitar
+  -ambiente REAL`; visto na .53 em 16/11). Elas são reconhecidas por **`evento: null`**. Também vêm
+  `null` o `estado_antes`, a `origem`, a `conta`, o `corretora_codigo` e o `gq`, e a `versao` vem 0.
+
+  Os campos de uma linha dessas que valem: `por`, `em`, `motivo`, `qtd_max_ordem`, `posicao_max` e
+  `conector` (o primeiro conector habilitado naquela época).
+
+  **O `estado` dessas linhas não vale.** Ele vem `SEM_APROVACAO` porque é derivado da coluna vazia, e
+  não diz se a linha habilitava ou desabilitava. O `habilitado` da época não está no JSON.
+
+  Como a tela deve mostrá-las:
+  - num rótulo próprio, por exemplo "Habilitação antiga (v1.34, antes da aprovação pela tela)", com
+    quem, quando e o motivo, e o motivo é o que diz se foi um habilitar ou um desabilitar;
+  - **sem** o selo de estado, a versão e a seta "antes → depois";
+  - sem contá-las como aprovação. Nunca houve aprovação antes da 0019 (D5).
+
+  O estado da habilitação antiga logo antes da migração está no `estado_antes` da linha `MIGRACAO`
+  (`HABILITADO_V134` ou `DESABILITADO_V134`), que é sempre a primeira linha com `evento` preenchido.
+  Esses dois valores só aparecem nessa linha. Na lista, elas vêm depois da `MIGRACAO`, porque são as
+  mais antigas.
 
 ### 5.2 `GET /usuarios/real` — a lista
 

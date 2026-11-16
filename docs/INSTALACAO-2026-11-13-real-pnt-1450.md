@@ -446,6 +446,21 @@ Como ler a tabela:
 
 ## 9. Para o próximo teste REAL pelo PnT
 
+> **OBSOLETO desde 16/11 (v1.35 `09872ead98f2` instalada na .53, `INSTALACAO-2026-11-16-v1.35.md`).**
+> Duas partes deste §9 não funcionam mais na v1.35:
+> - **o `REAL_UIDS`/`REAL_CONTAS` no env:** com valor, o serviço não sobe;
+> - **o `usuario habilitar -ambiente REAL`:** a CLI recusa.
+>
+> A aprovação do REAL agora é pela tela (`POST /usuarios/{uid}/real/aprovar`), e o 1450 está em
+> `SEM_APROVACAO` desde a 0019. O próximo REAL pelo PnT segue o roteiro do 1º dia REAL, a ser escrito
+> depois das telas do Kalman.
+>
+> Continuam valendo como referência:
+> - a sequência FIX (9.1);
+> - o bloco `REAL_FIX_*`/`REAL_PRECOS_*` do env, sem o `REAL_UIDS`;
+> - os limites, hoje em 1/1/600/30/2;
+> - o fix-integration do GQ parado antes.
+
 **9.1 A sequência: não montar store à mão.** O §2 sai do roteiro. Em outro dia, o store guardado em
 `$S/store` é de outra sessão (a criação é de 13/11): na partida depois das 08:30, o QuickFIX/Go o zera
 sozinho e loga com 34=1. Daí em diante vale o que funcionou em 13/11 às 09:31:

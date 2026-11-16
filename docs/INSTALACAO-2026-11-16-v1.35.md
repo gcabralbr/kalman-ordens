@@ -134,7 +134,7 @@ for u in 1450 5725 35; do curl -s "127.0.0.1:9092/usuarios/$u/destino?ambiente=S
 
 **S1**: o nome do banco. Só o nome aparece, a senha não.
 ```bash
-DB=$(sudo sed -n 's#^DB_DSN=.*)/\([^?"]*\).*#\1#p' /etc/kalman-ordens/service.env | tail -1); echo $DB
+DB=$(sudo sed -n 's#^DB_DSN=.*)/\([^?]*\).*#\1#p' /etc/kalman-ordens/service.env | tail -1 | tr -d "\"'"); echo $DB
 ```
 
 **S2**: o banco antes. Anote os números.
@@ -212,7 +212,8 @@ sudo systemctl stop kalman-ordens; systemctl is-active kalman-ordens     # inact
 T=$(sudo mysql "$DB" -N -e "SHOW TABLES LIKE 'kalmanordem%'"); echo $T
 C=/var/backups/kalman-ordens/antes-0019-$(date +%Y%m%d-%H%M%S).sql.gz
 sudo sh -c "mysqldump --single-transaction '$DB' $(echo $T) | gzip > $C"; echo $C
-sudo ls -l $C
+sudo chmod 600 $C                     # o redirecionamento cria com 644 (16/11)
+sudo ls -l $C                         # -rw------- root root
 sudo sh -c "zcat $C | tail -1"                                            # -- Dump completed on ...
 sudo sh -c "zcat $C | grep -c 'INSERT INTO .kalmanordemusuario.'"         # > 0
 ```
@@ -280,7 +281,8 @@ curl -s 127.0.0.1:9092/saude | jq '{versao, ambientes_permitidos,
 #   versao "09872ead98f2", ["SIMULADOR"], posicao 0, suspensas [], janela "08:02-18:30",
 #   logado true, ativa_por "janela", ultimo_login partida/OK, ordens_vivas 0,
 #   webhook_conferido_em = agora (a conferência pedida pelo login), webhook_faltas_seguidas 0,
-#   webhook_recadastrado_em o de hoje de manhã (08:02), não o de agora
+#   webhook_recadastrado_em null (só em memória: zera em cada partida e só ganha valor num
+#   recadastro depois dela; o das 08:02 não sobrevive ao restart)
 ```
 
 **O relogin da Flexscan dentro da janela (08:02–18:30).** É o mesmo da instalação da janela, em 12/11
@@ -430,7 +432,7 @@ de novo, como no S1, e só o nome aparece.
 ```bash
 sudo systemctl stop kalman-ordens
 sudo ls -l <CAMINHO-ANOTADO-NO-S7>
-DB=$(sudo sed -n 's#^DB_DSN=.*)/\([^?"]*\).*#\1#p' /etc/kalman-ordens/service.env | tail -1); echo $DB
+DB=$(sudo sed -n 's#^DB_DSN=.*)/\([^?]*\).*#\1#p' /etc/kalman-ordens/service.env | tail -1 | tr -d "\"'"); echo $DB
 sudo sh -c "zcat <CAMINHO-ANOTADO-NO-S7> | mysql '$DB'"
 sudo mysql "$DB" -e "SELECT COUNT(*), MAX(versao) FROM kalmanordem_migracao"   # 18 | 18
 sudo systemctl start kalman-ordens
@@ -468,3 +470,26 @@ sudo systemctl start kalman-ordens
 - o merge da `v1.35` no `main`, junto com a `v1.34` pendente (o §4 do ESTADO-2026-11-16);
 - a cópia `antes-0018` pode sair depois de alguns pregões com a v1.35;
 - a `antes-0019` fica até a instalação das telas.
+
+## 12. Resultado (16/11, 14:18–14:25, pelo George, com o `ae3bc3d`)
+
+Tudo conforme o esperado:
+- a 0019 aplicada; o 1450 e o 5725 em `SEM_APROVACAO`; o histórico de 10 para 12 linhas;
+- o login da partida OK, dentro da janela, e o webhook conferido;
+- o SIMULADOR igual nas duas comparações (§7.3 e S15);
+- o S12 recusado.
+
+A cópia ficou em `/var/backups/kalman-ordens/antes-0019-20261116-141859.sql.gz`, com a permissão
+ajustada à mão para 600.
+
+O que a instalação mostrou, já corrigido neste documento depois dela:
+1. **S1 e S17:** o `service.env` guarda o `DB_DSN` entre aspas simples, e o `sed` antigo deixava a
+   aspa no nome do banco (`kalmanordens'`). Na hora, foi usado `DB=kalmanordens`. O comando agora
+   termina em `tr -d "\"'"`. Ele foi testado com o DSN entre aspas simples, entre aspas duplas, sem
+   aspas e com `?parâmetros`.
+2. **§6:** o `webhook_recadastrado_em` veio `null` depois do restart. É o certo: o campo fica só em
+   memória (`Ponte.webhookRecadEm`, `internal/flexscan/webhook_cadastro.go:170`), zera em cada
+   partida e só ganha valor num recadastro depois dela. A expectativa foi ajustada.
+3. **S7:** o `mysqldump ... > $C` cria a cópia com 644. Agora o S7 tem `chmod 600`.
+4. **A ficha (§7.1):** as linhas do histórico anteriores à 0019 vêm com `evento`, `estado_antes` e
+   `origem` `null`. É o esperado, e como a tela deve tratá-las está agora no §5.1 da SPEC técnica.
