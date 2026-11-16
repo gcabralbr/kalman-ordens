@@ -480,15 +480,22 @@ da branch `v1.35`.
 Com a v1.35 instalada fora do pregão, `AMBIENTES_PERMITIDOS=SIM`, sem `REAL_UIDS`/`REAL_CONTAS`, e
 o SIMULADOR rodando como hoje:
 
-1. A recusa com `REAL_UIDS`, sem restart: numa cópia do env com a chave de volta,
-   `sudo sh -c 'set -a; . <copia>; kalman-ordens usuario conferir -uid 1450'`. A CLI lê o teto
-   pelo mesmo `LerAmbientes` (`usuario.go:180`) e recusa com a mensagem do §6.
+**Revisto em 16/11 (George):** a instalação do backend (`INSTALACAO-2026-11-16-v1.35.md`) confere
+só os itens 1–3 e 6. Sem as telas, o 1450 fica em `SEM_APROVACAO`, e a CLI não aprova. Os itens 4 e
+5 (aprovar/bloquear/revogar e a troca de conta do 1450) passam para a **instalação das telas do
+Kalman**, pelo caminho real. Com o REAL fora do teto, o código `REAL_SEM_APROVACAO` não aparece na
+.53, porque o teto vem antes e sai `AMBIENTE_NAO_PERMITIDO`. A instalação confere o estado
+`SEM_APROVACAO`, e os roteiros 119 e 127 provam o código.
+
+1. A recusa com `REAL_UIDS`, sem restart: `kalman-ordens usuario conferir -uid 1450 -env <copia>`,
+   com a cópia do env que ainda tem a chave. A CLI lê o teto pelo mesmo `LerAmbientes` e recusa com
+   a mensagem do §6.
 2. `GET /usuarios/real`: o 1450 e o 5725 em `SEM_APROVACAO`, com a linha `MIGRACAO` no histórico.
 3. `GET /usuarios/1450/destino?ambiente=REAL`: `AMBIENTE_NAO_PERMITIDO`, porque o teto vem antes.
    A ficha (`/usuarios/1450/real`) mostra `SEM_APROVACAO` e o GQ atual.
-4. Pela tela, ou pelo `curl` do roteiro: aprovar o 1450 (4582351, 1/1); bloquear; desbloquear;
+4. (Na instalação das telas.) Pela tela: aprovar o 1450 (4582351, 1/1); bloquear; desbloquear;
    revogar; aprovar de novo; cada passo com o motivo no histórico.
-5. **A troca de conta, no 1450** (decisão 1: é admin, tem cadastro completo, e na .53 só o Kalman
+5. (Na instalação das telas.) **A troca de conta, no 1450** (decisão 1: é admin, tem cadastro completo, e na .53 só o Kalman
    usa esse cadastro). O **George** troca a conta na tela "Perfil do usuário – Robô" do GQ, o
    caminho real. O roteiro nunca grava na `usutxtconfigprd` por SQL nem por script. Antes, anota-se
    o cadastro original pela ficha (`gq`). Em até 30 s: estado `CONTA_DIVERGENTE`, crítico `[REAL]`
