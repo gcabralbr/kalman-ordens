@@ -5,15 +5,12 @@ config AMBIENTES_PERMITIDOS=REAL
 config REAL_FLEXSCAN_CORRETORAS=85:BTG
 config REAL_FLEXSCAN_BTG_URL=falso
 config REAL_FLEXSCAN_BTG_CONTAS=4582351
-config REAL_UIDS=5725
-config REAL_CONTAS=4582351
 config REAL_LIMITE_QTD_ORDEM=1
 config REAL_LIMITE_PERDA_DIA_PTS=3000
 config REAL_LIMITE_ENTRADAS_DIA=10
 usuario 5725 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"4582351"}}
 habilita 5725 ambiente=REAL conectores=flexscan
 usuario 8 prd {"Robo":{"Conector":"FLEXSCAN","CORSeqId":85,"CCONroConta":"4582351"}}
-habilita 8 ambiente=REAL conectores=flexscan
 
 preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
 aguarda_logon
@@ -28,9 +25,9 @@ entrada 12702 C uid=5725 ambiente=REAL por=1
 resposta aceito=false codigo=CAMPO_INVALIDO "motivo=~so na boleta"
 flx_nada
 
-# --- as travas do uid valem na boleta: o 8 não está em REAL_UIDS
+# --- as travas do uid valem na boleta: o 8 não tem habilitação no REAL
 entrada 12703 C uid=8 ambiente=REAL modulo=BOLETA por=1
-resposta aceito=false codigo=REAL_UID_NAO_PERMITIDO
+resposta aceito=false codigo=UID_NAO_HABILITADO
 flx_nada
 
 # --- a conta e a corretora esperadas têm de bater com a coluna do GQ

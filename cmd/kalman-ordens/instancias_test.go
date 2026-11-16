@@ -21,7 +21,7 @@ func (semNotificar) Notificar(string, string) {}
 // conector do REAL são as REAL_ (faltando, o erro diz o nome que o operador escreve).
 func TestInstanciasDosDoisAmbientes(t *testing.T) {
 	segSim, segReal := strings.Repeat("s", 40), strings.Repeat("r", 40)
-	base := map[string]string{"AMBIENTES_PERMITIDOS": "SIM,REAL", "REAL_UIDS": "5725", "REAL_CONTAS": "715124",
+	base := map[string]string{"AMBIENTES_PERMITIDOS": "SIM,REAL",
 		"REAL_LIMITE_QTD_ORDEM": "1", "REAL_LIMITE_PERDA_DIA_PTS": "300", "REAL_LIMITE_ENTRADAS_DIA": "10",
 		"FLEXSCAN_URL": "http://127.0.0.1:1/sim", "FLEXSCAN_USUARIO": "u", "FLEXSCAN_SENHA": "p", "FLEXSCAN_WEBHOOK_SEGREDO": segSim,
 		"REAL_FLEXSCAN_URL": "http://127.0.0.1:1/real", "REAL_FLEXSCAN_USUARIO": "ur", "REAL_FLEXSCAN_SENHA": "pr", "REAL_FLEXSCAN_WEBHOOK_SEGREDO": segReal,
@@ -114,7 +114,7 @@ func TestInstanciasDosDoisAmbientes(t *testing.T) {
 // corretora (o guarda-chuva dela), cada uma com o seu webhook; os erros dizem a chave que o operador
 // escreve.
 func TestInstanciasPorCorretora(t *testing.T) {
-	base := map[string]string{"AMBIENTES_PERMITIDOS": "REAL", "REAL_UIDS": "5725", "REAL_CONTAS": "*",
+	base := map[string]string{"AMBIENTES_PERMITIDOS": "REAL",
 		"REAL_LIMITE_QTD_ORDEM": "1", "REAL_LIMITE_PERDA_DIA_PTS": "300", "REAL_LIMITE_ENTRADAS_DIA": "10",
 		"REAL_FLEXSCAN_URL": "http://127.0.0.1:1/prod", "REAL_FLEXSCAN_CORRETORAS": "88:CMC,85:BTG",
 		"REAL_FLEXSCAN_CMC_USUARIO": "cmc_kalman", "REAL_FLEXSCAN_CMC_SENHA": "p1", "REAL_FLEXSCAN_CMC_CONTAS": "715124,715125",

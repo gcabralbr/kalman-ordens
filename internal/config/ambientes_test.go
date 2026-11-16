@@ -8,7 +8,8 @@ import (
 )
 
 // SPEC-AMBIENTES-v1 §3.1: o teto da máquina. Padrão só o SIMULADOR; a equivalência ORDENS_AMBIENTE;
-// as duas juntas, o padrão REAL e o REAL sem listas, limites ou conector REAL não sobem.
+// as duas juntas, o padrão REAL e o REAL sem limites ou conector REAL não sobem. v1.35: REAL_UIDS e
+// REAL_CONTAS não existem mais — com valor, com ou sem o REAL permitido, o serviço não sobe.
 func TestLerAmbientes(t *testing.T) {
 	ler := func(v map[string]string) (Ambientes, []string, error) { return Novo(v).LerAmbientes() }
 
@@ -20,17 +21,17 @@ func TestLerAmbientes(t *testing.T) {
 		t.Fatalf("legado HML: %+v %v", a, err)
 	}
 	if a, _, err = ler(map[string]string{"ORDENS_AMBIENTE": "PRODUCAO", "LIMITE_QTD_ORDEM": "2"}); err != nil || a.Padrao != dominio.AmbienteReal ||
-		!a.UIDReal(1) || !a.ContaReal("x") || a.Real.QtdOrdem != 2 || a.Permitidos[dominio.AmbienteSimulador] {
+		a.Real.QtdOrdem != 2 || a.Permitidos[dominio.AmbienteSimulador] {
 		t.Fatalf("legado PRODUCAO: %+v %v", a, err)
 	}
 	if a, _, err = ler(map[string]string{"AMBIENTES_PERMITIDOS": "SIM", "AMBIENTE_PADRAO": "simulador"}); err != nil || a.Padrao != dominio.AmbienteSimulador || a.PnTNoSimulador() {
 		t.Fatalf("padrão da transição: %+v %v", a, err)
 	}
-	_, avisos, _ = ler(map[string]string{"REAL_UIDS": "5725"})
-	if len(avisos) != 1 || !strings.Contains(avisos[0], "REAL_UIDS ignorada") {
+	_, avisos, _ = ler(map[string]string{"REAL_LIMITE_QTD_ORDEM": "1"})
+	if len(avisos) != 1 || !strings.Contains(avisos[0], "REAL_LIMITE_QTD_ORDEM ignorada") {
 		t.Fatalf("aviso: %v", avisos)
 	}
-	reais := map[string]string{"AMBIENTES_PERMITIDOS": "SIM,REAL", "REAL_UIDS": "5725", "REAL_CONTAS": "715124",
+	reais := map[string]string{"AMBIENTES_PERMITIDOS": "SIM,REAL",
 		"REAL_LIMITE_QTD_ORDEM": "1", "REAL_LIMITE_PERDA_DIA_PTS": "300", "REAL_LIMITE_ENTRADAS_DIA": "10"}
 	sem := func(k string) map[string]string {
 		m := map[string]string{}
@@ -54,9 +55,11 @@ func TestLerAmbientes(t *testing.T) {
 		{sem("REAL_LIMITE_QTD_ORDEM"), "REAL_LIMITE_QTD_ORDEM"},
 		{sem("REAL_LIMITE_PERDA_DIA_PTS"), "REAL_LIMITE_PERDA_DIA_PTS"},
 		{sem("REAL_LIMITE_ENTRADAS_DIA"), "REAL_LIMITE_ENTRADAS_DIA"},
-		{sem("REAL_UIDS"), "REAL_UIDS"},
-		{sem("REAL_CONTAS"), "REAL_CONTAS"},
-		{func() map[string]string { m := sem(""); m["REAL_UIDS"] = "abc"; return m }(), "não é um uid"},
+		// v1.35 (SPEC-REAL-PELA-TELA-F1 D4): as chaves extintas, com e sem o REAL permitido, e no legado
+		{func() map[string]string { m := sem(""); m["REAL_FIX_HOST"] = "h"; m["REAL_UIDS"] = "1450"; return m }(), "tire do service.env: REAL_UIDS"},
+		{func() map[string]string { m := sem(""); m["REAL_FIX_HOST"] = "h"; m["REAL_CONTAS"] = "*"; return m }(), "tire do service.env: REAL_CONTAS"},
+		{map[string]string{"REAL_UIDS": "1450", "REAL_CONTAS": "4582351"}, "tire do service.env: REAL_UIDS, REAL_CONTAS"},
+		{map[string]string{"ORDENS_AMBIENTE": "PRODUCAO", "REAL_UIDS": "*"}, "a aprovacao do REAL e pela tela"},
 		{func() map[string]string { m := sem(""); m["REAL_LIMITE_QTD_ORDEM"] = "0"; return m }(), "maiores que zero"},
 		// v1.26: completo, mas sem conector REAL (o PnT desligado não conta)
 		{reais, "sem conector REAL"},
@@ -79,13 +82,23 @@ func TestLerAmbientes(t *testing.T) {
 			t.Fatalf("REAL com %s: %+v %v", k, a, err)
 		}
 	}
-	// as listas REAL: "*" e os uids
-	a = Ambientes{RealUIDs: []int{5725}, RealContas: []string{"715124"}}
-	if !a.UIDReal(5725) || a.UIDReal(1) || !a.ContaReal("715124") || a.ContaReal("1") {
-		t.Fatalf("listas: %+v", a)
+	// só espaço não é valor (a linha vazia de um env editado)
+	if _, _, err := ler(map[string]string{"REAL_UIDS": "  "}); err != nil {
+		t.Fatalf("REAL_UIDS em branco: %v", err)
 	}
-	if u, todos, err := lerUIDs("*"); err != nil || !todos || u != nil {
-		t.Fatalf("*: %v %v %v", u, todos, err)
+}
+
+// v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1 §5.3): os REAL_LIMITE_* lidos também com o REAL fora de
+// AMBIENTES_PERMITIDOS (a aprovação confere os limites do uid com os da instância); os padrões de
+// sempre (POSICAO_MAX = QTD_ORDEM; ENTRADAS_MIN = LIMITE_ENTRADAS_MIN); ausente = zero.
+func TestLimitesReal(t *testing.T) {
+	l := Novo(map[string]string{"REAL_LIMITE_QTD_ORDEM": "1", "REAL_LIMITE_PERDA_DIA_PTS": "600", "REAL_LIMITE_ENTRADAS_DIA": "30",
+		"REAL_LIMITE_ENTRADAS_MIN": "2"}).LimitesReal()
+	if l.QtdOrdem != 1 || l.PosicaoMax != 1 || l.PerdaDiaPts != 600 || l.EntradasDia != 30 || l.EntradasMin != 2 {
+		t.Fatalf("limites: %+v", l)
+	}
+	if l := Novo(map[string]string{"LIMITE_ENTRADAS_MIN": "7"}).LimitesReal(); l.QtdOrdem != 0 || l.PosicaoMax != 0 || l.EntradasMin != 7 {
+		t.Fatalf("ausentes: %+v", l)
 	}
 }
 
@@ -93,7 +106,7 @@ func TestLerAmbientes(t *testing.T) {
 // REAL_ (credencial de um ambiente nunca vale no outro) e os limites REAL; o SIMULADOR nunca tem a
 // sessão FIX; a equivalência ORDENS_AMBIENTE é a configuração inteira.
 func TestVisao(t *testing.T) {
-	base := map[string]string{"AMBIENTES_PERMITIDOS": "SIM,REAL", "REAL_UIDS": "5725", "REAL_CONTAS": "715124",
+	base := map[string]string{"AMBIENTES_PERMITIDOS": "SIM,REAL",
 		"REAL_LIMITE_QTD_ORDEM": "2", "REAL_LIMITE_PERDA_DIA_PTS": "300", "REAL_LIMITE_ENTRADAS_DIA": "10",
 		"FLEXSCAN_URL": "https://apisim", "FLEXSCAN_USUARIO": "sim", "FLEXSCAN_SENHA": "s1", "FLEXSCAN_WEBHOOK_SEGREDO": "segsim",
 		"REAL_FLEXSCAN_URL": "https://api", "REAL_FLEXSCAN_USUARIO": "real", "REAL_FLEXSCAN_SENHA": "s2",
@@ -138,7 +151,7 @@ func TestVisao(t *testing.T) {
 // v1.31.1: o robô e o OMS do PnT (20858/20859) são da sessão do ambiente: no REAL, só das REAL_; a
 // sem prefixo não vaza para o REAL, e a REAL_ não aparece no SIMULADOR.
 func TestVisaoRoboPnT(t *testing.T) {
-	base := map[string]string{"AMBIENTES_PERMITIDOS": "SIM,REAL", "REAL_UIDS": "1450", "REAL_CONTAS": "4582351",
+	base := map[string]string{"AMBIENTES_PERMITIDOS": "SIM,REAL",
 		"REAL_LIMITE_QTD_ORDEM": "1", "REAL_LIMITE_PERDA_DIA_PTS": "500", "REAL_LIMITE_ENTRADAS_DIA": "3",
 		"REAL_FIX_HOST": "prd", "REAL_FIX_PORTA": "1", "REAL_FIX_SENDER_COMP_ID": "GAMMAQ2",
 		"REAL_PNT_ROBOT_ID": "BTG_ALGO", "REAL_PNT_ENTERING_FIRM": "BTGDAYTRADE"}

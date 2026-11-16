@@ -230,6 +230,81 @@ type Habilitacao struct {
 	Por        string // quem alterou (usuário do sistema que rodou a CLI)
 	Motivo     string
 	Em         time.Time
+	// v1.35: no REAL, a linha é a aprovação (SPEC-TECNICA-REAL-PELA-TELA-F1 §1); no SIMULADOR, vazia
+	AprovacaoReal
+}
+
+// AprovacaoReal (SPEC-TECNICA-REAL-PELA-TELA-F1 §1.1): o estado do uid no REAL e o cadastro aprovado
+// (o conector aprovado é o único de Conectores). Habilitado é derivado: só com APROVADO.
+type AprovacaoReal struct {
+	Estado    string // EstadoSemAprovacao, EstadoAprovado, ...; "" no SIMULADOR
+	Corretora int    // Robo.CORSeqId aprovado
+	Conta     string
+	Versao    int // sobe a cada mudança (concorrência otimista da tela)
+	// a última aprovação (continua visível depois de um bloqueio)
+	AprovadoPor    string
+	AprovadoEm     time.Time
+	AprovadoMotivo string
+	// o cadastro do GQ visto na última divergência
+	GQConector      string
+	GQCorretora     int
+	GQConta         string
+	DivergenteDesde time.Time
+	Origem          string // OrigemTela, OrigemCLI, OrigemServico, OrigemMigracao
+}
+
+// Estados da aprovação no REAL (SPEC-REAL-PELA-TELA-F1, "Fluxo de habilitação").
+const (
+	EstadoSemAprovacao    = "SEM_APROVACAO"
+	EstadoAprovado        = "APROVADO"
+	EstadoBloqueado       = "BLOQUEADO"
+	EstadoContaDivergente = "CONTA_DIVERGENTE"
+	EstadoRevogado        = "REVOGADO"
+)
+
+// Eventos do histórico da aprovação (kalmanordemusuariohist.evento).
+const (
+	EventoMigracao    = "MIGRACAO"
+	EventoAprovar     = "APROVAR"
+	EventoBloquear    = "BLOQUEAR"
+	EventoDesbloquear = "DESBLOQUEAR"
+	EventoRevogar     = "REVOGAR"
+	EventoLimites     = "LIMITES"
+	EventoDivergencia = "DIVERGENCIA"
+	EventoVoltou      = "VOLTOU"
+)
+
+// Origens de uma mudança da aprovação.
+const (
+	OrigemTela     = "TELA"
+	OrigemCLI      = "CLI"
+	OrigemServico  = "SERVICO"
+	OrigemMigracao = "MIGRACAO"
+)
+
+// EstadoReal: o estado da linha REAL; sem linha (ou anterior à 0019) = SEM_APROVACAO.
+func (h Habilitacao) EstadoReal() string {
+	if h.Estado == "" {
+		return EstadoSemAprovacao
+	}
+	return h.Estado
+}
+
+// ConectorAprovado: o conector da aprovação (o único da linha REAL).
+func (h Habilitacao) ConectorAprovado() string {
+	if len(h.Conectores) == 0 {
+		return ConectorPnT
+	}
+	return h.Conectores[0]
+}
+
+// HabilitacaoHist: uma linha do histórico (só INSERT): o retrato depois da mudança, o evento e o
+// estado de antes.
+type HabilitacaoHist struct {
+	ID int64
+	Habilitacao
+	Evento      string
+	EstadoAntes string
 }
 
 // ModuloPadrao: o módulo de quem não diz qual é (o Kalman, o primeiro cliente do serviço).

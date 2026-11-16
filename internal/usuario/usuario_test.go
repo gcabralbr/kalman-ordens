@@ -186,11 +186,11 @@ func TestConectorEscolhidoPeloGQ(t *testing.T) {
 }
 
 // SPEC-AMBIENTES-v1 §0.1 e §4.1: a coluna é a do ambiente da ordem; o paper (9999 + QUANT) só no
-// SIMULADOR; o PnT só no REAL (salvo na equivalência HML); a trava nos dois sentidos e REAL_CONTAS.
+// SIMULADOR; o PnT só no REAL (salvo na equivalência HML); a trava nos dois sentidos. v1.35: sem
+// REAL_CONTAS — a conta do REAL é conferida com a aprovação pelo motor.
 func TestResolverAmbientes(t *testing.T) {
 	sim := Regras{Ambiente: dominio.AmbienteSimulador, ContasHML: []string{"99999"}, ContasHMLFlx: []string{"S-1117150"}, Flexscan: true}
-	real := Regras{Ambiente: dominio.AmbienteReal, ContasHML: []string{"99999"}, ContasHMLFlx: []string{"S-1117150"}, Flexscan: true,
-		RealContas: []string{"715124"}}
+	real := Regras{Ambiente: dominio.AmbienteReal, ContasHML: []string{"99999"}, ContasHMLFlx: []string{"S-1117150"}, Flexscan: true}
 	flx := []string{"FLEXSCAN"}
 	casos := []struct {
 		nome   string
@@ -209,8 +209,9 @@ func TestResolverAmbientes(t *testing.T) {
 		{"REAL na Capital", real, `{"Robo":{"CORSeqId":88,"CCONroConta":"715124"}}`, flx, "", "715124"},
 		{"conta de simulador no REAL", real, `{"Robo":{"CORSeqId":85,"CCONroConta":"S-1117150"}}`, flx, "CONTA_AMBIENTE", ""},
 		{"conta de simulador do outro conector no REAL", real, `{"Robo":{"CORSeqId":85,"CCONroConta":"99999"}}`, flx, "CONTA_AMBIENTE", ""},
-		{"fora de REAL_CONTAS", real, `{"Robo":{"CORSeqId":88,"CCONroConta":"715999"}}`, flx, "REAL_CONTA_NAO_PERMITIDA", ""},
-		{"PnT no REAL", Regras{Ambiente: dominio.AmbienteReal, RealContasTodas: true}, `{"Robo":{"CORSeqId":85,"CCONroConta":"123"}}`, nil, "", "123"},
+		{"outra conta real (a aprovação confere, não o resolver)", real, `{"Robo":{"CORSeqId":88,"CCONroConta":"715999"}}`, flx, "", "715999"},
+		{"PnT no REAL", Regras{Ambiente: dominio.AmbienteReal}, `{"Robo":{"CORSeqId":85,"CCONroConta":"123"}}`, nil, "", "123"},
+		{"PnT no legado PRODUCAO", Regras{Ambiente: Producao}, `{"Robo":{"CORSeqId":85,"CCONroConta":"123"}}`, nil, "", "123"},
 		{"9999 no REAL", real, `{"Robo":{"CORSeqId":9999,"CCONroConta":"QUANT"}}`, nil, "DESTINO_INVALIDO", ""},
 		{"ambiente inválido", Regras{Ambiente: "X"}, `{"Robo":{"CORSeqId":85,"CCONroConta":"1"}}`, nil, "CONTA_AMBIENTE", ""},
 	}
@@ -227,7 +228,39 @@ func TestResolverAmbientes(t *testing.T) {
 			t.Errorf("%s: o paper não é erro de configuração: %+v", c.nome, f)
 		}
 	}
-	if _, f := ResolverCom(real, `{"Robo":{"CORSeqId":88,"CCONroConta":"715999"}}`, flx); f.Alerta != "REAL_CONTA_NAO_PERMITIDA" {
-		t.Errorf("REAL_CONTA_NAO_PERMITIDA sem alerta: %+v", f)
+}
+
+// v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1 §3.1): o cadastro que a aprovação do REAL compara — conector
+// (vazio quando o GQ não diz), corretora e a conta de WIN (Futuros, senão Robo); ilegível com o
+// motivo, sem nunca trazer o resto do JSON (a credencial do Robo).
+func TestLerCadastro(t *testing.T) {
+	casos := []struct {
+		nome, texto string
+		quer        Cadastro
+		ilegivel    string
+	}{
+		{"PnT com conector", `{"Robo":{"Conector":"pnt","CORSeqId":85,"CCONroConta":"4582351","StrSenhaRobo":"segredo"}}`, Cadastro{"PNT", 85, "4582351"}, ""},
+		{"sem conector", `{"Robo":{"CORSeqId":85,"CCONroConta":" 4582351 "}}`, Cadastro{"", 85, "4582351"}, ""},
+		{"conector null", `{"Robo":{"Conector":null,"CORSeqId":85,"CCONroConta":"1"}}`, Cadastro{"", 85, "1"}, ""},
+		{"conta de futuros", `{"Robo":{"CORSeqId":85,"CCONroConta":"1"},"Futuros":{"CCONroContaFut":"4582351"}}`, Cadastro{"", 85, "4582351"}, ""},
+		{"futuros vazia", `{"Robo":{"CORSeqId":85,"CCONroConta":"1"},"Futuros":{"CCONroContaFut":""}}`, Cadastro{"", 85, "1"}, ""},
+		{"vazio", ` `, Cadastro{}, "vazio"},
+		{"JSON inválido", `{"Robo":{"CORSeqId":85,"StrSenhaRobo":"segredo"`, Cadastro{}, "JSON invalido"},
+		{"sem Robo", `{"Futuros":{"CCONroContaFut":"1"}}`, Cadastro{}, "sem Robo.CORSeqId"},
+		{"corretora texto", `{"Robo":{"CORSeqId":"85","CCONroConta":"1"}}`, Cadastro{}, "nao e inteiro"},
+		{"conector número", `{"Robo":{"Conector":1,"CORSeqId":85,"CCONroConta":"1"}}`, Cadastro{}, "Conector nao e texto"},
+		{"sem conta", `{"Robo":{"CORSeqId":85}}`, Cadastro{}, "sem conta"},
+		{"conta vazia", `{"Robo":{"CORSeqId":85,"CCONroConta":"  "}}`, Cadastro{}, "sem conta"},
+	}
+	for _, c := range casos {
+		got, f := LerCadastro(c.texto)
+		switch {
+		case c.ilegivel == "" && (f != nil || got != c.quer):
+			t.Errorf("%s: %+v %v", c.nome, got, f)
+		case c.ilegivel != "" && (f == nil || f.Codigo != "CADASTRO_ILEGIVEL" || !strings.Contains(f.Motivo, c.ilegivel) || got != (Cadastro{})):
+			t.Errorf("%s: esperava ilegível %q, veio %+v %v", c.nome, c.ilegivel, got, f)
+		case f != nil && strings.Contains(f.Motivo, "segredo"):
+			t.Errorf("%s: o motivo traz o JSON: %q", c.nome, f.Motivo)
+		}
 	}
 }

@@ -28,11 +28,12 @@ func (m *Motor) ambienteDoPedido(bruto string) (string, *recusa) {
 	return amb, nil
 }
 
-// tetoAmbiente (§4.1 itens 3 e 4): o ambiente permitido nesta máquina e, no REAL, o uid em
-// REAL_UIDS. O REAL recusado é crítico (alguém tentou o REAL onde ele não vale).
+// tetoAmbiente (§4.1 item 3): o ambiente permitido nesta máquina. O REAL recusado é crítico
+// (alguém tentou o REAL onde ele não vale). v1.35: o item 4 (REAL_UIDS) deu lugar à aprovação
+// do uid pela tela (SPEC-TECNICA-REAL-PELA-TELA-F1 §2).
 func (m *Motor) tetoAmbiente(amb string, uid int) *recusa { return m.teto(amb, uid, true) }
 
-// teto: as verificações 3 e 4; alertar falso no /usuarios/{uid}/destino (consulta, não tentativa).
+// teto: a verificação 3; alertar falso no /usuarios/{uid}/destino (consulta, não tentativa).
 func (m *Motor) teto(amb string, uid int, alertar bool) *recusa {
 	if !m.p.Amb.Permitidos[amb] {
 		texto := fmt.Sprintf("%s nao permitido nesta maquina (AMBIENTES_PERMITIDOS)", amb)
@@ -45,21 +46,13 @@ func (m *Motor) teto(amb string, uid int, alertar bool) *recusa {
 		// o roteador manda cada ambiente à sua instância; aqui só por defeito
 		return simples("AMBIENTE_NAO_PERMITIDO", fmt.Sprintf("%s sem instancia nesta maquina", amb))
 	}
-	if amb == dominio.AmbienteReal && !m.p.Amb.UIDReal(uid) {
-		if !alertar {
-			return simples("REAL_UID_NAO_PERMITIDO", fmt.Sprintf("uid %d fora de REAL_UIDS nesta maquina", uid))
-		}
-		m.al.Emitir("REAL_UID_NAO_PERMITIDO", "REAL_UID_NAO_PERMITIDO:"+strconv.Itoa(uid), fmt.Sprintf("entrada REAL do uid %d recusada: fora de REAL_UIDS", uid), 0)
-		return simples("REAL_UID_NAO_PERMITIDO", fmt.Sprintf("uid %d fora de REAL_UIDS nesta maquina", uid))
-	}
 	return nil
 }
 
 // regras: a resolução da coluna do GQ no ambiente da ordem.
 func (m *Motor) regras(amb string) usuario.Regras {
 	return usuario.Regras{Ambiente: amb, ContasHML: m.p.ContasHML, ContasHMLFlx: m.p.ContasHMLFlx, Flexscan: m.p.Flexscan,
-		PnTNoSimulador: m.p.Amb.PnTNoSimulador(), RealContas: m.p.Amb.RealContas, RealContasTodas: m.p.Amb.RealContasTodas,
-		Corretoras: m.corretorasDeclaradas()}
+		PnTNoSimulador: m.p.Amb.PnTNoSimulador(), Corretoras: m.corretorasDeclaradas()}
 }
 
 // ambienteConectores: o ambiente dos conectores desta instância (v1.26: um motor por ambiente).
@@ -126,8 +119,8 @@ func (m *Motor) destinoDaEntrada(uid int, amb string) map[string]any {
 			d["codigo"], d["motivo"] = r.codigo, r.motivo
 		}
 	}
-	d["permitido"] = m.p.Amb.Permitidos[amb] && (amb != dominio.AmbienteReal || m.p.Amb.UIDReal(uid))
-	// §4.1 itens 3 e 4
+	d["permitido"] = m.p.Amb.Permitidos[amb]
+	// §4.1 item 3
 	falhar(m.teto(amb, uid, false))
 	// item 5: a habilitação do ambiente (verificarHabilitacao)
 	h, ok, err := m.habilitacaoDo(uid, amb)

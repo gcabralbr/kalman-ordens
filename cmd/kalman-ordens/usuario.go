@@ -194,7 +194,7 @@ func conferirUsuario(r *repo.MariaDB, cfg config.Config, uid int, saida io.Write
 		if err != nil {
 			return err
 		}
-		permitido := teto.Permitidos[amb] && (amb != dominio.AmbienteReal || teto.UIDReal(uid))
+		permitido := teto.Permitidos[amb]
 		conectores := strings.ToLower(h.ConectoresTexto())
 		if !ok {
 			// sem linha não há conector habilitado (o PNT do ConectoresTexto é o padrão de linha vazia)
@@ -213,7 +213,7 @@ func conferirUsuario(r *repo.MariaDB, cfg config.Config, uid int, saida io.Write
 		v, _ := cfg.Visao(teto, amb)
 		rg := usuario.Regras{Ambiente: amb, ContasHML: usuario.Lista(cfg.Texto("ORDENS_CONTAS_HML", "")),
 			ContasHMLFlx: usuario.Lista(cfg.Texto("FLEXSCAN_CONTAS_HML", "")), Flexscan: v.Texto("FLEXSCAN_URL", "") != "",
-			PnTNoSimulador: teto.PnTNoSimulador(), RealContas: teto.RealContas, RealContasTodas: teto.RealContasTodas}
+			PnTNoSimulador: teto.PnTNoSimulador()}
 		cs := h.Conectores
 		if !ok {
 			cs = []string{dominio.ConectorPnT, dominio.ConectorFlexscan} // sem linha: o que o GQ aponta

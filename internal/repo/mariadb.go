@@ -454,36 +454,81 @@ func (r *MariaDB) CarregarDia(data string) ([]dominio.Operacao, []dominio.Ordem,
 
 // ---------------------------------------------------------------- habilitação e usuários do GQ
 
-func (r *MariaDB) Habilitacao(uid int, ambiente string) (dominio.Habilitacao, bool, error) {
-	h := dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteDe(ambiente)}
+// colunasHab: a linha da habilitação, com a aprovação do REAL (0019); a mesma ordem em
+// varrerHab e valoresHab, na tabela e no histórico.
+const colunasHab = `uid, ambiente, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em,
+	estado, corretora, conta, versao, aprovado_por, aprovado_em, aprovado_motivo, gq_conector, gq_corretora, gq_conta,
+	divergente_desde, origem`
+
+const marcasHab = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
+
+type varredor interface{ Scan(...any) error }
+
+// varrerHab lê colunasHab, com colunas antes (o id do histórico) e depois (evento, estado_antes).
+func varrerHab(s varredor, antes, depois []any) (dominio.Habilitacao, error) {
+	var h dominio.Habilitacao
 	var cs string
-	err := r.db.QueryRow(`SELECT habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em
-		FROM kalmanordemusuario WHERE uid=? AND ambiente=?`, uid, h.Ambiente).Scan(&h.Habilitado, &h.PosicaoMax, &h.QtdMaxOrdem, &cs, &h.Por, &h.Motivo, &h.Em)
-	if errors.Is(err, sql.ErrNoRows) {
-		return h, false, nil
+	var corretora, gqCorretora sql.NullInt64
+	var conta, aprPor, aprMot, gqCon, gqConta sql.NullString
+	var aprEm, divDesde sql.NullTime
+	dest := append(append([]any(nil), antes...), &h.UID, &h.Ambiente, &h.Habilitado, &h.PosicaoMax, &h.QtdMaxOrdem, &cs, &h.Por, &h.Motivo, &h.Em,
+		&h.Estado, &corretora, &conta, &h.Versao, &aprPor, &aprEm, &aprMot, &gqCon, &gqCorretora, &gqConta, &divDesde, &h.Origem)
+	if err := s.Scan(append(dest, depois...)...); err != nil {
+		return h, err
 	}
 	h.Conectores = conectoresDoBanco(cs)
+	h.Corretora, h.Conta = int(corretora.Int64), conta.String
+	h.AprovadoPor, h.AprovadoMotivo, h.AprovadoEm = aprPor.String, aprMot.String, aprEm.Time
+	h.GQConector, h.GQCorretora, h.GQConta, h.DivergenteDesde = gqCon.String, int(gqCorretora.Int64), gqConta.String, divDesde.Time
+	return h, nil
+}
+
+func valoresHab(h dominio.Habilitacao) []any {
+	return []any{h.UID, dominio.AmbienteDe(h.Ambiente), h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, h.ConectoresTexto(), cortar(h.Por, 64), cortar(h.Motivo, 200), h.Em.UTC(),
+		h.Estado, nuloInt(int64(h.Corretora)), nulo(cortar(h.Conta, 20)), h.Versao, nulo(cortar(h.AprovadoPor, 64)), utc(h.AprovadoEm), nulo(cortar(h.AprovadoMotivo, 200)),
+		nulo(cortar(h.GQConector, 10)), nuloInt(int64(h.GQCorretora)), nulo(cortar(h.GQConta, 20)), utc(h.DivergenteDesde), h.Origem}
+}
+
+func (r *MariaDB) Habilitacao(uid int, ambiente string) (dominio.Habilitacao, bool, error) {
+	amb := dominio.AmbienteDe(ambiente)
+	h, err := varrerHab(r.db.QueryRow(`SELECT `+colunasHab+` FROM kalmanordemusuario WHERE uid=? AND ambiente=?`, uid, amb), nil, nil)
+	if errors.Is(err, sql.ErrNoRows) {
+		return dominio.Habilitacao{UID: uid, Ambiente: amb}, false, nil
+	}
 	return h, err == nil, err
 }
 
 func (r *MariaDB) Habilitacoes() ([]dominio.Habilitacao, error) {
-	rows, err := r.db.Query(`SELECT uid, ambiente, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em
-		FROM kalmanordemusuario ORDER BY uid, ambiente DESC`)
+	rows, err := r.db.Query(`SELECT ` + colunasHab + ` FROM kalmanordemusuario ORDER BY uid, ambiente DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var hs []dominio.Habilitacao
 	for rows.Next() {
-		var h dominio.Habilitacao
-		var cs string
-		if err := rows.Scan(&h.UID, &h.Ambiente, &h.Habilitado, &h.PosicaoMax, &h.QtdMaxOrdem, &cs, &h.Por, &h.Motivo, &h.Em); err != nil {
+		h, err := varrerHab(rows, nil, nil)
+		if err != nil {
 			return nil, err
 		}
-		h.Conectores = conectoresDoBanco(cs)
 		hs = append(hs, h)
 	}
 	return hs, rows.Err()
+}
+
+// gravarHab: a linha (substituída) e o retrato no histórico, na transação.
+func gravarHab(tx *sql.Tx, h dominio.Habilitacao, evento, estadoAntes string) error {
+	v := valoresHab(h)
+	if _, err := tx.Exec(`INSERT INTO kalmanordemusuario (`+colunasHab+`) VALUES (`+marcasHab+`) ON DUPLICATE KEY UPDATE
+		habilitado=VALUES(habilitado), posicao_max=VALUES(posicao_max), qtd_max_ordem=VALUES(qtd_max_ordem), conectores=VALUES(conectores),
+		alterado_por=VALUES(alterado_por), motivo=VALUES(motivo), alterado_em=VALUES(alterado_em), estado=VALUES(estado),
+		corretora=VALUES(corretora), conta=VALUES(conta), versao=VALUES(versao), aprovado_por=VALUES(aprovado_por),
+		aprovado_em=VALUES(aprovado_em), aprovado_motivo=VALUES(aprovado_motivo), gq_conector=VALUES(gq_conector),
+		gq_corretora=VALUES(gq_corretora), gq_conta=VALUES(gq_conta), divergente_desde=VALUES(divergente_desde), origem=VALUES(origem)`, v...); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`INSERT INTO kalmanordemusuariohist (`+colunasHab+`, evento, estado_antes) VALUES (`+marcasHab+`,?,?)`,
+		append(v, evento, nulo(estadoAntes))...)
+	return err
 }
 
 func (r *MariaDB) GravarHabilitacao(h dominio.Habilitacao) error {
@@ -492,48 +537,90 @@ func (r *MariaDB) GravarHabilitacao(h dominio.Habilitacao) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO kalmanordemusuario (uid, ambiente, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em)
-		VALUES (?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE habilitado=VALUES(habilitado), posicao_max=VALUES(posicao_max),
-		qtd_max_ordem=VALUES(qtd_max_ordem), conectores=VALUES(conectores), alterado_por=VALUES(alterado_por), motivo=VALUES(motivo), alterado_em=VALUES(alterado_em)`,
-		h.UID, dominio.AmbienteDe(h.Ambiente), h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, h.ConectoresTexto(), cortar(h.Por, 64), cortar(h.Motivo, 200), h.Em.UTC()); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`INSERT INTO kalmanordemusuariohist (uid, ambiente, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em)
-		VALUES (?,?,?,?,?,?,?,?,?)`, h.UID, dominio.AmbienteDe(h.Ambiente), h.Habilitado, h.PosicaoMax, h.QtdMaxOrdem, h.ConectoresTexto(), cortar(h.Por, 64), cortar(h.Motivo, 200), h.Em.UTC()); err != nil {
+	if err := gravarHab(tx, h, "", ""); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
 func (r *MariaDB) AlterarHabilitado(uid int, ambiente string, habilitado bool, por, motivo string, em time.Time) (dominio.Habilitacao, bool, error) {
-	antes := dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteDe(ambiente)}
+	amb := dominio.AmbienteDe(ambiente)
+	antes := dominio.Habilitacao{UID: uid, Ambiente: amb}
 	tx, err := r.db.Begin()
 	if err != nil {
 		return antes, false, err
 	}
 	defer tx.Rollback()
-	var cs string
-	err = tx.QueryRow(`SELECT habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em
-		FROM kalmanordemusuario WHERE uid=? AND ambiente=? FOR UPDATE`, uid, antes.Ambiente).Scan(&antes.Habilitado, &antes.PosicaoMax, &antes.QtdMaxOrdem, &cs, &antes.Por, &antes.Motivo, &antes.Em)
+	antes, err = varrerHab(tx.QueryRow(`SELECT `+colunasHab+` FROM kalmanordemusuario WHERE uid=? AND ambiente=? FOR UPDATE`, uid, amb), nil, nil)
 	if errors.Is(err, sql.ErrNoRows) {
-		return antes, false, nil
+		return dominio.Habilitacao{UID: uid, Ambiente: amb}, false, nil
 	}
 	if err != nil {
 		return antes, false, err
 	}
-	antes.Conectores = conectoresDoBanco(cs)
 	if antes.Habilitado == habilitado {
 		return antes, true, nil
 	}
-	if _, err := tx.Exec(`UPDATE kalmanordemusuario SET habilitado=?, alterado_por=?, motivo=?, alterado_em=? WHERE uid=? AND ambiente=?`,
-		habilitado, cortar(por, 64), cortar(motivo, 200), em.UTC(), uid, antes.Ambiente); err != nil {
-		return antes, true, err
-	}
-	if _, err := tx.Exec(`INSERT INTO kalmanordemusuariohist (uid, ambiente, habilitado, posicao_max, qtd_max_ordem, conectores, alterado_por, motivo, alterado_em)
-		VALUES (?,?,?,?,?,?,?,?,?)`, uid, antes.Ambiente, habilitado, antes.PosicaoMax, antes.QtdMaxOrdem, antes.ConectoresTexto(), cortar(por, 64), cortar(motivo, 200), em.UTC()); err != nil {
+	h := antes
+	h.Habilitado, h.Por, h.Motivo, h.Em = habilitado, por, motivo, em
+	if err := gravarHab(tx, h, "", ""); err != nil {
 		return antes, true, err
 	}
 	return antes, true, tx.Commit()
+}
+
+// TransicaoReal (SPEC-TECNICA-REAL-PELA-TELA-F1 §5): a linha REAL do uid travada (FOR UPDATE), a
+// decisão de f sobre ela e, se f pede, a linha nova e o retrato no histórico, numa transação.
+func (r *MariaDB) TransicaoReal(uid int, f TransicaoFunc) (ResultadoTransicao, error) {
+	res := ResultadoTransicao{Antes: dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteReal}}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return res, err
+	}
+	defer tx.Rollback()
+	h, err := varrerHab(tx.QueryRow(`SELECT `+colunasHab+` FROM kalmanordemusuario WHERE uid=? AND ambiente=? FOR UPDATE`, uid, dominio.AmbienteReal), nil, nil)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+	case err != nil:
+		return res, err
+	default:
+		res.Antes, res.Existia = h, true
+	}
+	depois, evento, gravar, err := f(res.Antes, res.Existia)
+	if err != nil || !gravar {
+		return res, err
+	}
+	depois.UID, depois.Ambiente = uid, dominio.AmbienteReal
+	if err := gravarHab(tx, depois, evento, res.Antes.EstadoReal()); err != nil {
+		return res, err
+	}
+	if err := tx.Commit(); err != nil {
+		return res, err
+	}
+	res.Depois, res.Gravou = depois, true
+	return res, nil
+}
+
+// HistoricoHabilitacao: o histórico do uid no ambiente, do mais recente para o mais antigo.
+func (r *MariaDB) HistoricoHabilitacao(uid int, ambiente string, limite int) ([]dominio.HabilitacaoHist, error) {
+	rows, err := r.db.Query(`SELECT id, `+colunasHab+`, evento, estado_antes FROM kalmanordemusuariohist
+		WHERE uid=? AND ambiente=? ORDER BY id DESC LIMIT ?`, uid, dominio.AmbienteDe(ambiente), limite)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var r2 []dominio.HabilitacaoHist
+	for rows.Next() {
+		var x dominio.HabilitacaoHist
+		var antes sql.NullString
+		h, err := varrerHab(rows, []any{&x.ID}, []any{&x.Evento, &antes})
+		if err != nil {
+			return nil, err
+		}
+		x.Habilitacao, x.EstadoAntes = h, antes.String
+		r2 = append(r2, x)
+	}
+	return r2, rows.Err()
 }
 
 // conectoresDoBanco: a coluna conectores ("PNT,FLEXSCAN"); ilegível = só o PnT (o padrão da

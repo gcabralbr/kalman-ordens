@@ -593,7 +593,8 @@ sudo /opt/kalman-ordens/kalman-ordens usuario desabilitar -uid 5725 -ambiente RE
 ```
 
 A habilitação só não basta: a máquina é o teto. O REAL só vale com `AMBIENTES_PERMITIDOS=SIM,REAL`, o
-uid em `REAL_UIDS`, a conta em `REAL_CONTAS`, os três `REAL_LIMITE_*` obrigatórios e um conector REAL
+uid aprovado pela tela (v1.35, SPEC-REAL-PELA-TELA-F1; `REAL_UIDS` e `REAL_CONTAS` não existem mais e,
+com valor, o serviço não sobe), os três `REAL_LIMITE_*` obrigatórios e um conector REAL
 (`REAL_FLEXSCAN_URL` com `REAL_FLEXSCAN_USUARIO`/`_SENHA`, ou `REAL_FIX_*`), sem o
 `ORDENS_AMBIENTE` (as duas juntas não sobem). O `deploy/service.env.example` tem o bloco. Na .53, até
 o passo 4: `ORDENS_AMBIENTE=HML`, só o SIMULADOR, listas REAL vazias.
@@ -716,8 +717,8 @@ habilitado no ambiente, e valem as travas e os limites dele. O teste de terça (
 
    ```
    AMBIENTES_PERMITIDOS=SIM,REAL
-   REAL_UIDS=5725
-   REAL_CONTAS=4582351
+   REAL_UIDS=5725          # até a v1.34; a partir da v1.35, aprovação pela tela
+   REAL_CONTAS=4582351     # até a v1.34
    REAL_LIMITE_QTD_ORDEM=1
    REAL_LIMITE_PERDA_DIA_PTS=300
    REAL_LIMITE_ENTRADAS_DIA=10

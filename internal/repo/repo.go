@@ -82,6 +82,12 @@ type Repositorio interface {
 	// limites, com o histórico; atômico. Sem linha, ou já no valor pedido, não grava nada.
 	// Devolve a habilitação de antes e se havia linha.
 	AlterarHabilitado(uid int, ambiente string, habilitado bool, por, motivo string, em time.Time) (antes dominio.Habilitacao, existia bool, err error)
+	// TransicaoReal (v1.35, SPEC-TECNICA-REAL-PELA-TELA-F1 §5): a linha REAL do uid travada, a
+	// decisão de f e, se f pede, a linha nova e o retrato no histórico (evento, estado de antes),
+	// atômico. f não faz E/S: roda dentro da transação.
+	TransicaoReal(uid int, f TransicaoFunc) (ResultadoTransicao, error)
+	// HistoricoHabilitacao: o histórico do uid no ambiente, do mais recente, no máximo limite.
+	HistoricoHabilitacao(uid int, ambiente string, limite int) ([]dominio.HabilitacaoHist, error)
 
 	// Histórico (v1.5 R): consultas de qualquer dia, para a tela de admin e a CLI.
 	// DiaDaOperacao: o dia (pregão) da operação (modulo vazio = KALMAN).
@@ -127,6 +133,16 @@ type Repositorio interface {
 	ConfigUsuario(uid int) (hml, prd string, achou bool, err error)
 }
 
+// TransicaoFunc decide sobre a linha REAL travada (existia=false: sem linha; antes traz só o uid e o
+// ambiente): a linha nova, o evento do histórico e se grava. Um erro desfaz e volta a quem chamou.
+type TransicaoFunc func(antes dominio.Habilitacao, existia bool) (depois dominio.Habilitacao, evento string, gravar bool, err error)
+
+// ResultadoTransicao: a linha de antes (Existia) e, se gravou, a de depois.
+type ResultadoTransicao struct {
+	Antes, Depois   dominio.Habilitacao
+	Existia, Gravou bool
+}
+
 // UsuariosDeTeste: os roteiros e testes definem a configuração do GQ (no MariaDB, numa tabela
 // do schema de teste, nunca no dbecotools).
 type UsuariosDeTeste interface {
@@ -148,7 +164,8 @@ type Memoria struct {
 	proxOp     int64
 	proxOrdem  int64
 	habil      map[chaveHabil]dominio.Habilitacao
-	hist       []dominio.Habilitacao
+	hist       []dominio.HabilitacaoHist
+	proxHist   int64
 	usuarios   map[int]*[2]string // uid → {usutxtconfig, usutxtconfigprd}
 	sessao     []EventoSessao
 	pedidos    []PedidoHTTP
@@ -196,9 +213,47 @@ func (m *Memoria) GravarHabilitacao(h dominio.Habilitacao) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h.Ambiente = dominio.AmbienteDe(h.Ambiente)
-	m.habil[chaveHabil{h.UID, h.Ambiente}] = h
-	m.hist = append(m.hist, h)
+	m.gravarHab(h, "", "")
 	return nil
+}
+
+// gravarHab: a linha e o retrato no histórico (com o lock); cópia da lista de conectores.
+func (m *Memoria) gravarHab(h dominio.Habilitacao, evento, estadoAntes string) {
+	h.Conectores = append([]string(nil), h.Conectores...)
+	m.habil[chaveHabil{h.UID, h.Ambiente}] = h
+	m.proxHist++
+	m.hist = append(m.hist, dominio.HabilitacaoHist{ID: m.proxHist, Habilitacao: h, Evento: evento, EstadoAntes: estadoAntes})
+}
+
+func (m *Memoria) TransicaoReal(uid int, f TransicaoFunc) (ResultadoTransicao, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	res := ResultadoTransicao{Antes: dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteReal}}
+	if h, ok := m.habil[chaveHabil{uid, dominio.AmbienteReal}]; ok {
+		h.Conectores = append([]string(nil), h.Conectores...)
+		res.Antes, res.Existia = h, true
+	}
+	depois, evento, gravar, err := f(res.Antes, res.Existia)
+	if err != nil || !gravar {
+		return res, err
+	}
+	depois.UID, depois.Ambiente = uid, dominio.AmbienteReal
+	m.gravarHab(depois, evento, res.Antes.EstadoReal())
+	res.Depois, res.Gravou = depois, true
+	return res, nil
+}
+
+func (m *Memoria) HistoricoHabilitacao(uid int, ambiente string, limite int) ([]dominio.HabilitacaoHist, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	amb := dominio.AmbienteDe(ambiente)
+	var r []dominio.HabilitacaoHist
+	for i := len(m.hist) - 1; i >= 0 && len(r) < limite; i-- {
+		if x := m.hist[i]; x.UID == uid && x.Ambiente == amb {
+			r = append(r, x)
+		}
+	}
+	return r, nil
 }
 
 func (m *Memoria) AlterarHabilitado(uid int, ambiente string, habilitado bool, por, motivo string, em time.Time) (dominio.Habilitacao, bool, error) {
@@ -211,8 +266,7 @@ func (m *Memoria) AlterarHabilitado(uid int, ambiente string, habilitado bool, p
 	}
 	h := antes
 	h.Habilitado, h.Por, h.Motivo, h.Em = habilitado, por, motivo, em
-	m.habil[k] = h
-	m.hist = append(m.hist, h)
+	m.gravarHab(h, "", "")
 	return antes, true, nil
 }
 

@@ -89,9 +89,6 @@ type Regras struct {
 	PnTNoSimulador bool
 	// v1.30: as corretoras declaradas em REAL_FLEXSCAN_CORRETORAS (CORSeqId → NOME), além das de sempre
 	Corretoras map[int]string
-	// REAL_CONTAS: lista ou todas (*)
-	RealContas      []string
-	RealContasTodas bool
 }
 
 // Falha: por que não dá para mandar ordem real. Codigo é a recusa devolvida ao gestor; Alerta
@@ -126,14 +123,14 @@ func Resolver(ambiente, texto string, contasHML []string) (Resolvido, *Falha) {
 	return ResolverCom(Regras{Ambiente: ambiente, ContasHML: contasHML}, texto, []string{dominio.ConectorPnT})
 }
 
-// normalizar: HML e PRODUCAO (a equivalência da transição) viram SIMULADOR com o PnT e REAL para
-// todas as contas.
+// normalizar: HML e PRODUCAO (a equivalência da transição) viram SIMULADOR com o PnT e REAL (v1.35:
+// a conta do REAL é a da aprovação do admin, conferida pelo motor, não uma lista do env).
 func (rg Regras) normalizar() Regras {
 	switch rg.Ambiente {
 	case HML:
 		rg.Ambiente, rg.PnTNoSimulador = dominio.AmbienteSimulador, true
 	case Producao:
-		rg.Ambiente, rg.RealContasTodas = dominio.AmbienteReal, true
+		rg.Ambiente = dominio.AmbienteReal
 	}
 	return rg
 }
@@ -148,8 +145,8 @@ func (rg Regras) normalizar() Regras {
 //     (CONECTOR_AMBIENTE), salvo na equivalência HML.
 //   - Conta pelo conector: PnT só dígitos, Flexscan até 20 letras, dígitos e hífen.
 //   - Trava (§4.1 item 8): no SIMULADOR a conta tem de estar na lista de simulador do conector; no
-//     REAL não pode estar em nenhuma lista de simulador (CONTA_AMBIENTE) e tem de estar em
-//     REAL_CONTAS (REAL_CONTA_NAO_PERMITIDA).
+//     REAL não pode estar em nenhuma lista de simulador (CONTA_AMBIENTE). v1.35: a conta do REAL é
+//     conferida com a aprovação pelo motor (SPEC-TECNICA-REAL-PELA-TELA-F1 §2.1), não aqui.
 func ResolverCom(rg Regras, texto string, habilitados []string) (Resolvido, *Falha) {
 	rg = rg.normalizar()
 	ambiente := rg.Ambiente
@@ -249,9 +246,6 @@ func ResolverCom(rg Regras, texto string, habilitados []string) (Resolvido, *Fal
 		if contem(rg.ContasHML, conta) || contem(rg.ContasHMLFlx, conta) {
 			return Resolvido{}, &Falha{"CONTA_AMBIENTE", fmt.Sprintf("conta de simulador %s no REAL", conta), "CONTA_AMBIENTE"}
 		}
-		if !rg.RealContasTodas && !contem(rg.RealContas, conta) {
-			return Resolvido{}, &Falha{"REAL_CONTA_NAO_PERMITIDA", fmt.Sprintf("conta %s fora de REAL_CONTAS nesta máquina", conta), "REAL_CONTA_NAO_PERMITIDA"}
-		}
 	}
 	return Resolvido{Conta: conta, Destino: destino, Conector: conector, OrigemConta: origem}, nil
 }
@@ -283,6 +277,49 @@ func (cfg configGQ) conta(campo string) (conta, origem string, f *Falha) {
 		conta = strings.TrimSpace(conta)
 	}
 	return conta, origem, nil
+}
+
+// Cadastro (v1.35, SPEC-TECNICA-REAL-PELA-TELA-F1 §3.1): o que a aprovação do REAL compara com o
+// GQ — conector (vazio = o GQ não diz; vale o aprovado), corretora (Robo.CORSeqId) e conta (a de WIN,
+// pela mesma regra da entrada).
+type Cadastro struct {
+	Conector  string
+	Corretora int
+	Conta     string
+}
+
+// LerCadastro lê da coluna só os três campos (nunca o JSON inteiro). Falha = cadastro ilegível:
+// vazio, JSON inválido, sem Robo, sem CORSeqId inteiro, sem conta, ou Conector que não é texto.
+func LerCadastro(texto string) (Cadastro, *Falha) {
+	ilegivel := func(motivo string) (Cadastro, *Falha) {
+		return Cadastro{}, &Falha{"CADASTRO_ILEGIVEL", motivo, "USUARIO_CONFIG"}
+	}
+	if strings.TrimSpace(texto) == "" {
+		return ilegivel("vazio")
+	}
+	var cfg configGQ
+	if err := json.Unmarshal([]byte(texto), &cfg); err != nil {
+		return ilegivel("JSON invalido (" + erroJSON(err) + ")")
+	}
+	if cfg.Robo == nil || len(cfg.Robo.CORSeqId) == 0 {
+		return ilegivel("sem Robo.CORSeqId")
+	}
+	var c Cadastro
+	if err := json.Unmarshal(cfg.Robo.CORSeqId, &c.Corretora); err != nil {
+		return ilegivel("Robo.CORSeqId nao e inteiro")
+	}
+	if len(cfg.Robo.Conector) > 0 && string(cfg.Robo.Conector) != "null" {
+		if err := json.Unmarshal(cfg.Robo.Conector, &c.Conector); err != nil {
+			return ilegivel("Robo.Conector nao e texto")
+		}
+		c.Conector = strings.ToUpper(strings.TrimSpace(c.Conector))
+	}
+	conta, _, f := cfg.conta("cadastro")
+	if f != nil || conta == "" {
+		return ilegivel("sem conta (Futuros.CCONroContaFut ou Robo.CCONroConta)")
+	}
+	c.Conta = conta
+	return c, nil
 }
 
 // configGQ: os campos do usutxtconfig que o serviço usa (o resto, inclusive as credenciais do Robo,

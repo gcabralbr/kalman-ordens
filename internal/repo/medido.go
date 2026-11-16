@@ -100,6 +100,12 @@ func (m *Medido) AlterarHabilitado(uid int, ambiente string, hab bool, por, moti
 	})
 	return h, ok, err
 }
+func (m *Medido) TransicaoReal(uid int, f TransicaoFunc) (ResultadoTransicao, error) {
+	return medir("TransicaoReal", func() (ResultadoTransicao, error) { return m.Base.TransicaoReal(uid, f) })
+}
+func (m *Medido) HistoricoHabilitacao(uid int, ambiente string, limite int) ([]dominio.HabilitacaoHist, error) {
+	return medir("HistoricoHabilitacao", func() ([]dominio.HabilitacaoHist, error) { return m.Base.HistoricoHabilitacao(uid, ambiente, limite) })
+}
 func (m *Medido) DiaDaOperacao(mod string, id int64) (string, bool, error) {
 	var ok bool
 	d, err := medir("DiaDaOperacao", func() (string, error) {

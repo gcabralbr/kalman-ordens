@@ -149,8 +149,7 @@ func servir(ctx context.Context, cfg config.Config) error {
 	for _, a := range avisos {
 		slog.Warn("configuração", "aviso", a)
 	}
-	slog.Info("ambientes", "permitidos", amb.Lista(), "padrao", amb.Padrao, "ordens_ambiente", amb.Legado,
-		"real_uids", amb.RealUIDs, "real_uids_todos", amb.RealUIDsTodos, "real_contas", amb.RealContas, "real_contas_todas", amb.RealContasTodas)
+	slog.Info("ambientes", "permitidos", amb.Lista(), "padrao", amb.Padrao, "ordens_ambiente", amb.Legado)
 	// v1.2: conta, símbolo e uid vêm da operação e da tabela de habilitação; um service.env antigo
 	// não pode ficar valendo em silêncio
 	var removidas []string
