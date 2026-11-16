@@ -94,11 +94,18 @@ func (m *Motor) cutucarAvaliador(uid int) {
 		return
 	}
 	agora := m.agora()
+	host.emVoo()
 	go func() {
+		defer host.pousou()
 		r := host.passeAprovacoes(uid, agora)
 		host.entrar("outro", func() { host.aplicarAvaliacao(r) })
 	}()
 }
+
+// emVoo e pousou: o passe que roda fora da goroutine conta como trabalho do motor até o resultado
+// entrar na fila (Parado: os roteiros esperam o efeito, não um tempo).
+func (m *Motor) emVoo()  { m.naFila.Add(1) }
+func (m *Motor) pousou() { m.feitos.Add(1) }
 
 // tickAvaliador: na instância que hospeda o avaliador, um passe a cada CACHE_USUARIOS_S, fora da
 // goroutine do motor (lê o banco); o resultado volta pela fila.
@@ -108,7 +115,9 @@ func (m *Motor) tickAvaliador(agora time.Time) {
 		return
 	}
 	a.correndo, a.prox = true, agora.Add(m.p.CacheUsuarios)
+	m.emVoo()
 	go func() {
+		defer m.pousou()
 		r := m.passeAprovacoes(0, agora)
 		m.entrar("outro", func() {
 			a.correndo = false
