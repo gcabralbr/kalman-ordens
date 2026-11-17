@@ -1,15 +1,17 @@
 # v1.36 (a conta livre e o REAL sem limites de negócio) na .53: instalação com o REAL desligado
 
-Preparado em 16/11, depois da E2 (`5c1e7b0`).
+Preparado em 16/11, depois da E2 (`5c1e7b0`). Revisto em 17/11: a instalação é hoje à tarde, depois
+da zeragem das 14:30 (decisão de 17/11), com o relogin da Flexscan dentro da janela (§6).
 
 O roteiro é para o George ler antes de rodar. Os comandos com `sudo` estão separados e numerados,
 de **S1** a **S16**, e a lista completa está no §10. Os comandos sem `sudo` (curl e `versao`) só
 leem. Nada é gravado na `usutxtconfigprd`, e nada roda no `dbecotools` além das leituras de sempre do
 serviço.
 
-**Quando:** fora do pregão, **depois das 18:45** (recomendado), com a conferência do §1 zerada:
-posição 0, nada vivo e nada suspenso. A outra janela possível é depois da zeragem das 14:30, como na
-v1.35, com o §1 zerado. O motivo está no §0.2. Não pode rodar com o REAL ligado.
+**Quando:** **hoje (17/11) à tarde, depois da zeragem das 14:30**, como a v1.35 em 16/11, com a
+conferência do §1 zerada: posição 0, nada vivo e nada suspenso. Se o §1 não vier zerado, fica para
+depois das 18:45 (fora da janela da Flexscan, sem relogin). O motivo está no §0.2. Não pode rodar com o
+REAL ligado.
 
 **Uma janela só, do §1 ao §7.** Os comandos usam as variáveis de shell `$V`, `$DB`, `$T` e `$C`,
 que só existem na janela do terminal onde foram criadas. Rode tudo, do §1 ao §7, na mesma janela. Os
@@ -62,7 +64,7 @@ O que muda, por cima da v1.35 instalada (`09872ead98f2`), conforme a SPEC funcio
 
 | quem | durante a instalação | depois |
 |---|---|---|
-| **kalman-ordens, instância SIMULADOR** (a única ligada) | **parada de 2 a 3 min** (S5–S10). Depois das 18:45 a Flexscan está fora da janela (08:02–18:30): a partida não faz login, e o de amanhã às 08:02 é o de sempre. Depois das 14:30, há o relogin da partida, como na v1.35 (§6 daquele roteiro) | igual: as linhas do SIMULADOR e o caminho da Flexscan não mudam (§7.3) |
+| **kalman-ordens, instância SIMULADOR** (a única ligada) | **parada de 2 a 3 min** (S5–S10). Depois das 14:30 a Flexscan está dentro da janela (08:02–18:30): a partida faz o relogin e confere o webhook (§6), como na v1.35 em 16/11. Depois das 18:45 a partida não faz login, e o de amanhã às 08:02 é o de sempre | igual: as linhas do SIMULADOR e o caminho da Flexscan não mudam (§7.3) |
 | **Principal** (`kalman`) e as **telas F1** (KalmanWIN `06faeef`) | **não reinicia.** Perde o `GET /eventos` por alguns segundos e volta sozinha | as telas funcionam (§7.2): o quadro "Aprovado" mostra conta e limites como "—", e o botão "Alterar limites" some. A atualização das telas é do CC do Kalman, depois |
 | **Paper do Ferro** (35) e os demais em papel | não passam pelo kalman-ordens | nada muda |
 | **Sombras WIN-V28/V29** | não falam com o kalman-ordens | nada muda |
@@ -70,8 +72,9 @@ O que muda, por cima da v1.35 instalada (`09872ead98f2`), conforme a SPEC funcio
 | fix-integration do GQ, md | não são tocados | — |
 
 **Por que fora do pregão.** O SIMULADOR é a instância que reinicia: com operação aberta, uma
-entrada, uma stop ou uma saída da Flexscan poderia cair nos 2 a 3 minutos parados. Depois das 18:45
-não há pregão, nem janela da Flexscan, nem relogin. Se o §1 não vier zerado, **não instale**.
+entrada, uma stop ou uma saída da Flexscan poderia cair nos 2 a 3 minutos parados. Depois da zeragem
+das 14:30, com o §1 zerado, não há nada aberto para cair nesse intervalo; o único cuidado a mais é o
+relogin da Flexscan (§6). Se o §1 não vier zerado, **não instale**: fica para depois das 18:45.
 
 ### 0.3 A volta para a v1.35: até onde é simples
 
@@ -210,19 +213,45 @@ sudo systemctl start kalman-ordens
 Sem sudo:
 ```bash
 sleep 8; systemctl is-active kalman-ordens                 # active
-journalctl -u kalman-ordens --since '-1min' --no-pager | grep -E 'subindo|migra|no ar|ignorada|verificador|ERROR' | cut -c1-220
-#   bom: "kalman-ordens subindo" versao=5c1e7b004e3d; "migrações: nenhuma pendente"; "kalman-ordens no ar";
-#        cinco linhas "configuração" aviso="REAL_LIMITE_... ignorada: sem limites de negocio no REAL (v1.36, D7)"
+journalctl -u kalman-ordens --since '-1min' --no-pager | grep -E 'subindo|migra|no ar|ignorada|conector ligado|login|verificador|ERROR' | cut -c1-220
+#   bom: "kalman-ordens subindo" versao=5c1e7b004e3d; "migrações: nenhuma pendente";
+#        cinco linhas "configuração" aviso="REAL_LIMITE_... ignorada: sem limites de negocio no REAL (v1.36, D7)";
+#        "flexscan: conector ligado"; "flexscan: login motivo=partida"; "kalman-ordens no ar"
 #   ruim: ERROR; "verificador do REAL: ..." (não deve aparecer com o REAL desligado)
 curl -s 127.0.0.1:9092/saude | jq '{versao, ambientes_permitidos, posicao: .ambientes.SIMULADOR.posicao,
   suspensas: .ambientes.SIMULADOR.operacoes_suspensas, criticos: .alertas_criticos,
-  flex: .ambientes.SIMULADOR.flexscan | {janela, ativa, ativa_por, logado, ultimo_login, ordens_vivas}}'
+  flex: .ambientes.SIMULADOR.flexscan | {janela, ativa, ativa_por, logado, ultimo_login, ordens_vivas,
+  webhook_conferido_em, webhook_recadastrado_em, webhook_faltas_seguidas}}'
 #   versao "5c1e7b004e3d", ["SIMULADOR"], posicao 0, suspensas [], criticos {}, janela "08:02-18:30",
 #   ordens_vivas 0;
-#   depois das 18:45: ativa false, ativa_por null (fora da janela: sem login até as 08:02 de amanhã);
-#   depois das 14:30: ativa true, ativa_por "janela", logado true, ultimo_login partida/OK, como no §6
-#   do roteiro da v1.35
+#   depois das 14:30: ativa true, ativa_por "janela", logado true, ultimo_login partida/OK,
+#   webhook_conferido_em = agora (a conferência pedida pelo login), webhook_faltas_seguidas 0,
+#   webhook_recadastrado_em null (só em memória: zera em cada partida; o das 08:02 não sobrevive ao
+#   restart, como em 16/11)
+#   se ficou para depois das 18:45: ativa false, ativa_por null (sem login até as 08:02 de amanhã)
 ```
+
+**O relogin da Flexscan dentro da janela (depois das 14:30).** É o mesmo da v1.35 em 16/11 (deu OK
+entre 14:18 e 14:25). O cuidado a mais está em dois pontos:
+- **Depois das 08:45 não há tolerância.** A `FLEXSCAN_TOLERANCIA_ABERTURA` vale só para a abertura.
+  Um login da partida que falhe dá o **crítico `FLEXSCAN_LOGIN` na hora** no Telegram, e a ponte
+  tenta de novo sozinha. Sem operação e sem ordem viva, nada fica exposto, mas o SIMULADOR fica sem
+  Flexscan até um login dar certo.
+- **A conferência do webhook roda logo depois do login.** O webhook foi recadastrado hoje às 08:02:01
+  e deve estar `presente`, sem recadastro. Se a Flexscan o tiver limpado no meio do dia, sai o crítico
+  `FLEXSCAN_WEBHOOK_AUSENTE` com "recadastrado" e, em seguida, o `RESOLVIDO`. Não é defeito da
+  v1.36, mas me mande o texto.
+
+**O login da partida precisa dar OK.** Se o `ultimo_login` não vier `partida`/`OK`, ou se vier o
+`FLEXSCAN_LOGIN`:
+1. olhe primeiro se a ponte já se recuperou sozinha: `logado true` no `/saude` um minuto depois, e o
+   `RESOLVIDO` do `FLEXSCAN_LOGIN`;
+2. se não, reinicie de novo com o **S10b**:
+```bash
+sudo systemctl restart kalman-ordens
+```
+Se falhar outra vez, me mande o journal. A falha é da Flexscan, e voltar de versão não resolve: a
+ponte da Flexscan não mudou da v1.35 para a v1.36, e a v1.35 faria o mesmo login.
 
 **No Telegram:** só a `CONCILIACAO` da partida (0 ordens, posição 0). Nenhum crítico e nenhum `REAL_*`.
 
@@ -301,7 +330,7 @@ sudo sh -c "grep -vE '^[[:space:]]*REAL_LIMITE_' /etc/kalman-ordens/service.env 
 
 ## 8. Amanhã, 08:02–08:45
 
-A abertura da Flexscan deve ser igual à de hoje: **uma linha só**, `FLEXSCAN_ABERTURA`, sem nenhum
+A abertura da Flexscan deve ser igual à de 17/11 (ok às 08:04): **uma linha só**, `FLEXSCAN_ABERTURA`, sem nenhum
 crítico e sem nenhum `REAL_*`. Me mande a linha.
 
 ## 9. Como voltar
@@ -350,6 +379,7 @@ sudo systemctl start kalman-ordens
 | S8 | 4 | instala a v1.36 | **troca o binário** |
 | S9 | 5 | `migrar` (0020) e a conferência no banco | **muda o banco** (só se houver CONTA_DIVERGENTE) |
 | S10 | 6 | sobe o serviço | sobe o SIMULADOR |
+| S10b | 6 | só se o login da partida na Flexscan falhar e não se recuperar: restart | reinicia o SIMULADOR |
 | S11 | 7.1 | `usuario listar` do REAL | não |
 | S12 | 7.3 | compara as linhas do SIMULADOR com o S3 | não |
 | S13 | 7.3 | opcional: `usuario habilitar -ambiente REAL` (tem de ser recusado) | não (recusado) |
