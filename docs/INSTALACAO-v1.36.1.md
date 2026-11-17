@@ -200,13 +200,18 @@ PrivateTmp=yes
 U
 sudo systemctl daemon-reload
 sudo systemctl start kalman-teste-falhou; sleep 15
-systemctl show kalman-teste-falhou -p Result -p NRestarts     # Result=start-limit-hit, NRestarts=2
+systemctl show kalman-teste-falhou -p Result -p NRestarts     # Result=exit-code, NRestarts=3
 ```
 **Esperado no Telegram, nesta ordem:**
 - três `[.53 kalman-teste-falhou] AVISO: falhou (exit-code, exited 1); ultimo erro: sem mensagem do
   servico, ver o journal; o systemd reinicia em 2s (tentativa 1 de 3)`, depois a 2 de 3 e a 3 de 3;
-- um `[.53 kalman-teste-falhou] CRITICO: a unidade desistiu de subir (resultado start-limit-hit, 2
-  reinicio(s), ...)`.
+- um `[.53 kalman-teste-falhou] CRITICO: a unidade desistiu de subir (resultado exit-code, 3
+  reinicio(s), ...)`, com "versao ?" e "sem erro no journal" (natural para o `/bin/false`).
+
+O limite (3 partidas em 60 s) conta a primeira: a 3ª tentativa anunciada é a que o systemd recusa
+("Start request repeated too quickly"), e aí vem o CRITICO. Com o `RestartMode=direct`, o `Result`
+fica no da última falha (`exit-code`), não `start-limit-hit`, e o `NRestarts` conta a recusada (3).
+Visto no T7 de 17/11, às 19:28 (deploy/LEIA.md, "a última tentativa anunciada pode ser recusada").
 
 **Não ok:**
 - **um CRITICO antes do último AVISO:** o `RestartMode=direct` não fez efeito;
@@ -252,3 +257,17 @@ O arquivo `/var/lib/kalman-ordens/ultimo-erro`, se existir, pode ficar: a v1.36 
 | T7 | 5 | opcional: a unidade descartável que falha sempre | 4 mensagens de teste no Telegram |
 | T8 | 5 | apaga a unidade descartável | não |
 | T9 | 7 | volta: binário, unidade e script de antes, e restart | só se precisar |
+
+## 9. Resultado (17/11, pelo George)
+
+- **19:25: v1.36.1 `9f580660aab7` instalada** por este roteiro (`c3f0f91`), com o REAL ligado e a posição 0.
+  - `RestartMode=direct` e o `ExecStopPost` com o `servico-falhou.sh --reiniciando` na unidade.
+  - O restart pedido (T6) não mandou AVISO. Nenhum crítico. A `CONCILIACAO` do SIMULADOR deu 0/0.
+  - A sessão REAL ficou "sem sessão": às 19:25 estava fora da janela dela (`REAL_FIX_INICIO`/`FIM`,
+    08:30–17:55). Não é defeito; ela loga sozinha às 08:30.
+- **19:28: T7.** Três AVISOs (tentativas 1, 2 e 3 de 3) e depois um CRITICO, nessa ordem. O resultado
+  foi `Result=exit-code`, `NRestarts=3`: a 3ª tentativa anunciada foi a recusada ("Start request
+  repeated too quickly"). O comportamento está certo; a expectativa do §5 foi corrigida. O CRITICO de
+  teste saiu com "versao ?" e "sem erro no journal", natural para o `/bin/false`.
+- **19:32: a v1.36.2 `91df575bcc22`** foi instalada em seguida (`INSTALACAO-v1.36.2.md`).
+- **Retrato do instalado:** `9f580660aab7`, 20 migrações (sem migração nova).
