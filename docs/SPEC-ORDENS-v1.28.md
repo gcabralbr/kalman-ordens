@@ -278,3 +278,37 @@ O campo novo é `suspensa`: `null`, ou `{"desde", "motivo", "sugestao"}`. O `est
 |---|---|---|
 | `CONECTOR_FORA_TOLERANCIA_S` | `30` | o canal fora por mais que isto, com posição ou ordem viva, suspende a operação (0 = na hora) |
 | `FLEXSCAN_SEM_RESPOSTA_N` | `3` | pedidos seguidos sem resposta que derrubam a sessão da Flexscan (0 = não derruba) |
+
+## 4. O fim da entrada: o motivo e o texto (v1.36.2)
+
+SPEC técnica v1.36.2 §4.1. O teste da margem de day trade de 17/11 (REAL, BTG): a corretora recusa a
+ordem real do robô DSA e o PnT responde com um 39=4 ("changed to Error state ... is Rejected"), não com
+um 39=8. Até a v1.36.1 isso saía como `CANCELADA`.
+
+### 4.1 `ENTRADA_ENCERRADA` (v1.36.2)
+
+O exemplo que o roteiro 137 confere (`contrato_evento`): os `dados` do evento em `GET /eventos`.
+
+```json
+{"ambiente": "REAL", "modulo": "KALMAN", "operacao_id": 234777, "uid": 1450,
+ "qtd_final": 0, "preco_medio": 0, "motivo": "REJEITADA_CORRETORA",
+ "texto": "This strategy was changed to Error state, because offer RealOrder Id: 178312978 is Rejected."}
+```
+
+| `motivo` | quando | `texto` |
+|---|---|---|
+| `EXECUTADA` | executada (inteira ou com o resto cancelado depois) | `null` |
+| `CANCELADA` | cancelada (pelo prazo, pelo admin, pela saída ou pelo PnT, sem o texto abaixo) | `null` |
+| `EXPIRADA` / `EXPIRADA_NA_FILA` / `DESCONHECIDA` | como antes | `null` |
+| `REJEITADA` | 39=8 do PnT (com `RECUSADA` e `RECUSA_PNT` antes), ou a sessão caiu antes do envio | o 58, com o 103 entre colchetes quando vier (`"[99] [DSA-xx] Risk rejected"`); `null` sem 58 |
+| **`REJEITADA_CORRETORA`** (novo) | 39=4 da entrada com o 58 `changed to Error state ... is Rejected` (o robô DSA do PnT; na BTG, a margem de day trade). Vale mesmo com o cancelamento do prazo pendente | o 58, como veio (até 500 caracteres) |
+
+- **`texto` é campo novo, sempre presente** (`null` quando não há). Quem lê o evento ignora campos
+  desconhecidos.
+- **A recusa da corretora não é alerta** (sem `RECUSA_PNT`, sem Telegram; D4). O `motivo_rejeicao`
+  da ordem (`GET /historico/ordens`) leva o mesmo texto, e a ficha do admin conta as do dia
+  (`recusas_corretora_hoje`, SPEC técnica v1.36 §5.1).
+- **O que fica com o Kalman** (D5): a mensagem ao usuário e a regra de "2 recusas seguidas".
+- **O 35=9 do nosso cancel que chega depois do fim** ("Order cannot be canceled. It has ended
+  already", 39=4 ou 102=1) não é mais `RECUSA_PNT`: o motor espera o relatório final por
+  `ESPERA_FILL_POS_RECUSA_S` (3 s); sem ele, `RECUSA_PNT` e mass status.

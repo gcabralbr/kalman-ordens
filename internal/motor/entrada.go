@@ -198,7 +198,7 @@ func (m *Motor) pedirEntrada(p Pedido) (Resposta, *recusa) {
 		} else {
 			// já respondida (esperava a taxa): o gestor sabe pelo evento
 			m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("entrada %s não saiu para a %s (sessão caiu antes do envio)", o.ClOrdAtual, op.corretora()), op.OperacaoID)
-			m.publicar("ENTRADA_ENCERRADA", op, map[string]any{"qtd_final": 0, "preco_medio": 0, "motivo": "REJEITADA"})
+			m.publicar("ENTRADA_ENCERRADA", op, map[string]any{"qtd_final": 0, "preco_medio": 0, "motivo": "REJEITADA", "texto": nil})
 		}
 		m.salvarOp(op)
 	}
@@ -652,7 +652,7 @@ func (m *Motor) expirarNaFila(op *operacao, o *ordem) {
 	op.EncerrouEntrada = true
 	op.saidaAposEntrada = false
 	m.salvarOp(op)
-	m.publicar("ENTRADA_ENCERRADA", op, map[string]any{"qtd_final": 0, "preco_medio": 0, "motivo": "EXPIRADA_NA_FILA"})
+	m.publicar("ENTRADA_ENCERRADA", op, map[string]any{"qtd_final": 0, "preco_medio": 0, "motivo": "EXPIRADA_NA_FILA", "texto": nil})
 }
 
 func (m *Motor) haSemConfirmacao() bool {

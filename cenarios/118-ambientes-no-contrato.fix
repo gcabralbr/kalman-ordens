@@ -49,6 +49,9 @@ flx_webhook $E1
 evento ENTRADA_EXECUTADA operacao_id=11806 ambiente=SIMULADOR
 flx_recebe POST name=KM-P-11806-1 ordType=4 id=>P1
 evento PROTEGIDA operacao_id=11806 ambiente=SIMULADOR
+# v1.36.2: o ENTRADA_ENCERRADA da Flexscan tem a forma do contrato (o texto null fora das recusas)
+evento ENTRADA_ENCERRADA operacao_id=11806 ambiente=SIMULADOR qtd_final=1 texto=null
+contrato_evento docs/SPEC-ORDENS-v1.28.md 4.1
 http GET /ordens/11806
 resposta ambiente=SIMULADOR conta=S-1117150 conector=FLEXSCAN
 http GET /operacoes?dia=2026-10-29&ambiente=SIMULADOR

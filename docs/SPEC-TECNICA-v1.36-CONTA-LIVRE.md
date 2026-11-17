@@ -323,6 +323,10 @@ sistema não atende (corretora 107). `aprovado` sem conta e sem limites; `limite
  "ultima_mudanca": {"evento": "APROVAR", "origem": "TELA", "por": "admin:1450", "em": "2026-11-17T18:20:01.123-03:00",
                     "motivo": "fase 1"},
  "limites_instancia": null,
+ "recusas_corretora_hoje": {"quantidade": 3,
+   "ultima": {"em": "2026-11-17T11:02:08.919-03:00", "operacao_id": 234779, "clordid": "KM-E-234779-1",
+              "motivo": "REJEITADA_CORRETORA",
+              "texto": "This strategy was changed to Error state, because offer RealOrder Id: 178314346 is Rejected."}},
  "posicao": {"instancia": "LIGADA", "total": 1,
              "operacoes": [{"operacao_id": 234754, "modulo": "KALMAN", "conta": "4582351", "simbolo": "WINZ26", "posicao": 1,
                             "stop_corretora": {"estado": "VIVA", "preco_stop": 173835, "...": "§5.5 da v1.35"}}]},
@@ -332,16 +336,23 @@ sistema não atende (corretora 107). `aprovado` sem conta e sem limites; `limite
                 "em": "2026-11-17T18:20:01.123-03:00"}]}
 ```
 
+**v1.36.2 (SPEC técnica v1.36.2 §4.2):** `recusas_corretora_hoje` são as entradas REAL do uid no
+dia recusadas pela corretora ou pelo PnT (as com `motivo_rejeicao`): `quantidade` e a `ultima`
+(`motivo` `REJEITADA` para o 39=8, `REJEITADA_CORRETORA` para o 39=4 com o erro do robô; `texto` é o
+58). Sem recusa no dia: `{"quantidade": 0, "ultima": null}`. A contagem vem do banco e sobrevive a
+restart. A recusa da corretora não vai ao Telegram (D4): o admin a vê aqui.
+
 ### 5.2 `GET /usuarios/real` (a lista, v1.36)
 
 `conector`/`corretora`/`conta` são os do GQ lidos agora; `cadastro_utilizavel` diz se o sistema os
-atende; `qtd_max_ordem`, `posicao_max` e `divergente_desde` sempre `null`.
+atende; `qtd_max_ordem`, `posicao_max` e `divergente_desde` sempre `null`. v1.36.2: `recusas_corretora_hoje`
+é a `quantidade` da ficha.
 
 ```json
 {"usuarios": [{"uid": 1450, "estado": "APROVADO", "conector": "PNT", "corretora_codigo": 85, "corretora": "BTG",
                "conta": "4582351", "cadastro_utilizavel": true, "qtd_max_ordem": null, "posicao_max": null,
                "versao": 8, "origem": "TELA", "alterado_por": "admin:1450", "alterado_em": "2026-11-17T18:20:01.123-03:00",
-               "divergente_desde": null}]}
+               "divergente_desde": null, "recusas_corretora_hoje": 0}]}
 ```
 
 ## 6. A regra de repetição dos alertas críticos

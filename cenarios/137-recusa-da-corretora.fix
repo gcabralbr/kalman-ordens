@@ -1,0 +1,143 @@
+cenario 137 v1.36.2 (SPEC-TECNICA-v1.36.2-RECUSA-CORRETORA §3, §4, §5): a recusa da corretora na entrada, como no teste da margem de day trade de 17/11 (REAL, BTG) — o 39=4 com "changed to Error state ... is Rejected" ~10 s depois do 39=0 encerra a entrada como REJEITADA_CORRETORA, com o texto, sem RECUSA_PNT nem Telegram (D1, D4), e conta na ficha e na lista do admin; a corrida com o cancelamento do prazo de 10 s (o 35=9 "ended already" e, 137 ms depois, o 39=4 do robô: P1, D2); a rede de segurança do 35=9 sem o relatório final (RECUSA_PNT e mass status em 3 s: P3); o mesmo texto numa 1014 com posição segue o caminho de sempre (recriada, com o alerta)
+hora 2026-11-17 10:55:00
+config ORDENS_AMBIENTE=
+config ORDENS_CONTAS_HML=
+config AMBIENTES_PERMITIDOS=REAL
+config REAL_FIX_HOST=pnt-falso
+# o prazo da entrada da produção (10 s); a espera de encerramento (8 s) e a do relatório final
+# depois do 35=9 (3 s) são os padrões
+config TIMEOUT_ENTRADA_S=10
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=30
+usuario 7 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"12345"}}
+aprova 7
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+
+# --- sem recusa no dia: a ficha e a lista com zero
+http GET /usuarios/7/real
+resposta _status=200 recusas_corretora_hoje.quantidade=0 recusas_corretora_hoje.ultima=null
+http GET /usuarios/real
+resposta usuarios.0.uid=7 usuarios.0.recusas_corretora_hoje=0
+
+# --- 1. a margem (a 234777): 39=A, 39=0 e, 9,6 s depois do envio, o 39=4 do robô
+entrada 13701 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13701-1 1=12345 38=1 54=1 847=1031
+envia @ER 11=KM-E-13701-1 37=dsa.13701 150=A 39=A 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0 58="NEW DSA Order request sent to Robot"
+avanca 300ms
+envia @ER 11=KM-E-13701-1 37=dsa.13701 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+avanca 9300ms
+nada
+envia @ER 11=KM-E-13701-1 37=dsa.13701 150=4 39=4 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="This strategy was changed to Error state, because offer RealOrder Id: 178312978 is Rejected."
+# a espera de encerramento de sempre (8 s, um fill tardio ainda contaria); sem cancel nosso
+avanca 7900ms
+sem_evento ENTRADA_ENCERRADA
+avanca 200ms
+evento ENTRADA_ENCERRADA operacao_id=13701 qtd_final=0 preco_medio=0 motivo=REJEITADA_CORRETORA "texto=This strategy was changed to Error state, because offer RealOrder Id: 178312978 is Rejected."
+contrato_evento docs/SPEC-ORDENS-v1.28.md 4.1
+# D4: nenhum alerta, nada no Telegram; P2 não se aplica (não é 39=8)
+sem_evento RECUSADA
+sem_alerta RECUSA_PNT
+telegram RECUSA_PNT = 0
+saude posicao=0 divergente=false parada=null
+nada
+# o 58 no motivo_rejeicao da ordem (do banco); o estado é o que o PnT disse
+http GET /historico/ordens?dia=2026-11-17&ambiente=REAL
+resposta ordens.#=1 ordens.0.clordid=KM-E-13701-1 ordens.0.estado=CANCELADA "ordens.0.motivo_rejeicao=This strategy was changed to Error state, because offer RealOrder Id: 178312978 is Rejected."
+# a ficha e a lista do admin (§4.2), contra o contrato da SPEC v1.36 §5
+http GET /usuarios/7/real
+resposta recusas_corretora_hoje.quantidade=1 recusas_corretora_hoje.ultima.operacao_id=13701 recusas_corretora_hoje.ultima.clordid=KM-E-13701-1 recusas_corretora_hoje.ultima.motivo=REJEITADA_CORRETORA "recusas_corretora_hoje.ultima.texto=~RealOrder Id: 178312978" "recusas_corretora_hoje.ultima.em=~2026-11-17T10:55:12"
+contrato docs/SPEC-TECNICA-v1.36-CONTA-LIVRE.md 5.1
+http GET /usuarios/real
+resposta usuarios.0.recusas_corretora_hoje=1
+contrato docs/SPEC-TECNICA-v1.36-CONTA-LIVRE.md 5.2
+
+# --- 2. a corrida (a 234779): o prazo de 10 s manda o cancel; o PnT responde "ended already" e, 137 ms
+# depois, chega o 39=4 do robô. P1: o texto decide; D2: o 35=9 não é RECUSA_PNT
+entrada 13702 V ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13702-1 1=12345 38=1 54=2 847=1031
+envia @ER 11=KM-E-13702-1 37=dsa.13702 150=A 39=A 54=2 38=1 44=129985 847=1031 14=0 151=1 6=0 58="NEW DSA Order request sent to Robot"
+avanca 300ms
+envia @ER 11=KM-E-13702-1 37=dsa.13702 150=0 39=0 54=2 38=1 44=129985 847=1031 14=0 151=1 6=0
+avanca 9600ms
+nada
+avanca 100ms
+recebe 35=F 11=KM-E-13702-2 41=KM-E-13702-1 37=dsa.13702 54=2
+envia 35=9 11=KM-E-13702-2 41=KM-E-13702-1 37=dsa.13702 39=4 434=1 102=1 58="Order cannot be canceled. It has ended already (VO status: Cancelled)"
+avanca 100ms
+envia @ER 11=KM-E-13702-1 37=dsa.13702 150=4 39=4 54=2 38=1 44=129985 847=1031 14=0 151=0 6=0 58="This strategy was changed to Error state, because offer RealOrder Id: 178314346 is Rejected."
+# passada a espera do relatório final (3 s), a rede de segurança não dispara: a ordem terminou
+avanca 3100ms
+sem_alerta RECUSA_PNT
+avanca 4700ms
+sem_evento ENTRADA_ENCERRADA
+avanca 200ms
+evento ENTRADA_ENCERRADA operacao_id=13702 qtd_final=0 motivo=REJEITADA_CORRETORA "texto=~RealOrder Id: 178314346"
+sem_alerta RECUSA_PNT
+telegram RECUSA_PNT = 0
+saude posicao=0 divergente=false conciliando=false
+nada
+http GET /usuarios/7/real
+resposta recusas_corretora_hoje.quantidade=2 recusas_corretora_hoje.ultima.operacao_id=13702 recusas_corretora_hoje.ultima.clordid=KM-E-13702-1 recusas_corretora_hoje.ultima.motivo=REJEITADA_CORRETORA "recusas_corretora_hoje.ultima.texto=~178314346"
+http GET /usuarios/real
+resposta usuarios.0.recusas_corretora_hoje=2
+
+# --- 3. a rede de segurança (P3): o 35=9 "ended already" e nenhum relatório final em 3 s: o
+# RECUSA_PNT de antes e o mass status da conta, que traz o fim da ordem
+entrada 13703 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13703-1 1=12345 38=1 54=1 847=1031
+envia @ER 11=KM-E-13703-1 37=dsa.13703 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+avanca 10s
+recebe 35=F 11=KM-E-13703-2 41=KM-E-13703-1 37=dsa.13703 54=1
+envia 35=9 11=KM-E-13703-2 41=KM-E-13703-1 37=dsa.13703 39=4 434=1 102=1 58="Order cannot be canceled. It has ended already (VO status: Cancelled)"
+avanca 2900ms
+sem_alerta RECUSA_PNT
+nada
+avanca 200ms
+alerta RECUSA_PNT
+telegram RECUSA_PNT = 1
+# daqui em diante, como antes da v1.36.2: o mass status e o cancel de novo (o prazo da entrada)
+em_qualquer_ordem
+recebe 35=AF 1=12345 584=>MS
+recebe 35=F 11=KM-E-13703-3 41=KM-E-13703-1 37=dsa.13703
+fim
+envia @ER 11=KM-E-13703-1 37=dsa.13703 150=I 39=4 584=$MS 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0
+avanca 3s
+alerta CONCILIACAO
+avanca 8s
+evento ENTRADA_ENCERRADA operacao_id=13703 qtd_final=0 motivo=CANCELADA texto=null
+saude posicao=0 divergente=false conciliando=false
+nada
+# sem o texto do robô não é recusa da corretora: a contagem não muda
+http GET /usuarios/7/real
+resposta recusas_corretora_hoje.quantidade=2 recusas_corretora_hoje.ultima.operacao_id=13702
+
+# --- 4. o mesmo texto numa 1014 com posição: só a entrada é recusa da corretora; a proteção é
+# recriada na hora, com o alerta, como no roteiro 26
+entrada 13704 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13704-1 1=12345 38=1 54=1 847=1031
+envia @ER 11=KM-E-13704-1 37=dsa.13704 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+envia @ER 11=KM-E-13704-1 37=dsa.13704 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=13704 qtd=1 preco=130010
+recebe 35=D 11=KM-P-13704-1 1=12345 38=1 54=2 847=1014 20828=129510 20829=129410
+evento ENTRADA_ENCERRADA operacao_id=13704 qtd_final=1 texto=null
+envia @ER 11=KM-P-13704-1 37=dsa.13704.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=13704 preco_stop=129510
+envia @ER 11=KM-P-13704-1 37=dsa.13704.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0 58="This strategy was changed to Error state, because offer RealOrder Id: 178399999 is Rejected."
+recebe 35=D 11=KM-P-13704-2 38=1 54=2 847=1014 20828=129510 20829=129410
+alerta PROTECAO_RECRIADA
+envia @ER 11=KM-P-13704-2 37=dsa.13704.P2 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+evento PROTEGIDA operacao_id=13704 preco_stop=129510
+alerta RESOLVIDO
+saude posicao=1 divergente=false
+http GET /usuarios/7/real
+resposta recusas_corretora_hoje.quantidade=2
+nada

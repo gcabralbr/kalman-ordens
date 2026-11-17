@@ -85,33 +85,34 @@ const SenhaFlexscanRoteiro = "senha-do-roteiro-flexscan"
 
 // Executor de um cenário.
 type Executor struct {
-	c           roteiro.Cenario
-	dir         string
-	rel         *relogio.Controlado
-	preco       *preco.Falsa
-	repo        repo.Repositorio
-	falha       *repoComFalha // v1.13: erro de dado injetado (banco_erro_dado)
-	backend     Backend
-	notif       *notificador
-	pnt         *falso.Falso
-	svc         *servico
-	flx         *flxfalso.Falso            // a Flexscan falsa do alvo dos verbos flx_ (config FLEXSCAN_URL=falso)
-	flxs        map[string]*flxfalso.Falso // v1.26: por ambiente (REAL_FLEXSCAN_URL=falso: a do REAL)
-	alvoFlx     string
-	cfg         config.Config
-	cfgMapa     map[string]string // o que montou o cfg (v1.34: reinicia_servico config=K=V troca chaves)
-	capturas    map[string]string
-	resposta    map[string]any
-	casados     map[int64]bool
-	sessaoOK    int
-	logons      int64
-	travado     chan struct{} // motor_lento
-	tsPorOp     map[string]string
-	logonsMotor int                             // logons tratados pelo motor em execução (zera a cada subida)
-	async       chan *httptest.ResponseRecorder // http_async em curso
-	asyncDesc   string
-	naoParou    error    // v1.33: o ocioso que estourou o teto (o passo falha com ele)
-	Registro    []string // o que aconteceu, para depuração
+	c            roteiro.Cenario
+	dir          string
+	rel          *relogio.Controlado
+	preco        *preco.Falsa
+	repo         repo.Repositorio
+	falha        *repoComFalha // v1.13: erro de dado injetado (banco_erro_dado)
+	backend      Backend
+	notif        *notificador
+	pnt          *falso.Falso
+	svc          *servico
+	flx          *flxfalso.Falso            // a Flexscan falsa do alvo dos verbos flx_ (config FLEXSCAN_URL=falso)
+	flxs         map[string]*flxfalso.Falso // v1.26: por ambiente (REAL_FLEXSCAN_URL=falso: a do REAL)
+	alvoFlx      string
+	cfg          config.Config
+	cfgMapa      map[string]string // o que montou o cfg (v1.34: reinicia_servico config=K=V troca chaves)
+	capturas     map[string]string
+	resposta     map[string]any
+	ultimoEvento map[string]any // os dados do último evento casado (contrato_evento)
+	casados      map[int64]bool
+	sessaoOK     int
+	logons       int64
+	travado      chan struct{} // motor_lento
+	tsPorOp      map[string]string
+	logonsMotor  int                             // logons tratados pelo motor em execução (zera a cada subida)
+	async        chan *httptest.ResponseRecorder // http_async em curso
+	asyncDesc    string
+	naoParou     error    // v1.33: o ocioso que estourou o teto (o passo falha com ele)
+	Registro     []string // o que aconteceu, para depuração
 }
 
 // Backend de persistência do cenário. Novo dá um repositório limpo; Reabrir, o mesmo banco numa
@@ -833,6 +834,8 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return e.ajusteStop(p)
 	case "contrato":
 		return e.contrato(p.Args)
+	case "contrato_evento":
+		return e.contratoEvento(p.Args)
 	case "sinal":
 		return e.sinal(p)
 	case "gq":
@@ -1441,6 +1444,7 @@ func (e *Executor) eventos(p roteiro.Passo) error {
 			return fmt.Errorf("evento inesperado: %s %s", x.Tipo, string(x.Dados))
 		}
 		e.casados[x.Seq] = true
+		e.ultimoEvento = dados(x)
 		return nil
 	}
 	if p.Verbo == "sem_evento" {

@@ -93,6 +93,9 @@ terminou, sai só um INFO no journal ("cancel da entrada recusado: a ordem já t
 - **A rede de segurança (P3):** a ordem guarda `o.recusaTerminalEm`. No tick, se ela continuar não
   final depois de `ESPERA_FILL_POS_RECUSA_S` (3 s, a mesma chave da saída), sai o `RECUSA_PNT` de hoje
   ("cancel rejeitado (…), sem o relatório final em 3 s") e é pedido um mass status da conta.
+- **Enquanto espera, o prazo da entrada não manda outro cancel** (E2, achado pelo roteiro 137: sem
+  isso, o cancel saía de novo 1 s depois, contra uma ordem que o PnT já deu por terminada). Disparada
+  a rede, volta o de antes: o cancel de novo pelo prazo, junto com o mass status.
 - **Fora disso, nada muda:** um 35=9 com a ordem viva, de outro papel ou de outra ação segue o
   caminho atual.
 
@@ -162,6 +165,7 @@ O CC do Kalman é avisado **antes** do código, com esta seção.
 | **137, a corrida** | o prazo de 10 s cancela, o PnT responde 35=9 (39=4, 102=1, "ended already") e 137 ms depois o 39=4 do robô: sem `RECUSA_PNT` e com motivo `REJEITADA_CORRETORA` (P1) |
 | **137, a rede de segurança** | o 35=9 "ended already" sem relatório final: `RECUSA_PNT` depois de 3 s e o mass status (P3) |
 | **137, os outros papéis** | o mesmo texto num 39=4 da 1014 com posição: recriação como hoje e o alerta de hoje |
+| 03 | o 39=8 com o `texto` "[103] 58" (P2), contra o exemplo da SPEC-ORDENS v1.28 §4.1 (`contrato_evento`, verbo novo) |
 | 118 e 132 | o contrato: `texto` no `ENTRADA_ENCERRADA` e `recusas_corretora_hoje` na ficha e na lista, conferidos contra os exemplos JSON do §4 |
 | unidade | a regra do texto (os três textos reais de 17/11 casam; "Order cannot be canceled" não casa); o 39=8 com `texto` "[103] 58" |
 

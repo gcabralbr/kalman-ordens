@@ -20,10 +20,6 @@ func (e *Executor) contrato(args []string) error {
 	if len(args) < 2 {
 		return fmt.Errorf("contrato ARQUIVO SECAO [caminho]")
 	}
-	exemplo, err := exemploDoContrato(filepath.Join("..", "..", args[0]), args[1])
-	if err != nil {
-		return err
-	}
 	var real any = e.resposta
 	if len(args) > 2 {
 		for _, k := range strings.Split(args[2], ".") {
@@ -42,11 +38,31 @@ func (e *Executor) contrato(args []string) error {
 		}
 		real = r
 	}
+	return conferirContrato(args[0], args[1], real, "da resposta")
+}
+
+// contrato_evento ARQUIVO SECAO (v1.36.2): os dados do último evento casado por `evento` têm a forma
+// do exemplo do contrato, como no `contrato` (ex.: o ENTRADA_ENCERRADA com o `texto`).
+func (e *Executor) contratoEvento(args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("contrato_evento ARQUIVO SECAO")
+	}
+	if e.ultimoEvento == nil {
+		return fmt.Errorf("contrato_evento: nenhum evento casado antes")
+	}
+	return conferirContrato(args[0], args[1], e.ultimoEvento, "do evento")
+}
+
+func conferirContrato(arquivo, secao string, real any, de string) error {
+	exemplo, err := exemploDoContrato(filepath.Join("..", "..", arquivo), secao)
+	if err != nil {
+		return err
+	}
 	// a resposta foi lida com UseNumber; o exemplo, com float64: normaliza os dois
 	b, _ := json.Marshal(real)
 	_ = json.Unmarshal(b, &real)
 	if difs := compararForma("", exemplo, real); len(difs) > 0 {
-		return fmt.Errorf("contrato %s §%s diverge da resposta: %s", args[0], args[1], strings.Join(difs, "; "))
+		return fmt.Errorf("contrato %s §%s diverge %s: %s", arquivo, secao, de, strings.Join(difs, "; "))
 	}
 	return nil
 }
