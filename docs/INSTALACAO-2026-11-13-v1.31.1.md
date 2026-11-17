@@ -69,7 +69,7 @@ END {
   if (!("REAL_PNT_ENTERING_FIRM" in feito)) print "REAL_PNT_ENTERING_FIRM=BTGDAYTRADE"
 }' $B | sudo tee $F.novo >/dev/null
 sudo chmod 600 $F.novo
-sudo diff $B $F.novo | grep -vE 'SENHA|_TOKEN|_SEGREDO'
+sudo diff $B $F.novo | sed -E 's/^([^=]*(SENHA|SEGREDO|TOKEN|CHAVE|KEY|USUARIO|DSN)[^=]*=).*/\1(oculto)/I'
 #   esperado: só o comentário e as duas linhas acrescentadas no fim
 sudo cp $F.novo $F && sudo rm $F.novo
 sudo grep -n '^REAL_PNT_' $F                                 # as duas

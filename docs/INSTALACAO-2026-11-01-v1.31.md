@@ -55,7 +55,7 @@ para o SIMULADOR, e não é recusado com `AMBIENTE_AUSENTE`.
 
 ```bash
 sudo cp -a /etc/kalman-ordens/service.env /etc/kalman-ordens/service.env.antes-v131
-sudo grep -n '^AMBIENTES_PERMITIDOS\|^AMBIENTE_PADRAO\|^ORDENS_AMBIENTE\|^REAL_' /etc/kalman-ordens/service.env
+sudo grep -n '^AMBIENTES_PERMITIDOS\|^AMBIENTE_PADRAO\|^ORDENS_AMBIENTE\|^REAL_' /etc/kalman-ordens/service.env | sed -E 's/^([^=]*(SENHA|SEGREDO|TOKEN|CHAVE|KEY|USUARIO|DSN)[^=]*=).*/\1(oculto)/I'
 #   esperado: só  38:ORDENS_AMBIENTE=HML
 /opt/kalman-ordens/kalman-ordens versao                                  # 93245099bd13 (o §0 feito)
 curl -s 127.0.0.1:9092/usuarios/5725/destino | jq -S '.ambientes.SIMULADOR' > ~/5725-sim-antes.json

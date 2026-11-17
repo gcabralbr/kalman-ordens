@@ -42,7 +42,7 @@ do original com `cp`, que mantém o dono, o modo e o contexto do SELinux do arqu
 sudo awk '/^FLEXSCAN_JANELA=/ {print "FLEXSCAN_JANELA=08:02-18:30"; achou=1; next} {print}
   END {if (!achou) {print ""; print "# 12/11: a ponte acorda as 08:02 (o login das 08:00:00 ficava sem resposta em 3 s)"; print "FLEXSCAN_JANELA=08:02-18:30"}}' \
   $B | sudo tee $F.novo >/dev/null
-sudo diff $B $F.novo
+sudo diff $B $F.novo | sed -E 's/^([^=]*(SENHA|SEGREDO|TOKEN|CHAVE|KEY|USUARIO|DSN)[^=]*=).*/\1(oculto)/I'
 #   esperado: só a linha da janela (trocada, ou acrescentada com o comentário)
 sudo cp $F.novo $F && sudo rm $F.novo
 sudo grep -n '^FLEXSCAN_JANELA\|^REAL_FLEXSCAN_JANELA' $F

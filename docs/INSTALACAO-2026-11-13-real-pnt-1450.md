@@ -124,7 +124,7 @@ logon sai com 34=1 e `141=Y`.
 ```bash
 sudo cp -a $F $B
 sudo grep -nE '^(AMBIENTES_PERMITIDOS|AMBIENTE_PADRAO|ORDENS_AMBIENTE|REAL_|PRECOS_|ORDENS_SENDER_LOCATION|ORDENS_BOLSA|ORDENS_CONTAS_HML|FLEXSCAN_CONTAS_HML|PNT_DESLIGADO)' $F \
-  | grep -vE 'SENHA|_TOKEN|_SEGREDO'
+  | sed -E 's/^([^=]*(SENHA|SEGREDO|TOKEN|CHAVE|KEY|USUARIO|DSN)[^=]*=).*/\1(oculto)/I'
 ```
 
 Mande-me essa saída antes de seguir. Eu confiro três coisas:
@@ -184,7 +184,7 @@ sudo vi $F.novo        # preencha só as seis REAL_FIX_* (abaixo)
 **Conferir e gravar.** No `diff` não podem aparecer senhas: nem a nova nem as das `REAL_FLEXSCAN_*` comentadas. Por isso elas são filtradas:
 
 ```bash
-sudo diff $B $F.novo | grep -vE 'SENHA|_TOKEN|_SEGREDO'     # sem senhas (a REAL_FLEXSCAN_BTG_SENHA comentada também)
+sudo diff $B $F.novo | sed -E 's/^([^=]*(SENHA|SEGREDO|TOKEN|CHAVE|KEY|USUARIO|DSN)[^=]*=).*/\1(oculto)/I'   # segredos ocultos, comentados ou não
 #   esperado: AMBIENTES_PERMITIDOS SIM → SIM,REAL; REAL_UIDS 5725 → 1450; os 4 limites; as
 #   REAL_FLEXSCAN_* com #pnt1311#; no fim, o comentário e as chaves novas (REAL_FIX_* preenchidas)
 sudo grep -c '^REAL_FIX_SENHA=.' $F.novo                   # 1 (preenchida)
