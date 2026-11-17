@@ -190,3 +190,8 @@ janela fora do pregão. A instalação vem depois da v1.36.1.
    RealOrder Id: N is Rejected." e um 39=4. Dá para receber o motivo real (margem de day trade,
    limite de risco, outro), no 58 ou num campo próprio? De preferência num 39=8 com o 103.
 2. **A latência**, a pergunta que já estava pendente (ESTADO-2026-11-16 §2).
+3. **O horário oficial em que a sessão FIX aceita logon** (incluída em 17/11, depois da instalação).
+   A sessão REAL do kalman-ordens loga só entre 08:30 e 17:55 (`REAL_FIX_INICIO`/`REAL_FIX_FIM`, a
+   janela inicial da SPEC-ORDENS v1). O GQ já logou na GAMMAQ2 às 08:15 e às 18:44. Em que horário o
+   PnT aceita logon e em que horário ele desliga as máquinas à noite? Com a resposta, a janela pode
+   ser ajustada no `service.env`, sem binário novo.
