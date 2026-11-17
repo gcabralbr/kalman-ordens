@@ -3,6 +3,7 @@ package motor
 import (
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -231,8 +232,15 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 	case "4":
 		limparPendencia(o)
 		o.Estado = dominio.Cancelada
+		motivo := "CANCELADA"
+		if t := strings.TrimSpace(msg.Texto(58)); o.Papel == dominio.Entrada && reRecusaCorretora.MatchString(t) {
+			// v1.36.2 §3.1: a corretora recusou por dentro do robô (17/11, margem de day trade). O
+			// texto decide, mesmo com o cancel do prazo nosso pendente (P1)
+			o.MotivoRejeicao = cortarTexto(t, maxMotivoRejeicao)
+			op.textoEncerramento, motivo = o.MotivoRejeicao, motivoRejeitadaCorretora
+		}
 		if !estavaEncerrada {
-			m.ordemEncerrada(op, o, "CANCELADA")
+			m.ordemEncerrada(op, o, motivo)
 		}
 	case "C":
 		limparPendencia(o)
@@ -607,6 +615,7 @@ func (m *Motor) ordemRejeitada(op *operacao, o *ordem, texto, codigo string) {
 	m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("recusa da %s %s: [%s] %s", op.corretora(), o.ClOrdAtual, codigo, texto), op.OperacaoID)
 	switch o.Papel {
 	case dominio.Entrada:
+		op.textoEncerramento = o.MotivoRejeicao // v1.36.2 P2: "[103] 58" no ENTRADA_ENCERRADA
 		m.encerrarEntrada(op, "REJEITADA", true)
 	case dominio.Protecao:
 		m.protecaoRejeitada(op, texto)
@@ -631,7 +640,8 @@ func (m *Motor) encerrarEntrada(op *operacao, motivo string, imediato bool) {
 	op.EncerrouEntrada = true
 	op.encerramentoEm = timeZero
 	pm, _ := op.medio(true)
-	m.publicar("ENTRADA_ENCERRADA", op, map[string]any{"qtd_final": op.qtdEntrada(), "preco_medio": pm, "motivo": motivo})
+	m.publicar("ENTRADA_ENCERRADA", op, map[string]any{"qtd_final": op.qtdEntrada(), "preco_medio": pm, "motivo": motivo,
+		"texto": nuloSeVazio(op.textoEncerramento)})
 	switch {
 	case op.qtdEntrada() == 0 && op.posicao() == 0:
 		op.saidaAposEntrada = false
@@ -679,6 +689,14 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 			}
 		case o.Papel == dominio.Protecao && o.canceladaPorErro:
 			m.cancelProtecaoEmErroRejeitado(op, o, msg, texto)
+		case o.Papel == dominio.Entrada && jaTerminou(msg):
+			// v1.36.2 §3.2 (17/11, a 234779): o nosso cancel da entrada chegou depois de ela terminar
+			// na corretora; o relatório final vem a seguir. Sem ele em ESPERA_FILL_POS_RECUSA_S, o
+			// alerta de antes e o mass status (P3)
+			slog.Info("cancel da entrada recusado: a ordem já terminou na corretora; aguardando o relatório final",
+				"op", op.OperacaoID, "clordid", o.ClOrdAtual, "39", msg.Texto(39), "texto", texto)
+			o.cancelTerminalEm = m.agora()
+			o.cancelTerminalTexto = fmt.Sprintf("cancel rejeitado (%s): %s", texto, o.ClOrdAtual)
 		default:
 			m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("cancel rejeitado (%s): %s", texto, o.ClOrdAtual))
 		}
@@ -953,6 +971,45 @@ func (m *Motor) verificarRecusasExecutadas(op *operacao, agora time.Time) {
 		case agora.Sub(o.recusaExecEm) >= m.p.EsperaFillPosRecusa:
 			o.recusaExecEm = timeZero
 			m.al.Emitir(o.recusaExecCodigo, "", fmt.Sprintf("%s; sem fill em %s", o.recusaExecTexto, m.p.EsperaFillPosRecusa), op.OperacaoID)
+		}
+	}
+}
+
+// v1.36.2 §3.1: a recusa da corretora por dentro do robô DSA (17/11, margem de day trade no
+// BTGDAYTRADE). O PnT cancela a estratégia (39=4), sem 39=8 nem 103.
+var reRecusaCorretora = regexp.MustCompile(`(?i)changed to Error state.*is Rejected`)
+
+const (
+	motivoRejeitadaCorretora = "REJEITADA_CORRETORA"
+	maxMotivoRejeicao        = 500 // a coluna motivo_rejeicao
+)
+
+// jaTerminou: o 35=9 diz que a ordem já está terminal na corretora (39 = 2, 4, 8 ou C) ou que o
+// cancel chegou tarde (102=1).
+func jaTerminou(msg pnt.Mensagem) bool {
+	switch msg.Texto(39) {
+	case "2", "4", "8", "C":
+		return true
+	}
+	return msg.Texto(102) == "1"
+}
+
+// verificarCancelTerminal (v1.36.2 P3): o relatório final da entrada cujo cancel foi recusado por
+// já ter terminado chegou? Sem ele em ESPERA_FILL_POS_RECUSA_S, o RECUSA_PNT de antes e o mass status.
+func (m *Motor) verificarCancelTerminal(op *operacao, agora time.Time) {
+	for _, o := range op.ordens {
+		switch {
+		case o.cancelTerminalEm.IsZero():
+		case o.Estado.Final():
+			o.cancelTerminalEm = timeZero
+		case agora.Sub(o.cancelTerminalEm) >= m.p.EsperaFillPosRecusa:
+			o.cancelTerminalEm = timeZero
+			m.al.Emitir(m.codigoRecusa(op), "", fmt.Sprintf("%s; sem o relatorio final em %s: mass status", o.cancelTerminalTexto, m.p.EsperaFillPosRecusa), op.OperacaoID)
+			if !m.conciliando && m.algumLogado() {
+				m.conciliando = true
+				m.massTentativas = 0
+				m.pedirMassStatus()
+			}
 		}
 	}
 }

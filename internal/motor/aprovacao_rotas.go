@@ -169,6 +169,11 @@ func (s *Servico) FichaReal(uid, nHist int) (Resposta, error) {
 	}
 	r["gq"] = s.gqDaFicha(cad)
 	r["posicao"] = s.posicaoRealDaFicha(uid)
+	rec, err := s.recusasCorretoraHoje(uid)
+	if err != nil {
+		return nil, ErrIndisponivel
+	}
+	r["recusas_corretora_hoje"] = s.recusasDaFicha(rec[uid])
 	hs := make([]map[string]any, 0, len(hist))
 	for _, x := range hist {
 		var gqh any
@@ -249,6 +254,10 @@ func (s *Servico) ListaReal() (Resposta, error) {
 			return nil, ErrIndisponivel
 		}
 	}
+	rec, err := s.recusasCorretoraHoje(0)
+	if err != nil {
+		return nil, ErrIndisponivel
+	}
 	rg := s.regrasReal()
 	l := []map[string]any{}
 	for _, h := range reais {
@@ -256,7 +265,7 @@ func (s *Servico) ListaReal() (Resposta, error) {
 		gq := lerCadastroGQ(c[1], achou, rg)
 		x := map[string]any{"uid": h.UID, "estado": h.EstadoVigente(), "conector": nil, "corretora_codigo": nil, "corretora": nil, "conta": nil,
 			"cadastro_utilizavel": gq.falha == nil, "qtd_max_ordem": nil, "posicao_max": nil, "versao": h.Versao, "origem": nuloSeVazio(h.Origem),
-			"alterado_por": h.Por, "alterado_em": emBR(h.Em), "divergente_desde": nil}
+			"alterado_por": h.Por, "alterado_em": emBR(h.Em), "divergente_desde": nil, "recusas_corretora_hoje": len(rec[h.UID])}
 		if gq.legal {
 			x["conector"], x["corretora_codigo"], x["conta"] = nuloSeVazio(gq.cad.Conector), intOuNulo(gq.cad.Corretora), nuloSeVazio(gq.cad.Conta)
 			x["corretora"] = nomeCorretoraOuNulo(gq.cad.Corretora, rg.Corretoras)
@@ -397,5 +406,74 @@ func (m *Motor) stopCorretora(op *operacao) map[string]any {
 	default:
 		r["estado"], r["desde"] = "DESPROTEGIDA", emBROuNulo(op.semProtecaoDesde)
 	}
+	return r
+}
+
+// recusasCorretoraHoje (v1.36.2 §4.2): as entradas REAL do dia recusadas pela corretora, por uid (0 =
+// todos): as ordens de entrada com o motivo_rejeicao gravado — o 39=8 (REJEITADA) e o erro do robô
+// (REJEITADA_CORRETORA). Do banco: a contagem sobrevive a restart.
+func (s *Servico) recusasCorretoraHoje(uid int) (map[int][]dominio.Ordem, error) {
+	ops, ords, err := s.Repo().CarregarDia(s.principal.hoje())
+	if err != nil {
+		return nil, err
+	}
+	type chave struct {
+		mod string
+		op  int64
+	}
+	dono := map[chave]int{}
+	for _, o := range ops {
+		if dominio.AmbienteDe(o.Ambiente) == dominio.AmbienteReal && (uid == 0 || o.UID == uid) {
+			dono[chave{o.Modulo, o.OperacaoID}] = o.UID
+		}
+	}
+	r := map[int][]dominio.Ordem{}
+	for _, o := range ords {
+		u, ok := dono[chave{o.Modulo, o.OperacaoID}]
+		if ok && o.Papel == dominio.Entrada && o.MotivoRejeicao != "" {
+			r[u] = append(r[u], o)
+		}
+	}
+	return r, nil
+}
+
+// recusasDaFicha: {quantidade, ultima}; a última pela hora da última mensagem da ordem (a recusa).
+func (s *Servico) recusasDaFicha(l []dominio.Ordem) map[string]any {
+	r := map[string]any{"quantidade": len(l), "ultima": nil}
+	if len(l) == 0 {
+		return r
+	}
+	ids := make([]int64, len(l))
+	for i, o := range l {
+		ids[i] = o.ID
+	}
+	evs, err := s.Repo().EventosFIXDasOrdens(ids)
+	if err != nil {
+		evs = nil
+	}
+	em := map[int64]time.Time{}
+	for _, e := range evs {
+		if e.Em.After(em[e.OrdemID]) {
+			em[e.OrdemID] = e.Em
+		}
+	}
+	u := l[0]
+	quando := func(o dominio.Ordem) time.Time {
+		if t, ok := em[o.ID]; ok {
+			return t
+		}
+		return o.CriadaEm
+	}
+	for _, o := range l[1:] {
+		if quando(o).After(quando(u)) {
+			u = o
+		}
+	}
+	motivo := motivoRejeitadaCorretora
+	if u.Estado == dominio.Rejeitada {
+		motivo = "REJEITADA"
+	}
+	r["ultima"] = map[string]any{"em": emBR(quando(u)), "operacao_id": u.OperacaoID, "clordid": u.ClOrdAtual, "motivo": motivo,
+		"texto": u.MotivoRejeicao}
 	return r
 }
