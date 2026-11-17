@@ -4,7 +4,9 @@ Documentation=file:///opt/kalman-ordens/LEIA.md
 After=network-online.target mariadb.service
 Wants=network-online.target
 # 23/10: o eb65ec2 reiniciou 37 vezes em 3 min. No máximo 5 partidas em 5 min; depois, a unidade fica
-# failed e o OnFailure manda o alerta crítico (deploy/servico-falhou.sh, envio pelo disco.env)
+# failed e o OnFailure manda o alerta crítico (deploy/servico-falhou.sh, envio pelo disco.env).
+# v1.36.1: com RestartMode=direct (abaixo), o OnFailure só dispara quando o systemd desiste; cada
+# falha com reinício previsto manda só o AVISO do ExecStopPost.
 StartLimitIntervalSec=300
 StartLimitBurst=5
 OnFailure=kalman-ordens-falhou@%n.service
@@ -21,6 +23,14 @@ KillSignal=SIGTERM
 TimeoutStopSec=20
 Restart=on-failure
 RestartSec=10
+# v1.36.1 (17/11 09:40: o CRITICO "desistiu de subir" saiu na 1ª falha, com o reinício previsto):
+# o reinício automático vai direto a activating, sem passar por failed, e não dispara o OnFailure
+# (systemd ≥ 254). O ExecStopPost roda em toda parada e só avisa a falha que vai ser reiniciada; o
+# "-" faz uma falha do aviso não contar como falha da unidade. Roda como kalman-ordens, no sandbox
+# abaixo, com o ALERTA_WEBHOOK_URL/TELEGRAM_* do service.env (o serviço já os tem): não lê o
+# disco.env (só root).
+RestartMode=direct
+ExecStopPost=-/opt/kalman-ordens/servico-falhou.sh --reiniciando %n
 
 # Arquivos novos só do usuário do serviço (o QuickFIX/Go cria o log com 0777 & ~umask): log e
 # store FIX ficam 600, diretórios 700. O serviço também aperta o que já existia ao subir.

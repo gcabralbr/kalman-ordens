@@ -115,6 +115,8 @@ type ordem struct {
 	recusaTerminal39 string
 	// v1.19: 35=9 com 39=2 sem o fill aplicado: o alerta adiado (sai se o fill não vier a tempo)
 	recusaExecEm                      time.Time
+	cancelTerminalEm                  time.Time // v1.36.2 §3.2: o cancel da entrada recusado por já ter terminado
+	cancelTerminalTexto               string
 	recusaExecCodigo, recusaExecTexto string
 	saidaNoMass                       bool
 	saidaSemFill                      bool
@@ -160,6 +162,7 @@ type operacao struct {
 	saidaAposEntrada      bool
 	encerramentoEm        time.Time
 	motivoEncerramento    string
+	textoEncerramento     string // v1.36.2: o 58 da corretora no ENTRADA_ENCERRADA (REJEITADA, REJEITADA_CORRETORA)
 	zerarAposProtecao     bool
 	protecaoDesatualizada bool
 	saidaDivergente       bool

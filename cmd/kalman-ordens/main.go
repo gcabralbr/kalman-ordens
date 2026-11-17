@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -84,6 +85,7 @@ func executar(args []string, saida, erros io.Writer) int {
 	case "servir":
 		ctx, parar := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer parar()
+		apagarUltimoErro()
 		err = servir(ctx, config.DoAmbiente())
 	case "migrar":
 		err = cliMigrar(config.DoAmbiente(), args, saida)
@@ -115,9 +117,38 @@ func executar(args []string, saida, erros io.Writer) int {
 	}
 	if err != nil {
 		fmt.Fprintln(erros, "kalman-ordens:", err)
+		if cmd == "servir" {
+			gravarUltimoErro(err)
+		}
 		return 1
 	}
 	return 0
+}
+
+// arquivoUltimoErro (v1.36.1): o erro que derrubou o "servir", para o aviso do ExecStopPost
+// (deploy/servico-falhou.sh --reiniciando), que roda como o usuário do serviço e não lê o journal.
+// Só com o StateDirectory= da unidade ($STATE_DIRECTORY); fora dela, "".
+func arquivoUltimoErro() string {
+	d, _, _ := strings.Cut(os.Getenv("STATE_DIRECTORY"), ":")
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "ultimo-erro")
+}
+
+// apagarUltimoErro: na partida, o erro de uma partida anterior não vale mais.
+func apagarUltimoErro() {
+	if a := arquivoUltimoErro(); a != "" {
+		_ = os.Remove(a)
+	}
+}
+
+// gravarUltimoErro: uma linha, como sai no journal ("kalman-ordens: <erro>"); 600 pelo UMask da unidade.
+func gravarUltimoErro(err error) {
+	if a := arquivoUltimoErro(); a != "" {
+		linha := strings.ReplaceAll("kalman-ordens: "+err.Error(), "\n", " ")
+		_ = os.WriteFile(a, []byte(linha+"\n"), 0o600)
+	}
 }
 
 func obrigatorias(cfg config.Config, chaves ...string) error {

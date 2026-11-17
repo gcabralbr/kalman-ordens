@@ -16,6 +16,8 @@ http GET /usuarios/1450/real
 resposta _status=200 uid=1450 estado=SEM_APROVACAO versao=0 aprovado=null ultima_mudanca=null divergencia=null acoes.#=1 acoes.0=aprovar historico.#=0
 resposta gq.conector=PNT gq.corretora_codigo=85 gq.corretora=BTG gq.conta=4582351 gq.valido=true gq.erro=null
 resposta limites_instancia=null posicao.instancia=DESLIGADA posicao.operacoes=null
+# v1.36.2: as recusas da corretora no dia (SPEC técnica v1.36 §5.1)
+resposta recusas_corretora_hoje.quantidade=0 recusas_corretora_hoje.ultima=null
 http GET /usuarios/1450/real?historico=0
 resposta _status=400 codigo=CAMPO_INVALIDO
 
@@ -77,7 +79,7 @@ resposta _status=200 codigo=APROVADO estado=APROVADO versao=7 "motivo=~cadastro 
 avanca 31s
 sem_alerta REAL_CADASTRO_INUTILIZAVEL
 http GET /usuarios/real
-resposta usuarios.#=1 usuarios.0.uid=1450 usuarios.0.estado=APROVADO usuarios.0.conta=4582351 usuarios.0.corretora_codigo=107 usuarios.0.cadastro_utilizavel=false usuarios.0.qtd_max_ordem=null usuarios.0.versao=7 usuarios.0.origem=TELA
+resposta usuarios.#=1 usuarios.0.uid=1450 usuarios.0.estado=APROVADO usuarios.0.conta=4582351 usuarios.0.corretora_codigo=107 usuarios.0.cadastro_utilizavel=false usuarios.0.qtd_max_ordem=null usuarios.0.versao=7 usuarios.0.origem=TELA usuarios.0.recusas_corretora_hoje=0
 contrato docs/SPEC-TECNICA-v1.36-CONTA-LIVRE.md 5.2
 
 # --- o GQ ilegível: a ficha diz, sem os campos

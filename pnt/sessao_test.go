@@ -498,3 +498,36 @@ func TestMascarar(t *testing.T) {
 		}
 	}
 }
+
+// v1.36.1 (17/11 09:40): o arquivo que some entre a listagem e o chmod (o QuickFIX/Go recria o store
+// de outro dia no logon) não derruba o aperto; o resto continua sendo apertado.
+func TestApertarIgnoraOQueSumiu(t *testing.T) {
+	dir := t.TempDir()
+	sumiu := filepath.Join(dir, "store", "FIX.4.4-A-B.senderseqnums")
+	if err := apertar(sumiu, nil, &fs.PathError{Op: "lstat", Path: sumiu, Err: fs.ErrNotExist}); err != nil {
+		t.Fatalf("erro da listagem com o arquivo sumido: %v", err)
+	}
+	if err := apertar(sumiu, falsoArquivo{}, nil); err != nil {
+		t.Fatalf("chmod do arquivo sumido: %v", err)
+	}
+	if err := apertar(dir, nil, fs.ErrPermission); err == nil {
+		t.Fatal("outro erro da listagem tem de voltar")
+	}
+	f := filepath.Join(dir, "fica")
+	if err := os.WriteFile(f, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApertarPermissoes(dir); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := os.Stat(f); st.Mode().Perm() != 0o600 {
+		t.Fatalf("arquivo que existe: %v", st.Mode().Perm())
+	}
+}
+
+type falsoArquivo struct{}
+
+func (falsoArquivo) Name() string               { return "senderseqnums" }
+func (falsoArquivo) IsDir() bool                { return false }
+func (falsoArquivo) Type() fs.FileMode          { return 0 }
+func (falsoArquivo) Info() (fs.FileInfo, error) { return nil, fs.ErrNotExist }

@@ -179,9 +179,11 @@ func (m *Motor) verificarSemConfirmacao(agora time.Time) bool {
 func (m *Motor) acoesDeTempo(op *operacao, agora time.Time) {
 	m.tratarErros(op, agora)
 	m.verificarRecusasExecutadas(op, agora)
+	m.verificarCancelTerminal(op, agora)
 	if e := op.viva(dominio.Entrada); e != nil && e.Estado != dominio.Enviando && e.Estado != dominio.SemConfirmacao &&
 		!e.enviada.IsZero() && e.pend == semPendencia && agora.Sub(e.enviada) >= m.p.TimeoutEntrada &&
-		op.Modulo != dominio.ModuloBoleta { // v1.31: a entrada da boleta fica até o admin cancelar
+		op.Modulo != dominio.ModuloBoleta && // v1.31: a entrada da boleta fica até o admin cancelar
+		e.cancelTerminalEm.IsZero() { // v1.36.2 P3: o PnT disse que ela terminou; espera o relatório final
 
 		switch {
 		case e.cancelamentos == 0:
