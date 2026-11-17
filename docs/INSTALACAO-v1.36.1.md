@@ -5,8 +5,9 @@ antes de rodar. Os comandos com `sudo` são do George e estão numerados de **T1
 está no §8.
 
 - **Branch:** `v1.36.1` (worktree `../kalman-ordens-v1361`), a partir do `ea0cc03` da `v1.36`.
-- **Binário:** `<BINARIO>`, sha256 `<SHA256>`. Os dois valores entram aqui depois da suíte completa
-  das 18:31 de 17/11. **Não instale antes disso.**
+- **Binário:** `9f580660aab7`, sha256 `1f41fc69ca1f9d0ff55d1a87f5bc356a3056275aa7454920e089f656bac33b22`
+  (`dist/kalman-ordens` da worktree). Suíte completa em 17/11, 17:37:01–17:55:57, commit `9f58066`:
+  `FIM rc=0 teste-servico-falhou=0` (`var/suite1361-20261117-173701.log`).
 - **Quando:** fora do pregão, com a posição em 0. A instalação tem um restart do serviço. Pode ser
   com o REAL ligado ou desligado; o roteiro serve aos dois.
 - **Duração:** de 10 a 15 minutos, mais 1 minuto do teste opcional do §5.
@@ -87,8 +88,8 @@ Depois, `daemon-reload` e restart (§7). Não há migração na v1.36.1.
 
 ```bash
 /opt/kalman-ordens/kalman-ordens versao                      # 5c1e7b004e3d (a v1.36)
-sha256sum /home/gammaquant/kalman-ordens-v1361/dist/kalman-ordens   # <SHA256>
-/home/gammaquant/kalman-ordens-v1361/dist/kalman-ordens versao        # <BINARIO>
+sha256sum /home/gammaquant/kalman-ordens-v1361/dist/kalman-ordens   # 1f41fc69ca1f9d0ff55d1a87f5bc356a3056275aa7454920e089f656bac33b22
+/home/gammaquant/kalman-ordens-v1361/dist/kalman-ordens versao        # 9f580660aab7
 systemctl show kalman-ordens -p RestartMode -p ExecStopPost -p OnFailure -p StartLimitBurst
 #   RestartMode=normal, ExecStopPost= vazio, OnFailure=kalman-ordens-falhou@kalman-ordens.service.service, 5
 curl -s 127.0.0.1:9092/saude | jq -c '{versao, ambientes_permitidos, criticos: .alertas_criticos,
@@ -137,7 +138,7 @@ systemctl show kalman-ordens -p RestartMode -p ExecStopPost -p OnFailure -p Star
 **T5**: o binário.
 ```bash
 sudo install -o root -g root -m 755 dist/kalman-ordens /opt/kalman-ordens/kalman-ordens
-/opt/kalman-ordens/kalman-ordens versao                      # <BINARIO>
+/opt/kalman-ordens/kalman-ordens versao                      # 9f580660aab7
 ```
 
 **T6**: o restart.
@@ -149,11 +150,11 @@ Sem sudo:
 ```bash
 sleep 10; systemctl is-active kalman-ordens                  # active
 journalctl -u kalman-ordens --since '-1min' --no-pager | grep -E 'subindo|no ar|permiss|servico-falhou|AVISO|ERROR' | cut -c1-220
-#   bom: "kalman-ordens subindo" versao=<BINARIO>; "kalman-ordens no ar"
+#   bom: "kalman-ordens subindo" versao=9f580660aab7; "kalman-ordens no ar"
 #   não deve aparecer: AVISO (o restart pedido é calado), "permissões ... não apertadas" (pode, se
 #   algo sumiu no meio: é só WARN, a partida segue), ERROR
 curl -s 127.0.0.1:9092/saude | jq -c '{versao, ambientes_permitidos, criticos: .alertas_criticos}'
-#   versao <BINARIO>, os mesmos ambientes de antes, criticos {}
+#   versao 9f580660aab7, os mesmos ambientes de antes, criticos {}
 ```
 
 **No Telegram:** só a `CONCILIACAO` da partida. Nenhum AVISO, porque o restart foi pedido, e nenhum
@@ -199,13 +200,18 @@ PrivateTmp=yes
 U
 sudo systemctl daemon-reload
 sudo systemctl start kalman-teste-falhou; sleep 15
-systemctl show kalman-teste-falhou -p Result -p NRestarts     # Result=start-limit-hit, NRestarts=2
+systemctl show kalman-teste-falhou -p Result -p NRestarts     # Result=exit-code, NRestarts=3
 ```
 **Esperado no Telegram, nesta ordem:**
 - três `[.53 kalman-teste-falhou] AVISO: falhou (exit-code, exited 1); ultimo erro: sem mensagem do
   servico, ver o journal; o systemd reinicia em 2s (tentativa 1 de 3)`, depois a 2 de 3 e a 3 de 3;
-- um `[.53 kalman-teste-falhou] CRITICO: a unidade desistiu de subir (resultado start-limit-hit, 2
-  reinicio(s), ...)`.
+- um `[.53 kalman-teste-falhou] CRITICO: a unidade desistiu de subir (resultado exit-code, 3
+  reinicio(s), ...)`, com "versao ?" e "sem erro no journal" (natural para o `/bin/false`).
+
+O limite (3 partidas em 60 s) conta a primeira: a 3ª tentativa anunciada é a que o systemd recusa
+("Start request repeated too quickly"), e aí vem o CRITICO. Com o `RestartMode=direct`, o `Result`
+fica no da última falha (`exit-code`), não `start-limit-hit`, e o `NRestarts` conta a recusada (3).
+Visto no T7 de 17/11, às 19:28 (deploy/LEIA.md, "a última tentativa anunciada pode ser recusada").
 
 **Não ok:**
 - **um CRITICO antes do último AVISO:** o `RestartMode=direct` não fez efeito;
@@ -221,7 +227,7 @@ sudo systemctl daemon-reload
 
 ## 6. Depois (eu)
 
-- o `instalado-migracoes.sh <BINARIO>`, que não terá migração nova;
+- o `instalado-migracoes.sh 9f580660aab7`, que não terá migração nova;
 - o merge da `v1.36.1` na `v1.36` e no `main`;
 - a memória e o ESTADO.
 
@@ -251,3 +257,17 @@ O arquivo `/var/lib/kalman-ordens/ultimo-erro`, se existir, pode ficar: a v1.36 
 | T7 | 5 | opcional: a unidade descartável que falha sempre | 4 mensagens de teste no Telegram |
 | T8 | 5 | apaga a unidade descartável | não |
 | T9 | 7 | volta: binário, unidade e script de antes, e restart | só se precisar |
+
+## 9. Resultado (17/11, pelo George)
+
+- **19:25: v1.36.1 `9f580660aab7` instalada** por este roteiro (`c3f0f91`), com o REAL ligado e a posição 0.
+  - `RestartMode=direct` e o `ExecStopPost` com o `servico-falhou.sh --reiniciando` na unidade.
+  - O restart pedido (T6) não mandou AVISO. Nenhum crítico. A `CONCILIACAO` do SIMULADOR deu 0/0.
+  - A sessão REAL ficou "sem sessão": às 19:25 estava fora da janela dela (`REAL_FIX_INICIO`/`FIM`,
+    08:30–17:55). Não é defeito; ela loga sozinha às 08:30.
+- **19:28: T7.** Três AVISOs (tentativas 1, 2 e 3 de 3) e depois um CRITICO, nessa ordem. O resultado
+  foi `Result=exit-code`, `NRestarts=3`: a 3ª tentativa anunciada foi a recusada ("Start request
+  repeated too quickly"). O comportamento está certo; a expectativa do §5 foi corrigida. O CRITICO de
+  teste saiu com "versao ?" e "sem erro no journal", natural para o `/bin/false`.
+- **19:32: a v1.36.2 `91df575bcc22`** foi instalada em seguida (`INSTALACAO-v1.36.2.md`).
+- **Retrato do instalado:** `9f580660aab7`, 20 migrações (sem migração nova).
