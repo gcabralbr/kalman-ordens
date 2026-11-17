@@ -145,3 +145,14 @@ chegar como `CANCELADA`.
 | U2 | 3 | instala o binário | **troca o binário** |
 | U3 | 3 | restart | **reinicia o serviço** |
 | U4 | 7 | volta ao binário da v1.36.1 e restart | só se precisar |
+
+## 9. Resultado (17/11, pelo George)
+
+- **19:32: v1.36.2 `91df575bcc22` instalada** por este roteiro (`39fcc51`), logo depois da v1.36.1
+  (`9f580660aab7`, 19:25). Sem crítico e sem AVISO no restart pedido; `RestartMode=direct`,
+  `NRestarts=0`. A `CONCILIACAO` do SIMULADOR deu 0/0.
+- **§4:** `recusas_corretora_hoje` do 1450 = `{"quantidade":0,"ultima":null}`.
+- **Binário anterior:** `/opt/kalman-ordens/kalman-ordens.9f580660aab7` (a v1.36.1), para a volta (§7).
+- A sessão REAL ficou "sem sessão" desde as 19:25: fora da janela dela (08:30–17:55). Ela loga sozinha
+  às 08:30 de 18/11; a conferência está no ESTADO-2026-11-18.
+- **Retrato do instalado:** `91df575bcc22`, 20 migrações (sem migração nova).
