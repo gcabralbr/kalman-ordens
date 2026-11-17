@@ -4,11 +4,11 @@ Preparado em 17/11. **Não instalado.** O George lê antes de rodar. Os comandos
 George e estão numerados de **U1** a **U4**; a lista está no §8.
 
 - **Branch:** `v1.36.2` (worktree `../kalman-ordens-v1362`), a partir do `8a8fff8` da `v1.36.1`.
-- **Binário:** `<BINARIO>`, sha256 `<SHA256>`. Os dois valores entram aqui depois da suíte completa
-  (agendada para depois da suíte da v1.36.1 de 17/11, nunca antes das 18:30). **Não instale antes
-  disso.**
+- **Binário:** `91df575bcc22`, sha256 `0a9567bac3b6debf64bb45d7ef8861f473efc59e8bf66875e3e3196f3da2584e`
+  (`dist/kalman-ordens` da worktree). Suíte completa em 17/11, 17:55:57–18:14:29, commit `91df575`:
+  `FIM rc=0` (`var/suite1362-20261117-175557.log`).
 - **Pré-requisito: a v1.36.1 instalada e conferida** (`INSTALACAO-v1.36.1.md` até o T6, com o
-  binário `<BINARIO_V1361>`). A v1.36.2 contém a v1.36.1, mas a unidade e o `servico-falhou.sh` novos
+  binário `9f580660aab7`). A v1.36.2 contém a v1.36.1, mas a unidade e o `servico-falhou.sh` novos
   só entram pelo roteiro dela. Os dois podem ir na mesma noite, um depois do outro.
 - **Quando:** à noite, depois das suítes, ou no dia seguinte depois da zeragem das 14:30. Fora do
   pregão, com a posição em 0. Um restart do serviço. Serve com o REAL ligado ou desligado.
@@ -42,29 +42,29 @@ Sem migração, sem chave nova no `service.env`, sem mudança na unidade nem nos
 
 ### 0.2 A volta
 
-Só o binário: `kalman-ordens.<BINARIO_V1361>`, guardado no U1, e restart (§7). Sem banco. Os
+Só o binário: `kalman-ordens.9f580660aab7`, guardado no U1, e restart (§7). Sem banco. Os
 `motivo_rejeicao` que a v1.36.2 gravar ficam no banco; a v1.36.1 os mostra no histórico como texto,
 sem efeito.
 
 ## 1. Antes (sem mudar nada)
 
 ```bash
-/opt/kalman-ordens/kalman-ordens versao                      # <BINARIO_V1361> (a v1.36.1)
+/opt/kalman-ordens/kalman-ordens versao                      # 9f580660aab7 (a v1.36.1)
 systemctl show kalman-ordens -p RestartMode | cat            # RestartMode=direct (a v1.36.1 está)
-sha256sum /home/gammaquant/kalman-ordens-v1362/dist/kalman-ordens   # <SHA256>
-/home/gammaquant/kalman-ordens-v1362/dist/kalman-ordens versao        # <BINARIO>
+sha256sum /home/gammaquant/kalman-ordens-v1362/dist/kalman-ordens   # 0a9567bac3b6debf64bb45d7ef8861f473efc59e8bf66875e3e3196f3da2584e
+/home/gammaquant/kalman-ordens-v1362/dist/kalman-ordens versao        # 91df575bcc22
 curl -s 127.0.0.1:9092/saude | jq -c '{versao, ambientes_permitidos, criticos: .alertas_criticos,
   pos: [.ambientes[] | .posicao], vivas: [.ambientes[] | .ordens_vivas]}'
 #   posições 0, nada vivo, criticos {}
 ```
-Se a versão instalada não for a `<BINARIO_V1361>` ou o `RestartMode` não for `direct`, pare: falta a
+Se a versão instalada não for a `9f580660aab7` ou o `RestartMode` não for `direct`, pare: falta a
 v1.36.1.
 
 ## 2. Guardar o que está instalado
 
 **U1**: o binário da v1.36.1.
 ```bash
-sudo cp -a /opt/kalman-ordens/kalman-ordens /opt/kalman-ordens/kalman-ordens.<BINARIO_V1361>
+sudo cp -a /opt/kalman-ordens/kalman-ordens /opt/kalman-ordens/kalman-ordens.9f580660aab7
 ```
 
 ## 3. Instalar
@@ -72,7 +72,7 @@ sudo cp -a /opt/kalman-ordens/kalman-ordens /opt/kalman-ordens/kalman-ordens.<BI
 **U2**: o binário.
 ```bash
 sudo install -o root -g root -m 755 /home/gammaquant/kalman-ordens-v1362/dist/kalman-ordens /opt/kalman-ordens/kalman-ordens
-/opt/kalman-ordens/kalman-ordens versao                      # <BINARIO>
+/opt/kalman-ordens/kalman-ordens versao                      # 91df575bcc22
 ```
 
 **U3**: o restart.
@@ -84,9 +84,9 @@ Sem sudo:
 ```bash
 sleep 10; systemctl is-active kalman-ordens                  # active
 journalctl -u kalman-ordens --since '-1min' --no-pager | grep -E 'subindo|no ar|migra|ERROR' | cut -c1-220
-#   "kalman-ordens subindo" versao=<BINARIO>; "migrações: nenhuma pendente"; "kalman-ordens no ar"; nenhum ERROR
+#   "kalman-ordens subindo" versao=91df575bcc22; "migrações: nenhuma pendente"; "kalman-ordens no ar"; nenhum ERROR
 curl -s 127.0.0.1:9092/saude | jq -c '{versao, ambientes_permitidos, criticos: .alertas_criticos}'
-#   versao <BINARIO>, os mesmos ambientes de antes, criticos {}
+#   versao 91df575bcc22, os mesmos ambientes de antes, criticos {}
 ```
 **No Telegram:** só a `CONCILIACAO` da partida. Nenhum AVISO (o restart foi pedido) e nenhum CRITICO.
 
@@ -122,7 +122,7 @@ journalctl -u kalman-ordens --since today --no-pager | grep -E 'REJEITADA_CORRET
 
 ## 6. Depois (eu)
 
-- o `instalado-migracoes.sh <BINARIO>`, que não terá migração nova;
+- o `instalado-migracoes.sh 91df575bcc22`, que não terá migração nova;
 - o merge da `v1.36.2` na `v1.36.1` e no `main`;
 - a memória e o ESTADO.
 
@@ -130,9 +130,9 @@ journalctl -u kalman-ordens --since today --no-pager | grep -E 'REJEITADA_CORRET
 
 **U4**: só o binário.
 ```bash
-sudo install -o root -g root -m 755 /opt/kalman-ordens/kalman-ordens.<BINARIO_V1361> /opt/kalman-ordens/kalman-ordens
+sudo install -o root -g root -m 755 /opt/kalman-ordens/kalman-ordens.9f580660aab7 /opt/kalman-ordens/kalman-ordens
 sudo systemctl restart kalman-ordens
-/opt/kalman-ordens/kalman-ordens versao                      # <BINARIO_V1361>
+/opt/kalman-ordens/kalman-ordens versao                      # 9f580660aab7
 ```
 O Kalman segue funcionando: sem o campo, a ficha não mostra a linha das recusas, e a margem volta a
 chegar como `CANCELADA`.
@@ -141,7 +141,7 @@ chegar como `CANCELADA`.
 
 | nº | § | o que faz | muda algo? |
 |---|---|---|---|
-| U1 | 2 | guarda o binário da v1.36.1 (`kalman-ordens.<BINARIO_V1361>`) | grava a cópia |
+| U1 | 2 | guarda o binário da v1.36.1 (`kalman-ordens.9f580660aab7`) | grava a cópia |
 | U2 | 3 | instala o binário | **troca o binário** |
 | U3 | 3 | restart | **reinicia o serviço** |
 | U4 | 7 | volta ao binário da v1.36.1 e restart | só se precisar |
