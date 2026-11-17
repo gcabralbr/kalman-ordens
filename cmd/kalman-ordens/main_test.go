@@ -316,3 +316,30 @@ func TestServirRecusaConfigAntiga(t *testing.T) {
 		}
 	}
 }
+
+// v1.36.1: o "servir" que cai grava o erro em $STATE_DIRECTORY/ultimo-erro (o aviso do ExecStopPost
+// lê dali); a partida apaga o de antes; sem $STATE_DIRECTORY, nada.
+func TestUltimoErroDoServir(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "ultimo-erro")
+	if err := os.WriteFile(a, []byte("kalman-ordens: erro de ontem\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("STATE_DIRECTORY", dir+":/outro")
+	t.Setenv("DB_DSN", "")
+	var erros bytes.Buffer
+	if rc := executar([]string{"servir"}, io.Discard, &erros); rc != 1 {
+		t.Fatalf("rc %d", rc)
+	}
+	b, err := os.ReadFile(a)
+	if err != nil || string(b) != erros.String() || !strings.Contains(string(b), "DB_DSN") || strings.Contains(string(b), "ontem") {
+		t.Fatalf("ultimo-erro %q (stderr %q, %v)", b, erros.String(), err)
+	}
+	if st, _ := os.Stat(a); st.Mode().Perm() != 0o600 {
+		t.Fatalf("modo %v", st.Mode().Perm())
+	}
+	t.Setenv("STATE_DIRECTORY", "")
+	if arquivoUltimoErro() != "" {
+		t.Fatal("sem STATE_DIRECTORY não grava")
+	}
+}

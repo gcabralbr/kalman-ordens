@@ -228,7 +228,13 @@ func (s *Sessao) Iniciar() error {
 	}
 	s.vigia.Add(1)
 	go s.vigiar()
-	return ApertarPermissoes(s.cfg.Dir)
+	// v1.36.1: permissão é endurecimento, não condição para operar (17/11 09:40: o chmod de um
+	// seqnums que o QuickFIX/Go recriava derrubou a partida); os arquivos novos já nascem 600
+	// pelo UMask=0077 da unidade
+	if err := ApertarPermissoes(s.cfg.Dir); err != nil {
+		slog.Warn("pnt: permissões do diretório FIX não apertadas; a partida segue", "dir", s.cfg.Dir, "erro", err)
+	}
+	return nil
 }
 
 func (s *Sessao) subir() error {
@@ -713,14 +719,25 @@ func (s *Sessao) logout(b []byte) string {
 // padrão, log legível por todos); a unidade systemd usa UMask=0077 e isto aperta o que já
 // existia. O store guarda a senha (v1.3 A1) e o log revela o tamanho dela pelo 9 do logon.
 func ApertarPermissoes(dir string) error {
-	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	return filepath.WalkDir(dir, apertar)
+}
+
+// apertar: um passo do WalkDir. O que sumiu entre a listagem e o chmod (v1.36.1: o QuickFIX/Go
+// zera o store de outro dia no logon e recria os *seqnums) é pulado: o arquivo novo já nasce com
+// o UMask da unidade.
+func apertar(p string, d fs.DirEntry, err error) error {
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
 		}
-		modo := fs.FileMode(0o600)
-		if d.IsDir() {
-			modo = 0o700
-		}
-		return os.Chmod(p, modo)
-	})
+		return err
+	}
+	modo := fs.FileMode(0o600)
+	if d.IsDir() {
+		modo = 0o700
+	}
+	if err := os.Chmod(p, modo); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }

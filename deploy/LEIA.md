@@ -500,12 +500,27 @@ Unidade com limite e alerta (uma vez):
 sudo install -o root -g root -m 755 deploy/servico-falhou.sh /opt/kalman-ordens/servico-falhou.sh
 sudo install -o root -g root -m 644 deploy/kalman-ordens.service 'deploy/kalman-ordens-falhou@.service' /etc/systemd/system/
 sudo systemctl daemon-reload
-systemctl show kalman-ordens -p StartLimitBurst -p StartLimitIntervalUSec -p OnFailure   # 5, 5min, kalman-ordens-falhou@kalman-ordens.service.service
+systemctl show kalman-ordens -p StartLimitBurst -p StartLimitIntervalUSec -p OnFailure -p RestartMode -p ExecStopPost
+#   5, 5min, kalman-ordens-falhou@kalman-ordens.service.service, direct, servico-falhou.sh --reiniciando
 ```
 
-O alerta (`[.53 kalman-ordens] CRITICO: a unidade desistiu de subir (...); ultimo erro: ...`) sai pelo
-`/etc/kalman-ordens/disco.env`, como o do disco. Teste: `scripts/teste-servico-falhou.sh`. Com a unidade
-em `failed`, o `restart` exige antes `sudo systemctl reset-failed kalman-ordens`.
+Os dois alertas (v1.36.1; antes, o CRITICO saía já na 1ª falha, com o reinício previsto):
+- **AVISO, a cada falha que o systemd vai reiniciar:** `[.53 kalman-ordens] AVISO: falhou (exit-code,
+  exited 1); ultimo erro: kalman-ordens: ...; o systemd reinicia em 10s (tentativa N de 5)`. Sai do
+  `ExecStopPost` da própria unidade, como o usuário `kalman-ordens`, no sandbox dela, com o
+  `ALERTA_WEBHOOK_URL`/`TELEGRAM_*` do `service.env` que o serviço já tem: não lê o `disco.env`. O
+  último erro vem de `/var/lib/kalman-ordens/ultimo-erro`, que o `servir` grava ao cair. Calado na
+  parada normal e na parada pedida (`stop`/`restart`). O limite conta as partidas em 5 min, inclusive a
+  primeira: a última tentativa anunciada pode ser recusada, e aí vem o CRITICO logo depois.
+- **CRITICO, só quando o systemd desiste** (`RestartMode=direct`: o reinício automático não passa por
+  `failed` e não dispara o `OnFailure`): `[.53 kalman-ordens] CRITICO: a unidade desistiu de subir
+  (...); ultimo erro: ...`. Sai pelo `/etc/kalman-ordens/disco.env`, como o do disco. Se caiu logo
+  depois de instalar um binário novo, voltar ao anterior (o bloco "Todo pacote" acima); senão, o
+  journal.
+
+O token e a URL do bot vão ao `curl` pela entrada padrão (`-K -`), fora da linha de comando. Teste:
+`scripts/teste-servico-falhou.sh`. Com a unidade em `failed`, o `restart` exige antes `sudo systemctl
+reset-failed kalman-ordens`.
 
 Login na Flexscan travado pela guarda (`FLEXSCAN_LOGIN`, "login bloqueado desde ..." ou "limite de 5
 logins em 10m"): com a senha bloqueada na Flexscan, trocar a senha no app e o `FLEXSCAN_SENHA` (a
