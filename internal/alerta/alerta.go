@@ -2,6 +2,8 @@
 // Os críticos repetem a cada ALERTA_REPETICAO_S até serem resolvidos — nos primeiros
 // ALERTA_REPETICAO_CURTA_S; depois, a cada ALERTA_REPETICAO_LONGA_S (22/10: sem enxurrada numa falha
 // longa) —, com "(continua desde HH:MM:SS)" (v1.32 §4); a resolução gera RESOLVIDO.
+// v1.36: os "uma vez" (UmaVez) são guardados pela chave como um crítico (sem duplicar, com o
+// RESOLVIDO), mas não repetem.
 // Confinado à goroutine do motor.
 package alerta
 
@@ -46,8 +48,15 @@ var Catalogo = map[string]bool{
 	// v1.32 §4: a linha única da abertura da Flexscan (login e recadastro que se resolveram sozinhos)
 	"FLEXSCAN_ABERTURA": false,
 	// v1.35 (SPEC-TECNICA-REAL-PELA-TELA-F1): a aprovação do REAL pela tela
-	"REAL_CONTA_DIVERGENTE": true, "REAL_CADASTRO_ILEGIVEL": true, "REAL_RECUSA_ESTADO": false,
+	"REAL_RECUSA_ESTADO": false,
+	// v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE): o cadastro do GQ que o sistema não atende (uma vez, §3.3)
+	// e a segunda entrada de um uid com uma operação aberta no REAL (defeito, uma vez por operação, §2)
+	"REAL_CADASTRO_INUTILIZAVEL": false, "UID_COM_OPERACAO_ABERTA": false,
 }
+
+// UmaVez (v1.36 §3.3): os alertas que se guardam pela chave até o Resolver, como um crítico, mas
+// saem uma vez só (o Tick não repete). Ficam em Ativos enquanto abertos.
+var UmaVez = map[string]bool{"REAL_CADASTRO_INUTILIZAVEL": true}
 
 // Notificador entrega o alerta para fora (Telegram). Não pode bloquear.
 type Notificador interface {
@@ -67,6 +76,7 @@ type critico struct {
 	origem        Origem    // a de quem emitiu: o RESOLVIDO sai com ela
 	desde         time.Time // a emissão: a repetição espaça depois de curtaAte
 	proximo       time.Time
+	umaVez        bool // v1.36: não repete
 }
 
 // Alertas.
@@ -105,7 +115,7 @@ func (a *Alertas) Emitir(codigo, chave, texto string, operacaoID int64) {
 		slog.Error("alerta fora do catálogo", "codigo", codigo)
 		cr = true
 	}
-	if cr {
+	if cr || UmaVez[codigo] {
 		if chave == "" {
 			chave = codigo
 		}
@@ -113,7 +123,8 @@ func (a *Alertas) Emitir(codigo, chave, texto string, operacaoID int64) {
 			return
 		}
 		agora := a.rel.Agora()
-		a.ativos[chave] = &critico{codigo: codigo, texto: texto, operacao: operacaoID, origem: a.origem, desde: agora, proximo: agora.Add(a.repeticao)}
+		a.ativos[chave] = &critico{codigo: codigo, texto: texto, operacao: operacaoID, origem: a.origem, desde: agora, proximo: agora.Add(a.repeticao),
+			umaVez: UmaVez[codigo]}
 	}
 	a.enviar(codigo, texto, operacaoID, a.origem)
 }
@@ -127,7 +138,10 @@ func (a *Alertas) Atualizar(chave, texto string) {
 }
 
 // Resolver encerra um crítico (e avisa com RESOLVIDO).
-func (a *Alertas) Resolver(chave string) {
+func (a *Alertas) Resolver(chave string) { a.ResolverPor(chave, "") }
+
+// ResolverPor (v1.36): o Resolver com o porquê no fim do RESOLVIDO ("uid fora do APROVADO").
+func (a *Alertas) ResolverPor(chave, porque string) {
 	c, ok := a.ativos[chave]
 	if !ok {
 		return
@@ -136,6 +150,9 @@ func (a *Alertas) Resolver(chave string) {
 	texto := c.codigo // sem chave própria a chave é o código: "RESOLVIDO: FONTE_DEGRADADA", não repetido
 	if chave != c.codigo {
 		texto = fmt.Sprintf("%s: %s", c.codigo, chave)
+	}
+	if porque != "" {
+		texto += " (" + ASCII(porque) + ")"
 	}
 	o := c.origem
 	if o == (Origem{}) {
@@ -166,7 +183,7 @@ func (a *Alertas) Tick() {
 	sort.Strings(chaves)
 	for _, k := range chaves {
 		c := a.ativos[k]
-		if agora.Before(c.proximo) {
+		if c.umaVez || agora.Before(c.proximo) {
 			continue
 		}
 		c.proximo = agora.Add(a.repeticao)

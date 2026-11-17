@@ -334,11 +334,13 @@ func (e *Executor) usuario(p roteiro.Passo) error {
 }
 
 // aprova (v1.35, SPEC-TECNICA-REAL-PELA-TELA-F1): a linha REAL já aprovada, como a tela deixaria
-// (o que o roteiro testa é o efeito dela): aprova UID conta=C corretora=N [conector=pnt]
-// [qtd_max=1] [posicao_max=1] [estado=APROVADO|BLOQUEADO|REVOGADO|CONTA_DIVERGENTE|SEM_APROVACAO].
+// (o que o roteiro testa é o efeito dela): aprova UID [estado=APROVADO|BLOQUEADO|REVOGADO|
+// CONTA_DIVERGENTE|SEM_APROVACAO]. v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE): a aprovação não tem conta,
+// conector nem limites; conta=C corretora=N [conector=pnt] [qtd_max=N] [posicao_max=N] simulam uma
+// linha gravada pela v1.35 (que a v1.36 ignora).
 func (e *Executor) aprova(uid int, p roteiro.Passo) error {
 	agora := e.rel.Agora()
-	h := dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteReal, QtdMaxOrdem: 1, PosicaoMax: 1, Conectores: []string{dominio.ConectorPnT},
+	h := dominio.Habilitacao{UID: uid, Ambiente: dominio.AmbienteReal,
 		Por: "roteiro", Motivo: p.Origem, Em: agora, AprovacaoReal: dominio.AprovacaoReal{Estado: dominio.EstadoAprovado, Versao: 1,
 			AprovadoPor: "roteiro", AprovadoEm: agora, AprovadoMotivo: p.Origem, Origem: dominio.OrigemTela}}
 	for _, a := range p.Args[1:] {
@@ -361,11 +363,8 @@ func (e *Executor) aprova(uid int, p roteiro.Passo) error {
 			err = fmt.Errorf("desconhecido")
 		}
 		if err != nil {
-			return fmt.Errorf("aprova UID conta=C corretora=N [conector=pnt] [qtd_max=N] [posicao_max=N] [estado=E]: %s", a)
+			return fmt.Errorf("aprova UID [estado=E] [conta=C corretora=N conector=pnt qtd_max=N posicao_max=N]: %s", a)
 		}
-	}
-	if h.Conta == "" || h.Corretora == 0 {
-		return fmt.Errorf("aprova %d: conta= e corretora= obrigatórios", uid)
 	}
 	h.Habilitado = h.Estado == dominio.EstadoAprovado
 	return e.repo.GravarHabilitacao(h)
@@ -457,6 +456,7 @@ func (e *Executor) subir() error {
 		svc.pontes[amb], svc.receptores[amb], svc.caminhos[amb] = ponte, rec, prefixo+c.Texto("FLEXSCAN_WEBHOOK_SEGREDO", "")
 	}
 	sv := motor.NovoServico(ms...)
+	sv.DefinirRegrasReal(motor.RegrasRealDoEnv(e.cfg))
 	if err := sv.Iniciar(); err != nil {
 		return err
 	}
@@ -900,6 +900,8 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return e.eventos(p)
 	case "alerta", "sem_alerta":
 		return e.alerta(p)
+	case "telegram":
+		return e.telegram(p.Args)
 	}
 	if strings.HasPrefix(p.Verbo, "flx_") {
 		return e.flexscan(p)
@@ -1206,6 +1208,32 @@ func (e *Executor) conferirASCII() error {
 		if err := soASCII("Telegram", t); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// telegram (v1.36): telegram CODIGO = N — quantas mensagens do código foram ao Telegram desde o
+// início do roteiro, com as repetições dos críticos (o evento ALERTA não se repete; o "uma vez" do
+// REAL_CADASTRO_INUTILIZAVEL só se prova aqui).
+func (e *Executor) telegram(args []string) error {
+	if len(args) != 3 || args[1] != "=" {
+		return fmt.Errorf("telegram CODIGO = N")
+	}
+	quer, err := strconv.Atoi(args[2])
+	if err != nil {
+		return fmt.Errorf("telegram CODIGO = N: %v", err)
+	}
+	e.ocioso()
+	e.notif.mu.Lock()
+	defer e.notif.mu.Unlock()
+	var achou []string
+	for _, t := range e.notif.n {
+		if strings.HasPrefix(t, args[0]+": ") {
+			achou = append(achou, t)
+		}
+	}
+	if len(achou) != quer {
+		return fmt.Errorf("telegram %s: %d mensagem(ns), esperava %d: %v", args[0], len(achou), quer, achou)
 	}
 	return nil
 }

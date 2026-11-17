@@ -18,14 +18,6 @@ type Ambientes struct {
 	// Legado: ORDENS_AMBIENTE (HML ou PRODUCAO), a equivalência da transição (§3.1); os conectores
 	// configurados são os do ambiente dela (HML: o PnT também no SIMULADOR, como antes)
 	Legado string
-	// limites próprios do REAL (§3.1); no legado PRODUCAO, os globais
-	Real LimitesReal
-}
-
-// LimitesReal: os limites do REAL, separados dos do SIMULADOR (LIMITE_*).
-type LimitesReal struct {
-	QtdOrdem, EntradasDia, PosicaoMax, EntradasMin int
-	PerdaDiaPts                                    int64
 }
 
 // Os valores de ORDENS_AMBIENTE (legado).
@@ -34,8 +26,11 @@ const (
 	LegadoProducao = "PRODUCAO"
 )
 
-// chaves REAL obrigatórias quando o REAL é permitido (§3.1): o REAL nunca sobe por um padrão
-var chavesReal = []string{"REAL_LIMITE_QTD_ORDEM", "REAL_LIMITE_PERDA_DIA_PTS", "REAL_LIMITE_ENTRADAS_DIA"}
+// chavesLimiteReal (v1.36, SPEC-TECNICA-v1.36-CONTA-LIVRE §2, D7): o REAL não tem limites de
+// negócio; no env, estas chaves são ignoradas com um aviso (não impedem a subida: a volta para a
+// v1.35, que as exige com o REAL permitido, é só a troca do binário).
+var chavesLimiteReal = []string{"REAL_LIMITE_QTD_ORDEM", "REAL_LIMITE_POSICAO_MAX", "REAL_LIMITE_PERDA_DIA_PTS",
+	"REAL_LIMITE_ENTRADAS_DIA", "REAL_LIMITE_ENTRADAS_MIN"}
 
 // chavesExtintas (v1.35, SPEC-REAL-PELA-TELA-F1 D4): com valor, o serviço não sobe (uma só fonte de
 // verdade para quem opera no REAL: a aprovação pela tela).
@@ -62,7 +57,7 @@ func (c Config) LerAmbientes() (a Ambientes, avisos []string, err error) {
 	}
 	if legado != "" {
 		// a equivalência da transição: HML = só o SIMULADOR, com o padrão SIMULADOR; PRODUCAO = só o
-		// REAL, com o padrão REAL e os limites globais (v1.35: com a aprovação, como o REAL)
+		// REAL, com o padrão REAL (v1.35: com a aprovação, como o REAL; v1.36: sem limites de negócio)
 		switch legado {
 		case LegadoHML:
 			a.Permitidos[dominio.AmbienteSimulador] = true
@@ -70,9 +65,6 @@ func (c Config) LerAmbientes() (a Ambientes, avisos []string, err error) {
 		case LegadoProducao:
 			a.Permitidos[dominio.AmbienteReal] = true
 			a.Padrao = dominio.AmbienteReal
-			a.Real = LimitesReal{QtdOrdem: c.Inteiro("LIMITE_QTD_ORDEM", 1), EntradasDia: c.Inteiro("LIMITE_ENTRADAS_DIA", 3000),
-				PosicaoMax: c.Inteiro("LIMITE_POSICAO_MAX", 200), EntradasMin: c.Inteiro("LIMITE_ENTRADAS_MIN", 400),
-				PerdaDiaPts: c.Pontos("LIMITE_PERDA_DIA_PTS", 1500)}
 		default:
 			return a, nil, fmt.Errorf("ORDENS_AMBIENTE=%q: HML ou PRODUCAO", c.Texto("ORDENS_AMBIENTE", ""))
 		}
@@ -80,7 +72,7 @@ func (c Config) LerAmbientes() (a Ambientes, avisos []string, err error) {
 		if c.Texto("AMBIENTE_PADRAO", "") != "" {
 			return a, nil, fmt.Errorf("AMBIENTE_PADRAO com ORDENS_AMBIENTE: o padrão do legado é o ambiente dele")
 		}
-		return a, avisosReal(c, a), nil
+		return a, avisosLimiteReal(c), nil
 	}
 
 	if permitidos == "" {
@@ -107,54 +99,25 @@ func (c Config) LerAmbientes() (a Ambientes, avisos []string, err error) {
 		a.Padrao = amb
 	}
 	if !a.Permitidos[dominio.AmbienteReal] {
-		return a, avisosReal(c, a), nil
-	}
-
-	// o REAL permitido: limites obrigatórios, nunca por um padrão
-	var faltam []string
-	for _, k := range chavesReal {
-		if strings.TrimSpace(c.Texto(k, "")) == "" {
-			faltam = append(faltam, k)
-		}
-	}
-	if len(faltam) > 0 {
-		return a, nil, fmt.Errorf("REAL em AMBIENTES_PERMITIDOS sem %s (SPEC-AMBIENTES-v1 §3.1)", strings.Join(faltam, ", "))
-	}
-	a.Real = c.LimitesReal()
-	if a.Real.QtdOrdem <= 0 || a.Real.EntradasDia <= 0 || a.Real.PerdaDiaPts <= 0 || a.Real.PosicaoMax <= 0 || a.Real.EntradasMin <= 0 {
-		return a, nil, fmt.Errorf("limites REAL: todos maiores que zero (%+v)", a.Real)
+		return a, avisosLimiteReal(c), nil
 	}
 	// v1.26: os conectores do REAL são os das chaves REAL_ (Visao); sem nenhum, o REAL não teria por
 	// onde mandar ordem
 	if c.Texto("REAL_FLEXSCAN_URL", "") == "" && c.Texto("REAL_FLEXSCAN_CORRETORAS", "") == "" && (c.Texto("REAL_FIX_HOST", "") == "" || c.Bool("REAL_PNT_DESLIGADO", false)) {
 		return a, nil, fmt.Errorf("REAL em AMBIENTES_PERMITIDOS sem conector REAL: REAL_FLEXSCAN_URL, REAL_FLEXSCAN_CORRETORAS ou REAL_FIX_HOST (SPEC-AMBIENTES-v1 §2.1)")
 	}
-	return a, nil, nil
+	return a, avisosLimiteReal(c), nil
 }
 
-// avisosReal: as chaves REAL_* preenchidas numa máquina sem o REAL permitido ficam ignoradas.
-func avisosReal(c Config, a Ambientes) []string {
-	if a.Permitidos[dominio.AmbienteReal] {
-		return nil
-	}
+// avisosLimiteReal (v1.36 §2): os REAL_LIMITE_* preenchidos ficam ignorados, com ou sem o REAL.
+func avisosLimiteReal(c Config) []string {
 	var r []string
-	for _, k := range append(append([]string(nil), chavesReal...), "REAL_LIMITE_POSICAO_MAX", "REAL_LIMITE_ENTRADAS_MIN") {
+	for _, k := range chavesLimiteReal {
 		if c.Texto(k, "") != "" {
-			r = append(r, k+" ignorada: REAL fora de AMBIENTES_PERMITIDOS")
+			r = append(r, k+" ignorada: sem limites de negocio no REAL (v1.36, D7)")
 		}
 	}
 	return r
-}
-
-// LimitesReal: os REAL_LIMITE_* do env, com os padrões do §3.1 (zero = ausente nas três
-// obrigatórias). v1.35: lidos também com o REAL fora de AMBIENTES_PERMITIDOS — a aprovação pela
-// tela confere os limites do uid com os da instância (SPEC-TECNICA-REAL-PELA-TELA-F1 §5.3).
-func (c Config) LimitesReal() LimitesReal {
-	l := LimitesReal{QtdOrdem: c.Inteiro("REAL_LIMITE_QTD_ORDEM", 0), EntradasDia: c.Inteiro("REAL_LIMITE_ENTRADAS_DIA", 0),
-		PerdaDiaPts: c.Pontos("REAL_LIMITE_PERDA_DIA_PTS", 0)}
-	l.PosicaoMax = c.Inteiro("REAL_LIMITE_POSICAO_MAX", l.QtdOrdem)
-	l.EntradasMin = c.Inteiro("REAL_LIMITE_ENTRADAS_MIN", c.Inteiro("LIMITE_ENTRADAS_MIN", 400))
-	return l
 }
 
 func separador(r rune) bool { return r == ',' || r == ' ' || r == ';' }

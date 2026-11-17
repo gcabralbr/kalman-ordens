@@ -290,6 +290,17 @@ func (h Habilitacao) EstadoReal() string {
 	return h.Estado
 }
 
+// EstadoVigente (v1.36, SPEC-TECNICA-v1.36-CONTA-LIVRE §1): o estado que vale para decidir. O
+// CONTA_DIVERGENTE da v1.35 não existe mais e vale como APROVADO (o que a 0020 grava; aqui também
+// para uma linha que a v1.35 tenha posto nele depois da 0020, numa volta e reinstalação). O
+// histórico continua mostrando o EstadoReal gravado.
+func (h Habilitacao) EstadoVigente() string {
+	if e := h.EstadoReal(); e != EstadoContaDivergente {
+		return e
+	}
+	return EstadoAprovado
+}
+
 // ConectorAprovado: o conector da aprovação (o único da linha REAL).
 func (h Habilitacao) ConectorAprovado() string {
 	if len(h.Conectores) == 0 {

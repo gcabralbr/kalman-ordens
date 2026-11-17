@@ -113,10 +113,13 @@ func (m *Motor) DestinoDoUsuario(uid int, ambientes []string) (Resposta, error) 
 // mostra para onde iria).
 func (m *Motor) destinoDaEntrada(uid int, amb string) map[string]any {
 	d := map[string]any{"destino": nil, "conector": nil, "corretora": nil, "corretora_codigo": nil, "conta": nil,
-		"habilitado": false, "permitido": false, "pode_enviar": false, "codigo": nil, "motivo": nil, "rotulo": nil, "canal": nil}
+		"habilitado": false, "permitido": false, "pode_enviar": false, "codigo": nil, "motivo": nil, "causa": nil, "rotulo": nil, "canal": nil}
 	falhar := func(r *recusa) {
 		if r != nil && d["codigo"] == nil {
 			d["codigo"], d["motivo"] = r.codigo, r.motivo
+			if r.causa != "" {
+				d["causa"] = r.causa // v1.36: o porquê do REAL_CADASTRO_INUTILIZAVEL
+			}
 		}
 	}
 	d["permitido"] = m.p.Amb.Permitidos[amb]
@@ -154,7 +157,7 @@ func (m *Motor) destinoDaEntrada(uid int, amb string) map[string]any {
 		d["destino"], d["rotulo"] = "PAPER", "Simulador · paper"
 		falhar(simples(f.Codigo, f.Motivo))
 	case f != nil:
-		falhar(simples(f.Codigo, f.Motivo))
+		falhar(&recusa{codigo: f.Codigo, motivo: f.Motivo, causa: f.Causa})
 	default:
 		d["destino"], d["conector"], d["corretora"], d["corretora_codigo"], d["conta"] = "CONECTOR", res.Conector, m.nomeCorretora(res.Destino), res.Destino, res.Conta
 		d["rotulo"] = m.rotuloDestino(amb, res)

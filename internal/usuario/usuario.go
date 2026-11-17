@@ -97,6 +97,8 @@ type Falha struct {
 	Codigo string
 	Motivo string
 	Alerta string // "" = sem alerta
+	// Causa (v1.36 §3.2): na recusa REAL_CADASTRO_INUTILIZAVEL, o código do porquê (CausaConta...)
+	Causa string
 }
 
 func (f *Falha) Error() string { return f.Codigo + ": " + f.Motivo }
@@ -151,39 +153,39 @@ func ResolverCom(rg Regras, texto string, habilitados []string) (Resolvido, *Fal
 	rg = rg.normalizar()
 	ambiente := rg.Ambiente
 	if ambiente != dominio.AmbienteSimulador && ambiente != dominio.AmbienteReal {
-		return Resolvido{}, &Falha{"CONTA_AMBIENTE", fmt.Sprintf("ambiente %q inválido (SIMULADOR ou REAL)", ambiente), "CONTA_AMBIENTE"}
+		return Resolvido{}, &Falha{"CONTA_AMBIENTE", fmt.Sprintf("ambiente %q inválido (SIMULADOR ou REAL)", ambiente), "CONTA_AMBIENTE", ""}
 	}
 	campo := Campo(ambiente)
 	if strings.TrimSpace(texto) == "" {
-		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + " vazio", "USUARIO_CONFIG"}
+		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + " vazio", "USUARIO_CONFIG", ""}
 	}
 	// só os campos usados: o JSON tem credenciais (Robo.StrSenhaRobo, Robo.CCOTxtUser) e nunca vai
 	// inteiro para log, recusa ou banco
 	var cfg configGQ
 	if err := json.Unmarshal([]byte(texto), &cfg); err != nil {
-		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + ": JSON inválido (" + erroJSON(err) + ")", "USUARIO_CONFIG"}
+		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + ": JSON inválido (" + erroJSON(err) + ")", "USUARIO_CONFIG", ""}
 	}
 	if cfg.Robo == nil || len(cfg.Robo.CORSeqId) == 0 {
-		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + ": sem Robo.CORSeqId", "USUARIO_CONFIG"}
+		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + ": sem Robo.CORSeqId", "USUARIO_CONFIG", ""}
 	}
 	var destino int
 	if err := json.Unmarshal(cfg.Robo.CORSeqId, &destino); err != nil {
-		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + ": Robo.CORSeqId não é inteiro: " + string(cfg.Robo.CORSeqId), "USUARIO_CONFIG"}
+		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + ": Robo.CORSeqId não é inteiro: " + string(cfg.Robo.CORSeqId), "USUARIO_CONFIG", ""}
 	}
 	switch {
 	case destino == DestinoGQ && ambiente == dominio.AmbienteReal:
-		return Resolvido{}, &Falha{"DESTINO_INVALIDO", fmt.Sprintf("%s: Robo.CORSeqId %d é o simulador do GQ; no REAL, só uma corretora (%s)", campo, destino, listaCorretoras(rg.Corretoras)), "USUARIO_CONFIG"}
+		return Resolvido{}, &Falha{"DESTINO_INVALIDO", fmt.Sprintf("%s: Robo.CORSeqId %d é o simulador do GQ; no REAL, só uma corretora (%s)", campo, destino, listaCorretoras(rg.Corretoras)), "USUARIO_CONFIG", ""}
 	case destino == DestinoGQ:
 		conta, _, f := cfg.conta(campo)
 		switch {
 		case f != nil:
 			return Resolvido{}, f
 		case conta == ContaPaper:
-			return Resolvido{Conta: conta, Destino: destino}, &Falha{"DESTINO_PAPER", fmt.Sprintf("%s: simulador interno do GQ (9999, conta %s): paper, nenhuma ordem vai ao serviço", campo, ContaPaper), ""}
+			return Resolvido{Conta: conta, Destino: destino}, &Falha{"DESTINO_PAPER", fmt.Sprintf("%s: simulador interno do GQ (9999, conta %s): paper, nenhuma ordem vai ao serviço", campo, ContaPaper), "", ""}
 		}
-		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", fmt.Sprintf("%s: Robo.CORSeqId 9999 (simulador do GQ) sem a conta %s (conta %q)", campo, ContaPaper, conta), "USUARIO_CONFIG"}
+		return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", fmt.Sprintf("%s: Robo.CORSeqId 9999 (simulador do GQ) sem a conta %s (conta %q)", campo, ContaPaper, conta), "USUARIO_CONFIG", ""}
 	case NomeCorretora(destino, rg.Corretoras) == "":
-		return Resolvido{}, &Falha{"DESTINO_INVALIDO", fmt.Sprintf("%s: Robo.CORSeqId %d não é uma corretora conhecida (%s; outra entra em REAL_FLEXSCAN_CORRETORAS)", campo, destino, listaCorretoras(rg.Corretoras)), "USUARIO_CONFIG"}
+		return Resolvido{}, &Falha{"DESTINO_INVALIDO", fmt.Sprintf("%s: Robo.CORSeqId %d não é uma corretora conhecida (%s; outra entra em REAL_FLEXSCAN_CORRETORAS)", campo, destino, listaCorretoras(rg.Corretoras)), "USUARIO_CONFIG", ""}
 	}
 	// o conector: o GQ escolhe (Robo.Conector, gerado pelo GX desde 23/10) entre os da habilitação
 	if len(habilitados) == 0 {
@@ -193,7 +195,7 @@ func ResolverCom(rg Regras, texto string, habilitados []string) (Resolvido, *Fal
 	var gq string
 	if len(cfg.Robo.Conector) > 0 && string(cfg.Robo.Conector) != "null" {
 		if err := json.Unmarshal(cfg.Robo.Conector, &gq); err != nil {
-			return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + ": Robo.Conector não é texto", "USUARIO_CONFIG"}
+			return Resolvido{}, &Falha{"CONFIG_USUARIO_INVALIDA", campo + ": Robo.Conector não é texto", "USUARIO_CONFIG", ""}
 		}
 		gq = strings.ToUpper(strings.TrimSpace(gq))
 	}
@@ -206,26 +208,26 @@ func ResolverCom(rg Regras, texto string, habilitados []string) (Resolvido, *Fal
 			}
 		}
 		if conector == "" {
-			return Resolvido{}, &Falha{"CONECTOR_NAO_HABILITADO", fmt.Sprintf("%s: Robo.Conector %s fora da habilitação do uid (%s)", campo, gq, lista), ""}
+			return Resolvido{}, &Falha{"CONECTOR_NAO_HABILITADO", fmt.Sprintf("%s: Robo.Conector %s fora da habilitação do uid (%s)", campo, gq, lista), "", ""}
 		}
 	case len(habilitados) == 1:
 		conector = habilitados[0]
 	default:
-		return Resolvido{}, &Falha{"CONECTOR_INDEFINIDO", fmt.Sprintf("%s: sem Robo.Conector no GQ e a habilitação tem mais de um conector (%s)", campo, lista), ""}
+		return Resolvido{}, &Falha{"CONECTOR_INDEFINIDO", fmt.Sprintf("%s: sem Robo.Conector no GQ e a habilitação tem mais de um conector (%s)", campo, lista), "", ""}
 	}
 	contasSim, listaSim := rg.ContasHML, "ORDENS_CONTAS_HML"
 	switch conector {
 	case dominio.ConectorPnT:
 		if ambiente == dominio.AmbienteSimulador && !rg.PnTNoSimulador {
-			return Resolvido{}, &Falha{"CONECTOR_AMBIENTE", "o PnT só opera no REAL (a HML do PnT é D-1)", ""}
+			return Resolvido{}, &Falha{"CONECTOR_AMBIENTE", "o PnT só opera no REAL (a HML do PnT é D-1)", "", ""}
 		}
 	case dominio.ConectorFlexscan:
 		if !rg.Flexscan {
-			return Resolvido{}, &Falha{"CONECTOR_NAO_CONFIGURADO", "conector FLEXSCAN na habilitação, mas esta instância não tem FLEXSCAN_URL", ""}
+			return Resolvido{}, &Falha{"CONECTOR_NAO_CONFIGURADO", "conector FLEXSCAN na habilitação, mas esta instância não tem FLEXSCAN_URL", "", ""}
 		}
 		contasSim, listaSim = rg.ContasHMLFlx, "FLEXSCAN_CONTAS_HML"
 	default:
-		return Resolvido{}, &Falha{"CONECTOR_NAO_CONFIGURADO", fmt.Sprintf("conector %q desconhecido", conector), ""}
+		return Resolvido{}, &Falha{"CONECTOR_NAO_CONFIGURADO", fmt.Sprintf("conector %q desconhecido", conector), "", ""}
 	}
 	conta, origem, f := cfg.conta(campo)
 	if f != nil {
@@ -233,18 +235,18 @@ func ResolverCom(rg Regras, texto string, habilitados []string) (Resolvido, *Fal
 	}
 	switch {
 	case conector == dominio.ConectorFlexscan && !contaFlexscan.MatchString(conta):
-		return Resolvido{}, &Falha{"CONTA_INVALIDA", fmt.Sprintf("%s: conector FLEXSCAN: conta %q (%s) inválida (até 20 letras, dígitos e hífen)", campo, conta, origem), "USUARIO_CONFIG"}
+		return Resolvido{}, &Falha{"CONTA_INVALIDA", fmt.Sprintf("%s: conector FLEXSCAN: conta %q (%s) inválida (até 20 letras, dígitos e hífen)", campo, conta, origem), "USUARIO_CONFIG", ""}
 	case conector == dominio.ConectorPnT && !soDigitos.MatchString(conta):
-		return Resolvido{}, &Falha{"CONTA_INVALIDA", fmt.Sprintf("%s: conector PNT: conta %q (%s) não é só dígitos", campo, conta, origem), "USUARIO_CONFIG"}
+		return Resolvido{}, &Falha{"CONTA_INVALIDA", fmt.Sprintf("%s: conector PNT: conta %q (%s) não é só dígitos", campo, conta, origem), "USUARIO_CONFIG", ""}
 	}
 	if ambiente == dominio.AmbienteSimulador {
 		if !contem(contasSim, conta) {
-			return Resolvido{}, &Falha{"CONTA_AMBIENTE", fmt.Sprintf("conta %s fora de %s no SIMULADOR", conta, listaSim), "CONTA_AMBIENTE"}
+			return Resolvido{}, &Falha{"CONTA_AMBIENTE", fmt.Sprintf("conta %s fora de %s no SIMULADOR", conta, listaSim), "CONTA_AMBIENTE", ""}
 		}
 	} else {
 		// REAL: nenhuma conta de simulador, de nenhum conector
 		if contem(rg.ContasHML, conta) || contem(rg.ContasHMLFlx, conta) {
-			return Resolvido{}, &Falha{"CONTA_AMBIENTE", fmt.Sprintf("conta de simulador %s no REAL", conta), "CONTA_AMBIENTE"}
+			return Resolvido{}, &Falha{"CONTA_AMBIENTE", fmt.Sprintf("conta de simulador %s no REAL", conta), "CONTA_AMBIENTE", ""}
 		}
 	}
 	return Resolvido{Conta: conta, Destino: destino, Conector: conector, OrigemConta: origem}, nil
@@ -265,14 +267,14 @@ func (cfg configGQ) conta(campo string) (conta, origem string, f *Falha) {
 	origem = "Futuros.CCONroContaFut"
 	if cfg.Futuros != nil && len(cfg.Futuros.CCONroContaFut) > 0 && string(cfg.Futuros.CCONroContaFut) != "null" {
 		if err := json.Unmarshal(cfg.Futuros.CCONroContaFut, &conta); err != nil {
-			return "", "", &Falha{"CONTA_INVALIDA", campo + ": Futuros.CCONroContaFut não é texto", "USUARIO_CONFIG"}
+			return "", "", &Falha{"CONTA_INVALIDA", campo + ": Futuros.CCONroContaFut não é texto", "USUARIO_CONFIG", ""}
 		}
 		conta = strings.TrimSpace(conta)
 	}
 	if conta == "" {
 		origem = "Robo.CCONroConta"
 		if err := json.Unmarshal(cfg.Robo.CCONroConta, &conta); err != nil {
-			return "", "", &Falha{"CONTA_INVALIDA", campo + ": sem Futuros.CCONroContaFut e Robo.CCONroConta ausente ou não é texto", "USUARIO_CONFIG"}
+			return "", "", &Falha{"CONTA_INVALIDA", campo + ": sem Futuros.CCONroContaFut e Robo.CCONroConta ausente ou não é texto", "USUARIO_CONFIG", ""}
 		}
 		conta = strings.TrimSpace(conta)
 	}
@@ -292,7 +294,7 @@ type Cadastro struct {
 // vazio, JSON inválido, sem Robo, sem CORSeqId inteiro, sem conta, ou Conector que não é texto.
 func LerCadastro(texto string) (Cadastro, *Falha) {
 	ilegivel := func(motivo string) (Cadastro, *Falha) {
-		return Cadastro{}, &Falha{"CADASTRO_ILEGIVEL", motivo, "USUARIO_CONFIG"}
+		return Cadastro{}, &Falha{"CADASTRO_ILEGIVEL", motivo, "USUARIO_CONFIG", ""}
 	}
 	if strings.TrimSpace(texto) == "" {
 		return ilegivel("vazio")

@@ -1,8 +1,6 @@
 package config
 
 import (
-	"strconv"
-
 	"gammaquant.com.br/kalman-ordens/internal/dominio"
 )
 
@@ -75,11 +73,8 @@ func (c Config) Visao(a Ambientes, amb string) (Config, []string) {
 	// o PnT do REAL existe com REAL_FIX_HOST; REAL_PNT_DESLIGADO o desliga
 	desl := c.Texto("REAL_FIX_HOST", "") == "" || c.Bool("REAL_PNT_DESLIGADO", false)
 	v.v["PNT_DESLIGADO"] = map[bool]string{true: "1", false: "0"}[desl]
-	// os limites do REAL (§3.1) no lugar dos LIMITE_ do SIMULADOR
-	for k, n := range map[string]int{"LIMITE_QTD_ORDEM": a.Real.QtdOrdem, "LIMITE_ENTRADAS_DIA": a.Real.EntradasDia,
-		"LIMITE_POSICAO_MAX": a.Real.PosicaoMax, "LIMITE_ENTRADAS_MIN": a.Real.EntradasMin, "LIMITE_PERDA_DIA_PTS": int(a.Real.PerdaDiaPts)} {
-		v.v[k] = strconv.Itoa(n)
-	}
+	// v1.36 §2 (D7): o REAL não tem limites de negócio; a instância REAL pula as conferências deles
+	// (os LIMITE_* do SIMULADOR ficam na visão, sem efeito no REAL)
 	// o FLEXSCAN_CONTAS_HML e o ORDENS_CONTAS_HML continuam: são a trava do §4.1 item 8, nos dois sentidos
 	return v, nil
 }

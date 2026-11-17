@@ -9,6 +9,17 @@ e depois a cada 5 min (`ALERTA_REPETICAO_LONGA_S`), até a condição se resolve
 `(continua desde HH:MM:SS)` no fim do texto (a hora da emissão; v1.32 §4); a resolução
 gera um alerta `RESOLVIDO` com o código original no texto (`RESOLVIDO: FONTE_DEGRADADA`; com chave
 própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
+**Uma vez** (v1.36, SPEC-TECNICA-v1.36-CONTA-LIVRE §3.3): não crítico, mas guardado pela chave como um
+crítico: sai uma vez só, não repete, fica em `/saude` `alertas_criticos` enquanto aberto e gera o
+`RESOLVIDO` quando a condição acaba. Hoje só o `REAL_CADASTRO_INUTILIZAVEL`. O estado fica em memória:
+depois de um restart, uma condição que continua sai mais uma vez.
+
+**No REAL, sem limites de negócio** (v1.36 §2, D7): os `REAL_LIMITE_*` não valem e não são exigidos
+(no env, são ignorados com aviso na partida). No REAL não saem `QTD_MAXIMA`, `POSICAO_MAXIMA`,
+`INTERVALO_MINIMO`, `ENTRADAS_POR_MINUTO`, `ENTRADAS_POR_DIA`, `ENTRADAS_POR_MINUTO_UID`,
+`INTERVALO_MINIMO_UID`, `PERDA_DIARIA` (nem a Parada automática por perda) e `BOOK_DESCOLADO`. Ficam o
+`ORDENS_POR_MINUTO` (`LIMITE_MENSAGENS_MIN`), a Parada das 50 recusas e o `UID_COM_OPERACAO_ABERTA`.
+O SIMULADOR continua com todos.
 
 ## Alertas
 
@@ -66,9 +77,9 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `USUARIO_CONFIG` | configuração do usuário no GQ inutilizável na entrada: JSON inválido, sem `Robo`, uid sem linha em `acusuario`, corretora desconhecida ou o simulador do GQ, conta fora da regra do conector, `acusuario` ou habilitação ilegíveis | não |
 | `CONTA_AMBIENTE` | trava da conta por ambiente (SPEC-AMBIENTES-v1 §4.1): no SIMULADOR, conta fora da lista de simulador do conector (`ORDENS_CONTAS_HML`, `FLEXSCAN_CONTAS_HML`); no REAL, conta de qualquer lista de simulador; por uid, resolvido na próxima entrada válida dele | sim |
 | `AMBIENTE_NAO_PERMITIDO` | (SPEC-AMBIENTES-v1 §3) entrada REAL numa máquina sem o REAL em `AMBIENTES_PERMITIDOS` (o SIMULADOR fora dela é só recusa) | sim |
-| `REAL_CONTA_DIVERGENTE` | (v1.35, SPEC-TECNICA-REAL-PELA-TELA-F1 §3.2) o cadastro do GQ (`usutxtconfigprd`: conector, corretora ou conta) deixou de bater com o aprovado: o uid vai para CONTA_DIVERGENTE e as entradas REAL novas são recusadas; o texto traz aprovado × atual e a posição aberta (que segue na conta da operação); por uid; resolve quando o cadastro volta ao aprovado, numa nova aprovação ou quando o admin bloqueia/revoga e o cadastro volta. Substitui, no REAL, o `CONTA_ALTERADA_COM_POSICAO` | sim |
-| `REAL_CADASTRO_ILEGIVEL` | (v1.35, §3.1) a `usutxtconfigprd` de um uid com aprovação não se lê (vazia, JSON inválido, sem `Robo.CORSeqId` ou sem conta): entradas REAL recusadas, a posição aberta segue na conta da operação; por uid; resolve quando a coluna volta a ser lida | sim |
-| `REAL_RECUSA_ESTADO` | (v1.35, §2.1) entrada REAL recusada pelo estado da aprovação (sem aprovação, bloqueado, revogado, conta divergente): a tela deveria ter desabilitado o "Enviar ordens"; uma vez por uid, estado e versão | não |
+| `REAL_RECUSA_ESTADO` | (v1.35, §2.1) entrada REAL recusada pelo estado da aprovação (sem aprovação, bloqueado, revogado): a tela deveria ter desabilitado o "Enviar ordens"; uma vez por uid, estado e versão | não |
+| `REAL_CADASTRO_INUTILIZAVEL` | (v1.36 §3) o cadastro do GQ (`usutxtconfigprd`) de um uid `APROVADO` não é atendido pelo sistema (ilegível, sem `Robo.Conector`, conector que a máquina não tem, corretora não atendida — pelo PnT só BTG —, conta vazia, inválida, de simulador ou fora do guarda-chuva Flexscan): entradas REAL recusadas; a posição aberta segue na conta da operação. **Uma vez** por uid, pelo verificador (só com a instância REAL); `RESOLVIDO` quando volta a ser usável ou o uid sai do APROVADO. Trocar a conta no GQ não gera alerta (D6). Substitui o `REAL_CONTA_DIVERGENTE` e o `REAL_CADASTRO_ILEGIVEL` da v1.35 | não |
+| `UID_COM_OPERACAO_ABERTA` | (v1.36 §2) defeito: entrada REAL de um uid que já tem uma operação não final na instância REAL (qualquer módulo); uma vez por operação aberta | não |
 | `AMBIENTE_PEDIDO_DIVERGENTE` | (SPEC-AMBIENTES-v1 §1.2) saída ou ajuste do stop com `ambiente` diferente do gravado na operação: executado no gravado (nunca recusa a saída); por operação | sim |
 | `CONECTOR_FORA_COM_POSICAO` | (v1.28) o conector da operação está fora do ar há mais de `CONECTOR_FORA_TOLERANCIA_S` com posição ou ordem viva: a operação fica SUSPENSA; o texto traz corretora, conta, lado, quantidade, preço médio, a stop que segue valendo e a orientação de sair pela corretora (home broker, Profit, mesa); resolve na volta (vira `OPERACAO_SUSPENSA`) ou ao zerar | sim |
 | `OPERACAO_SUSPENSA` | (v1.28) o conector voltou e a operação segue SUSPENSA: a conciliação sugere o caso (ex.: "stop cancelada fora sem fill: provável zeragem manual") e o admin confirma a posição na corretora (`kalman-ordens operacao confirmar`); resolve com ENCERRADA_FORA, RETOMADA ou ZERADA | sim |
@@ -114,8 +125,8 @@ própria, `RESOLVIDO: SEM_PROTECAO: <chave>`).
 | `REAL_SEM_APROVACAO` | (v1.35) REAL de uid sem aprovação do admin (sem linha REAL, ou `SEM_APROVACAO`) | não | `REAL_RECUSA_ESTADO` |
 | `REAL_BLOQUEADO` | (v1.35) REAL de uid bloqueado pelo admin; o motivo traz o do bloqueio | não | `REAL_RECUSA_ESTADO` |
 | `REAL_REVOGADO` | (v1.35) REAL de uid revogado: só uma nova aprovação | não | `REAL_RECUSA_ESTADO` |
-| `REAL_CONTA_DIVERGENTE` | (v1.35) REAL com o cadastro do GQ diferente do aprovado (aprovado × atual no motivo) | não | `REAL_CONTA_DIVERGENTE` (crítico, pelo avaliador) |
-| `REAL_CADASTRO_ILEGIVEL` | (v1.35) REAL com a `usutxtconfigprd` ilegível | não | `REAL_CADASTRO_ILEGIVEL` (crítico, pelo avaliador) |
+| `REAL_CADASTRO_INUTILIZAVEL` | (v1.36 §3.2) REAL de uid aprovado com o cadastro do GQ que o sistema não atende; `causa`: `CADASTRO_ILEGIVEL`, `CONECTOR_NAO_ATENDIDO`, `CORRETORA_NAO_ATENDIDA` ou `CONTA_INVALIDA`. No REAL, substitui `DESTINO_INVALIDO`, `CONECTOR_*`, `CONTA_INVALIDA`, `CONTA_AMBIENTE`, `CONFIG_USUARIO_INVALIDA`, `CORRETORA_SEM_CREDENCIAL` e `CONTA_FORA_DA_CORRETORA` | não | `REAL_CADASTRO_INUTILIZAVEL` (uma vez, pelo verificador) |
+| `UID_COM_OPERACAO_ABERTA` | (v1.36 §2) REAL de uid com uma operação não final na instância REAL; não conta para a Parada das 50 recusas | não | `UID_COM_OPERACAO_ABERTA` (uma vez por operação) |
 | `AMBIENTE_DIVERGENTE` | entrada repetida (mesmo `operacao_id`) com outro ambiente | não | — |
 | `CONTA_INVALIDA` | `Robo.CCONroConta` ausente; pela regra do conector da habilitação: PnT só dígitos (o simulador usa `QUANT`); Flexscan até 20 letras, dígitos e hífen | não | `USUARIO_CONFIG` |
 | `CONTA_AMBIENTE` | trava da conta por ambiente (SPEC-AMBIENTES-v1 §4.1 item 8) | não | `CONTA_AMBIENTE` (crítico) |
@@ -262,25 +273,19 @@ estes códigos.
 
 ## Aprovação do REAL pela tela (v1.35, SPEC-TECNICA-REAL-PELA-TELA-F1 §5)
 
-`POST /usuarios/{uid}/real/{aprovar|bloquear|desbloquear|revogar|limites}` → `{aceito, codigo, motivo,
-estado, versao}`. Nenhum gera alerta por si (o `REAL_CONTA_DIVERGENTE` do desbloquear sai pelo
-avaliador).
+`POST /usuarios/{uid}/real/{aprovar|bloquear|desbloquear|revogar}` → `{aceito, codigo, motivo,
+estado, versao}`. Nenhum gera alerta por si. v1.36: o aprovar não envolve conta nem limites (`visto`,
+`qtd_max_ordem` e `posicao_max` são aceitos e ignorados) e a ação `limites` saiu (400).
 
 | Código | HTTP | Quando |
 |---|---|---|
-| `APROVADO` | 200 | aceito: aprovado com o cadastro do GQ e os limites |
+| `APROVADO` | 200 | aceito: aprovado (sem conta e sem limites; com o cadastro do GQ inutilizável, o motivo avisa) |
 | `BLOQUEADO` | 200 | aceito: entradas novas recusadas; posição, 1014 e saídas seguem |
 | `DESBLOQUEADO` | 200 | aceito: de volta a APROVADO |
-| `CONTA_DIVERGENTE` | 200 | aceito (desbloquear): o cadastro do GQ mudou durante o bloqueio; aprovado × atual no motivo |
 | `REVOGADO` | 200 | aceito: só uma nova aprovação |
-| `LIMITES_ALTERADOS` | 200 | aceito: os limites do uid, com a versão nova |
-| `CAMPO_INVALIDO` | 400 | uid, JSON, ação, `motivo` (3 a 200), `por`, `versao`, limites, `visto` |
+| `CAMPO_INVALIDO` | 400 | uid, JSON, ação (inclusive `limites`, desde a v1.36), `motivo` (3 a 200), `por`, `versao` |
 | `TRANSICAO_INVALIDA` | 409 | a ação não se aplica ao estado atual |
 | `VERSAO_MUDOU` | 409 | a linha mudou depois da ficha que a tela mostrou |
-| `CADASTRO_MUDOU` | 409 | aprovar: o cadastro do GQ não é mais o `visto` |
-| `CADASTRO_INVALIDO` | 422 | aprovar: o cadastro do GQ não serve para o REAL (ilegível, sem linha, corretora desconhecida, conta de simulador) |
-| `LIMITE_ACIMA_DA_INSTANCIA` | 422 | limites do uid acima dos `REAL_LIMITE_QTD_ORDEM`/`_POSICAO_MAX` |
-| `LIMITES_INSTANCIA_AUSENTES` | 422 | sem `REAL_LIMITE_QTD_ORDEM` ou `REAL_LIMITE_POSICAO_MAX` no env |
 | `CONFIG_USUARIO_INDISPONIVEL` | 503 | o banco do serviço ou o do GQ não respondeu |
 
 ## Rejeições e avisos conhecidos do PnT

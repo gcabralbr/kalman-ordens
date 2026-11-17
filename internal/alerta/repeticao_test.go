@@ -88,3 +88,30 @@ func TestTextoDoResolvido(t *testing.T) {
 		t.Fatalf("textos %q", n.textos)
 	}
 }
+
+// v1.36 §3.3: o "uma vez" sai uma vez só por chave, não repete, fica aberto até o Resolver (com o
+// RESOLVIDO e o porquê) e volta a sair numa emissão nova.
+func TestUmaVez(t *testing.T) {
+	rel := relogio.NovoControlado(time.Date(2026, 11, 17, 13, 0, 0, 0, time.UTC))
+	n := &notifLista{}
+	a := Novo(n, nil, rel, 30*time.Second)
+	a.Espacar(2*time.Minute, 5*time.Minute)
+	a.Emitir("REAL_CADASTRO_INUTILIZAVEL", "REAL_CADASTRO_INUTILIZAVEL:1450", "uid 1450: corretora 107", 0)
+	a.Emitir("REAL_CADASTRO_INUTILIZAVEL", "REAL_CADASTRO_INUTILIZAVEL:1450", "uid 1450: de novo", 0)
+	a.Atualizar("REAL_CADASTRO_INUTILIZAVEL:1450", "uid 1450: conta vazia")
+	for s := 0; s < 20*60; s++ {
+		rel.Avancar(time.Second)
+		a.Tick()
+	}
+	if len(n.textos) != 1 || !a.Ativo("REAL_CADASTRO_INUTILIZAVEL:1450") || a.Ativos()["REAL_CADASTRO_INUTILIZAVEL:1450"] != "REAL_CADASTRO_INUTILIZAVEL" {
+		t.Fatalf("uma vez: %v", n.textos)
+	}
+	a.ResolverPor("REAL_CADASTRO_INUTILIZAVEL:1450", "uid fora do APROVADO")
+	if ult := n.textos[len(n.textos)-1]; ult != "RESOLVIDO: REAL_CADASTRO_INUTILIZAVEL: REAL_CADASTRO_INUTILIZAVEL:1450 (uid fora do APROVADO)" {
+		t.Fatalf("resolvido %q", ult)
+	}
+	a.Emitir("REAL_CADASTRO_INUTILIZAVEL", "REAL_CADASTRO_INUTILIZAVEL:1450", "uid 1450: outra vez", 0)
+	if len(n.textos) != 3 {
+		t.Fatalf("emissão nova depois do RESOLVIDO: %v", n.textos)
+	}
+}

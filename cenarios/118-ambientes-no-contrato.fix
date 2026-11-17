@@ -77,8 +77,9 @@ evento ZERADA operacao_id=11806 ambiente=SIMULADOR
 http GET /usuarios/8/destino
 contrato docs/SPEC-ORDENS-v1.28.md 3.2
 resposta ambientes.SIMULADOR.destino=CONECTOR ambientes.SIMULADOR.conector=FLEXSCAN ambientes.SIMULADOR.corretora=BTG ambientes.SIMULADOR.conta=S-1117150 ambientes.SIMULADOR.pode_enviar=true "ambientes.SIMULADOR.rotulo=Simulador · Flexscan"
-# v1.35: sem REAL_CONTAS, o REAL não permitido ainda mostra para onde iria (a coluna resolve), com o código do teto
-resposta ambientes.REAL.destino=CONECTOR ambientes.REAL.conta=715124 ambientes.REAL.permitido=false ambientes.REAL.pode_enviar=false ambientes.REAL.codigo=AMBIENTE_NAO_PERMITIDO
+# v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE §3.1): o REAL não permitido resolve o cadastro pelo que a
+# máquina atenderia no REAL (o env): sem Flexscan REAL aqui, ele não resolve; o código é o do teto
+resposta ambientes.REAL.destino=null ambientes.REAL.conta=null ambientes.REAL.permitido=false ambientes.REAL.pode_enviar=false ambientes.REAL.codigo=AMBIENTE_NAO_PERMITIDO ambientes.REAL.causa=null
 http GET /usuarios/9/destino?ambiente=SIMULADOR
 resposta ambientes.SIMULADOR.destino=PAPER ambientes.SIMULADOR.pode_enviar=false ambientes.SIMULADOR.codigo=DESTINO_PAPER "ambientes.SIMULADOR.rotulo=Simulador · paper"
 # v1.27: o /destino dá o mesmo código que a entrada daria (11804 DESTINO_PAPER, 11805 CONECTOR_AMBIENTE)

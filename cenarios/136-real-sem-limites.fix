@@ -1,0 +1,135 @@
+cenario 136 v1.36 (SPEC-TECNICA-v1.36-CONTA-LIVRE §2, D7): o REAL sem limites de negócio nem de estratégia — os REAL_LIMITE_* no env não valem (qtd=2 e mais entradas no dia e no minuto que eles deixariam); sem ENTRADAS_POR_MINUTO_UID, INTERVALO_MINIMO_UID e BOOK_DESCOLADO; ficam a trava de uma operação aberta por uid (UID_COM_OPERACAO_ABERTA, um alerta de defeito por operação, fora das recusas da Parada), o LIMITE_MENSAGENS_MIN e a Parada das recusas
+hora 2026-11-17 10:00:00
+config ORDENS_AMBIENTE=
+config ORDENS_CONTAS_HML=
+config AMBIENTES_PERMITIDOS=REAL
+config REAL_FIX_HOST=pnt-falso
+# os REAL_LIMITE_* da v1.35 no env: ignorados (aviso na partida), sem efeito
+config REAL_LIMITE_QTD_ORDEM=1
+config REAL_LIMITE_POSICAO_MAX=1
+config REAL_LIMITE_PERDA_DIA_PTS=300
+config REAL_LIMITE_ENTRADAS_DIA=2
+config REAL_LIMITE_ENTRADAS_MIN=1
+# as travas contra defeito, baixas para o roteiro
+config LIMITE_RECUSAS_PARADA=3
+config LIMITE_MENSAGENS_MIN=9
+usuario 7 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"12345"}}
+aprova 7
+usuario 8 prd {"Robo":{"Conector":"PNT","CORSeqId":85,"CCONroConta":"88888"}}
+aprova 8
+
+preco ticker=WINZ26 bid=130000 ask=130005 preco=130000 status84=0 idade=100ms
+aguarda_logon
+avanca 3s
+alerta CONCILIACAO
+
+# --- qtd=2 (acima do REAL_LIMITE_QTD_ORDEM=1) com o book descolado (|meio - preco| > 150): aceita; a
+# corretora recusa (a operação encerra sem entrada)
+preco bid=130000 ask=130005 preco=130200
+entrada 13601 C qtd=2 ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13601-1 1=12345 38=2 54=1 847=1031
+envia @ER 11=KM-E-13601-1 37=dsa.13601 150=8 39=8 54=1 38=2 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected"
+avanca 1s
+
+# --- mais três entradas no mesmo sentido em segundos: sem ENTRADAS_POR_MINUTO_UID (3), INTERVALO_MINIMO_UID
+# (30 s), REAL_LIMITE_ENTRADAS_DIA=2 nem REAL_LIMITE_ENTRADAS_MIN=1
+preco preco=130000
+entrada 13602 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13602-1 1=12345 38=1 54=1 847=1031
+envia @ER 11=KM-E-13602-1 37=dsa.13602 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13602"
+avanca 1s
+entrada 13603 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13603-1 1=12345 38=1 54=1 847=1031
+envia @ER 11=KM-E-13603-1 37=dsa.13603 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13603"
+avanca 1s
+entrada 13604 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13604-1 1=12345 38=1 54=1 847=1031
+envia @ER 11=KM-E-13604-1 37=dsa.13604 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13604"
+avanca 1s
+saude parada=null
+
+# --- uma operação aberta por uid: a 13605 fica trabalhando; três entradas a mais são
+# UID_COM_OPERACAO_ABERTA, com um alerta de defeito só e sem contar para a Parada (limite 3)
+entrada 13605 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13605-1 1=12345 847=1031
+envia @ER 11=KM-E-13605-1 37=dsa.13605 150=0 39=0 54=1 38=1 44=130020 847=1031 14=0 151=1 6=0
+entrada 13606 V ambiente=REAL
+resposta aceito=false codigo=UID_COM_OPERACAO_ABERTA "motivo=~operacao 13605 aberta"
+entrada 13607 V ambiente=REAL
+resposta aceito=false codigo=UID_COM_OPERACAO_ABERTA "motivo=~operacao 13605 aberta"
+entrada 13608 V ambiente=REAL
+resposta aceito=false codigo=UID_COM_OPERACAO_ABERTA "motivo=~operacao 13605 aberta"
+nada 35=D
+alerta UID_COM_OPERACAO_ABERTA
+telegram UID_COM_OPERACAO_ABERTA = 1
+saude parada=null
+# o outro uid (o 8) não é afetado pela operação do 7
+entrada 13609 C uid=8 ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13609-1 1=88888 847=1031
+envia @ER 11=KM-E-13609-1 37=dsa.13609 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13609"
+# a 13605 expira (TIMEOUT_ENTRADA_S): o cancelamento e o 150=4; a operação encerra sem entrada
+avanca 3s
+recebe 35=F 11=KM-E-13605-2 41=KM-E-13605-1
+envia @ER 11=KM-E-13605-2 41=KM-E-13605-1 37=dsa.13605 150=4 39=4 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0
+avanca 1s
+
+# --- LIMITE_MENSAGENS_MIN (9 no roteiro): continua valendo no REAL
+avanca 61s
+entrada 13610 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13610-1 1=12345 847=1031
+envia @ER 11=KM-E-13610-1 37=dsa.13610 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13610"
+entrada 13611 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13611-1 1=12345 847=1031
+envia @ER 11=KM-E-13611-1 37=dsa.13611 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13611"
+entrada 13612 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13612-1 1=12345 847=1031
+envia @ER 11=KM-E-13612-1 37=dsa.13612 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13612"
+entrada 13613 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13613-1 1=12345 847=1031
+envia @ER 11=KM-E-13613-1 37=dsa.13613 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13613"
+entrada 13614 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13614-1 1=12345 847=1031
+envia @ER 11=KM-E-13614-1 37=dsa.13614 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13614"
+entrada 13615 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13615-1 1=12345 847=1031
+envia @ER 11=KM-E-13615-1 37=dsa.13615 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13615"
+entrada 13616 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13616-1 1=12345 847=1031
+envia @ER 11=KM-E-13616-1 37=dsa.13616 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13616"
+entrada 13617 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13617-1 1=12345 847=1031
+envia @ER 11=KM-E-13617-1 37=dsa.13617 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13617"
+entrada 13618 C ambiente=REAL
+resposta aceito=true
+recebe 35=D 11=KM-E-13618-1 1=12345 847=1031
+envia @ER 11=KM-E-13618-1 37=dsa.13618 150=8 39=8 54=1 38=1 44=130020 847=1031 14=0 151=0 6=0 58="[DSA-xx] Rejected 13618"
+entrada 13619 C ambiente=REAL
+resposta aceito=false codigo=ORDENS_POR_MINUTO
+alerta LIMITE
+
+# --- a Parada das recusas (3 no roteiro) continua: três entradas em leilão (LEILAO) param o REAL
+avanca 61s
+preco status84=1
+entrada 13620 C ambiente=REAL
+resposta aceito=false codigo=LEILAO
+entrada 13621 C ambiente=REAL
+resposta aceito=false codigo=LEILAO
+entrada 13622 C ambiente=REAL
+resposta aceito=false codigo=LEILAO
+alerta PARADA
+saude parada.modo=BLOQUEAR parada.origem=auto
+nada 35=D
