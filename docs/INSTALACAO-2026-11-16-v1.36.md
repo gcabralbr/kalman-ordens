@@ -396,3 +396,24 @@ sudo systemctl start kalman-ordens
 - o merge da `v1.36` no `main`;
 - avisar o CC do Kalman do contrato novo (§5 da SPEC técnica da v1.36) para a atualização das telas;
 - a cópia `antes-0019` pode sair; a `antes-0020` fica até alguns pregões com a v1.36.
+
+## 12. Resultado (17/11, pelo George)
+
+- **14:32: v1.36 `5c1e7b004e3d` instalada** por este roteiro (`ea0cc03`), depois da zeragem, com o
+  REAL desligado.
+  - A 0020 foi aplicada sem mudar linhas, e o histórico ficou em 25 → 25.
+  - Os cinco `REAL_LIMITE_*` foram ignorados com aviso ("sem limites de negocio no REAL (v1.36)").
+  - O SIMULADOR ficou igual nas duas comparações.
+  - O cadastro do 1450 ficou `CONECTOR_NAO_ATENDIDO` com o REAL desligado, como esperado (§7).
+- **Cópia do banco:** `/var/backups/kalman-ordens/antes-0020-20261117-143124.sql.gz`.
+- **Binário anterior:** `/opt/kalman-ordens/kalman-ordens.09872ead98f2` (a v1.35), para a volta (§9).
+- **14:34: REAL religado** com o `service.env.real-1711` (`REAL-2026-11-17-ligar-v135.md`).
+  - A sessão GAMMAQ2 logou.
+  - A conciliação deu 0/0.
+  - O cadastro do 1450 voltou válido (`cadastro_utilizavel: true`, `APROVADO`).
+  - O erro do `chmod` não voltou. A correção está na v1.36.1.
+- **Conferência minha, às 14:4x:**
+  - `versao` `5c1e7b004e3d` e `criticos {}`;
+  - posições 0 nos dois ambientes, e a sessão REAL e a Flexscan do SIMULADOR logadas;
+  - no journal desde as 14:34: nenhum ERROR, só os avisos esperados da configuração e as duas `CONCILIACAO`.
+- **Retrato do instalado:** `5c1e7b004e3d`, com 20 migrações (`cmd/kalman-ordens/testdata/instalado`).
