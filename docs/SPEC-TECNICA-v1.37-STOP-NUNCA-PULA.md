@@ -145,3 +145,99 @@ com `origem`/`motivo` `STOP_FURADO`, valores que já existem (15/10).
 4. A folga do limite: decidir depois da medição da E1 (sugestão inicial: 200).
 5. **FX-11 à Flexscan:** o `PUT /orders/{id}` do `price` vale numa stop-limite já disparada? Ela
    aparece como limitada? Vai junto com a FX-9 ampliada.
+
+**Respostas do George ao §5 (19/11, SPEC aprovada):**
+1. Os tempos: 1 s para o disparo sem fill e 500 ms de confirmação pelo livro.
+2. A saída: limitada larga (bid − 300), com repreço a cada 1 s enquanto houver posição.
+3. A trava fica.
+4. `FOLGA_STOP_PTS=200` já, como medida provisória. Entrou em 19/11, às 14:28:56, pelo F7 do
+   `REAL-2026-11-19-flexscan-5725.md`.
+5. A FX-11 vai junto com a FX-9 ampliada.
+
+## 6. E1: a medição (19/11, 14:37–14:52, só leitura)
+
+Fontes:
+- o HTTP local: `/operacoes?dia=` de 14/10 a 19/11 e `/operacoes/{id}/historico?cru=1` de cada stop
+  executada;
+- os ticks gravados pelo Kalman (`/var/lib/kalman/tick/winfut-*.csv*`, 68 dias de pregão, de 11/08 a
+  19/11; último a cada ~100 ms; bid/ask só desde 01/10);
+- a gravação da 9090 de 26/10 (`var/precos-9090-20261026.jsonl`, a única).
+
+Os scripts são de análise, ficaram fora do repositório e não mudaram nada.
+
+### 6.1 O PnT: do disparo da 1014 ao fill
+
+61 stops executadas (`origem_saida STOP_SERVIDOR`): 18 do PnT (4 no REAL, 14 na HML) e 43 da Flexscan
+(1 no REAL, 42 no apisim).
+
+| onde | o 39=B de disparo (20807 > 0, "[DSA-122]") | do 39=B ao fill |
+|---|---|---|
+| **REAL (4: 13, 17, 18 e 19/11)** | **nunca veio.** Só o 39=B "Delaying final state 'Finished'", sem o 20807, que já é o robô fechando a ordem | 254, 274, 497 e 531 ms do "Delaying" ao ER de fill |
+| HML (14, mercado D-1) | 9 vezes | 170, 246, 486, 492, 497, 516, 730, 973 e **1.501 ms** (a saída por replace de 19/10). E os 9.346 ms do furo de 21/10 |
+
+**Consequência para o D1(a):** com 1 s, a regra só pega na HML, onde daria 1 falso positivo em 9 (o
+de 1.501 ms, e o de 973 ms passaria raspando). **No REAL ela não arma**, porque o robô BTG_ALGO não
+manda o disparo explícito. No REAL, o PnT depende do D1(b), o do livro, como a Flexscan. O código fica
+como aprovado (1 s, quando o 39=B com 20807 vier). Entra nas perguntas ao PnT: por que o robô do REAL
+não manda o 39=B "[DSA-122]" que a HML manda?
+
+### 6.2 O deslizamento das stops executadas (preço da execução × gatilho vigente)
+
+Sinal: positivo = pior que o gatilho.
+
+| onde | n | deslizamento | além do limite? |
+|---|---|---|---|
+| **REAL, PnT** | 4 | +20, −5, −10 e −45 | nenhuma |
+| **REAL, Flexscan** (19/11, op 1119124417) | 1 | −5 | não |
+| apisim, Flexscan | 42 | de +5 a +20, quase sempre +5 (o simulador executa 1 tick pior) | nenhuma |
+| HML, PnT | 14 | de −325 a +20. Os três extremos são saídas por replace ou o livro da HML | nenhuma |
+
+**Nenhuma stop executada passou do limite**, e nenhuma pulou: as 3 "STOP_FURADO" de 15/10 foram falso
+positivo da fonte (§2). No REAL, o pior deslizamento foi de 20 pts.
+
+### 6.3 Quanto o preço anda além de um gatilho no 1º segundo
+
+Método:
+- **O gatilho:** para cada tick em que o último cruza um nível, o gatilho hipotético é o nível logo
+  depois do último anterior (G = P_ant ∓ 5).
+- **A medida:** quanto o último vai além de G dentro da janela.
+- **O que entra:** só o pregão contínuo (`status84` 0).
+- **Os episódios:** eventos a menos de 30 s um do outro contam como um.
+- **Uma cota de cima:** um episódio conta se *algum* nível foi atravessado. Uma stop só pula se estiver
+  naquele nível.
+
+| janela | medida | > 100 | > 150 | > 200 | > 300 |
+|---|---|---|---|---|---|
+| 1 s | % dos 7,7 milhões de cruzamentos | 0,30% | 0,098% | 0,043% | 0,012% |
+| **0,3 s** (a reação de uma stop na bolsa ou do robô) | episódios em 66 dias (sem 05/10 e 26/10) | 338 (5,1/dia) | 139 (2,1/dia) | **79 (1,2/dia)** | 25 (0,4/dia) |
+| 1 s | episódios em 66 dias | 1.107 (16,8/dia) | 281 (4,3/dia) | 139 (2,1/dia) | 58 (0,9/dia) |
+
+**Fora da conta, dois dias:**
+- **26/10, a ampliação do limite:** 10.420 pts de uma vez. Nenhuma folga resolve, e o caso é da
+  §14.5.
+- **05/10:** 1.520 pts num segundo.
+
+O livro (bid/ask) dá números maiores e mais ruidosos (p99,9 de 920 pts, com bid/ask velho ou cruzado
+na fonte). Por isso a medida principal é o último. O D1(b) usa o livro **e** o último, com o livro
+validado (bid ≤ ask, idade ≤ 1 s).
+
+### 6.4 A folga: 200 se confirma
+
+- **De 100 para 200:**
+  - os cruzamentos de 1 s em que o preço passa da folga caem de 0,30% para 0,043% (7 vezes menos);
+  - os episódios da janela de 0,3 s caem de 5,1 para 1,2 por dia (4 vezes menos).
+- **De 200 para 300:** cai mais 3 vezes, a 0,4 por dia.
+- **O custo da folga maior** só aparece quando o preço de fato atravessa o gatilho com gap: o fill
+  pode sair até 200 pts além do gatilho, contra 100 (com 1 WIN, R$ 40 contra R$ 20). No movimento
+  normal, o fill não muda (o deslizamento real medido ficou em ±45 pts).
+- **Recomendação:** manter **200**. O que sobra é coberto pelo D1/D2: a saída agressiva em ~1 s. O
+  300 só se, depois da E2, os alertas de `STOP_FURADO` aparecerem mais de uma vez por semana.
+
+### 6.5 O que muda na E2 por causa da E1
+
+- **O D1(b) é o caminho principal nos dois conectores**, porque no REAL o PnT não manda o disparo
+  explícito.
+- **Um roteiro novo:** o PnT do REAL sem o 39=B de disparo, só com o "Delaying final state", e o
+  preço além do limite. O furo tem de vir pelo livro, em 500 ms.
+- **A pergunta ao PnT/BTG** sobre o 39=B "[DSA-122]" do robô do REAL entra no próximo ESTADO.
+- **A FX-11** tem roteiro próprio: `docs/SONDAGEM-FX11-flexscan.md`.
