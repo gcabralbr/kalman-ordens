@@ -34,11 +34,7 @@ func rodar(t *testing.T, b Backend) {
 			continue
 		}
 		t.Run(c.Arquivo, func(t *testing.T) {
-			dir, err := os.MkdirTemp("", "cenario-"+c.Numero)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := Executar(c, dir, b); err != nil {
+			if err := Executar(c, t.TempDir(), b); err != nil {
 				t.Fatal(err)
 			}
 		})

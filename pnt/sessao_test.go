@@ -207,7 +207,8 @@ func TestSenhaSoNoStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(f.Parar)
-	dir, _ := os.MkdirTemp("", "pnt-senha") // o FileLog do QuickFIX/Go não fecha: não apagar no Windows
+	dir, _ := os.MkdirTemp("", "pnt-senha") // o FileLog do QuickFIX/Go não fecha: não t.TempDir (falharia no Windows)
+	t.Cleanup(func() { os.RemoveAll(dir) }) // no Linux apaga; no Windows o erro é ignorado
 	o := &ouvinteTeste{}
 	s, err := NovaSessao(ConfigSessao{SenderCompID: "CLIENTE", Host: "127.0.0.1", Porta: f.Porta(), Dir: dir,
 		Inicio: "00:00:00", Fim: "00:00:00", HeartBtInt: 5, ReconexaoS: 1, Usuario: "USUARIO_HML", Senha: senha}, o)

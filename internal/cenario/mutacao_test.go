@@ -1,7 +1,6 @@
 package cenario
 
 import (
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -77,8 +76,7 @@ func TestExecutorReprovaMutacoes(t *testing.T) {
 			if !mu.mudar(&c) {
 				t.Fatal("mutação não se aplicou ao roteiro")
 			}
-			dir, _ := os.MkdirTemp("", "mutacao")
-			if err := Executar(c, dir, Memoria); err == nil {
+			if err := Executar(c, t.TempDir(), Memoria); err == nil {
 				t.Fatal("o executor aceitou um roteiro mutado")
 			} else {
 				t.Logf("reprovado como devia: %v", strings.SplitN(err.Error(), "\n", 2)[0])

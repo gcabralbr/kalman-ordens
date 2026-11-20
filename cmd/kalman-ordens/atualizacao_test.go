@@ -91,6 +91,7 @@ func TestServirAtualizaDoInstalado(t *testing.T) {
 	}
 	endereco := livre()
 	dirFix, _ := os.MkdirTemp("", "atualiza-fix")
+	t.Cleanup(func() { os.RemoveAll(dirFix) }) // não t.TempDir: no Windows o FileLog aberto faria o teste falhar
 	cfg := config.Novo(map[string]string{
 		"DB_DSN": dsn, "FIX_SENDER_COMP_ID": "KALMAN_ATUALIZA", "FIX_HOST": "127.0.0.1", "FIX_PORTA": strconv.Itoa(f.Porta()),
 		"FIX_DIR": dirFix, "FIX_INICIO": "00:00:00", "FIX_FIM": "00:00:00", "FIX_RECONEXAO_S": "1",
