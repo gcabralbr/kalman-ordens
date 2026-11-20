@@ -68,6 +68,7 @@ func TestServirPnTDesligado(t *testing.T) {
 	}
 	endereco := livre()
 	dir, _ := os.MkdirTemp("", "pnt-desligado")
+	t.Cleanup(func() { os.RemoveAll(dir) })
 	base := map[string]string{
 		"DB_DSN": dsn, "PNT_DESLIGADO": "1", "ORDENS_AMBIENTE": "HML", "ACUSUARIO_TABELA": "acusuario_teste",
 		"HTTP_ENDERECO": endereco, "PRECOS_URL": pnt.URL, "PRECOS_URL_FLEXSCAN": md.URL, "MASS_STATUS_SILENCIO_S": "0.5",

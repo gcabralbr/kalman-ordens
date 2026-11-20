@@ -80,7 +80,8 @@ func TestServirDePontaAPonta(t *testing.T) {
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	endereco := ln.Addr().String()
 	ln.Close()
-	dirFix, _ := os.MkdirTemp("", "fumaca-fix") // o FileLog do QuickFIX/Go não fecha: não apagar no Windows
+	dirFix, _ := os.MkdirTemp("", "fumaca-fix") // o FileLog do QuickFIX/Go não fecha: não t.TempDir (falharia no Windows)
+	t.Cleanup(func() { os.RemoveAll(dirFix) })  // no Linux apaga; no Windows o erro é ignorado
 	cfg := config.Novo(map[string]string{
 		"DB_DSN": dsn, "FIX_SENDER_COMP_ID": "KALMAN_FUMACA", "FIX_HOST": "127.0.0.1", "FIX_PORTA": strconv.Itoa(f.Porta()),
 		"FIX_DIR": dirFix, "FIX_USUARIO": "USUARIO_FUMACA", "FIX_SENHA": senhaFumaca, "FIX_INICIO": "00:00:00", "FIX_FIM": "00:00:00", "FIX_RECONEXAO_S": "1", "FIX_HEARTBEAT": "5",

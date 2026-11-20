@@ -95,6 +95,7 @@ type Falso struct {
 	recusa    string
 	recusasEm []time.Time
 	store     *storeFalso
+	dirTemp   string // o Dir criado aqui (Config.Dir vazio): o Parar apaga
 }
 
 // Tipos de mensagem de sessão (não entram na fila de aplicação).
@@ -108,20 +109,25 @@ func Novo(cfg Config) (*Falso, error) {
 	if cfg.Contraparte == "" {
 		return nil, errors.New("falso: Contraparte obrigatória")
 	}
+	dirTemp := ""
 	if cfg.Dir == "" {
 		d, err := os.MkdirTemp("", "pnt-falso")
 		if err != nil {
 			return nil, err
 		}
-		cfg.Dir = d
+		cfg.Dir, dirTemp = d, d
 	}
 	dd, err := dicionario.Carregar()
 	if err != nil {
+		if dirTemp != "" {
+			os.RemoveAll(dirTemp)
+		}
 		return nil, err
 	}
 	f := &Falso{
-		cfg: cfg,
-		dd:  dd,
+		cfg:     cfg,
+		dirTemp: dirTemp,
+		dd:      dd,
 		estrito: quickfix.NewValidator(quickfix.ValidatorSettings{
 			CheckFieldsOutOfOrder:     true,
 			RejectInvalidMessage:      true,
@@ -199,6 +205,9 @@ func (f *Falso) Parar() {
 	}
 	if f.acceptor != nil {
 		f.acceptor.Stop()
+	}
+	if f.dirTemp != "" {
+		os.RemoveAll(f.dirTemp)
 	}
 }
 
