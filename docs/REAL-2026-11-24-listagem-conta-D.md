@@ -1,7 +1,7 @@
 # REAL, 24/11 (terça), entre 09:00 e a ligação do 1450 e do 35: a listagem pela D-4582351 com uma ordem viva
 
-O §2.3 do `docs/REAL-2026-11-20-conta-D-5725.md`, que ficou de fora em 23/11. Sem código. Vale
-com a v1.36.2 ou com a v1.36.3 (se ela for instalada na noite de 23/11).
+O §2.3 do `docs/REAL-2026-11-20-conta-D-5725.md`, que ficou de fora em 23/11. Sem código. Roda
+com a v1.36.3 (`947b81422b04`, instalada em 23/11 às 14:28).
 
 `K=/opt/kalman-ordens/kalman-ordens`. Todo comando que mostra o service.env termina no filtro de segredos.
 
@@ -23,7 +23,7 @@ com a v1.36.2 ou com a v1.36.3 (se ela for instalada na noite de 23/11).
 ## 1. Antes das 09:00 (sem mudar nada)
 
 ```bash
-date; $K versao                                              # 91df575bcc22 (v1.36.2) ou o da v1.36.3
+date; $K versao                                              # 947b81422b04 (v1.36.3)
 journalctl -u kalman-ordens --since '08:00' --no-pager | grep -E 'flexscan: login|login recusado|pnt: envio liberado|conector de volta|chmod|permiss|ERROR|CRITICO' | cut -c1-200
 #   08:02 os logins da flx_gammaquant e da btg_gammaquant OK (nenhum "login recusado"); 08:30 a GAMMAQ2
 curl -s 127.0.0.1:9092/saude | jq -c '.ambientes.REAL | {criticos: .alertas_criticos, sessao_logada, posicao, divergente, parada, ordens_vivas, canais: (.canais|map_values(.estado))}'
