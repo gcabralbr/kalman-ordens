@@ -142,9 +142,7 @@ func (m *Motor) replaceDeSaidaConfirmado(op *operacao) {
 // replaceDeSaidaRecusado: 35=9 do replace de saída. A 1014 já disparou ou terminou (ou o texto diz
 // que chegou tarde): espera os fills, como no cancel rejeitado. Outro motivo: cancel + 1031 agora.
 func (m *Motor) replaceDeSaidaRecusado(op *operacao, p *ordem, msg pnt.Mensagem, texto string) {
-	st := msg.Texto(39)
-	if strings.Contains(strings.ToLower(texto), "in time") || st == "B" || st == "2" || st == "4" || st == "8" ||
-		!p.disparadaEm.IsZero() || !p.viva() {
+	if stopEmExecucao(p, msg, texto) {
 		m.saidaReplaceFalhou(op, "replace recusado com a 1014 disparada ou terminal: "+texto, "AGUARDANDO_STOP")
 		m.mudar(op, dominio.AguardandoStop)
 		op.aguardandoStopDesde = m.agora()
@@ -154,6 +152,14 @@ func (m *Motor) replaceDeSaidaRecusado(op *operacao, p *ordem, msg pnt.Mensagem,
 	m.mudar(op, dominio.CancelandoProtecao)
 	op.cancelProtEm = m.agora()
 	m.cancelar(p)
+}
+
+// stopEmExecucao: o 35=9 de um pedido para a 1014 (cancel ou replace) chegou com a stop já
+// executando ou terminada — "in time" no texto, 39 em B/2/4/8, a 1014 disparada ou não mais viva.
+func stopEmExecucao(p *ordem, msg pnt.Mensagem, texto string) bool {
+	st := msg.Texto(39)
+	return strings.Contains(strings.ToLower(texto), "in time") || st == "B" || st == "2" || st == "4" || st == "8" ||
+		!p.disparadaEm.IsZero() || !p.viva()
 }
 
 // tickSaidaReplace: o tempo da saída por replace (dentro de SAINDO).

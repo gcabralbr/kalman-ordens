@@ -148,6 +148,7 @@ type operacao struct {
 	ordens                []*ordem
 	semProtecaoDesde      time.Time
 	cancelProtEm          time.Time
+	saidaAposReplace      bool // v1.36.3 §4: a saída espera a resposta de um replace da 1014
 	aguardandoStopDesde   time.Time
 	proximoRepreco        time.Time
 	proximaSaidaEm        time.Time

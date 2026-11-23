@@ -1,0 +1,140 @@
+cenario 138 v1.36.3: o 35=9 "in time" com a stop executando (um CANCEL_STOP_REJEITADO, sem RECUSA_PNT; repetições e atrasados só registrados) e a saída pedida com o replace da 1014 pendente (decidida na resposta)
+hora 2026-11-23 10:11:00
+# SPEC-TECNICA-v1.36.3 §3 e §4 (op 234820, 23/11). A stop manual foi a 165840; 87 ms depois o Kalman
+# pediu a saída com o replace ainda pendente; o serviço guardou um cancel, mandou o 35=F no 150=5 e o
+# PnT respondeu seis 35=9 "in time" (dois deles 69 s depois do fill), cada um virando RECUSA_PNT.
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config LIMITE_ENTRADAS_DIA=100
+config LIMITE_RECUSAS_PARADA=50
+
+executa INICIO
+
+# --- a) cancel da 1014 que perde para a stop (sem saída por replace): o primeiro 35=9 vai a
+# AGUARDANDO_STOP com um CANCEL_STOP_REJEITADO; os outros cinco, antes e depois do fill, só registro
+executa COMPRADO OP=13801
+saida 13801 V STOP_MANUAL
+resposta aceito=true
+recebe 35=F 11=KM-P-13801-2 41=KM-P-13801-1
+envia @ER 11=KM-P-13801-2 41=KM-P-13801-1 37=dsa.13801.P 150=6 39=6 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 58="DSA Order cancellation requested by DSA Client, forwarding it to Robot;"
+envia 35=9 11=KM-P-13801-2 41=KM-P-13801-1 37=dsa.13801.P 39=C 434=1 102=0 58="Order could not be cancelled in time."
+alerta CANCEL_STOP_REJEITADO
+http GET /ordens/13801
+resposta estado=AGUARDANDO_STOP
+envia 35=9 11=KM-P-13801-2 41=KM-P-13801-1 37=dsa.13801.P 39=C 434=1 102=0 58="Order could not be cancelled in time."
+envia @ER 11=KM-P-13801-1 37=dsa.13801.P 150=I 39=B 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 58="Delaying final state 'Finished' for 3.00 s, timer started."
+envia 35=9 11=KM-P-13801-2 41=KM-P-13801-1 37=dsa.13801.P 39=C 434=1 102=0 58="Order could not be cancelled in time."
+envia 35=9 11=KM-P-13801-2 41=KM-P-13801-1 37=dsa.13801.P 39=C 434=1 102=0 58="Order could not be cancelled in time."
+avanca 1s
+nada
+envia @ER 11=KM-P-13801-1 37=dsa.13801.P 150=F 39=2 54=2 38=1 44=129410 847=1014 32=1 31=129505 14=1 151=0 6=129505
+evento ZERADA operacao_id=13801 origem=STOP_SERVIDOR
+saude posicao=0
+avanca 69s
+envia 35=9 11=KM-P-13801-2 41=KM-P-13801-1 37=dsa.13801.P 39=C 434=1 102=0 58="Order could not be cancelled in time."
+envia 35=9 11=KM-P-13801-2 41=KM-P-13801-1 37=dsa.13801.P 39=C 434=1 102=0 58="Order could not be cancelled in time."
+sem_alerta CANCEL_STOP_REJEITADO
+sem_alerta RECUSA_PNT
+nada
+
+# daqui em diante, com a saída por replace da v1.11 (a máquina do REAL)
+reinicia_servico config=SAIDA_POR_REPLACE=1
+aguarda_logon
+avanca 3s
+
+# --- b) a saída por replace recusada "in time" com a stop disparada: um CANCEL_STOP_REJEITADO, sem
+# RECUSA_PNT; as quatro repetições só registro
+executa COMPRADO OP=13802
+saida 13802 V TRSP
+resposta aceito=true
+recebe 35=G 11=KM-P-13802-2 41=KM-P-13802-1 37=dsa.13802.P 20828=130100 20829=129950
+evento SAIDA_POR_REPLACE operacao_id=13802 degrau=1
+envia @ER 11=KM-P-13802-1 37=dsa.13802.P 150=I 39=B 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 20807=1 20806=129410 58="[DSA-122] Waiting for sent orders to be cancelled, before sending Status=Finished. Remainning open qty: 1."
+envia 35=9 11=KM-P-13802-2 41=KM-P-13802-1 37=dsa.13802.P 39=C 434=2 102=0 58="Order could not be replaced in time."
+evento SAIDA_REPLACE_FALHOU operacao_id=13802 seguinte=AGUARDANDO_STOP
+alerta CANCEL_STOP_REJEITADO
+envia 35=9 11=KM-P-13802-2 41=KM-P-13802-1 37=dsa.13802.P 39=C 434=2 102=0 58="Order could not be replaced in time."
+envia 35=9 11=KM-P-13802-2 41=KM-P-13802-1 37=dsa.13802.P 39=C 434=2 102=0 58="Order could not be replaced in time."
+envia 35=9 11=KM-P-13802-2 41=KM-P-13802-1 37=dsa.13802.P 39=C 434=2 102=0 58="Order could not be replaced in time."
+envia 35=9 11=KM-P-13802-2 41=KM-P-13802-1 37=dsa.13802.P 39=C 434=2 102=0 58="Order could not be replaced in time."
+avanca 1s
+nada
+envia @ER 11=KM-P-13802-1 37=dsa.13802.P 150=F 39=2 54=2 38=1 44=129410 847=1014 32=1 31=129500 14=1 151=0 6=129500
+evento ZERADA operacao_id=13802 motivo=TRSP origem=STOP_SERVIDOR
+saude posicao=0
+sem_alerta CANCEL_STOP_REJEITADO
+sem_alerta RECUSA_PNT
+nada
+
+# --- c) o fio da 234820: a stop manual pendente, a saída, o preço passa do gatilho novo; no 150=5
+# a stop é a saída — nenhum 35=F, nenhum 35=9
+executa COMPRADO OP=13803
+stop 13803 preco=129800 origem=STOP_MANUAL
+resposta aceito=true situacao=ENVIADO preco_stop=129800
+recebe 35=G 11=KM-P-13803-2 41=KM-P-13803-1 37=dsa.13803.P 44=129700 847=1014 20828=129800 20829=129700
+envia @ER 11=KM-P-13803-2 41=KM-P-13803-1 37=dsa.13803.P 150=E 39=E 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+preco bid=129795 ask=129800 preco=129795
+saida 13803 V STOP_MANUAL
+resposta aceito=true
+nada
+http GET /ordens/13803
+resposta estado=CANCELANDO_PROTECAO
+envia @ER 11=KM-P-13803-2 41=KM-P-13803-1 37=dsa.13803.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+evento PROTECAO_AJUSTADA operacao_id=13803 preco_stop=129800 stop_origem=STOP_MANUAL
+http GET /ordens/13803
+resposta estado=AGUARDANDO_STOP
+avanca 1s
+nada
+envia @ER 11=KM-P-13803-2 37=dsa.13803.P 150=I 39=B 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 58="Delaying final state 'Finished' for 3.00 s, timer started."
+envia @ER 11=KM-P-13803-2 37=dsa.13803.P 150=F 39=2 54=2 38=1 44=129700 847=1014 32=1 31=129795 14=1 151=0 6=129795
+evento ZERADA operacao_id=13803 motivo=STOP_MANUAL origem=STOP_SERVIDOR
+saude posicao=0
+sem_evento SAIDA_POR_REPLACE operacao_id=13803
+sem_alerta CANCEL_STOP_REJEITADO
+sem_alerta RECUSA_PNT
+nada
+preco bid=130000 ask=130005 preco=130000
+
+# --- d) o mesmo, com o preço longe do gatilho novo: no 150=5, a saída por replace de sempre
+executa COMPRADO OP=13804
+stop 13804 preco=129800 origem=STOP_MANUAL
+resposta aceito=true situacao=ENVIADO preco_stop=129800
+recebe 35=G 11=KM-P-13804-2 41=KM-P-13804-1 37=dsa.13804.P 44=129700 847=1014 20828=129800 20829=129700
+saida 13804 V TRSP
+resposta aceito=true
+nada
+envia @ER 11=KM-P-13804-2 41=KM-P-13804-1 37=dsa.13804.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+evento PROTECAO_AJUSTADA operacao_id=13804 preco_stop=129800
+recebe 35=G 11=KM-P-13804-3 41=KM-P-13804-2 37=dsa.13804.P 44=129950 20828=130100 20829=129950
+evento SAIDA_POR_REPLACE operacao_id=13804 preco_stop=130100 preco_limite=129950 degrau=1 motivo=TRSP
+envia @ER 11=KM-P-13804-3 41=KM-P-13804-2 37=dsa.13804.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20828=130100 20829=129950
+envia @ER 11=KM-P-13804-3 37=dsa.13804.P 150=F 39=2 54=2 38=1 44=129950 847=1014 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=13804 motivo=TRSP origem=GESTOR
+saude posicao=0
+nada
+
+# --- e) a saída esperando o replace do ajuste, e o replace recusado "in time" com a stop executando
+# (pelo gatilho antigo): AGUARDANDO_STOP, sem 35=F e sem RECUSA_PNT
+executa COMPRADO OP=13805
+stop 13805 preco=129800 origem=STOP_MANUAL
+resposta aceito=true situacao=ENVIADO preco_stop=129800
+recebe 35=G 11=KM-P-13805-2 41=KM-P-13805-1 37=dsa.13805.P 44=129700 847=1014 20828=129800 20829=129700
+saida 13805 V STOP_MANUAL
+resposta aceito=true
+nada
+envia 35=9 11=KM-P-13805-2 41=KM-P-13805-1 37=dsa.13805.P 39=B 434=2 102=0 58="Order could not be replaced in time."
+alerta CANCEL_STOP_REJEITADO
+evento PROTECAO_AJUSTE_RECUSADO operacao_id=13805 preco_stop_pedido=129800 preco_stop=129510
+http GET /ordens/13805
+resposta estado=AGUARDANDO_STOP
+envia 35=9 11=KM-P-13805-2 41=KM-P-13805-1 37=dsa.13805.P 39=B 434=2 102=0 58="Order could not be replaced in time."
+envia 35=9 11=KM-P-13805-2 41=KM-P-13805-1 37=dsa.13805.P 39=B 434=2 102=0 58="Order could not be replaced in time."
+avanca 1s
+nada
+envia @ER 11=KM-P-13805-1 37=dsa.13805.P 150=F 39=2 54=2 38=1 44=129410 847=1014 32=1 31=129500 14=1 151=0 6=129500
+evento ZERADA operacao_id=13805 motivo=STOP_MANUAL origem=STOP_SERVIDOR
+saude posicao=0
+sem_alerta CANCEL_STOP_REJEITADO
+sem_alerta RECUSA_PNT
+nada
