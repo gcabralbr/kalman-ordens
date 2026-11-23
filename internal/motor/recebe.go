@@ -557,9 +557,13 @@ func (m *Motor) replaceConfirmado(op *operacao, o *ordem, clNovo string) {
 				"preco_stop_anterior": stopAntes, "preco_limite_anterior": limAntes, "stop_origem": op.stopOrigem()})
 		}
 	}
-	if cancelarDepois {
+	switch {
+	case cancelarDepois:
+		op.saidaAposReplace = false // um cancel pedido depois (stop furado...) vale mais
 		m.cancelar(o)
-	} else if o.Papel == dominio.Protecao && op.protecaoDesatualizada {
+	case o.Papel == dominio.Protecao && op.saidaAposReplace:
+		m.decidirSaidaAposReplace(op, o, false) // v1.36.3 §4
+	case o.Papel == dominio.Protecao && op.protecaoDesatualizada:
 		m.ajustarProtecao(op)
 	}
 }
@@ -584,6 +588,7 @@ func (m *Motor) ordemEncerrada(op *operacao, o *ordem, motivo string) {
 	case dominio.Entrada:
 		m.encerrarEntrada(op, motivo, motivo == "EXECUTADA")
 	case dominio.Protecao:
+		op.saidaAposReplace = false
 		switch {
 		case op.Estado == dominio.CancelandoProtecao:
 			m.al.Resolver(chaveOp("CANCEL_SEM_RESPOSTA", op))
@@ -667,6 +672,13 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 	m.registrarRecebida(o, msg)
 	op := m.donoDa[o]
 	era := o.pend
+	if era == semPendencia && (op.Estado.Final() || op.Estado == dominio.AguardandoStop) {
+		// v1.36.3 §3.2 (op 234820): o PnT repete o 35=9 do mesmo pedido, até 69 s depois do fill.
+		// Sem pedido nosso pendente e com a stop executando ou a operação encerrada, só registro
+		slog.Info("35=9 repetido ou atrasado: só registro", "op", op.OperacaoID, "clordid", msg.Texto(11),
+			"estado", op.Estado, "texto", msg.Texto(58))
+		return
+	}
 	ajuste, stopPedido := m.eraAjuste(op, o), o.stopPend
 	cancelarDepois := o.cancelarApos
 	o.cancelarApos = false
@@ -702,7 +714,12 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 		}
 	} else {
 		if o.Papel == dominio.Protecao && op.saidaRep != nil {
-			m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("replace de saída da 1014 rejeitado (%s): %s", texto, o.ClOrdAtual))
+			if stopEmExecucao(o, msg, texto) {
+				// v1.36.3 §3.3: a stop executa; não é recusa a investigar
+				m.alertarRecusa(op, o, msg, "CANCEL_STOP_REJEITADO", fmt.Sprintf("replace de saída da 1014 rejeitado (%s): aguardando fills do stop, operação %d", texto, op.OperacaoID))
+			} else {
+				m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("replace de saída da 1014 rejeitado (%s): %s", texto, o.ClOrdAtual))
+			}
 			m.replaceDeSaidaRecusado(op, o, msg, texto)
 			m.salvarOrdem(o)
 			m.salvarOp(op)
@@ -719,15 +736,26 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 			m.salvarOp(op)
 			return
 		}
-		m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("replace rejeitado (%s): %s", texto, o.ClOrdAtual))
+		saidaPendente := o.Papel == dominio.Protecao && op.saidaAposReplace
+		disparada := saidaPendente && stopEmExecucao(o, msg, texto)
+		if disparada {
+			// v1.36.3 §4: a saída esperava este replace, e a stop já executa
+			m.alertarRecusa(op, o, msg, "CANCEL_STOP_REJEITADO", fmt.Sprintf("replace da 1014 rejeitado (%s): a stop executa; aguardando fills do stop, operação %d", texto, op.OperacaoID))
+		} else {
+			m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("replace rejeitado (%s): %s", texto, o.ClOrdAtual))
+		}
 		switch {
 		case ajuste:
 			m.ajusteRecusado(op, o, stopPedido, texto)
-		case o.Papel == dominio.Protecao:
+		case o.Papel == dominio.Protecao && !saidaPendente:
 			m.protecaoRejeitada(op, texto)
 		}
-		if cancelarDepois {
+		switch {
+		case cancelarDepois:
+			op.saidaAposReplace = false
 			m.cancelar(o)
+		case saidaPendente:
+			m.decidirSaidaAposReplace(op, o, disparada)
 		}
 	}
 	m.salvarOrdem(o)

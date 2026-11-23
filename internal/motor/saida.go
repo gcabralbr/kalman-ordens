@@ -121,6 +121,16 @@ func (m *Motor) iniciarSaida(op *operacao, motivo, origem string) {
 // prosseguirSaida: passo 2 em diante — cancela a 1014 (se houver) ou vai direto à saída.
 func (m *Motor) prosseguirSaida(op *operacao) {
 	if p := op.viva(dominio.Protecao); p != nil {
+		if p.pend == pendReplace && op.saidaRep == nil && !p.cancelarApos {
+			// v1.36.3 §4 (op 234820): um replace da 1014 (o ajuste) sem resposta. Sem cancel guardado:
+			// a decisão espera a resposta dele (decidirSaidaAposReplace)
+			m.mudar(op, dominio.CancelandoProtecao)
+			op.cancelProtEm = m.agora()
+			op.saidaAposReplace = true
+			m.salvarOp(op)
+			slog.Info("saída pedida com o replace da 1014 pendente: decide na resposta", "op", op.OperacaoID, "clordid", p.ClOrdAtual)
+			return
+		}
 		if m.iniciarSaidaPorReplace(op, p) {
 			return // v1.11: o replace da 1014 é a saída
 		}
@@ -131,6 +141,38 @@ func (m *Motor) prosseguirSaida(op *operacao) {
 	}
 	m.mudar(op, dominio.Saindo)
 	m.enviarSaida(op)
+}
+
+// decidirSaidaAposReplace (v1.36.3 §4): o replace da 1014 que estava pendente quando a saída foi
+// pedida respondeu. Com a stop executando (disparada) ou o gatilho já ultrapassado pelo preço, a
+// stop é a saída: espera os fills. Senão, o caminho de sempre (saída por replace, ou cancel + 1031).
+func (m *Motor) decidirSaidaAposReplace(op *operacao, p *ordem, disparada bool) {
+	op.saidaAposReplace = false
+	if op.Estado != dominio.CancelandoProtecao || !p.viva() {
+		return
+	}
+	if disparada || !p.disparadaEm.IsZero() || m.gatilhoUltrapassado(op, p) {
+		slog.Info("saída pedida com a stop executando ou o gatilho ultrapassado: a stop é a saída",
+			"op", op.OperacaoID, "clordid", p.ClOrdAtual, "gatilho", p.Stop)
+		m.mudar(op, dominio.AguardandoStop)
+		op.aguardandoStopDesde = m.agora()
+		return
+	}
+	m.prosseguirSaida(op)
+}
+
+// gatilhoUltrapassado: o preço da fonte do conector já chegou ao gatilho da 1014 (venda: bid ou
+// último ≤ gatilho; compra: ask ou último ≥ gatilho). Sem preço utilizável, false.
+func (m *Motor) gatilhoUltrapassado(op *operacao, p *ordem) bool {
+	l := m.precosDo(op.conector()).Ler()
+	if p.Stop == 0 || l.Situacao != preco.OK || l.Ticker != op.Simbolo || l.Idade(m.agora()) > m.p.IdadeMaxPreco {
+		return false
+	}
+	g := decimal.NewFromInt(p.Stop)
+	if p.Lado == dominio.Venda {
+		return (l.Bid != nil && l.Bid.LessThanOrEqual(g)) || (l.Preco != nil && l.Preco.LessThanOrEqual(g))
+	}
+	return (l.Ask != nil && l.Ask.GreaterThanOrEqual(g)) || (l.Preco != nil && l.Preco.GreaterThanOrEqual(g))
 }
 
 func (m *Motor) enviarSaida(op *operacao) {

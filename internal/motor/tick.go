@@ -211,6 +211,7 @@ func (m *Motor) acoesDeTempo(op *operacao, agora time.Time) {
 			// cancel que não saiu ou foi rejeitado por 35=3/35=j: tenta de novo, com intervalo
 			if p.ultimoCancel.IsZero() || agora.Sub(p.ultimoCancel) >= m.p.RetentativaProtecao {
 				op.cancelProtEm = agora
+				op.saidaAposReplace = false // v1.36.3 §4: o replace terminou sem resposta; vale o cancel
 				m.cancelar(p)
 			}
 		}

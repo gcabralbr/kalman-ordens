@@ -2,6 +2,8 @@ package flexscan
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -206,6 +208,11 @@ type Ponte struct {
 	emCurso  int
 	sinal    chan struct{}
 
+	// v1.36.3: o ExecID dos relatórios gerados aqui (sem o da Flexscan) leva a marca desta partida;
+	// só o contador repetia depois de um restart (NONE:8:8:0:1 de novo, descartado pelo motor)
+	partida string
+	seqExec atomic.Int64
+
 	logado     atomic.Bool
 	jaLogou    bool
 	definitivo bool      // login com erro definitivo: não tenta sozinho
@@ -263,7 +270,7 @@ func Nova(cfg Config, ouv Ouvinte, rel relogio.Relogio) *Ponte {
 	guarda := novaGuarda(cfg.EstadoLogin, cfg.LoginMax, cfg.LoginJanela, cfg.Usuario, cfg.Senha)
 	p := &Ponte{cfg: cfg, cli: novoCliente(cfg.URL, cfg.Usuario, cfg.Senha, cfg.Timeout, cfg.ReqPorS, cfg.Rajada, guarda), ouv: ouv, rel: rel,
 		ordens: map[string]*ordemP{}, porNome: map[string]*ordemP{}, porCl: map[string]*ordemP{}, ocupadas: map[string]bool{},
-		sinal: make(chan struct{}, 1), ctx: ctx, cancelar: cancel, traf: novoTrafego(rel)}
+		sinal: make(chan struct{}, 1), ctx: ctx, cancelar: cancel, traf: novoTrafego(rel), partida: marcaDePartida()}
 	p.cli.aoLogin = p.registrarLogin
 	p.cli.agora = rel.Agora
 	return p
@@ -1365,7 +1372,14 @@ func (p *Ponte) avisoPrecoAjustado(o *ordemP, de, para decimal.Decimal) func(*Po
 
 // ---------------------------------------------------------------- ERs sintéticos
 
-var seqExec atomic.Int64
+// marcaDePartida: 4 bytes aleatórios em hex, um por ponte (por partida do processo).
+func marcaDePartida() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	return hex.EncodeToString(b)
+}
 
 func (p *Ponte) base(o *ordemP, tipo string) pnt.Mensagem {
 	m := pnt.Mensagem{Tipo: tipo}
@@ -1418,7 +1432,7 @@ func (p *Ponte) er(o *ordemP, et, st string, extra map[int]string) pnt.Mensagem 
 	add(&m, 37, id)
 	ex := extra[17]
 	if ex == "" {
-		ex = fmt.Sprintf("%s:%s:%s:%d:%d", id, et, st, o.exec, seqExec.Add(1))
+		ex = fmt.Sprintf("%s:%s:%s:%d:%s.%d", id, et, st, o.exec, p.partida, p.seqExec.Add(1))
 	}
 	add(&m, 17, ex)
 	add(&m, 150, et)

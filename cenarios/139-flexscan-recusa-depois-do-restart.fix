@@ -1,0 +1,36 @@
+cenario 139 v1.36.3: Flexscan, o POST recusado antes e depois de um restart — as duas entradas terminam REJEITADA (o ExecID do 150=8 sem id não repete entre partidas)
+hora 2026-11-23 09:36:00
+# SPEC-TECNICA-v1.36.3 §2 (op 1123094048, 23/11). O 150=8 que a ponte gera para o POST recusado não
+# tem id da Flexscan (37=NONE). Até a v1.36.2 o ExecID era NONE:8:8:0:<contador do processo>: depois
+# do restart das 09:40 o contador voltou a 1, a recusa repetiu a chave das 09:11 (recarregada no
+# execVistos) e foi descartada; a entrada ficou ENTRANDO com a E em ENVIANDO.
+config FLEXSCAN_URL=falso
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_RECUSAS_PARADA=50
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+
+flx_falha 400 texto="Account code not found for username" codigo=3418
+entrada 13901 C uid=8
+resposta aceito=true
+flx_recebe POST name=KM-E-13901-1
+evento ENTRADA_ENCERRADA operacao_id=13901 motivo=REJEITADA
+alerta RECUSA_FLEXSCAN
+
+reinicia_servico
+aguarda_logon
+avanca 3s
+
+flx_falha 400 texto="Invalid client document!"
+entrada 13902 C uid=8
+resposta aceito=true
+flx_recebe POST name=KM-E-13902-1
+evento ENTRADA_ENCERRADA operacao_id=13902 motivo=REJEITADA
+alerta RECUSA_FLEXSCAN
+http GET /ordens/13902
+resposta estado=ENCERRADA_SEM_ENTRADA
+saude posicao=0 divergente=false
+flx_nada
