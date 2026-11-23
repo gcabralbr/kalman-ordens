@@ -140,3 +140,18 @@ Também é um login REAL da Flexscan (o aviso do §3 vale).
 | U2 | 3 | instala o binário | **troca o binário** |
 | U3 | 3 | restart | **reinicia o serviço** |
 | U4 | 7 | volta ao binário da v1.36.2 e restart | só se precisar |
+
+## 9. Resultado (23/11, pelo George)
+
+- **14:28:30: v1.36.3 `947b81422b04` instalada** por este roteiro (`7c92b0c`), depois da zeragem.
+  O §1 conferido: v1.36.2 `91df575bcc22`, o sha256 `ebea4543…c7247`, posições 0, nas vivas só a
+  `KM-BOLETA-E-1123094048-1` DESCONHECIDA. U1–U3 feitos.
+- **Depois:** `active`, `NRestarts=0`, "migrações: nenhuma pendente", os logins de partida OK da
+  `flx_gammaquant` e da `btg_gammaquant` (o 4º da `btg_gammaquant` no dia, sem recusa), as duas
+  conciliações `0 ordem(ns) KM, 0 de outros (ignoradas), 0 divergência(s); posição 0` (14:28:33 e
+  14:28:34), o REAL logado, sem divergência nem parada, PNT e FLEXSCAN:BTG `NO_AR`; o 1450, o 35 e o
+  5725 com `pode_enviar` true. Conferido por mim no binário instalado (o mesmo sha256).
+- **Binário anterior:** `/opt/kalman-ordens/kalman-ordens.91df575bcc22` (a v1.36.2), para a volta (§7).
+- **Retrato do instalado:** `947b81422b04`, 20 migrações (sem migração nova).
+- O §4 (o caso de verdade) fica para quando acontecer; a prova da listagem da D- de 24/11 roda com
+  esta versão.
