@@ -1,7 +1,7 @@
 # Webhook da Flexscan no REAL (BTG): o segredo novo, a rota no nginx e o teste
 
 Preparado em 24/11. **Não executado.** O George lê antes de decidir o dia. Os comandos com `sudo` são
-do George: **N** no host do nginx público, **E** na .53, **V** a volta; a lista está no §6. Todo comando
+do George: **N** no host do proxy público, **F** e **E** na .53, **V** a volta; a lista está no §6. Todo comando
 que mostra o `service.env` termina no filtro de segredos, **aqui com `WEBHOOK_URL` a mais**, porque a
 URL do webhook carrega o segredo (§2.3).
 
@@ -44,86 +44,86 @@ D=<o dia, ex.: 2511>
 17:55**. A janela da Flexscan é 08:02–18:30, então o cadastro aparece no mesmo dia. O teste (§4) é no
 dia D+1, às 09:00.
 
-## 1. Hoje, só leitura: o receptor do REAL está exposto?
+## 1. As conferências de 24/11: sem exposição imediata
 
-O que já se sabe (lido em 24/11, sem sudo):
+O que foi lido em 24/11:
 - **O receptor do REAL está no ar com o segredo vazado** desde 19/11, em `172.16.110.53:9098`, no
   caminho `/flexscan/webhook-real-btg/<segredo>`. A URL vazia só desliga o cadastro e a espera. O
   receptor existe porque o `FLEXSCAN_WEBHOOK_ENDERECO` é de todas as pontes, e um POST no caminho
   certo é processado.
 - **Nenhum sinal de uso:** nenhuma linha `WEBHOOK` no tráfego do REAL de 19/11 a 24/11. No journal
-  (desde 20/10) há um único "webhook recusado": em 29/10, um GET da própria .53. Esse registro sai no
-  máximo um por minuto.
-- **O nginx da .53 não tem nada da Flexscan** (o `nginx.conf` padrão, sem `conf.d`). O nginx público,
-  que repassa o webhook do SIMULADOR, fica **em outro host**, que daqui não consigo ler. O firewall
-  da .53 (firewalld, zona `public`) também precisa de root.
+  (desde 20/10) há um único "webhook recusado": em 29/10, um GET da própria .53.
 
-**C1 (host do nginx público):** a location do SIMULADOR.
+O resultado das conferências do George:
+
+| # | o quê | resultado |
+|---|---|---|
+| C3 | o segredo do REAL × o do SIMULADOR (`$W compara`) | **diferentes**: só o do REAL está vazado |
+| C1 | o proxy público | **uma única location aponta para a 9098, e é exata:** `location = /kalman-ordens/flexscan/webhook/<segredo do SIMULADOR>`. O caminho do REAL não é alcançável pela internet |
+| C2 | o firewall da .53 | a 9098 aberta para `172.16.110.0/24`, a rede interna do George (só máquinas dele). A 8080 e o MySQL também são só internos |
+
+**Conclusão:** sem exposição imediata. Hoje alcançam o receptor do REAL só as máquinas da
+`172.16.110.0/24` e quem está dentro da .53. A troca segue por este roteiro, sem urgência, no dia
+que o George decidir. O F1 (§2.0) fecha a 9098 para o resto da rede interna.
+
+## 2. Dia D, a qualquer hora: o firewall, o proxy e as cópias do env (sem efeito no serviço)
+
+### 2.0 F1 (opcional, .53): a 9098 só para o IP interno do proxy
+O George informa o IP na hora. **Faça fora do pregão:** se o IP estiver errado, o webhook do SIMULADOR
+para de chegar (vêm `FLEXSCAN_WEBHOOK_ATRASADO` e `_SEM_CHEGAR`), e a volta é recolocar a regra da /24.
 ```bash
-sudo nginx -T 2>/dev/null | grep -n -B3 -A12 'location[^{]*flexscan' | sed -E 's#(webhook[^/ ]*/)[A-Za-z0-9_-]{16,}#\1(oculto)#g'
+sudo firewall-cmd --zone=public --list-rich-rules | grep 9098     # a regra de hoje: anote o texto exato
+P=<o IP interno do proxy>
+sudo firewall-cmd --permanent --zone=public --add-rich-rule="rule family=\"ipv4\" source address=\"$P/32\" port port=\"9098\" protocol=\"tcp\" accept"
+sudo firewall-cmd --permanent --zone=public --remove-rich-rule='<o texto exato da regra da 172.16.110.0/24 para a 9098>'
+sudo firewall-cmd --reload
+sudo firewall-cmd --zone=public --list-rich-rules | grep 9098     # só a do $P
 ```
-| o que aparece | `/flexscan/webhook-real-btg/<vazado>` casa? |
-|---|---|
-| `location /flexscan/webhook/` (com a barra final) | **não**: `webhook-real-btg` não começa com `webhook/` |
-| `location /flexscan/webhook` (sem a barra), `location /flexscan/`, `location /` com `proxy_pass` para a 9098, ou uma regex `~ ^/flexscan/webhook` | **sim: aberto à internet agora.** Faça o B1 antes de qualquer outra coisa |
+- A regra nova entra antes de a velha sair, então a 9098 nunca fica fechada para o proxy.
+- **Se a /24 não for uma regra só da 9098** (uma `source` da zona ou uma regra que também abre a 8080
+  ou o MySQL), não remova nada: mande a saída e eu escrevo o comando.
+- **A conferência:**
+  - do proxy, `curl -s -o /dev/null -w '%{http_code}\n' --max-time 3 -X POST http://172.16.110.53:9098/x` dá `404` (é o receptor);
+  - de outra máquina da rede, o mesmo comando dá `000` (o tempo esgota);
+  - na .53, o SIMULADOR com `webhook_faltas_seguidas` 0 depois da próxima ordem dele.
+- **A volta:** `--add-rich-rule` com o texto anotado da /24, mais o `--reload`.
+- Isso não fecha a 9098 para quem está dentro da .53. Para esse caso, só o segredo novo resolve.
 
-**C2 (.53):** quem alcança a 9098 pela rede interna.
-```bash
-sudo firewall-cmd --zone=public --list-all; sudo firewall-cmd --zone=public --list-rich-rules
-sudo nft list ruleset | grep -n -B2 -A2 9098
-```
-A regra esperada (SPEC-FLEXSCAN §5.1): a 9098 aberta **só para o IP do nginx**. Se aparecer a
-`9098/tcp` em `ports:` (aberta para todos) ou numa regra sem `source address`, qualquer máquina da
-rede interna alcança o receptor do REAL com o segredo vazado. Mande a saída e eu escrevo o comando
-exato (B2). De dentro da própria .53, qualquer usuário alcança a 9098; isso só se resolve com o
-segredo novo.
-
-**C3 (.53):** o segredo do SIMULADOR é o mesmo do REAL? (só "iguais/diferentes")
-```bash
-sudo $W compara $F REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO $F FLEXSCAN_WEBHOOK_SEGREDO
-#   diferentes: bom. iguais: o webhook do SIMULADOR, que está cadastrado e público, também está vazado: B1 vale para ele, pare e me chame
-```
-
-**B1 (host do nginx, só se o C1 casar ou o C3 der iguais):** um bloqueio que não precisa de restart do
-kalman-ordens. O REAL não usa webhook hoje, então não perde nada.
+### 2.1 N1: a location do REAL no proxy público, com o filtro de IP (FX-7)
+A location do SIMULADOR é **exata, com o segredo no caminho** (C1). Para o REAL, a proposta é **uma
+location de prefixo com o filtro de IP**:
+- o segredo novo fica num lugar só (o env da .53), sem ter de ser copiado para o proxy, o que o faria
+  aparecer na tela;
+- de fora, só a Flexscan chega à 9098;
+- o receptor continua conferindo o segredo.
 ```nginx
-location ^~ /flexscan/webhook-real- { return 404; }    # ao lado da location do SIMULADOR
-```
-```bash
-sudo nginx -t && sudo systemctl reload nginx
-curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<host do nginx>/flexscan/webhook-real-btg/teste   # 404
-```
-(A `^~` vence a regex e o prefixo mais curto do SIMULADOR. O N1 do §2 troca este bloco.)
-
-## 2. Dia D, a qualquer hora: o nginx e as cópias do env (sem efeito no serviço)
-
-### 2.1 N1: a location do REAL no nginx público, com o filtro de IP (FX-7)
-Copie a location do SIMULADOR que o C1 mostrou e mude só o caminho, mais as duas linhas de acesso:
-```nginx
-location ^~ /flexscan/webhook-real-btg/ {
-    if ($request_method != POST) { return 200; }   # o teste do cadastro da Flexscan, como no SIMULADOR
+location ^~ /kalman-ordens/flexscan/webhook-real-btg/ {
+    if ($request_method != POST) { return 200; }   # o teste do cadastro da Flexscan (faça como a do SIMULADOR faz)
     allow 177.71.196.212;                          # a Flexscan (todos os webhooks desde 28/10, FX-7)
     deny all;
-    # ... as linhas proxy_pass/proxy_set_header da location do SIMULADOR, iguais (o X-Real-IP inclusive)
+    proxy_pass http://172.16.110.53:9098/flexscan/webhook-real-btg/;
+    # ... as outras linhas proxy_* da location do SIMULADOR, iguais (o X-Real-IP inclusive)
 }
 ```
 - No nginx, o `if/return` roda antes do `allow/deny`. O GET de teste recebe 200 de qualquer lugar e
   não chega à 9098; o POST só passa vindo da Flexscan, e os outros levam 403.
-- O `proxy_pass` sem caminho (só `http://172.16.110.53:9098`) repassa o caminho inteiro, que é o que o
-  receptor espera.
+- O `proxy_pass` com caminho troca o prefixo `/kalman-ordens/flexscan/webhook-real-btg/` por
+  `/flexscan/webhook-real-btg/` e mantém o segredo no fim, que é o caminho que o receptor espera.
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
-curl -s -o /dev/null -w '%{http_code}\n' https://<host do nginx>/flexscan/webhook-real-btg/teste           # 200 (GET)
-curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<host do nginx>/flexscan/webhook-real-btg/teste   # 403 (a .53 não é a Flexscan)
+curl -s -o /dev/null -w '%{http_code}\n' https://<host do proxy>/kalman-ordens/flexscan/webhook-real-btg/teste           # 200 (GET)
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<host do proxy>/kalman-ordens/flexscan/webhook-real-btg/teste   # 403 (quem testa não é a Flexscan)
 ```
-Se o B1 estiver no ar, ele sai neste passo.
+Se preferir a location exata, como a do SIMULADOR, me avise. Ela pede um passo para levar o segredo
+novo da .53 ao proxy sem mostrá-lo (um arquivo gerado pelo script e copiado por `scp`), e o filtro
+de IP vale igual.
 
 ### 2.2 E1–E3: o arquivo novo, gerado sem o segredo aparecer
 ```bash
 sudo cp -a $F $F.antes-webhook-$D        # a volta V0 (se o serviço não subir); tem o vazado: sai no E7
 sudo cp -a $F $F.webhook-$D
-sudo $W novo $F.webhook-$D BTG https://<host do nginx>
-#   ok: REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO novo (44 caracteres); REAL_FLEXSCAN_BTG_WEBHOOK_URL=https://<host>/flexscan/webhook-real-btg/(oculto)
+sudo $W novo $F.webhook-$D BTG https://<host do proxy>/kalman-ordens
+#   ok: REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO novo (44 caracteres); REAL_FLEXSCAN_BTG_WEBHOOK_URL=https://<host>/kalman-ordens/flexscan/webhook-real-btg/(oculto)
 sudo cp -a $F.webhook-$D $F.webhook-sem-url-$D     # a volta V1: o segredo novo, sem URL
 sudo $W sem-url $F.webhook-sem-url-$D BTG
 ```
@@ -136,7 +136,7 @@ mantém dono e modo. Se uma chave não estiver ativa uma vez só, ele não muda 
 sudo $W compara $F.webhook-$D REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO $F FLEXSCAN_WEBHOOK_SEGREDO                          # diferentes (do SIMULADOR)
 sudo $W compara $F.webhook-$D REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO $F REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO                 # diferentes (do vazado)
 sudo $W compara $F.webhook-sem-url-$D REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO $F.webhook-$D REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO  # iguais (a volta tem o novo)
-sudo $W confere-url $F.webhook-$D BTG              # sim: https://<host>/flexscan/webhook-real-btg/(segredo, 44 caracteres)
+sudo $W confere-url $F.webhook-$D BTG              # sim: https://<host>/kalman-ordens/flexscan/webhook-real-btg/(segredo, 44 caracteres)
 sudo $W confere-url $F.webhook-sem-url-$D BTG      # URL vazia (sem webhook)
 ```
 
@@ -237,7 +237,7 @@ sleep 3; curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&li
 |---|---|---|
 | **sucesso:** um WEBHOOK de 177.71.196.212 depois do POST e outro depois do DELETE, nenhum alerta de webhook | o caminho Flexscan → nginx → 9098 → ponte REAL funciona, e a conta D- bate | o "Enviar ordens" volta; o caminho da stop executada se prova na primeira saída de verdade (um `WEBHOOK ... KM-P-... EXECUTADA` antes de qualquer consulta) |
 | `FLEXSCAN_WEBHOOK_INCOERENTE` "conta 4582351, esperada D-4582351" | a Flexscan escreve a conta sem o `D-` no webhook (a consulta devolve com o `D-`); todo webhook do 5725 seria descartado, com crítico | volta V1 depois do teste (nada vivo). A correção é no código (comparar a conta sem o prefixo de rota), numa versão, sem improvisar |
-| nenhum WEBHOOK e um `FLEXSCAN_WEBHOOK_ATRASADO` depois de 5 s | o webhook não chegou: o nginx barrou (403) ou não repassou | no host do nginx: `sudo grep 'webhook-real' /var/log/nginx/access.log \| tail -5 \| sed -E 's#(webhook-real-btg/)[A-Za-z0-9_-]+#\1(oculto)#'`. Se o IP de origem não for 177.71.196.212, é dado da FX-7 (perguntar à Flexscan antes de mudar o `allow`). Volta V1 depois do teste |
+| nenhum WEBHOOK e um `FLEXSCAN_WEBHOOK_ATRASADO` depois de 5 s | o webhook não chegou: o proxy barrou (403) ou não repassou | no host do proxy: `sudo grep 'webhook-real' /var/log/nginx/access.log \| tail -5 \| sed -E 's#(webhook-real-btg/)[A-Za-z0-9_-]+#\1(oculto)#'`. Se o IP de origem não for 177.71.196.212, é dado da FX-7 (perguntar à Flexscan antes de mudar o `allow`). Volta V1 depois do teste |
 | um WEBHOOK de outro IP | não pode, com o N1 | confira o N1 |
 
 ## 5. A volta
@@ -247,11 +247,8 @@ sleep 3; curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&li
   ```bash
   sudo cp -a $F.webhook-sem-url-$D $F && sudo systemctl restart kalman-ordens
   ```
-  **Mais o N2 no nginx:** a location do REAL vira `return 404`, como o B1.
-  ```nginx
-  location ^~ /flexscan/webhook-real- { return 404; }
-  ```
-  Sem o N2, a Flexscan continua com o cadastro até a limpeza da madrugada e os POSTs seguem
+  **Mais o N2 no proxy:** tirar a location do N1 e fazer o reload. O caminho do REAL volta a não
+  ser alcançável, como em 24/11. Sem o N2, a Flexscan continua com o cadastro até a limpeza da madrugada e os POSTs seguem
   chegando. A URL vazia só desliga o cadastro e a espera, não o receptor.
 - **Só o N2, no meio do pregão** (sem restart): se os alertas de webhook virarem barulho. Os webhooks
   param na hora. Como a URL continua no env, vêm `FLEXSCAN_WEBHOOK_ATRASADO` e, depois de 3 faltas,
@@ -266,13 +263,11 @@ sleep 3; curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&li
 
 | # | onde | quando | o quê |
 |---|---|---|---|
-| C1 | host do nginx | hoje | a location do SIMULADOR (leitura) |
-| C2 | .53 | hoje | o firewall da 9098 (leitura) |
-| C3 | .53 | hoje | o segredo do SIMULADOR × o do REAL: iguais/diferentes |
-| B1 / B2 | nginx / .53 | hoje, só se C1–C3 mostrarem caminho aberto | o bloqueio |
-| N1 | host do nginx | dia D | a location do REAL com `allow 177.71.196.212; deny all;` |
+| C1–C3 | proxy / .53 | **feitas em 24/11** | sem exposição imediata (§1) |
+| F1 | .53 | opcional, fora do pregão | a 9098 só para o IP interno do proxy |
+| N1 | host do proxy | dia D | a location do REAL com `allow 177.71.196.212; deny all;` |
 | E1–E4 | .53 | dia D | as cópias, o segredo novo, as conferências, o diff |
 | E5 | .53 | dia D, depois da zeragem, até 17:55 | o `cp` e o restart |
 | E7 | .53 | dia D, depois do E6 ok | a procura e a limpeza do segredo vazado |
 | T1, T3 | .53 (sem sudo) | dia D+1, 09:00 | a boleta e o cancelamento |
-| V0 / V1 + N2 | .53 / nginx | se der problema | a volta |
+| V0 / V1 + N2 | .53 / proxy | se der problema | a volta |

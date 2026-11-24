@@ -56,7 +56,7 @@ novo)
   arq=$2 c=$3 base=${4%/}
   [ -f "$arq" ] || erro "$arq não existe"
   case "$base" in https://*) ;; *) erro "BASE começa com https://" ;; esac
-  case "$base" in */flexscan*) erro "BASE é só https://host (o caminho vem do prefixo)" ;; esac
+  case "$base" in */flexscan*) erro "BASE é https://host[/caminho do proxy], sem o /flexscan (vem do prefixo)" ;; esac
   T_VALOR1=$(head -c 33 /dev/urandom | base64 -w0 | tr '+/' '-_')
   [ ${#T_VALOR1} -eq 44 ] || erro "segredo gerado com ${#T_VALOR1} caracteres"
   export T_VALOR1 T_CHAVE1="REAL_FLEXSCAN_${c}_WEBHOOK_SEGREDO" T_CHAVE2="REAL_FLEXSCAN_${c}_WEBHOOK_URL"
