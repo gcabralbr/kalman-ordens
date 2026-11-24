@@ -75,6 +75,33 @@ curl -s 127.0.0.1:9092/saude | jq -c '.ambientes.REAL | {criticos: .alertas_crit
 ```
 **Com isso, a listagem pela D- está provada.**
 
+**O critério, escrito antes do teste (24/11, pelo código `internal/motor/conciliacao.go` e
+`internal/flexscan/ponte.go` `massStatus`):**
+- **A lista de contas** da conciliação vem **das operações do dia carregadas do banco** (`dia carregado`)
+  com ordem viva ou posição (`contasMassStatus`, v1.10 C5), cada conta pelo conector gravado na
+  operação, só se esse conector estiver logado. **Não** vem da `REAL_FLEXSCAN_BTG_CONTAS` (essa é só
+  a lista de contas permitidas) nem dos habilitados.
+- **"mass status: nenhuma conta (sem operação no dia nem usuário habilitado)"** quer dizer: nenhuma
+  conta com ordem viva ou posição (o texto é antigo, de antes da v1.10). A conciliação fecha pelo
+  silêncio, sem perguntar nada à corretora. Foi o caso de todos os restarts de 23/11. A linha **não
+  diz a instância**: o login da `flx_gammaquant` (SIMULADOR) continua dando uma dessas hoje.
+- **O gatilho:** cada login (o da `btg_gammaquant` na partida, ~0,3 s depois de subir) e o logon da
+  GAMMAQ2 (~1,5 s) pedem a conciliação da instância REAL; a D- só é perguntada com a ponte BTG logada.
+  A ponte faz `GET /orders/filter?account=D-4582351` e devolve a ordem como 150=I com o ExecID
+  `MS:KM-MS-<ms>-<n>:<orderid37>`, 911=1, 912=Y. Essa consulta não vira linha no `/flexscan/trafego`
+  (só conta em `consultas_min`) e a resposta 150=I não tem linha própria no journal.
+- **Sucesso:** pelo menos uma linha
+  `msg=conciliação resumo="1 ordem(ns) KM, 0 de outros (ignoradas), 0 divergência(s); posição 0"`
+  (a do REAL; a do SIMULADOR é `0 ordem(ns) KM, ... 0 divergência(s)`), **toda** linha de resumo com
+  `0 divergência(s)`; nenhuma `DESCONHECIDA`, `DIVERGENTE`, `PARADA`, `flexscan: mass status sem
+  resposta` ou `contas sem resposta completa`; a mesma E viva com o mesmo `orderid37`. Prova extra no
+  histórico da operação: o 150=I com `17=MS:...:<orderid37>`:
+  ```bash
+  curl -s "127.0.0.1:9092/operacoes/$OP/historico?modulo=BOLETA&cru=1" | jq -r '.mensagens[] | select((.fix_raw // "") | test("17=MS:")) | "\(.em) \(.fix_raw)"' | cut -c1-200
+  ```
+- **Falha:** `DESCONHECIDA` + `DIVERGENTE` + `PARADA BLOQUEAR` (a listagem não achou a ordem) ou
+  `contas sem resposta completa ... [D-4582351]` (a listagem não respondeu): o §5.
+
 ## 4. O cancelamento e a liberação
 
 ```bash
