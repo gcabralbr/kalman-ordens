@@ -90,8 +90,8 @@ sudo firewall-cmd --zone=public --list-rich-rules | grep 9098     # só a do $P
 - Isso não fecha a 9098 para quem está dentro da .53. Para esse caso, só o segredo novo resolve.
 
 ### 2.1 N1: a location do REAL no proxy público, com o filtro de IP (FX-7)
-A location do SIMULADOR é **exata, com o segredo no caminho** (C1). Para o REAL, a proposta é **uma
-location de prefixo com o filtro de IP**:
+A location do SIMULADOR é **exata, com o segredo no caminho** (C1). Para o REAL, **aprovada pelo George
+em 24/11: uma location de prefixo com o filtro de IP**, sem copiar o segredo para o proxy:
 - o segredo novo fica num lugar só (o env da .53), sem ter de ser copiado para o proxy, o que o faria
   aparecer na tela;
 - de fora, só a Flexscan chega à 9098;
@@ -114,9 +114,6 @@ sudo nginx -t && sudo systemctl reload nginx
 curl -s -o /dev/null -w '%{http_code}\n' https://<host do proxy>/kalman-ordens/flexscan/webhook-real-btg/teste           # 200 (GET)
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<host do proxy>/kalman-ordens/flexscan/webhook-real-btg/teste   # 403 (quem testa não é a Flexscan)
 ```
-Se preferir a location exata, como a do SIMULADOR, me avise. Ela pede um passo para levar o segredo
-novo da .53 ao proxy sem mostrá-lo (um arquivo gerado pelo script e copiado por `scp`), e o filtro
-de IP vale igual.
 
 ### 2.2 E1–E3: o arquivo novo, gerado sem o segredo aparecer
 ```bash
