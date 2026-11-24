@@ -241,3 +241,114 @@ validado (bid ≤ ask, idade ≤ 1 s).
   preço além do limite. O furo tem de vir pelo livro, em 500 ms.
 - **A pergunta ao PnT/BTG** sobre o 39=B "[DSA-122]" do robô do REAL entra no próximo ESTADO.
 - **A FX-11** tem roteiro próprio: `docs/SONDAGEM-FX11-flexscan.md`.
+
+## 7. Adendo de 24/11: a stop do PnT que não dispara (op 234852)
+
+**Aprovado pelo George em 24/11 para entrar na SPEC, com prioridade acima do OCO. Proposta de N,
+alerta e testes para a leitura dele; não codar antes.**
+
+### 7.1 O caso
+- **A op 234852** (uid 35, conta 5094181, comprado a 167965) tinha a stop de venda 168110 (limite
+  167910), aceita às 11:32:25.004.
+- **O mercado passou pelo gatilho e a stop não disparou.** Pela captura da Cedro, houve negócio a
+  ≤168110 desde ~11:32:29.8, e o preço chegou a 167955. A stop **nunca disparou**: nenhum 39=B e
+  nenhum fill.
+- **As reservas que existem demoraram:**
+  - a do serviço (D1b) só olha o preço além do **limite** (167910), e o mínimo foi 167955;
+  - a do Kalman (R5, 10 s) pediu a saída às 11:32:49;
+  - a saída por replace fez 4 degraus de ~2,3 s, todos com gatilho 45–130 pts além do preço, e
+    nenhum disparou;
+  - o cancelamento levou 3,9 s, e a S executou às 11:33:04.
+- **Resultado: ~33 s sem proteção efetiva.**
+- **O mesmo robô, na mesma conta e no mesmo dia,** disparou duas stops antes do gatilho (234847 e
+  234849). Isso foi levado ao PnT (log em `var/pnt-1014-2411/`).
+
+**O normal, medido:**
+- no REAL, a stop do 1450 em 24/11 disparou 0,59 s depois do 1º negócio no gatilho (166840 às
+  09:45:34.559 pela Cedro; o 150=I às 35.148);
+- nas 7 saídas por replace que funcionaram (13/11–23/11), o 1º 150=I/39=B veio de 250 a 780 ms
+  depois do 150=5.
+
+### 7.2 (a) A 3ª porta: o gatilho atravessado sem disparo (só no PnT)
+
+**A regra:** com a posição ≠ 0, a 1014 viva e aceita (150=0 ou 150=5), sem replace nem cancelamento
+pendente, e sem nenhum sinal de disparo:
+- **o último além do gatilho confirmado por pelo menos 1 tick**: na venda, último ≤ gatilho − 5; na
+  compra, espelhado;
+- **com o preço confiável:** `status84` 0 e idade ≤ `PRECO_IDADE_MAX_S`, a mesma condição da D1(b);
+- **por `STOP_SEM_DISPARO_S`, com a proposta de N = 2 s.** É ~3× o normal medido, e o atraso da
+  Cedro só atrasa a detecção: ela nunca vê o cruzamento antes do PnT.
+
+**O que conta como sinal de disparo:** qualquer relatório da 1014 depois do cruzamento com 39=B ou
+150=I (inclusive o "Delaying final state" com 20807=0, que é o que o REAL manda), ou um fill (150=1/F).
+O `disparadaEm` de hoje não serve, porque exige 20807>0.
+
+**O relógio:**
+- começa na 1ª leitura além do gatilho e **não volta a zero se o preço voltar**: o toque bastava
+  para disparar;
+- volta a zero com um 150=5 novo (outro gatilho), e a regra é reavaliada com ele.
+
+**A ação:**
+1. o alerta crítico `STOP_SEM_DISPARO`;
+2. `CANCELANDO_PROTECAO` e o cancelamento da 1014;
+3. **só com o cancelamento confirmado**, a saída, com o preço e o repreço da D2;
+4. `origem`/`motivo` `STOP_SEM_DISPARO`, um valor novo que o Kalman precisa aceitar. Se for melhor
+   não mudar o contrato, use `STOP_FURADO`.
+
+Se a 1014 disparar ou executar durante o cancelamento, vale o que já existe: o 35=9 "in time" vai
+para `AGUARDANDO_STOP` (v1.36.3) e o fill encerra.
+
+**Por que não mandar a saída antes do cancelamento confirmado:** se a 1014 disparar atrasada, seriam
+duas vendas, e a posição vira. Os 3,9 s do cancelamento continuam sendo o custo. A D2.1 da SPEC (o
+replace da própria stop para o agressivo) não serve aqui, porque é exatamente o replace que não
+disparou.
+
+**Na Flexscan, nada muda.** A stop-limite é nativa da B3 e não manda sinal de disparo, então a porta
+não se aplica; a D1(b) continua.
+
+### 7.3 (b) A saída por replace desiste no 1º degrau
+
+- **A regra:** se o 1º degrau não disparar em `SAIDA_REPLACE_TIMEOUT_S` (2 s, contados do 150=5),
+  vêm o `STOP_SEM_DISPARO` e o cancelamento com a S, sem os degraus 2–4. O gatilho desse replace já
+  está 100 pts além do preço (`SAIDA_REPLACE_ALEM_PTS`), e o normal é disparar em 250–780 ms.
+- **A chave:** `SAIDA_REPLACE_DEGRAUS`, padrão 1. Hoje o número de degraus vem do
+  `MAX_REPRECO_SAIDA` (3, que dá 4 degraus), que também conta os repreços da S. Por isso não dá para
+  reduzi-lo só pelo env sem mexer na S.
+- **O ganho na 234852:** a S teria saído ~7 s antes.
+
+### 7.4 O alerta (crítico, Telegram, um por operação)
+```
+[.53 kalman-ordens] CRITICO STOP_SEM_DISPARO: uid 35 op 234852 (PnT, conta 5094181): stop de venda
+gatilho 168110 sem disparo há 2,0 s com o último em 168095 (além do gatilho desde 11:32:29.8);
+cancelando a stop para sair por ordem nova
+```
+Na saída por replace:
+```
+[.53 kalman-ordens] CRITICO STOP_SEM_DISPARO: uid 35 op 234852 (PnT, conta 5094181): saída por
+replace com gatilho 168085 (último 167985) sem disparo em 2,0 s; cancelando para sair por ordem nova
+```
+No fill, o `RESOLVIDO` diz: "saída a 168095: 15 pts além do gatilho, resultado +130 pts". No
+`ALERTAS.md` entra uma linha nova, e a pergunta ao PnT fica citada.
+
+### 7.5 Os testes (roteiros novos, a contagem passa de 149)
+
+| # | roteiro | espera |
+|---|---|---|
+| 140 | PnT: a 1014 aceita, o último cai 1 tick além do gatilho e fica, nenhum 39=B | aos 2 s, `STOP_SEM_DISPARO` e o 35=F; no 150=4, a S; o fill zera com `motivo STOP_SEM_DISPARO` |
+| 141 | o mesmo, com o 150=I "Delaying final state" (20807=0) aos 0,6 s | **sem** alerta; o fill da stop zera como `STOP_SERVIDOR` |
+| 142 | o último toca o gatilho (sem passar 1 tick), ou o preço velho/em leilão | **sem** alerta |
+| 143 | o último passa e volta antes dos 2 s, sem 39=B | alerta aos 2 s, porque o relógio não volta a zero |
+| 144 | um replace de ajuste (TRSP) aceito no meio | o relógio volta a zero no 150=5 e conta de novo contra o gatilho novo |
+| 145 | o cancelamento recusado "in time" (a stop executando) | `AGUARDANDO_STOP`, sem a S; o fill zera (v1.36.3) |
+| 146 | saída por replace: o 1º degrau aceito e nenhum 39=B em 2 s | `STOP_SEM_DISPARO`, sem o 2º degrau, cancelamento e S |
+| 147 | saída por replace normal: o 39=B aos 0,5 s | nada muda (os 7 casos do REAL) |
+| 148 | Flexscan: o preço além do gatilho, sem fill | **sem** `STOP_SEM_DISPARO` (só a D1b) |
+
+Mais o teste do contrato: o Kalman recebe o `motivo` novo, ou o `STOP_FURADO`, se for essa a decisão.
+
+### 7.6 Decisões para o George
+1. N = 2 s e 1 tick além do gatilho?
+2. O motivo novo `STOP_SEM_DISPARO` no contrato com o Kalman, ou reaproveitar o `STOP_FURADO`?
+3. Fica antes da D1/D2 (o furo) na E2, ou numa versão própria (v1.36.4) só com 7.2 e 7.3? A
+   recomendação é a **versão própria**: ela é pequena (a regra no tick, a chave nova, o
+   `tickSaidaReplace`, 9 roteiros) e não espera a FX-11.
