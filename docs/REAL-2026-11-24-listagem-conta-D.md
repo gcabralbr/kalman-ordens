@@ -127,3 +127,19 @@ o George e o Ferro ligam o "Enviar ordens" do 1450 e do 35.
 - do §2: o `orderid37`, a linha do POST e a do FLX-GET;
 - do §3: a linha da conciliação e o `/saude`;
 - do §4: o estado final e o que o Profit mostra.
+
+## 7. Resultado (24/11, George e CC): **provada**
+- **§1 (08:53 e 09:00:21):** o "Enviar ordens" dos três desligado (nenhum `[real]` no journal do Kalman
+  no dia), REAL logado, limpo, posição 0.
+- **§2 (09:02:09):** op `1124090206`, E `KM-BOLETA-E-1124090206-1` C 1 WINZ26 limite 164700 na
+  `D-4582351`: POST 202, `ATIVA`, orderid37 `24ce3717-287f-4cab-805b-54a28e631e60`, `route=1
+  ORDPROXY0801BTG.DTBTG00000000001`.
+- **§3 (restart 09:03:13, v1.36.3 `947b81422b04`, NRestarts=0):** login da `btg_gammaquant` 09:03:14.090
+  → conciliação 09:03:14.102 **`1 ordem(ns) KM, 0 de outros (ignoradas), 0 divergência(s); posição 0`**;
+  logon da GAMMAQ2 09:03:15.525 → a mesma linha às 09:03:15.536; a do SIMULADOR 0/0 às 09:03:17.086.
+  Nenhuma DESCONHECIDA/DIVERGENTE/PARADA/"sem resposta". No histórico, as duas respostas
+  `17=MS:KM-MS-…:24ce3717-…` `150=I 39=0 1=D-4582351`. A mesma E `ATIVA`, o mesmo orderid37.
+- **§4 (09:04:14):** `boleta cancelar` → DELETE 202, consulta `CANCELADA exec 0/1`; 09:04:23
+  `ENCERRADA_SEM_ENTRADA`, E `CANCELADA`; `/saude` limpo (sem vivas, posição 0). No Profit, a
+  limitada saiu (George).
+- **Consequência:** o 5725 pode operar pela `D-4582351` com outros usuários ligados na instância REAL.
