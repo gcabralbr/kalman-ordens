@@ -901,7 +901,7 @@ func (e *Executor) passo(p roteiro.Passo) error {
 		return conferir(e.resposta, p.Args)
 	case "evento", "sem_evento", "conta_eventos":
 		return e.eventos(p)
-	case "alerta", "sem_alerta":
+	case "alerta", "sem_alerta", "alerta_contem":
 		return e.alerta(p)
 	case "telegram":
 		return e.telegram(p.Args)
@@ -1470,6 +1470,10 @@ func (e *Executor) alerta(p roteiro.Passo) error {
 			continue
 		}
 		if fmt.Sprint(dados(x)["codigo"]) != p.Args[0] {
+			continue
+		}
+		// v1.36.4: alerta_contem CODIGO "trecho": o mesmo, com o trecho no texto
+		if p.Verbo == "alerta_contem" && !strings.Contains(fmt.Sprint(dados(x)["texto"]), p.Args[1]) {
 			continue
 		}
 		if p.Verbo == "sem_alerta" {

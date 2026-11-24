@@ -1,0 +1,16 @@
+cenario 142 v1.36.4: na Flexscan a porta do stop sem disparo não age (a stop-limite é da B3 e não há sinal de disparo): o preço além do gatilho, entre ele e o limite, sem alerta
+hora 2026-11-24 11:32:00
+# SPEC-TECNICA-v1.37 §7.2: só o PnT. Na Flexscan o retrato vai de 3 para 5 sem sinal de disparo
+# (SPEC-FLEXSCAN §14.5); ali fica a reserva pelo limite (verificarFuro).
+config FLEXSCAN_URL=falso
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+executa COMPRADO_FLX OP=14201
+preco bid=129500 ask=129505 preco=129505
+avanca 4s
+nada
+sem_alerta STOP_FURADO
+http GET /ordens/14201
+resposta estado=PROTEGIDA

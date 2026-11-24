@@ -1,5 +1,8 @@
 cenario 79 Saída que esgotou os repreços reapregoa a cada REPRECO_ESGOTADO_S (10 s), com o alerta crítico mantido
 hora 2026-10-13 10:45:00
+# v1.36.4: a porta do stop sem disparo (STOP_SEM_DISPARO_S, 2 s) desligada aqui: o preço passa do gatilho
+# sem 39=B e o roteiro testa o caminho de antes (o furo pelo limite em ESPERA_STOP_S); ela tem o 140
+config STOP_SEM_DISPARO_S=0
 # SPEC v1.10 L. Até MAX_REPRECO_SAIDA (3), repreço a cada TIMEOUT_SAIDA_S (2 s); esgotado
 # (SAIDA_ESGOTOU, crítico), a cada REPRECO_ESGOTADO_S — uma saída presa não ocupa a sessão (HML 16/10:
 # 43 replaces em 80 s). Mesmo começo do roteiro 07 (stop furado).

@@ -381,6 +381,10 @@ zeragem) troca o gatilho da 1014 para além do preço em vez de cancelar a 1014 
 ativa e aceita, sem pedido pendente, não disparada, cobrindo a posição, sem entrada viva, sem ticker
 divergente e com o disjuntor fechado; senão, o caminho de antes. 150=5 sem disparo em
 `SAIDA_REPLACE_TIMEOUT_S` (2): degrau seguinte, até `MAX_REPRECO_SAIDA`; esgotado, cancel + 1031.
+v1.36.4: `SAIDA_REPLACE_DEGRAUS` (1): o 1º degrau sem disparo já vira `STOP_FURADO` "(sem disparo)" e cancel + 1031
+(op 234852: 4 degraus sem disparo, 9 s). E `STOP_SEM_DISPARO_S` (2, 0 desliga) e `STOP_SEM_DISPARO_TICKS` (1): no
+PnT, a 1014 aceita com o último além do gatilho e nenhum 150=I/39=B/fill nesse tempo vai pelo caminho do stop
+furado (só com o cancel confirmado, a 1031; o cancel recusado "in time" espera os fills).
 Disparada sem fill em `ESPERA_STOP_S`: stop furado. Recusado: com a 1014 disparada/terminal ("in
 time"), espera os fills (AGUARDANDO_STOP); outro motivo, cancel + 1031 na hora. Contrato com o
 Kalman inalterado (estado SAINDO; fill com a origem e o motivo do pedido; sem PROTEGIDA,

@@ -1,0 +1,141 @@
+cenario 140 v1.36.4: a 1014 do PnT com o último além do gatilho e nenhum sinal de disparo em STOP_SEM_DISPARO_S (2 s) → o caminho do stop furado, com o detalhe "sem disparo"
+hora 2026-11-24 11:32:00
+# SPEC-TECNICA-v1.37 §7.2 (op 234852, 24/11): a stop de venda 168110 aceita às 11:32:25; o mercado passou
+# por ela desde ~11:32:29 (mínimo 167955), nenhum 39=B e nenhum fill; o serviço só olhava o preço além do
+# LIMITE (verificarFuro). Aqui: COMPRADO a 130010, a 1014 com gatilho 129510 e limite 129410.
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config LIMITE_ENTRADAS_DIA=100
+config LIMITE_RECUSAS_PARADA=50
+config LIMITE_PERDA_DIA_PTS=100000
+
+executa INICIO
+
+# --- a) o caso da 234852: 1 tick além do gatilho, entre o gatilho e o limite, e nada do PnT. Aos 2 s,
+# STOP_FURADO "sem disparo" (o relógio começa no 1º tick com o preço além: +100 ms), o cancel e, com ele confirmado, a 1031; o fill zera com STOP_FURADO
+executa COMPRADO OP=14001
+preco bid=129500 ask=129505 preco=129505
+avanca 2s
+nada
+avanca 100ms
+alerta_contem STOP_FURADO "sem disparo"
+recebe 35=F 11=KM-P-14001-2 41=KM-P-14001-1 37=dsa.14001.P
+http GET /ordens/14001
+resposta estado=CANCELANDO_PROTECAO
+envia @ER 11=KM-P-14001-2 41=KM-P-14001-1 37=dsa.14001.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-14001-1 54=2 847=1031
+envia @ER 11=KM-S-14001-1 37=dsa.14001.S 150=F 39=2 54=2 38=1 44=129450 847=1031 32=1 31=129495 14=1 151=0 6=129495
+evento ZERADA operacao_id=14001 motivo=STOP_FURADO origem=STOP_FURADO
+saude posicao=0
+nada
+preco bid=130000 ask=130005 preco=130000
+
+# --- b) a stop normal: o "Delaying final state" (150=I 39=B, 20807=0, como no REAL) aos 0,6 s é o
+# disparo; nenhum alerta, o fill zera como STOP_SERVIDOR
+executa COMPRADO OP=14002
+preco bid=129500 ask=129505 preco=129505
+avanca 600ms
+envia @ER 11=KM-P-14002-1 37=dsa.14002.P 150=I 39=B 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 20807=0 58="Delaying final state 'Finished' for 3.00 s, timer started."
+avanca 3s
+nada
+sem_alerta STOP_FURADO
+envia @ER 11=KM-P-14002-1 37=dsa.14002.P 150=F 39=2 54=2 38=1 44=129410 847=1014 32=1 31=129500 14=1 151=0 6=129500
+evento ZERADA operacao_id=14002 origem=STOP_SERVIDOR
+saude posicao=0
+nada
+preco bid=130000 ask=130005 preco=130000
+
+# --- c) o último no gatilho (sem passar 1 tick), e depois além com o preço velho: nenhum alerta
+executa COMPRADO OP=14003
+preco bid=129505 ask=129510 preco=129510
+avanca 3s
+nada
+preco bid=129400 ask=129405 preco=129405 idade=10s
+avanca 3s
+nada
+sem_alerta STOP_FURADO
+preco bid=130000 ask=130005 preco=130000 idade=0s
+avanca 3s
+nada
+envia @ER 11=KM-P-14003-1 37=dsa.14003.P 150=F 39=2 54=2 38=1 44=129410 847=1014 32=1 31=129505 14=1 151=0 6=129505
+evento ZERADA operacao_id=14003 origem=STOP_SERVIDOR
+nada
+
+# --- d) o último passa do gatilho e volta antes dos 2 s, sem 39=B: o relógio não volta a zero (o
+# toque bastava para disparar), alerta aos 2 s
+executa COMPRADO OP=14004
+preco bid=129495 ask=129500 preco=129500
+avanca 500ms
+preco bid=129600 ask=129605 preco=129605
+avanca 1500ms
+nada
+avanca 100ms
+alerta_contem STOP_FURADO "sem disparo"
+recebe 35=F 11=KM-P-14004-2 41=KM-P-14004-1 37=dsa.14004.P
+envia @ER 11=KM-P-14004-2 41=KM-P-14004-1 37=dsa.14004.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-14004-1 54=2 847=1031
+envia @ER 11=KM-S-14004-1 37=dsa.14004.S 150=F 39=2 54=2 38=1 44=129555 847=1031 32=1 31=129600 14=1 151=0 6=129600
+evento ZERADA operacao_id=14004 motivo=STOP_FURADO origem=STOP_FURADO
+nada
+preco bid=130000 ask=130005 preco=130000
+
+# --- e) um ajuste (TRSP) aceito no meio: o relógio volta a zero no 150=5 e conta contra o gatilho novo
+executa COMPRADO OP=14005
+stop 14005 preco=129800 origem=TRSP
+resposta aceito=true
+recebe 35=G 11=KM-P-14005-2 41=KM-P-14005-1 37=dsa.14005.P 20828=129800
+preco bid=129495 ask=129500 preco=129500
+avanca 1500ms
+nada
+envia @ER 11=KM-P-14005-2 41=KM-P-14005-1 37=dsa.14005.P 150=5 39=5 54=2 38=1 44=129700 847=1014 14=0 151=1 6=0 20828=129800 20829=129700
+evento PROTECAO_AJUSTADA operacao_id=14005 preco_stop=129800
+avanca 2s
+nada
+avanca 100ms
+alerta_contem STOP_FURADO "gatilho 129800"
+recebe 35=F 11=KM-P-14005-3 41=KM-P-14005-2 37=dsa.14005.P
+
+# --- f) o cancel recusado "in time" (a stop executando por fim): AGUARDANDO_STOP, sem a 1031 (v1.36.3)
+envia 35=9 11=KM-P-14005-3 41=KM-P-14005-2 37=dsa.14005.P 39=B 434=1 102=0 58="Order could not be cancelled in time."
+alerta CANCEL_STOP_REJEITADO
+http GET /ordens/14005
+resposta estado=AGUARDANDO_STOP
+envia @ER 11=KM-P-14005-2 37=dsa.14005.P 150=F 39=2 54=2 38=1 44=129700 847=1014 32=1 31=129495 14=1 151=0 6=129495
+evento ZERADA operacao_id=14005 origem=STOP_SERVIDOR
+saude posicao=0
+nada
+preco bid=130000 ask=130005 preco=130000
+
+# --- h) o cancel recusado por outro motivo (a 1014 segue viva e sem disparo): nada de 1031 com ela
+# viva (seriam duas vendas se ela disparar depois); o cancel é repetido e a 1031 vem no 150=4
+executa COMPRADO OP=14007
+preco bid=129500 ask=129505 preco=129505
+avanca 2100ms
+alerta_contem STOP_FURADO "sem disparo"
+recebe 35=F 11=KM-P-14007-2 41=KM-P-14007-1 37=dsa.14007.P
+envia 35=9 11=KM-P-14007-2 41=KM-P-14007-1 37=dsa.14007.P 39=0 434=1 102=99 58="Temporarily unavailable"
+alerta RECUSA_PNT
+http GET /ordens/14007
+resposta estado=CANCELANDO_PROTECAO
+nada
+avanca 5s
+recebe 35=F 11=KM-P-14007-3 41=KM-P-14007-1 37=dsa.14007.P
+envia @ER 11=KM-P-14007-3 41=KM-P-14007-1 37=dsa.14007.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-14007-1 54=2 847=1031
+envia @ER 11=KM-S-14007-1 37=dsa.14007.S 150=F 39=2 54=2 38=1 44=129450 847=1031 32=1 31=129495 14=1 151=0 6=129495
+evento ZERADA operacao_id=14007 motivo=STOP_FURADO origem=STOP_FURADO
+saude posicao=0
+nada
+preco bid=130000 ask=130005 preco=130000
+
+# --- g) desligada (STOP_SEM_DISPARO_S=0): só o caminho de antes
+reinicia_servico config=STOP_SEM_DISPARO_S=0
+aguarda_logon
+avanca 3s
+executa COMPRADO OP=14006
+preco bid=129500 ask=129505 preco=129505
+avanca 4s
+nada
+sem_alerta STOP_FURADO
+preco bid=130000 ask=130005 preco=130000

@@ -1,5 +1,8 @@
 cenario 07 1014 dispara e a saída não executa (gap) → stop furado → saída agressiva
 hora 2026-10-13 10:45:00
+# v1.36.4: a porta do stop sem disparo (STOP_SEM_DISPARO_S, 2 s) desligada aqui: o preço passa do gatilho
+# sem 39=B e o roteiro testa o caminho de antes (o furo pelo limite em ESPERA_STOP_S); ela tem o 140
+config STOP_SEM_DISPARO_S=0
 
 executa INICIO
 executa COMPRADO OP=1007

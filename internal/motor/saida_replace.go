@@ -21,7 +21,8 @@ import (
 //   - venda (sai de compra): gatilho = max(bid, último) + SAIDA_REPLACE_ALEM_PTS; compra: espelhado;
 //     limite = bid − COLAR_SAIDA × k / ask + COLAR_SAIDA × k (k = degrau, como o repreço);
 //   - 150=5 sem disparo (150=I/39=B) em SAIDA_REPLACE_TIMEOUT_S: replace no degrau seguinte; passado
-//     o último (MAX_REPRECO_SAIDA + 1), cancel + nova ordem (o caminho de antes);
+//     o último (SAIDA_REPLACE_DEGRAUS, padrão 1 desde a v1.36.4; no máximo MAX_REPRECO_SAIDA + 1),
+//     STOP_FURADO "sem disparo" e cancel + nova ordem (o caminho de antes);
 //   - disparada sem fill em ESPERA_STOP_S: o caminho do stop furado (cancel; rejeitado → 1031);
 //   - replace recusado: com a 1014 disparada/terminal (ou "in time"), espera os fills como no cancel
 //     rejeitado (AGUARDANDO_STOP); outro motivo, cancel + nova ordem na hora;
@@ -193,8 +194,13 @@ func (m *Motor) tickSaidaReplace(op *operacao) {
 	if agora.Sub(r.aceitoEm) < m.p.SaidaReplaceTimeout {
 		return
 	}
-	if r.degrau > m.p.MaxRepreco || p.replaces >= m.p.Replaces1014Max {
+	if r.degrau >= m.p.SaidaReplaceDegraus || r.degrau > m.p.MaxRepreco || p.replaces >= m.p.Replaces1014Max {
 		m.saidaReplaceFalhou(op, fmt.Sprintf("a 1014 não disparou em %d replace(s)", r.degrau), "CANCEL_E_NOVA")
+		// v1.36.4 (SPEC v1.37 §7.3, op 234852): o gatilho além do preço que não dispara é a stop que
+		// não dispara: crítico, e o cancel + 1031 já no 1º degrau (SAIDA_REPLACE_DEGRAUS)
+		m.al.Emitir("STOP_FURADO", chaveOp("STOP_FURADO", op),
+			fmt.Sprintf("stop furado (sem disparo): a saída por replace da 1014 %s com gatilho %d além do preço não disparou no PnT em %s (%d replace(s)); cancelando para sair por ordem nova, posição %d, operação %d",
+				p.ClOrdAtual, r.gatilho, agora.Sub(r.aceitoEm).Truncate(100*time.Millisecond), r.degrau, op.posicao(), op.OperacaoID), op.OperacaoID)
 		m.mudar(op, dominio.CancelandoProtecao)
 		op.cancelProtEm = agora
 		m.cancelar(p)

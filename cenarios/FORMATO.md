@@ -82,6 +82,7 @@ Mensagens de sessão (0, 1, 2, 4, 5, A) não entram na fila de `recebe`/`nada`; 
 | `conta_eventos TIPO [campo=valor ...] = N` | total de eventos desse tipo (casados ou não) |
 | `alerta CODIGO` | um alerta com esse código, ainda não casado (Telegram e evento ALERTA levam `codigo` e `texto`) |
 | `sem_alerta CODIGO` | nenhum alerta não casado com esse código |
+| `alerta_contem CODIGO "trecho"` | (v1.36.4) como o `alerta`, com o trecho no texto do alerta |
 
 ## Processo e sessão
 

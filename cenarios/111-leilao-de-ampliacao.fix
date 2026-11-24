@@ -1,5 +1,8 @@
 cenario 111 Leilão de ampliação do limite (v1.18): em leilão o preco não é referência — sem stop furado por comparação, resultado do dia sem preço, saída com limite largo (SAIDA_EM_LEILAO) e sem repreço; na reabertura com gap, o furo pela reserva e o repreço normal
 hora 2026-10-26 10:00:00
+# v1.36.4: a porta do stop sem disparo (STOP_SEM_DISPARO_S, 2 s) desligada aqui: o preço passa do gatilho
+# sem 39=B e o roteiro testa o caminho de antes (o furo pelo limite em ESPERA_STOP_S); ela tem o 140
+config STOP_SEM_DISPARO_S=0
 # as fases perdem ~14.500 pts (o gap): a perda do dia não pode parar o roteiro
 config LIMITE_PERDA_DIA_PTS=100000
 # 26/10 09:38: a 9090 em status84 3 com preco = último negócio (177.215) e o teórico do leilão em

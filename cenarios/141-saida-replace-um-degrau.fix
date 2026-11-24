@@ -1,0 +1,51 @@
+cenario 141 v1.36.4: a saída por replace desiste no 1º degrau (SAIDA_REPLACE_DEGRAUS=1): o gatilho além do preço que não dispara em SAIDA_REPLACE_TIMEOUT_S é a stop que não dispara → STOP_FURADO "sem disparo", cancel + 1031
+hora 2026-11-24 11:32:40
+# SPEC-TECNICA-v1.37 §7.3 (op 234852, 24/11): 4 degraus de ~2,3 s, todos com o gatilho 45–130 pts além do
+# preço, nenhum disparou; o cancel + S veio 9 s depois do 1º. Agora: um degrau, 2 s depois do 150=5.
+config SAIDA_POR_REPLACE=1
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config LIMITE_ENTRADAS_DIA=100
+config LIMITE_RECUSAS_PARADA=50
+config LIMITE_PERDA_DIA_PTS=100000
+
+executa INICIO
+
+# --- a) o caso da 234852: o 1º degrau aceito e nada do PnT em 2 s: STOP_FURADO "sem disparo", sem o 2º degrau
+executa COMPRADO OP=14101
+saida 14101 V TRSP
+resposta aceito=true
+recebe 35=G 11=KM-P-14101-2 41=KM-P-14101-1 37=dsa.14101.P 44=129950 20828=130100 20829=129950
+evento SAIDA_POR_REPLACE operacao_id=14101 degrau=1 preco_stop=130100 preco_limite=129950 motivo=TRSP
+envia @ER 11=KM-P-14101-2 41=KM-P-14101-1 37=dsa.14101.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20828=130100 20829=129950
+avanca 1900ms
+nada
+avanca 200ms
+evento SAIDA_REPLACE_FALHOU operacao_id=14101 seguinte=CANCEL_E_NOVA
+alerta_contem STOP_FURADO "sem disparo"
+recebe 35=F 11=KM-P-14101-3 41=KM-P-14101-2
+sem_evento SAIDA_POR_REPLACE operacao_id=14101 degrau=2
+envia @ER 11=KM-P-14101-3 41=KM-P-14101-2 37=dsa.14101.P 150=4 39=4 54=2 38=1 44=129950 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-14101-1 54=2 847=1031
+envia @ER 11=KM-S-14101-1 37=dsa.14101.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=129995 14=1 151=0 6=129995
+evento ZERADA operacao_id=14101 motivo=TRSP origem=GESTOR
+saude posicao=0
+nada
+
+# --- b) a saída por replace normal (os 7 casos do REAL): o disparo ("Delaying final state", 20807=0) aos
+# 0,5 s e o fill; nenhum alerta
+executa COMPRADO OP=14102
+saida 14102 V SINAL_OPOSTO
+resposta aceito=true
+recebe 35=G 11=KM-P-14102-2 41=KM-P-14102-1 37=dsa.14102.P 20828=130100 20829=129950
+envia @ER 11=KM-P-14102-2 41=KM-P-14102-1 37=dsa.14102.P 150=5 39=5 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20828=130100 20829=129950
+avanca 500ms
+envia @ER 11=KM-P-14102-2 37=dsa.14102.P 150=I 39=B 54=2 38=1 44=129950 847=1014 14=0 151=1 6=0 20807=0 58="Delaying final state 'Finished' for 3.00 s, timer started."
+avanca 3s
+nada
+sem_alerta STOP_FURADO
+envia @ER 11=KM-P-14102-2 37=dsa.14102.P 150=F 39=2 54=2 38=1 44=129950 847=1014 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=14102 motivo=SINAL_OPOSTO origem=GESTOR
+saude posicao=0
+nada

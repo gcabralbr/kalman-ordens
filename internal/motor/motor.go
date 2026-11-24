@@ -109,8 +109,11 @@ type ordem struct {
 	// saída com replace recusado pela ordem já terminal no PnT (35=9 com 39=2/4/8, v1.3 I1): desde
 	// quando (repreço suspenso), se o mass status já foi pedido e se ele não foi coerente
 	// 1014 disparada no PnT (150=I 39=B com 20807>0, v1.3 J2): quando, e quanto já tinha executado
-	disparadaEm      time.Time
-	qtdNoDisparo     int
+	disparadaEm  time.Time
+	qtdNoDisparo int
+	// v1.36.4: o último sinal de disparo ou execução da 1014 (150=I, 39=B, fill) desde o último aceite
+	// (150=0/5); zero = nenhum. O disparadaEm exige 20807>0, que o PnT do REAL não manda
+	sinalDisparoEm   time.Time
 	recusaTerminalEm time.Time
 	recusaTerminal39 string
 	// v1.19: 35=9 com 39=2 sem o fill aplicado: o alerta adiado (sai se o fill não vier a tempo)
@@ -145,19 +148,25 @@ func (o *ordem) posicao() int {
 // operacao = persistido + ordens + volátil.
 type operacao struct {
 	dominio.Operacao
-	ordens                []*ordem
-	semProtecaoDesde      time.Time
-	cancelProtEm          time.Time
-	saidaAposReplace      bool // v1.36.3 §4: a saída espera a resposta de um replace da 1014
-	aguardandoStopDesde   time.Time
-	proximoRepreco        time.Time
-	proximaSaidaEm        time.Time
-	repreco               int
-	continuarRepreco      bool // a próxima saída segue do repreço seguinte (saída cancelada em erro, F14)
-	rejeicoesProtecao     int
-	retentativaProtEm     time.Time
-	furoDesde             time.Time
-	furado                bool
+	ordens              []*ordem
+	semProtecaoDesde    time.Time
+	cancelProtEm        time.Time
+	saidaAposReplace    bool // v1.36.3 §4: a saída espera a resposta de um replace da 1014
+	aguardandoStopDesde time.Time
+	proximoRepreco      time.Time
+	proximaSaidaEm      time.Time
+	repreco             int
+	continuarRepreco    bool // a próxima saída segue do repreço seguinte (saída cancelada em erro, F14)
+	rejeicoesProtecao   int
+	retentativaProtEm   time.Time
+	furoDesde           time.Time
+	furado              bool
+	// v1.36.4 (STOP_SEM_DISPARO_S): a 1ª leitura do último além do gatilho semDisparoGatilho da 1014
+	// sem sinal de disparo, e esse último; zero com um gatilho novo ou com o disparo
+	semDisparoDesde       time.Time
+	semDisparoGatilho     int64
+	semDisparoPx          string
+	semDisparo            bool          // o stop furado veio do verificarSemDisparo: a 1014 nunca disparou
 	saidaEmLeilao         bool          // v1.18: SAIDA_EM_LEILAO emitido; volta a false com o status84 0
 	saidaRep              *saidaReplace // saída por replace da 1014 em curso (v1.11; só em memória)
 	saidaAposEntrada      bool

@@ -168,6 +168,12 @@ type Parametros struct {
 	SaidaReplaceAlemPts int64
 	SaidaLeilaoPct      int64 // v1.18: limite da saída em leilão, % sobre o último negócio
 	SaidaReplaceTimeout time.Duration
+	// v1.36.4 (SPEC v1.37 §7.3, op 234852): degraus da saída por replace antes do cancel + 1031
+	SaidaReplaceDegraus int
+	// v1.36.4 (SPEC v1.37 §7.2, op 234852): a 1014 do PnT com o último além do gatilho por
+	// StopSemDisparoTicks e nenhum sinal de disparo em StopSemDisparo (0 = desligado): stop furado
+	StopSemDisparo      time.Duration
+	StopSemDisparoTicks int64
 	// v1.13: 20864=Y (IgnoreTunnel) também nas entradas (a 1014 e a saída sempre levam)
 	IgnoreTunnelEntrada bool
 	// v1.13: MaxReplaces da 1014 (RoE §4.3.7, padrão 100) e a reserva para a saída por replace
@@ -225,6 +231,9 @@ func (c Config) Parametros() Parametros {
 		SaidaReplaceAlemPts:     c.Pontos("SAIDA_REPLACE_ALEM_PTS", 100),
 		SaidaLeilaoPct:          int64(c.Inteiro("SAIDA_LEILAO_PCT", 10)),
 		SaidaReplaceTimeout:     c.Segundos("SAIDA_REPLACE_TIMEOUT_S", 2),
+		SaidaReplaceDegraus:     c.Inteiro("SAIDA_REPLACE_DEGRAUS", 1),
+		StopSemDisparo:          c.Segundos("STOP_SEM_DISPARO_S", 2),
+		StopSemDisparoTicks:     int64(c.Inteiro("STOP_SEM_DISPARO_TICKS", 1)),
 		IgnoreTunnelEntrada:     c.Bool("IGNORE_TUNNEL_ENTRADA", false),
 		Replaces1014Max:         c.Inteiro("REPLACES_1014_MAX", 100),
 		Replaces1014Reserva:     c.Inteiro("REPLACES_1014_RESERVA", 5),

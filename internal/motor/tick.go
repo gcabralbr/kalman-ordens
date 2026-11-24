@@ -201,6 +201,9 @@ func (m *Motor) acoesDeTempo(op *operacao, agora time.Time) {
 	switch op.Estado {
 	case dominio.Protegida:
 		m.verificarFuro(op, agora)
+		if op.Estado == dominio.Protegida {
+			m.verificarSemDisparo(op, agora)
+		}
 	case dominio.CancelandoProtecao:
 		p := op.viva(dominio.Protecao)
 		switch {
@@ -287,6 +290,53 @@ func (m *Motor) verificarFuro(op *operacao, agora time.Time) {
 		return
 	}
 	m.stopFurado(op, p, agora, fmt.Sprintf("stop furado: último %s além do limite %d com posição %d, operação %d", px, p.StopLim, op.posicao(), op.OperacaoID))
+}
+
+// verificarSemDisparo (v1.36.4, SPEC v1.37 §7.2; op 234852 de 24/11): no PnT, a 1014 aceita, o
+// último além do gatilho por STOP_SEM_DISPARO_TICKS e nenhum sinal de disparo (150=I, 39=B, fill)
+// em STOP_SEM_DISPARO_S: o caminho do stop furado (o alerta diz "sem disparo"). O relógio começa na
+// 1ª leitura além do gatilho e não volta a zero se o preço voltar (o toque bastava para disparar);
+// volta com um gatilho novo (150=5) ou com o disparo. Pedido pendente na 1014: espera a resposta.
+// Na Flexscan não: a stop é da B3 e não há sinal de disparo (fica a reserva do verificarFuro).
+func (m *Motor) verificarSemDisparo(op *operacao, agora time.Time) {
+	p := op.viva(dominio.Protecao)
+	if m.p.StopSemDisparo <= 0 || op.conector() != dominio.ConectorPnT || p == nil || p.Stop == 0 || op.posicao() == 0 {
+		op.semDisparoDesde, op.semDisparoGatilho = timeZero, 0
+		return
+	}
+	if p.Stop != op.semDisparoGatilho {
+		op.semDisparoDesde, op.semDisparoGatilho = timeZero, p.Stop
+	}
+	if p.pend != semPendencia || p.cancelarApos || p.Estado != dominio.Ativa {
+		return
+	}
+	if !p.disparadaEm.IsZero() || !p.sinalDisparoEm.IsZero() || p.QtdExec != 0 {
+		op.semDisparoDesde = timeZero
+		return
+	}
+	if op.semDisparoDesde.IsZero() {
+		px := m.precoConfiavel(m.precosDo(op.conector()).Ler(), op.Simbolo)
+		if px == nil || m.divergenteOp(op) {
+			return
+		}
+		alem := decimal.NewFromInt(m.p.StopSemDisparoTicks * m.p.Tick)
+		g := decimal.NewFromInt(p.Stop)
+		if (p.Lado == dominio.Venda && px.LessThanOrEqual(g.Sub(alem))) || (p.Lado == dominio.Compra && px.GreaterThanOrEqual(g.Add(alem))) {
+			op.semDisparoDesde, op.semDisparoPx = agora, px.String()
+		}
+		return
+	}
+	if agora.Sub(op.semDisparoDesde) < m.p.StopSemDisparo {
+		return
+	}
+	op.semDisparo = true
+	lado := "venda"
+	if p.Lado == dominio.Compra {
+		lado = "compra"
+	}
+	m.stopFurado(op, p, agora, fmt.Sprintf("stop furado (sem disparo): a 1014 %s de %s com gatilho %d não disparou no PnT; o último passou do gatilho às %s (%s) e nada veio em %s; cancelando para sair por ordem nova, posição %d, operação %d",
+		p.ClOrdAtual, lado, p.Stop, op.semDisparoDesde.In(relogio.Fuso).Format("15:04:05.000"), op.semDisparoPx,
+		agora.Sub(op.semDisparoDesde).Truncate(100*time.Millisecond), op.posicao(), op.OperacaoID))
 }
 
 // stopFurado: cancela a 1014 e sai com a 1031 (Parte 3.6).

@@ -181,6 +181,14 @@ func (m *Motor) aplicarExecReport(op *operacao, o *ordem, msg pnt.Mensagem) {
 		o.SecID = s
 	}
 	m.observarDisparo(op, o, st, msg)
+	if o.Papel == dominio.Protecao {
+		switch {
+		case et == "0" || et == "5":
+			o.sinalDisparoEm = timeZero // aceita (ou com gatilho novo): conta de novo
+		case et == "I" || st == "B" || et == "1" || et == "F":
+			o.sinalDisparoEm = m.agora()
+		}
+	}
 	estavaEncerrada := o.Estado.Final() && o.Estado != dominio.FalhaEnvio
 	if et != "I" {
 		m.confirmar(op, o)
@@ -690,10 +698,21 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 		switch {
 		case o.Papel == dominio.Protecao && op.Estado == dominio.CancelandoProtecao:
 			m.al.Resolver(chaveOp("CANCEL_SEM_RESPOSTA", op))
-			if op.furado {
+			switch {
+			case op.furado && op.semDisparo && stopEmExecucao(o, msg, texto):
+				// v1.36.4: a stop sem disparo disparou por fim (o cancel chegou tarde): a 1031 seria
+				// uma segunda venda; espera os fills, como no cancel rejeitado da v1.36.3
+				m.alertarRecusa(op, o, msg, "CANCEL_STOP_REJEITADO", fmt.Sprintf("cancel da 1014 sem disparo rejeitado (%s): a stop disparou por fim; aguardando fills do stop, operação %d", texto, op.OperacaoID))
+				m.mudar(op, dominio.AguardandoStop)
+				op.aguardandoStopDesde = m.agora()
+			case op.furado && op.semDisparo:
+				// v1.36.4: a 1014 sem disparo segue viva: nada de 1031 com ela viva (seriam duas vendas
+				// se ela disparar depois); o tick (CANCELANDO_PROTECAO) repete o cancel
+				m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("cancel da 1014 sem disparo rejeitado (%s): ela segue viva; o cancel é repetido, operação %d", texto, op.OperacaoID))
+			case op.furado:
 				m.mudar(op, dominio.Saindo)
 				m.enviarSaida(op)
-			} else {
+			default:
 				// a 1014 provavelmente já disparou: não manda a saída, espera os fills
 				m.alertarRecusa(op, o, msg, "CANCEL_STOP_REJEITADO", fmt.Sprintf("cancel da 1014 rejeitado (%s): aguardando fills do stop, operação %d", texto, op.OperacaoID))
 				m.mudar(op, dominio.AguardandoStop)

@@ -352,3 +352,43 @@ Mais o teste do contrato: o Kalman recebe o `motivo` novo, ou o `STOP_FURADO`, s
 3. Fica antes da D1/D2 (o furo) na E2, ou numa versão própria (v1.36.4) só com 7.2 e 7.3? A
    recomendação é a **versão própria**: ela é pequena (a regra no tick, a chave nova, o
    `tickSaidaReplace`, 9 roteiros) e não espera a FX-11.
+
+### 7.7 Decisões do George (24/11) e a implementação (v1.36.4)
+
+**As decisões:**
+- o §7 vira uma **v1.36.4 própria**, antes do resto da v1.37;
+- N = 2 s, com 1 tick;
+- o motivo é o **`STOP_FURADO`** com o detalhe **"(sem disparo)"** no texto: o contrato com o Kalman
+  não muda;
+- `SAIDA_REPLACE_DEGRAUS=1`.
+
+**O que foi decidido na implementação:**
+- **O cancelamento da 1014 sem disparo recusado** não segue o furo (lá, a recusa manda a 1031 na hora):
+  - recusado "in time" (`stopEmExecucao`): a stop disparou por fim, então `CANCEL_STOP_REJEITADO` e
+    `AGUARDANDO_STOP`, sem a 1031, que seria uma segunda venda;
+  - recusado por outro motivo: a 1014 segue viva, então o alerta de recusa e o cancelamento repetido
+    pelo tick, sem 1031 enquanto ela estiver viva.
+- **O sinal de disparo** é qualquer relatório da 1014 com 150=I, 39=B ou fill desde o último 150=0/5.
+  O `disparadaEm` exige 20807>0, que o PnT do REAL não manda.
+- **O relógio** começa no 1º tick com o preço confiável além do gatilho e não volta a zero se o preço
+  voltar. Volta a zero com um gatilho novo ou com o disparo. Com um pedido pendente na 1014, a porta
+  espera a resposta.
+
+**Os roteiros:**
+- **140**, com as seções a–h: o caso da 234852, a stop normal com o "Delaying final state", o toque
+  sem passar 1 tick e o preço velho, o preço que volta, o ajuste no meio, o cancelamento recusado "in
+  time", o cancelamento recusado por outro motivo e a porta desligada;
+- **141:** a saída por replace com 1 degrau, e a normal;
+- **142:** a Flexscan sem a porta.
+
+**Os roteiros de antes:**
+- o 07, o 79 e o 111 testam o caminho de antes com o preço além do gatilho sem 39=B, e ficaram com
+  `STOP_SEM_DISPARO_S=0`;
+- o 87 testa os degraus 2–4 com `SAIDA_REPLACE_DEGRAUS=4`.
+
+**As verificações ao contrário reprovaram como deviam:**
+- sem a porta, o 140 (a);
+- com os degraus de antes, o 141 (a);
+- sem o ramo do cancelamento recusado, o 140 (f);
+- sem a marca do sinal, o 140 (b);
+- com o relógio que volta a zero, o 140 (d).
