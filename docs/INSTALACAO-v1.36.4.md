@@ -1,6 +1,6 @@
 # v1.36.4 na .53: a stop do PnT que não dispara (op 234852)
 
-Preparado em 24/11. **Não instalado.** O George lê antes de rodar. Os comandos com `sudo` são do
+Preparado em 24/11. **Instalado em 25/11 às 20:00:51** (resultado no §9). O George lê antes de rodar. Os comandos com `sudo` são do
 George e estão numerados de **U1** a **U4**; a lista está no §8.
 
 - **Branch:** `v1.36.4` (worktree `../kalman-ordens-v1364`), a partir do `main` `1225a6f`.
@@ -147,3 +147,16 @@ Também é um login REAL da Flexscan (o aviso do §3 vale).
 | U2 | 3 | instala o binário | **troca o binário** |
 | U3 | 3 | restart | **reinicia o serviço** |
 | U4 | 7 | volta ao binário da v1.36.3 e restart | só se precisar |
+
+## 9. Resultado (25/11)
+
+Instalada pelo George às **20:00:51** (U1–U3), depois das 17:55 (a GAMMAQ2 fechada; loga às 08:30 de
+26/11). Conferido por ele: `ef0500954c33` `active`, `NRestarts=0`, migrações nenhuma pendente, os logins
+de partida da Flexscan (`btg_gammaquant` e `flx_gammaquant`) OK, as conciliações com 0 divergência e
+posição 0, `criticos {}`. REAL: `sessao_logada false` (fora da janela), PNT `FORA`, FLEXSCAN:BTG
+`NO_AR`, posição 0, sem parada. Destinos: 1450 PNT 4582351, 35 PNT 5094181, 5725 FLEXSCAN D-4582351.
+Telegram: só as conciliações e o aviso do vigia (o serviço fora do ar por segundos). O U4 não foi
+usado; a cópia da v1.36.3 fica em `/opt/kalman-ordens/kalman-ordens.947b81422b04`.
+
+Depois: `instalado-migracoes.sh` (`ef0500954c33`, 20 migrações, sem nova), merge da `v1.36.4` no `main`
+e a tag `instalado/v1.36.4` no `ef05009`. O caso de verdade (§4) fica para quando acontecer.
