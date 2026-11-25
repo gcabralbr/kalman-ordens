@@ -1,0 +1,64 @@
+cenario 146 Flexscan REAL sem webhook: a saída pedida com a stop já executada na B3 e a consulta ainda sem o fill — a saída do gestor (a reserva R5, 4 s depois do toque) e o stop furado; nenhuma venda a mais
+hora 2026-11-25 10:03:00
+# Pergunta do George (25/11, a R5 em 4 s com a consulta de 5 s; ops 234865/234866). Variante do 98:
+# o DELETE recusado com 400 "Finalizado" e o GET logo depois ainda sem o fill; sem webhook, o fill só
+# aparece na consulta periódica (FLEXSCAN_CONSULTA_S, 5 s).
+config FLEXSCAN_URL=falso
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config LIMITE_ENTRADAS_DIA=100
+config LIMITE_RECUSAS_PARADA=50
+config LIMITE_PERDA_DIA_PTS=100000
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+
+# --- a) a reserva: o toque no gatilho, a B3 executa (o serviço não vê), 4 s depois a saída do gestor;
+# o DELETE recusado ("Finalizado"), a consulta ainda sem o fill; nenhum POST. O fill aparece na
+# consulta periódica e zera como STOP_SERVIDOR
+executa COMPRADO_FLX OP=14601
+preco bid=129500 ask=129505 preco=129505
+avanca 4s
+flx_falha 400 texto="order cannot be canceled because it is in the state: Finalizado" codigo=4003
+saida 14601 V SINAL_OPOSTO uid=8
+resposta aceito=true
+flx_recebe DELETE id=$FP
+avanca 1s
+flx_nada
+flx_executa $FP preco=129505
+avanca 6s
+evento SAIDA_EXECUTADA operacao_id=14601 qtd=1 preco=129505 origem=STOP_SERVIDOR
+evento ZERADA operacao_id=14601 origem=STOP_SERVIDOR
+conta_eventos SAIDA_EXECUTADA operacao_id=14601 = 1
+saude posicao=0 divergente=false
+avanca 6s
+flx_nada
+nada
+preco bid=130000 ask=130005 preco=130000
+
+# DEFEITO D2 (25/11, este roteiro falha de propósito até a correção): com op.furado, o cancel recusado
+# vai direto ao Saindo + enviarSaida (recebe.go:693-695), mesmo com o 39=2 do "Finalizado": sai o POST
+# KM-S de 1 e, quando a consulta mostra o fill da stop, a posição fica -1 (DIVERGENTE).
+# --- b) o stop furado (o mercado além do limite 129410 por ESPERA_STOP_S) com a stop já executada na
+# B3 e a consulta logo depois do DELETE ainda sem o fill. Esperado (seguro): o 400 "Finalizado" diz que
+# a stop executou; nenhum POST de saída até a consulta mostrar o fill, e a posição zera sem ficar vendida
+avanca 1m
+executa COMPRADO_FLX OP=14602
+preco bid=129395 ask=129400 preco=129400
+flx_falha 400 texto="order cannot be canceled because it is in the state: Finalizado" codigo=4003
+avanca 5100ms
+alerta STOP_FURADO
+flx_recebe DELETE id=$FP
+avanca 1s
+flx_nada
+flx_executa $FP preco=129410
+avanca 6s
+evento SAIDA_EXECUTADA operacao_id=14602 qtd=1 preco=129410
+evento ZERADA operacao_id=14602
+conta_eventos SAIDA_EXECUTADA operacao_id=14602 = 1
+saude posicao=0 divergente=false
+avanca 6s
+flx_nada
+nada

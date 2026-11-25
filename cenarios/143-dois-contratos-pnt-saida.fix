@@ -1,0 +1,108 @@
+cenario 143 2 contratos no PnT: a saída por replace com 38=2 (disparo e fill de 2); a 1014 de 2 que executa 1 (o gestor vira ja_em_saida; o furo cancela o resto e manda a 1031 de 1); a saída por replace com fill parcial de 1 e o resto preso no limite
+hora 2026-11-25 10:20:00
+# Pedido do George (25/11, item 4.1): antes de subir a quantidade no REAL, provar que a saída trata
+# qtd > 1. COMPRADO de 2 a 130010; a 1014 de 2 com gatilho 129510 e limite 129410.
+config SAIDA_POR_REPLACE=1
+config LIMITE_POSICAO_MAX=2
+config LIMITE_QTD_ORDEM=2
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config LIMITE_ENTRADAS_DIA=100
+config LIMITE_RECUSAS_PARADA=50
+config LIMITE_PERDA_DIA_PTS=100000
+
+executa INICIO
+
+# --- a) a saída por replace com 2: o replace leva 38=2 (degrau 1: gatilho bid + 100, limite bid − 50),
+# o disparo ("Delaying final state") e o fill de 2 zeram
+entrada 14301 C qtd=2
+resposta aceito=true
+recebe 35=D 11=KM-E-14301-1 38=2 40=2 44=130020 54=1 847=1031
+envia @ER 11=KM-E-14301-1 37=dsa.14301.E 150=0 39=0 54=1 38=2 44=130020 847=1031 14=0 151=2 6=0
+envia @ER 11=KM-E-14301-1 37=dsa.14301.E 150=F 39=2 54=1 38=2 44=130020 847=1031 32=2 31=130010 14=2 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=14301 qtd=2 preco=130010 qtd_total=2 preco_medio=130010
+recebe 35=D 11=KM-P-14301-1 38=2 40=2 44=129410 54=2 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-14301-1 37=dsa.14301.P 150=0 39=0 54=2 38=2 44=129410 847=1014 14=0 151=2 6=0
+evento PROTEGIDA operacao_id=14301 preco_stop=129510 preco_limite=129410 qtd=2
+saude posicao=2
+saida 14301 V SINAL_OPOSTO qtd=2
+resposta aceito=true
+recebe 35=G 11=KM-P-14301-2 41=KM-P-14301-1 37=dsa.14301.P 38=2 44=129950 20828=130100 20829=129950
+evento SAIDA_POR_REPLACE operacao_id=14301 degrau=1 preco_stop=130100 preco_limite=129950
+envia @ER 11=KM-P-14301-2 41=KM-P-14301-1 37=dsa.14301.P 150=5 39=5 54=2 38=2 44=129950 847=1014 14=0 151=2 6=0 20828=130100 20829=129950
+avanca 500ms
+envia @ER 11=KM-P-14301-2 37=dsa.14301.P 150=I 39=B 54=2 38=2 44=129950 847=1014 14=0 151=2 6=0 20807=0 58="Delaying final state 'Finished' for 3.00 s, timer started."
+envia @ER 11=KM-P-14301-2 37=dsa.14301.P 150=F 39=2 54=2 38=2 44=129950 847=1014 32=2 31=130000 14=2 151=0 6=130000
+evento SAIDA_EXECUTADA operacao_id=14301 qtd=2 preco=130000 origem=GESTOR
+# (130000 − 130010) × 2
+evento ZERADA operacao_id=14301 motivo=SINAL_OPOSTO origem=GESTOR pnl_pts=-20
+saude posicao=0
+nada
+sem_alerta STOP_FURADO
+
+# --- b) a 1014 de 2 executa 1 (39=1): a saída já é do stop (STOP_SERVIDOR) e o pedido do gestor é aceito
+# como ja_em_saida, sem ordem nova. O resto depende do limite da 1014 (129410): o mercado passa dele e,
+# em ESPERA_STOP_S, o stop furado cancela o resto e, com o 150=4, manda a 1031 de 1 (nunca 2)
+avanca 1m
+entrada 14302 C qtd=2
+resposta aceito=true
+recebe 35=D 11=KM-E-14302-1 38=2 44=130020 847=1031
+envia @ER 11=KM-E-14302-1 37=dsa.14302.E 150=F 39=2 54=1 38=2 44=130020 847=1031 32=2 31=130010 14=2 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=14302 qtd=2 qtd_total=2
+recebe 35=D 11=KM-P-14302-1 38=2 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-14302-1 37=dsa.14302.P 150=0 39=0 54=2 38=2 44=129410 847=1014 14=0 151=2 6=0
+evento PROTEGIDA operacao_id=14302 qtd=2
+preco bid=129500 ask=129505 preco=129505
+envia @ER 11=KM-P-14302-1 37=dsa.14302.P 150=F 39=1 54=2 38=2 44=129410 847=1014 32=1 31=129500 14=1 151=1 6=129500
+evento SAIDA_EXECUTADA operacao_id=14302 qtd=1 preco=129500 origem=STOP_SERVIDOR
+saude posicao=1
+saida 14302 V SINAL_OPOSTO qtd=1
+resposta aceito=true ja_em_saida=true origem=STOP_SERVIDOR
+nada
+sem_evento SAIDA_POR_REPLACE operacao_id=14302
+preco bid=129395 ask=129400 preco=129400
+avanca 5100ms
+alerta STOP_FURADO
+recebe 35=F 11=KM-P-14302-2 41=KM-P-14302-1 37=dsa.14302.P
+envia @ER 11=KM-P-14302-2 41=KM-P-14302-1 37=dsa.14302.P 150=4 39=4 54=2 38=2 44=129410 847=1014 14=1 151=0 6=129500
+recebe 35=D 11=KM-S-14302-1 38=1 54=2 847=1031
+envia @ER 11=KM-S-14302-1 37=dsa.14302.S 150=F 39=2 54=2 38=1 44=129345 847=1031 32=1 31=129395 14=1 151=0 6=129395
+evento SAIDA_EXECUTADA operacao_id=14302 qtd=1 preco=129395
+evento ZERADA operacao_id=14302
+saude posicao=0
+nada
+preco bid=130000 ask=130005 preco=130000
+
+# DEFEITO D1 (25/11, este roteiro falha de propósito até a correção): o tickSaidaReplace só sai do
+# disparo sem fill (saida_replace.go:178) com QtdExec == qtdNoDisparo; depois de um fill parcial a
+# operação fica em SAINDO com o resto no limite e nada mais é enviado (2 min no roteiro, sem fim).
+# --- c) a saída por replace de 2 dispara e executa só 1; o mercado foge do limite (129950) e o resto
+# fica parado. Esperado (seguro): em ESPERA_STOP_S sem novo fill, o cancel do resto e a 1031 de 1
+avanca 1m
+entrada 14303 C qtd=2
+resposta aceito=true
+recebe 35=D 11=KM-E-14303-1 38=2 44=130020 847=1031
+envia @ER 11=KM-E-14303-1 37=dsa.14303.E 150=F 39=2 54=1 38=2 44=130020 847=1031 32=2 31=130010 14=2 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=14303 qtd=2 qtd_total=2
+recebe 35=D 11=KM-P-14303-1 38=2 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-14303-1 37=dsa.14303.P 150=0 39=0 54=2 38=2 44=129410 847=1014 14=0 151=2 6=0
+evento PROTEGIDA operacao_id=14303 qtd=2
+saida 14303 V SINAL_OPOSTO qtd=2
+resposta aceito=true
+recebe 35=G 11=KM-P-14303-2 41=KM-P-14303-1 37=dsa.14303.P 38=2 44=129950 20828=130100 20829=129950
+envia @ER 11=KM-P-14303-2 41=KM-P-14303-1 37=dsa.14303.P 150=5 39=5 54=2 38=2 44=129950 847=1014 14=0 151=2 6=0 20828=130100 20829=129950
+avanca 500ms
+envia @ER 11=KM-P-14303-2 37=dsa.14303.P 150=I 39=B 54=2 38=2 44=129950 847=1014 14=0 151=2 6=0 20807=0 58="Delaying final state 'Finished' for 3.00 s, timer started."
+envia @ER 11=KM-P-14303-2 37=dsa.14303.P 150=F 39=1 54=2 38=2 44=129950 847=1014 32=1 31=129960 14=1 151=1 6=129960
+evento SAIDA_EXECUTADA operacao_id=14303 qtd=1 preco=129960 origem=GESTOR
+saude posicao=1
+preco bid=129800 ask=129805 preco=129800
+avanca 5100ms
+recebe 35=F 11=KM-P-14303-3 41=KM-P-14303-2 37=dsa.14303.P
+envia @ER 11=KM-P-14303-3 41=KM-P-14303-2 37=dsa.14303.P 150=4 39=4 54=2 38=2 44=129950 847=1014 14=1 151=0 6=129960
+recebe 35=D 11=KM-S-14303-1 38=1 54=2 847=1031
+envia @ER 11=KM-S-14303-1 37=dsa.14303.S 150=F 39=2 54=2 38=1 44=129750 847=1031 32=1 31=129795 14=1 151=0 6=129795
+evento ZERADA operacao_id=14303 motivo=SINAL_OPOSTO
+saude posicao=0
+nada
