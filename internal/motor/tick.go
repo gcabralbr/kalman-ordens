@@ -220,6 +220,20 @@ func (m *Motor) acoesDeTempo(op *operacao, agora time.Time) {
 		}
 	case dominio.AguardandoStop:
 		if agora.Sub(op.aguardandoStopDesde) >= m.p.EsperaStop {
+			if op.recusaExecutou && !op.conferindoExec {
+				// v1.36.5 (D2, roteiro 146b): a corretora disse que a stop executou e o fill não chegou
+				// (na Flexscan sem webhook, só na consulta seguinte): vender agora pode ser uma venda a
+				// mais. O mass status confere uma vez; sem o fill em mais ESPERA_STOP_S, a saída
+				op.conferindoExec = true
+				op.aguardandoStopDesde = agora
+				slog.Info("stop executada pela recusa e sem fill: conferindo pelo mass status antes da saída", "op", op.OperacaoID)
+				if !m.conciliando && m.algumLogado() {
+					m.conciliando = true
+					m.massTentativas = 0
+					m.pedirMassStatus()
+				}
+				return
+			}
 			slog.Info("stop não zerou; seguindo com a saída", "op", op.OperacaoID)
 			m.mudar(op, dominio.Saindo)
 			m.enviarSaida(op)

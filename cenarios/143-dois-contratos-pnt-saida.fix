@@ -74,9 +74,9 @@ saude posicao=0
 nada
 preco bid=130000 ask=130005 preco=130000
 
-# DEFEITO D1 (25/11, este roteiro falha de propósito até a correção): o tickSaidaReplace só sai do
-# disparo sem fill (saida_replace.go:178) com QtdExec == qtdNoDisparo; depois de um fill parcial a
-# operação fica em SAINDO com o resto no limite e nada mais é enviado (2 min no roteiro, sem fim).
+# D1 (25/11, corrigido na v1.36.5): antes, o tickSaidaReplace só saía do disparo sem fill com
+# QtdExec == qtdNoDisparo; depois de um fill parcial a operação ficava em SAINDO com o resto no limite.
+# Agora o fill parcial recomeça o relógio de ESPERA_STOP_S (recebe.go).
 # --- c) a saída por replace de 2 dispara e executa só 1; o mercado foge do limite (129950) e o resto
 # fica parado. Esperado (seguro): em ESPERA_STOP_S sem novo fill, o cancel do resto e a 1031 de 1
 avanca 1m

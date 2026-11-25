@@ -38,9 +38,9 @@ flx_nada
 nada
 preco bid=130000 ask=130005 preco=130000
 
-# DEFEITO D2 (25/11, este roteiro falha de propósito até a correção): com op.furado, o cancel recusado
-# vai direto ao Saindo + enviarSaida (recebe.go:693-695), mesmo com o 39=2 do "Finalizado": sai o POST
-# KM-S de 1 e, quando a consulta mostra o fill da stop, a posição fica -1 (DIVERGENTE).
+# D2 (25/11, corrigido na v1.36.5): antes, com op.furado, o cancel recusado ia direto ao Saindo +
+# enviarSaida, mesmo com o 39=2 do "Finalizado": saía o POST KM-S de 1 e a posição ficava -1
+# (DIVERGENTE). Agora: AGUARDANDO_STOP; sem o fill em ESPERA_STOP_S, o mass status confere uma vez.
 # --- b) o stop furado (o mercado além do limite 129410 por ESPERA_STOP_S) com a stop já executada na
 # B3 e a consulta logo depois do DELETE ainda sem o fill. Esperado (seguro): o 400 "Finalizado" diz que
 # a stop executou; nenhum POST de saída até a consulta mostrar o fill, e a posição zera sem ficar vendida
