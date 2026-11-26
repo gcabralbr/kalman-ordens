@@ -1,6 +1,6 @@
 # v1.36.5 na .53: D1 (saída parcial parada) e D2 (venda a mais com a stop já executada)
 
-Preparado em 25/11. **Não instalado.** O George lê antes de rodar. Os comandos com `sudo` são do
+Preparado em 25/11. **Instalado em 26/11 às 14:05:44** (resultado no §9). O George lê antes de rodar. Os comandos com `sudo` são do
 George e estão numerados de **U1** a **U4**; a lista está no §8.
 
 - **Branch:** `v1.36.5` (worktree `../kalman-ordens-v1365`), a partir da `teste-2c` (`7a8be66`, os
@@ -150,3 +150,23 @@ Também é um login REAL da Flexscan (o aviso do §3 vale). Para voltar à v1.36
 | U2 | 3 | instala o binário | **troca o binário** |
 | U3 | 3 | restart | **reinicia o serviço** |
 | U4 | 7 | volta ao binário da v1.36.4 e restart | só se precisar |
+
+## 9. Resultado (26/11)
+
+Instalada pelo George às **14:05:44** (U1–U3), dentro da janela da GAMMAQ2 (ela caiu às 14:05:43 com o
+logout e logou de novo às 14:05:45.611), com as posições 0 e o §1 limpo (o grep do pregão da v1.36.4
+sem linhas, `criticos {}`). Conferido por ele: `7a0e7f419bf2` `active`, `NRestarts=0`, migrações
+nenhuma pendente, os logins de partida da Flexscan (`flx_gammaquant` e `btg_gammaquant`) OK, as
+conciliações com 0 divergência e posição 0, `criticos {}`. REAL: `sessao_logada true`, PNT e
+FLEXSCAN:BTG `NO_AR`, posição 0, sem parada. O U4 não foi usado; a cópia da v1.36.4 fica em
+`/opt/kalman-ordens/kalman-ordens.ef0500954c33`.
+
+Telegram: 3 `CONCILIACAO`, mas o serviço emitiu 2 (uma por instância: SIMULADOR às 14:05:47.910 e
+REAL às 14:05:49.210). A do REAL chegou em dobro: o envio ao bot local (127.0.0.1:5077) passou do
+tempo (`webhook: falha de envio, vai retentar` às 14:05:52.211), o bot entregou a primeira assim mesmo
+(14:05:53.423) e a nova tentativa entregou de novo (14:05:53.942). Não é uma por canal: a conciliação
+do REAL é uma só, para o PnT e a Flexscan BTG juntos.
+
+Depois: `instalado-migracoes.sh` (`7a0e7f419bf2`, 20 migrações, sem nova), merge da `v1.36.5` no
+`main` (com os roteiros 143–147 da `teste-2c`) e a tag `instalado/v1.36.5` no `7a0e7f4`. O caso de
+verdade (§4) fica para quando acontecer.
