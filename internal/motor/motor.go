@@ -153,6 +153,8 @@ type operacao struct {
 	cancelProtEm        time.Time
 	saidaAposReplace    bool // v1.36.3 §4: a saída espera a resposta de um replace da 1014
 	aguardandoStopDesde time.Time
+	recusaExecutou      bool // v1.36.5 (D2): a recusa do cancel da 1014 disse que ela já executou (39=2)
+	conferindoExec      bool // v1.36.5 (D2): o mass status já conferiu, antes de vender no fim do AGUARDANDO_STOP
 	proximoRepreco      time.Time
 	proximaSaidaEm      time.Time
 	repreco             int

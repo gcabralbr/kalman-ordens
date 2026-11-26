@@ -392,3 +392,45 @@ Mais o teste do contrato: o Kalman recebe o `motivo` novo, ou o `STOP_FURADO`, s
 - sem o ramo do cancelamento recusado, o 140 (f);
 - sem a marca do sinal, o 140 (b);
 - com o relógio que volta a zero, o 140 (d).
+
+### 7.8 v1.36.5: D1 e D2 (25/11, achados pelos roteiros 143–147)
+
+Os roteiros com 2 contratos e os da Flexscan sem webhook (pedido do George de 25/11, item 4.1, branch
+`teste-2c`) acharam dois defeitos. O George aprovou (25/11): a v1.36.4 instala como está; D1 e D2 na
+v1.36.5, com os roteiros 143 (c) e 146 (b).
+
+**D1, só com mais de 1 contrato, no PnT** (roteiro 143 c):
+- **O caso:** a saída por replace de 2 dispara, executa 1 a 129960, e o mercado foge para 129800, abaixo
+  do limite 129950.
+- **Antes:** o `tickSaidaReplace` só tratava o "disparou e nenhum fill chegou" com
+  `QtdExec == qtdNoDisparo`. Depois do fill parcial isso não valia mais, e a operação ficava em SAINDO
+  com 1 contrato e nada enviado.
+- **Agora:** na saída por replace, o fill parcial da 1014 disparada recomeça o relógio
+  (`disparadaEm`, `qtdNoDisparo`; `recebe.go`). Sem fill novo em `ESPERA_STOP_S`, vem o `STOP_FURADO`
+  ("o resto (1 de 2) não executou"), o cancel do resto e, com o 150=4, a 1031 só de 1.
+- Na posição protegida (fora da saída por replace) nada muda: o 143 (b) já passava pela reserva do
+  limite.
+
+**D2, na Flexscan (e no PnT), com 1 contrato** (roteiro 146 b):
+- **O caso:** a operação furada (o último além do limite por `ESPERA_STOP_S`) com a stop já executada
+  na B3; o DELETE volta 400 "Finalizado" e o GET logo depois ainda não mostra o fill. A ponte manda o
+  35=9 com 39=2.
+- **Antes:** com `op.furado`, o cancel recusado ia direto à 1031 (o POST `KM-S`), e a posição ficava
+  −1, DIVERGENTE, quando o fill da stop aparecia.
+- **Agora:**
+  - com `op.furado` e a recusa com **39=2**, `CANCEL_STOP_REJEITADO` e `AGUARDANDO_STOP`, sem a 1031.
+    Com outro 39 (a stop ainda viva, cancelada ou rejeitada sem execução), a 1031 de antes;
+  - em `AGUARDANDO_STOP` vindo de uma recusa com 39=2 (furada ou não), se o fill não chega em
+    `ESPERA_STOP_S`, o mass status confere uma vez e o relógio recomeça; só sem o fill depois disso
+    sai a 1031. Sem webhook, o fill da Flexscan só aparece na consulta seguinte (5 s), que pode passar
+    dos `ESPERA_STOP_S`.
+- Os ramos da v1.36.4 (stop sem disparo, roteiros 140 f/h) vêm antes e não mudam; o furo do PnT por
+  disparo sem fill (07, 79, 111) chega com 39=B, não 39=2, e segue com a 1031.
+
+**Os roteiros:** 143 (c) e 146 (b) passam; os 140–147, 02, 07, 79, 87, 96, 98 e 111 também.
+
+**As verificações ao contrário reprovaram como deviam:**
+- sem o relógio do fill parcial, o 143 (c), na linha 102 (nenhum cancel);
+- sem o ramo `op.furado` com 39=2, o 146 (b), na linha 55 (o POST `KM-S`);
+- sem a conferência pelo mass status, o 146 (b), na linha 63 (o POST `KM-S` no fim do
+  `AGUARDANDO_STOP`).

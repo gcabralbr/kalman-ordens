@@ -426,6 +426,12 @@ func (m *Motor) aplicarFill(op *operacao, o *ordem, cum int, avg decimal.Decimal
 		metricas.EnvioAteFill.Observar(time.Since(o.envioReal).Seconds(), nomePapel(o.Papel))
 	}
 	o.QtdExec = cum
+	if o.Papel == dominio.Protecao && op.saidaRep != nil && !o.disparadaEm.IsZero() && cum < o.Qtd {
+		// v1.36.5 (D1, roteiro 143c): na saída por replace, o fill parcial da 1014 disparada recomeça o
+		// relógio do "disparou e nenhum fill chegou" (tickSaidaReplace): sem fill novo em ESPERA_STOP_S,
+		// o resto é cancelado e sai pela 1031 só da quantidade que falta
+		o.disparadaEm, o.qtdNoDisparo = m.agora(), cum
+	}
 	if m.agregado.valido {
 		m.somarContribuicao(op, 1)
 	}
@@ -709,6 +715,14 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 				// v1.36.4: a 1014 sem disparo segue viva: nada de 1031 com ela viva (seriam duas vendas
 				// se ela disparar depois); o tick (CANCELANDO_PROTECAO) repete o cancel
 				m.alertarRecusa(op, o, msg, m.codigoRecusa(op), fmt.Sprintf("cancel da 1014 sem disparo rejeitado (%s): ela segue viva; o cancel é repetido, operação %d", texto, op.OperacaoID))
+			case op.furado && msg.Texto(39) == "2":
+				// v1.36.5 (D2, roteiro 146b): a recusa diz que a stop já executou (39=2; na Flexscan, o
+				// 400 "Finalizado" com a consulta ainda sem o fill): a 1031 seria uma venda a mais;
+				// espera o fill, como no cancel rejeitado sem furo
+				m.alertarRecusa(op, o, msg, "CANCEL_STOP_REJEITADO", fmt.Sprintf("cancel da 1014 furada rejeitado (%s): a stop já executou; aguardando o fill do stop, operação %d", texto, op.OperacaoID))
+				m.mudar(op, dominio.AguardandoStop)
+				op.aguardandoStopDesde = m.agora()
+				op.recusaExecutou = true
 			case op.furado:
 				m.mudar(op, dominio.Saindo)
 				m.enviarSaida(op)
@@ -717,6 +731,7 @@ func (m *Motor) cancelRejeitado(msg pnt.Mensagem) {
 				m.alertarRecusa(op, o, msg, "CANCEL_STOP_REJEITADO", fmt.Sprintf("cancel da 1014 rejeitado (%s): aguardando fills do stop, operação %d", texto, op.OperacaoID))
 				m.mudar(op, dominio.AguardandoStop)
 				op.aguardandoStopDesde = m.agora()
+				op.recusaExecutou = msg.Texto(39) == "2" // v1.36.5 (D2)
 			}
 		case o.Papel == dominio.Protecao && o.canceladaPorErro:
 			m.cancelProtecaoEmErroRejeitado(op, o, msg, texto)

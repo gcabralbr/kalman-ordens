@@ -181,9 +181,15 @@ func (m *Motor) tickSaidaReplace(op *operacao) {
 	if !p.disparadaEm.IsZero() {
 		if p.QtdExec == p.qtdNoDisparo && agora.Sub(p.disparadaEm) >= m.p.EsperaStop {
 			// disparou e não executou: o caminho do stop furado (cancel; se rejeitado, 1031)
+			// v1.36.5 (D1): depois de um fill parcial, o relógio recomeça no fill (recebe.go); "nenhum
+			// fill chegou" vale então para o resto
+			oQue := "nenhum fill chegou"
+			if p.QtdExec > 0 {
+				oQue = fmt.Sprintf("o resto (%d de %d) não executou", p.Qtd-p.QtdExec, p.Qtd)
+			}
 			m.saidaReplaceFalhou(op, fmt.Sprintf("1014 disparada há %s sem fill", agora.Sub(p.disparadaEm).Truncate(100*time.Millisecond)), "STOP_FURADO")
 			m.al.Emitir("STOP_FURADO", chaveOp("STOP_FURADO", op),
-				fmt.Sprintf("saída por replace: a 1014 %s disparou e nenhum fill chegou em %s, posição %d, operação %d", p.ClOrdAtual, m.p.EsperaStop, op.posicao(), op.OperacaoID), op.OperacaoID)
+				fmt.Sprintf("saída por replace: a 1014 %s disparou e %s em %s, posição %d, operação %d", p.ClOrdAtual, oQue, m.p.EsperaStop, op.posicao(), op.OperacaoID), op.OperacaoID)
 			op.furado = true
 			m.mudar(op, dominio.CancelandoProtecao)
 			op.cancelProtEm = agora

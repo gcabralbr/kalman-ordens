@@ -1,0 +1,75 @@
+cenario 145 Flexscan com 2 contratos: a stop-limite de 2 e a saída do gestor (DELETE, cancel confirmado, POST limitada de 2); e a stop que executa 1 de 2 antes da saída: o POST sai de 1
+hora 2026-11-25 10:20:00
+# Pedido do George (25/11, item 4.1). Na Flexscan não há saída por replace: cancel + limitada.
+# COMPRADO de 2 a 130010; a stop-limite de 2 com gatilho 129510 e limite 129410.
+config FLEXSCAN_URL=falso
+config LIMITE_POSICAO_MAX=2
+config LIMITE_QTD_ORDEM=2
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config LIMITE_ENTRADAS_DIA=100
+config LIMITE_RECUSAS_PARADA=50
+config LIMITE_PERDA_DIA_PTS=100000
+usuario 8 hml {"Robo":{"CORSeqId":88,"CCONroConta":"S-1117150"}}
+habilita 8 conectores=flexscan
+
+executa INICIO
+
+# --- a) a saída do gestor com 2: o DELETE da stop, o cancel confirmado pela consulta e o POST de 2
+entrada 14501 C qtd=2 uid=8
+resposta aceito=true
+flx_recebe POST name=KM-E-14501-1 qtty=2 ordType=2 price=130020 id=>E1
+flx_executa $E1 preco=130010
+flx_webhook $E1
+evento ENTRADA_EXECUTADA operacao_id=14501 qtd=2 preco=130010 qtd_total=2
+flx_recebe POST name=KM-P-14501-1 qtty=2 ordType=4 stopPrice=129510 price=129410 id=>P1
+evento PROTEGIDA operacao_id=14501 qtd=2 preco_stop=129510 preco_limite=129410
+saude posicao=2
+saida 14501 V SINAL_OPOSTO qtd=2 uid=8
+resposta aceito=true
+flx_recebe DELETE id=$P1
+flx_recebe POST name=KM-S-14501-1 qtty=2 ordType=2 id=>S1
+flx_ordem $P1 status=4
+flx_executa $S1 preco=129995
+flx_webhook $S1
+evento SAIDA_EXECUTADA operacao_id=14501 qtd=2 preco=129995 origem=GESTOR
+evento ZERADA operacao_id=14501 motivo=SINAL_OPOSTO origem=GESTOR pnl_pts=-30
+saude posicao=0
+avanca 6s
+flx_nada
+nada
+
+# --- b) a stop executa 1 de 2 (a B3, sem ação nossa): a saída já é do stop e o pedido do gestor é
+# ja_em_saida. O mercado passa do limite (129410): em ESPERA_STOP_S o stop furado faz o DELETE do resto
+# e, com o cancel confirmado, o POST de 1 (nunca 2)
+avanca 1m
+entrada 14502 C qtd=2 uid=8
+resposta aceito=true
+flx_recebe POST name=KM-E-14502-1 qtty=2 ordType=2 price=130020 id=>E2
+flx_executa $E2 preco=130010
+flx_webhook $E2
+evento ENTRADA_EXECUTADA operacao_id=14502 qtd=2 qtd_total=2
+flx_recebe POST name=KM-P-14502-1 qtty=2 ordType=4 stopPrice=129510 price=129410 id=>P2
+evento PROTEGIDA operacao_id=14502 qtd=2
+preco bid=129500 ask=129505 preco=129505
+flx_executa $P2 qtd=1 preco=129500
+flx_webhook $P2
+evento SAIDA_EXECUTADA operacao_id=14502 qtd=1 preco=129500 origem=STOP_SERVIDOR
+saude posicao=1
+saida 14502 V SINAL_OPOSTO qtd=1 uid=8
+resposta aceito=true ja_em_saida=true origem=STOP_SERVIDOR
+flx_nada
+preco bid=129395 ask=129400 preco=129400
+avanca 5100ms
+alerta STOP_FURADO
+flx_recebe DELETE id=$P2
+flx_recebe POST name=KM-S-14502-1 qtty=1 ordType=2 id=>S2
+flx_executa $S2 preco=129395
+flx_webhook $S2
+evento SAIDA_EXECUTADA operacao_id=14502 qtd=1 preco=129395
+evento ZERADA operacao_id=14502
+saude posicao=0
+avanca 6s
+flx_nada
+nada

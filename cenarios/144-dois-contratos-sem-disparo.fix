@@ -1,0 +1,65 @@
+cenario 144 v1.36.4 com 2 contratos: a 1014 de 2 sem disparo → STOP_FURADO "sem disparo", cancel, 150=4 e a 1031 de 2; e o fill atrasado de 1 da 1014 antes do 150=4: a 1031 sai de 1, sem venda a mais
+hora 2026-11-25 11:00:00
+# SPEC-TECNICA-v1.37 §7 (a porta da v1.36.4) com qtd > 1 (pedido do George, 25/11, item 4.1).
+# COMPRADO de 2 a 130010; a 1014 de 2 com gatilho 129510 e limite 129410.
+config LIMITE_POSICAO_MAX=2
+config LIMITE_QTD_ORDEM=2
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config LIMITE_ENTRADAS_DIA=100
+config LIMITE_RECUSAS_PARADA=50
+config LIMITE_PERDA_DIA_PTS=100000
+
+executa INICIO
+
+# --- a) 1 tick além do gatilho e nada do PnT: aos 2 s o alerta, o cancel e, com o 150=4, a 1031 de 2
+entrada 14401 C qtd=2
+resposta aceito=true
+recebe 35=D 11=KM-E-14401-1 38=2 44=130020 847=1031
+envia @ER 11=KM-E-14401-1 37=dsa.14401.E 150=F 39=2 54=1 38=2 44=130020 847=1031 32=2 31=130010 14=2 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=14401 qtd=2 qtd_total=2
+recebe 35=D 11=KM-P-14401-1 38=2 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-14401-1 37=dsa.14401.P 150=0 39=0 54=2 38=2 44=129410 847=1014 14=0 151=2 6=0
+evento PROTEGIDA operacao_id=14401 qtd=2
+preco bid=129500 ask=129505 preco=129505
+avanca 2s
+nada
+avanca 100ms
+alerta_contem STOP_FURADO "sem disparo"
+recebe 35=F 11=KM-P-14401-2 41=KM-P-14401-1 37=dsa.14401.P
+envia @ER 11=KM-P-14401-2 41=KM-P-14401-1 37=dsa.14401.P 150=4 39=4 54=2 38=2 44=129410 847=1014 14=0 151=0 6=0
+recebe 35=D 11=KM-S-14401-1 38=2 54=2 847=1031
+envia @ER 11=KM-S-14401-1 37=dsa.14401.S 150=F 39=2 54=2 38=2 44=129450 847=1031 32=2 31=129495 14=2 151=0 6=129495
+evento SAIDA_EXECUTADA operacao_id=14401 qtd=2 preco=129495 origem=STOP_FURADO
+evento ZERADA operacao_id=14401 motivo=STOP_FURADO origem=STOP_FURADO
+saude posicao=0
+nada
+preco bid=130000 ask=130005 preco=130000
+
+# --- b) o mesmo, mas a 1014 executa 1 (disparo atrasado) depois do nosso cancel e antes do 150=4:
+# o 150=4 traz 14=1 e a 1031 sai de 1; a posição zera sem ficar vendida
+avanca 1m
+entrada 14402 C qtd=2
+resposta aceito=true
+recebe 35=D 11=KM-E-14402-1 38=2 44=130020 847=1031
+envia @ER 11=KM-E-14402-1 37=dsa.14402.E 150=F 39=2 54=1 38=2 44=130020 847=1031 32=2 31=130010 14=2 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=14402 qtd=2 qtd_total=2
+recebe 35=D 11=KM-P-14402-1 38=2 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-14402-1 37=dsa.14402.P 150=0 39=0 54=2 38=2 44=129410 847=1014 14=0 151=2 6=0
+evento PROTEGIDA operacao_id=14402 qtd=2
+preco bid=129500 ask=129505 preco=129505
+avanca 2100ms
+alerta_contem STOP_FURADO "sem disparo"
+recebe 35=F 11=KM-P-14402-2 41=KM-P-14402-1 37=dsa.14402.P
+envia @ER 11=KM-P-14402-1 37=dsa.14402.P 150=F 39=1 54=2 38=2 44=129410 847=1014 32=1 31=129500 14=1 151=1 6=129500
+evento SAIDA_EXECUTADA operacao_id=14402 qtd=1 preco=129500
+saude posicao=1
+nada
+envia @ER 11=KM-P-14402-2 41=KM-P-14402-1 37=dsa.14402.P 150=4 39=4 54=2 38=2 44=129410 847=1014 14=1 151=0 6=129500
+recebe 35=D 11=KM-S-14402-1 38=1 54=2 847=1031
+envia @ER 11=KM-S-14402-1 37=dsa.14402.S 150=F 39=2 54=2 38=1 44=129450 847=1031 32=1 31=129495 14=1 151=0 6=129495
+evento SAIDA_EXECUTADA operacao_id=14402 qtd=1 preco=129495
+evento ZERADA operacao_id=14402
+saude posicao=0
+nada

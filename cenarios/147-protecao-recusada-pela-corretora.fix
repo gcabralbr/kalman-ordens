@@ -1,0 +1,44 @@
+cenario 147 PnT: a 1014 (proteção) recusada pela corretora por dentro do robô ("changed to Error state ... is Rejected", 39=4, como a entrada 234875 de 25/11): o serviço recria a 1014; na 3ª recusa em menos de 30 s, PROTECAO_INSTAVEL e a 1031 zera a posição
+hora 2026-11-25 10:40:00
+# Pergunta do George (25/11, a recusa por margem na conta 4582351): se a corretora recusar a proteção
+# (e não a entrada), a posição não pode ficar sem stop. O texto do 58 é o da 234875 (o REAL não tem
+# caso de 1014 recusada).
+config LIMITE_INTERVALO_ENTRADAS_S=0
+config LIMITE_ENTRADAS_MIN=10
+config LIMITE_MENSAGENS_MIN=1000
+config LIMITE_ENTRADAS_DIA=100
+config LIMITE_RECUSAS_PARADA=50
+config LIMITE_PERDA_DIA_PTS=100000
+
+executa INICIO
+entrada 14701 C
+resposta aceito=true
+recebe 35=D 11=KM-E-14701-1 38=1 44=130020 847=1031
+envia @ER 11=KM-E-14701-1 37=dsa.14701.E 150=F 39=2 54=1 38=1 44=130020 847=1031 32=1 31=130010 14=1 151=0 6=130010
+evento ENTRADA_EXECUTADA operacao_id=14701 qtd=1
+
+# 1ª recusa: a 1014 recriada (KM-P-2), o mesmo gatilho e limite
+recebe 35=D 11=KM-P-14701-1 38=1 847=1014 20828=129510 20829=129410
+envia @ER 11=KM-P-14701-1 37=dsa.14701.P 150=A 39=A 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0 58="NEW DSA Order request sent to Robot"
+envia @ER 11=KM-P-14701-1 37=dsa.14701.P 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+avanca 200ms
+envia @ER 11=KM-P-14701-1 37=dsa.14701.P 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0 58="This strategy was changed to Error state, because offer RealOrder Id: 178824385 is Rejected."
+recebe 35=D 11=KM-P-14701-2 38=1 847=1014 20828=129510 20829=129410
+
+# 2ª recusa: recriada de novo (KM-P-3)
+envia @ER 11=KM-P-14701-2 37=dsa.14701.P2 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+avanca 200ms
+envia @ER 11=KM-P-14701-2 37=dsa.14701.P2 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0 58="This strategy was changed to Error state, because offer RealOrder Id: 178824386 is Rejected."
+recebe 35=D 11=KM-P-14701-3 38=1 847=1014 20828=129510 20829=129410
+
+# 3ª recusa em menos de 30 s: PROTECAO_INSTAVEL, a posição zera pela 1031; nenhuma 4ª 1014
+envia @ER 11=KM-P-14701-3 37=dsa.14701.P3 150=0 39=0 54=2 38=1 44=129410 847=1014 14=0 151=1 6=0
+avanca 200ms
+envia @ER 11=KM-P-14701-3 37=dsa.14701.P3 150=4 39=4 54=2 38=1 44=129410 847=1014 14=0 151=0 6=0 58="This strategy was changed to Error state, because offer RealOrder Id: 178824387 is Rejected."
+alerta PROTECAO_INSTAVEL
+recebe 35=D 11=KM-S-14701-1 38=1 54=2 847=1031
+envia @ER 11=KM-S-14701-1 37=dsa.14701.S 150=F 39=2 54=2 38=1 44=129950 847=1031 32=1 31=130000 14=1 151=0 6=130000
+evento ZERADA operacao_id=14701 origem=PROTECAO_INSTAVEL
+saude posicao=0
+avanca 3s
+nada
