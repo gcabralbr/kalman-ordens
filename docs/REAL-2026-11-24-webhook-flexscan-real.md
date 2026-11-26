@@ -1,15 +1,24 @@
 # Webhook da Flexscan no REAL (BTG): o segredo novo, a rota no nginx e o teste
 
-Preparado em 24/11. **Não executado.** O George lê antes de decidir o dia. Os comandos com `sudo` são
-do George: **N** no host do proxy público, **F** e **E** na .53, **V** a volta; a lista está no §6. Todo comando
-que mostra o `service.env` termina no filtro de segredos, **aqui com `WEBHOOK_URL` a mais**, porque a
-URL do webhook carrega o segredo (§2.3).
+Preparado em 24/11. **Revisto em 26/11 para o dia D = 27/11** (decisão do George: o webhook REAL liga
+**antes** do HMAC, sem modo de assinatura; a `PRECOS_SAUDE_URL` sai no mesmo restart). **Não
+executado.** Os comandos com `sudo` são do George: **N** no host do proxy público, **F** e **E** na .53,
+**V** a volta; a lista está no §6. Todo comando que mostra o `service.env` termina no filtro de
+segredos, **aqui com `WEBHOOK_URL` a mais**, porque a URL do webhook carrega o segredo (§2.3).
+
+**As datas:**
+- **27/11 (sexta), dia D:** N1 e E0–E4 a qualquer hora; o restart (E5) **depois da zeragem (14:30) e
+  antes das 17:55**, com posição 0; E6 e E7 em seguida.
+- **28/11 e 29/11:** fim de semana, sem pregão; nada a fazer.
+- **30/11 (segunda), o pregão seguinte:** a conferência da abertura às 08:02 (§4.0) e T1–T3 às 09:00
+  (§4.1), no mesmo dia. O "Enviar ordens" do 5725 no REAL **fica desligado** (desde 26/11 09:26) **até
+  o fim do T3**.
 
 ```bash
 F=/etc/kalman-ordens/service.env
 K=/opt/kalman-ordens/kalman-ordens
 W=/home/gammaquant/kalman-ordens/scripts/segredo-webhook.sh   # ler antes: roda com sudo
-D=<o dia, ex.: 2511>
+D=2711
 ```
 
 ## 0. Por quê e o que muda
@@ -20,8 +29,8 @@ D=<o dia, ex.: 2511>
   zerada para ele, com a posição aberta na BTG e sem stop. (O fill de limitada não, esse só vale pela
   consulta, `FLEXSCAN_CONFIRMAR_FILL=1`.) Um forjado precisa também do id da Flexscan da ordem viva
   (a ponte confere o `ClOrdID`), da conta e do símbolo. Isso dificulta, mas não basta.
-- **O segredo é nosso, não da Flexscan.** São 44 caracteres base64url gerados aqui, gravados no env e
-  mandados no cadastro. Ninguém precisa pedir nada ao suporte (corrige o ESTADO-2026-11-20 §1).
+- **O segredo do caminho é nosso, não da Flexscan.** São 44 caracteres base64url gerados aqui, gravados no env e
+  mandados no cadastro (dentro da URL). O `secret` da assinatura HMAC é outra coisa, da Flexscan (abaixo). Ninguém precisa pedir nada ao suporte (corrige o ESTADO-2026-11-20 §1).
   O vazado nunca foi cadastrado na Flexscan: a `REAL_FLEXSCAN_BTG_WEBHOOK_URL` está vazia desde 19/11.
 - **O ganho do webhook** (a resposta de 24/11): nenhum na entrada (o fill de limitada continua pela
   consulta, ~200 ms depois do 202). Na **stop executada**: de 0–5 s (a consulta periódica, ~2,5 s em
@@ -32,17 +41,34 @@ D=<o dia, ex.: 2511>
   (crítico) e a conferência do cadastro (`FLEXSCAN_WEBHOOK_AUSENTE` se sumiu). Nenhum bloqueia
   entrada nem dá parada.
 - **Sem binário novo, sem migração.** O cadastro na Flexscan é o próprio serviço que faz: na partida
-  e todo dia às 08:02, porque a Flexscan limpa os cadastros de madrugada.
+  e todo dia às 08:02, porque a Flexscan limpa os cadastros de madrugada. O binário é o instalado
+  (a v1.36.5, `7a0e7f419bf2`, se entrou em 26/11).
+- **O que fica de fora, de propósito (26/11):**
+  - **a assinatura HMAC.** A Flexscan gera um `secret` a cada cadastro (só na resposta do POST); esta
+    versão o ignora, como o SIMULADOR faz hoje. A validação vem na branch do HMAC;
+  - **o risco aceito até lá:** um webhook forjado de "stop executada" ou "stop cancelada" é aplicado
+    direto (o primeiro dá a operação como zerada; o segundo faz o serviço recriar a stop, com duas
+    vivas). Para forjar é preciso, ao mesmo tempo: sair do IP da Flexscan (o N1), o segredo novo do
+    caminho e o id da Flexscan da ordem viva. É a máquina de dev, só o 5725 (conta do George), 1
+    contrato, testes sob controle (decisão do George, 26/11). Na produção (.51), só com a stop
+    executada/cancelada confirmada pela consulta (pedido do George para a branch do HMAC).
+- **O que se ganha:** a stop executada vista em ~0,3–1 s em vez de 0–5 s, o que tira a corrida da
+  reserva R5 do Kalman (4 s) com a consulta (a de 26/11 09:23: a SAIDA de reserva do 5725 chegou 0,22 s
+  depois do fill visto pela consulta, recusada com `SEM_POSICAO`). E mostra cedo problemas reais,
+  como a conta `D-` no webhook (§4).
+- **A `PRECOS_SAUDE_URL` sai no mesmo restart (§2.4).** Ela aponta para o `/saude` do pnt-md-hml
+  (127.0.0.1:9096), desligado desde 28/10: hoje só põe "fonte: /saude da fonte sem resposta" no texto
+  do `FONTE_DEGRADADA` do REAL (26/11, 11:20), sem mudar decisão nenhuma.
 
 | quem | durante | depois |
 |---|---|---|
-| kalman-ordens (SIMULADOR e REAL) | um restart (E5), de segundos, depois da zeragem | o REAL BTG cadastra o webhook e o espera |
+| kalman-ordens (SIMULADOR e REAL) | um restart (E5), de segundos, depois da zeragem | o REAL BTG cadastra o webhook e o espera; o `FONTE_DEGRADADA` do REAL sem o "fonte: …" |
 | o Kalman | nada (sem posição, sem efeito) | nada muda |
 | o webhook do SIMULADOR | nada (a location dele não muda; o reload do nginx é sem queda) | nada muda |
 
-**O dia:** dia D, as cópias (§2) a qualquer hora e o restart (§3) **depois da zeragem e antes das
-17:55**. A janela da Flexscan é 08:02–18:30, então o cadastro aparece no mesmo dia. O teste (§4) é no
-dia D+1, às 09:00.
+**O dia:** 27/11, as cópias (§2) a qualquer hora e o restart (§3) **depois da zeragem e antes das
+17:55**. A janela da Flexscan é 08:02–18:30, então o cadastro aparece no mesmo dia. O teste (§4) é em
+30/11, às 09:00.
 
 ## 1. As conferências de 24/11: sem exposição imediata
 
@@ -115,13 +141,25 @@ curl -s -o /dev/null -w '%{http_code}\n' https://<host do proxy>/kalman-ordens/f
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<host do proxy>/kalman-ordens/flexscan/webhook-real-btg/teste   # 403 (quem testa não é a Flexscan)
 ```
 
-### 2.2 E1–E3: o arquivo novo, gerado sem o segredo aparecer
+### 2.2 E0–E3: o arquivo novo, gerado sem o segredo aparecer
+
+**E0, a `PRECOS_SAUDE_URL` de hoje** (o valor não é segredo; anote a linha, é a volta V2):
+```bash
+sudo grep -nE '^#?[[:space:]]*(REAL_)?PRECOS_SAUDE_URL' $F | sed -E 's/^([^=]*(SENHA|SEGREDO|TOKEN|CHAVE|KEY|USUARIO|DSN|WEBHOOK_URL)[^=]*=).*/\1(oculto)/I'
+#   esperado: uma linha ativa só, PRECOS_SAUDE_URL=http://127.0.0.1:9096/saude (sem _PNT, sem REAL_)
+```
+Se vier outra coisa (uma `_PNT`, uma `REAL_`, outro host ou mais de uma ativa), **não siga o §2.4**:
+mande a saída e eu reescrevo o passo. O resto do roteiro (o webhook) segue igual.
+
 ```bash
 sudo cp -a $F $F.antes-webhook-$D        # a volta V0 (se o serviço não subir); tem o vazado: sai no E7
 sudo cp -a $F $F.webhook-$D
 sudo $W novo $F.webhook-$D BTG https://<host do proxy>/kalman-ordens
 #   ok: REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO novo (44 caracteres); REAL_FLEXSCAN_BTG_WEBHOOK_URL=https://<host>/kalman-ordens/flexscan/webhook-real-btg/(oculto)
-sudo cp -a $F.webhook-$D $F.webhook-sem-url-$D     # a volta V1: o segredo novo, sem URL
+```
+**Agora o §2.4** (a `PRECOS_SAUDE_URL` sai do `$F.webhook-$D`), e só depois:
+```bash
+sudo cp -a $F.webhook-$D $F.webhook-sem-url-$D     # a volta V1: o segredo novo, sem URL (e já sem a PRECOS_SAUDE_URL)
 sudo $W sem-url $F.webhook-sem-url-$D BTG
 ```
 O script (`scripts/segredo-webhook.sh`) gera o segredo e o passa ao `awk` pelo ambiente. O segredo
@@ -140,15 +178,32 @@ sudo $W confere-url $F.webhook-sem-url-$D BTG      # URL vazia (sem webhook)
 ### 2.3 E4: o diff, com a `WEBHOOK_URL` também oculta
 ```bash
 sudo diff $F $F.webhook-$D | sed -E 's/^([^=]*(SENHA|SEGREDO|TOKEN|CHAVE|KEY|USUARIO|DSN|WEBHOOK_URL)[^=]*=).*/\1(oculto)/I'
-#   só duas linhas de cada lado: < e > REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO=(oculto) e REAL_FLEXSCAN_BTG_WEBHOOK_URL=(oculto)
+#   < e > REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO=(oculto)
+#   < e > REAL_FLEXSCAN_BTG_WEBHOOK_URL=(oculto)
+#   < PRECOS_SAUDE_URL=http://127.0.0.1:9096/saude   (só do lado de hoje: a linha que sai)
+#   nada mais
+sudo diff $F.webhook-$D $F.webhook-sem-url-$D | sed -E 's/^([^=]*(SENHA|SEGREDO|TOKEN|CHAVE|KEY|USUARIO|DSN|WEBHOOK_URL)[^=]*=).*/\1(oculto)/I'
+#   só a REAL_FLEXSCAN_BTG_WEBHOOK_URL=(oculto) dos dois lados (a V1 só tira a URL)
 ```
-**Proposta:** o filtro de sempre não esconde a `*_WEBHOOK_URL`, e ela carrega o segredo (a do
-SIMULADOR já tem o dele). Daqui em diante, o filtro único passa a ter o `WEBHOOK_URL`.
+O filtro único já tem o `WEBHOOK_URL` (desde 24/11).
 
-## 3. Dia D, depois da zeragem e antes das 17:55: o restart
+### 2.4 E3b: a `PRECOS_SAUDE_URL` sai do arquivo novo
+Só com o E0 como esperado. O arquivo mantém dono, modo e contexto (o `cat` por cima, como o script);
+o temporário nasce com `umask 077`, porque o env tem segredos.
+```bash
+sudo sh -c 'umask 077; grep -v "^PRECOS_SAUDE_URL=" "$1" > "$1.tmp" && cat "$1.tmp" > "$1" && rm -f "$1.tmp"' _ $F.webhook-$D
+sudo grep -cE '^(REAL_)?PRECOS_SAUDE_URL' $F.webhook-$D      # 0
+sudo ls -lZ $F $F.webhook-$D                                  # mesmo dono, modo e contexto
+```
+O `PNT_DESLIGADO=1` e as `PRECOS_URL*` ficam como estão. Sem a chave, o serviço não lê nenhum `/saude`
+de fonte no REAL (o SIMULADOR já não lia).
+
+## 3. 27/11, depois da zeragem e antes das 17:55: o restart
 
 **Antes (sem sudo):** nada vivo nas duas instâncias, e o Kalman sem abrir entradas.
 ```bash
+curl -s 127.0.0.1:9092/saude | jq -c '{versao, criticos: .alertas_criticos}'
+#   a versão instalada (7a0e7f419bf2 com a v1.36.5); criticos {}
 curl -s 127.0.0.1:9092/saude | jq -c '.ambientes | map_values({posicao, ordens_vivas, divergente, parada})'
 #   REAL e SIMULADOR: posicao 0, ordens_vivas null, divergente false, parada null
 ```
@@ -168,7 +223,14 @@ curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&limite=10" 
 #   LOGIN 200 partida OK; WEBHOOK_CADASTRO 200 conferencia: ausente; recadastro (order.all,algo.changed); conferencia: presente
 curl -s 127.0.0.1:9092/saude | jq -c '{sim: .ambientes.SIMULADOR.flexscan | {webhook_cadastrado}, real: .ambientes.REAL | {criticos: .alertas_criticos, posicao, canais: (.canais|map_values(.estado))}}'
 #   SIMULADOR webhook_cadastrado true; REAL criticos {}, posicao 0, PNT e FLEXSCAN:BTG NO_AR
+sudo grep -cE '^(REAL_)?PRECOS_SAUDE_URL' $F                 # 0 (a PRECOS_SAUDE_URL saiu)
+systemctl show kalman-ordens -p NRestarts | cat              # NRestarts=0
 ```
+**No Telegram:** as `CONCILIACAO` da partida, o aviso do vigia (o serviço fora por segundos) e,
+possivelmente, o `FLEXSCAN_ABERTURA` "webhook recadastrado" do REAL. Nenhum CRITICO.
+
+A saída da `PRECOS_SAUDE_URL` só se vê no próximo `FONTE_DEGRADADA` do REAL: o texto vem sem o
+"fonte: …", como o do SIMULADOR.
 **Se o cadastro falhar** (`FLEXSCAN_WEBHOOK_AUSENTE`, "recadastro falhou"): o mais provável é o teste
 da URL pela Flexscan ter levado 4xx, ou seja, a location do N1. Volta V1 já (nada vivo), confira o N1 e
 me chame. O serviço segue funcionando pela consulta enquanto isso.
@@ -192,15 +254,18 @@ sudo $W procura $F.antes-webhook-$D REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO /etc /opt 
 - No fim, repita a procura usando o `$F.antes-webhook-$D` antes de apagá-lo, ou apague-o por último:
   o esperado é que só ele apareça.
 
-## 4. Dia D+1: a abertura e o teste das 09:00
+## 4. 30/11 (segunda): a abertura e o teste das 09:00
 
-**08:02 (sem sudo):**
+### 4.0 A abertura, 08:02 (sem sudo)
+O primeiro recadastro do REAL depois da limpeza da madrugada. O 5725 continua com o envio desligado.
 ```bash
 curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&limite=10" | jq -r '.mensagens[] | "\(.em) \(.tipo) \(.status_http) \(.resumo)"' | head -5
 #   08:02 LOGIN OK; WEBHOOK_CADASTRO conferencia: ausente → recadastro → presente (a Flexscan limpou de madrugada)
 journalctl -u kalman-ordens --since '08:00' --no-pager | grep -E 'ALERTA' | cut -c1-200
 #   FLEXSCAN_ABERTURA "webhook recadastrado" (aviso, como o do SIMULADOR todo dia); nenhum FLEXSCAN_WEBHOOK_AUSENTE
 ```
+
+### 4.1 O teste, 09:00
 
 **Antes das 09:00:** o §1 do `REAL-2026-11-24-listagem-conta-D.md` (as sessões, o `/saude`, os três
 `/destino`), com o "Enviar ordens" dos três desligado durante o teste, como em 24/11.
@@ -232,7 +297,7 @@ sleep 3; curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&li
 
 | resultado | o que quer dizer | o que fazer |
 |---|---|---|
-| **sucesso:** um WEBHOOK de 177.71.196.212 depois do POST e outro depois do DELETE, nenhum alerta de webhook | o caminho Flexscan → nginx → 9098 → ponte REAL funciona, e a conta D- bate | o "Enviar ordens" volta; o caminho da stop executada se prova na primeira saída de verdade (um `WEBHOOK ... KM-P-... EXECUTADA` antes de qualquer consulta) |
+| **sucesso:** um WEBHOOK de 177.71.196.212 depois do POST e outro depois do DELETE, nenhum alerta de webhook | o caminho Flexscan → nginx → 9098 → ponte REAL funciona, e a conta D- bate | o "Enviar ordens" volta; o caminho da stop executada se prova na primeira saída de verdade: um `WEBHOOK ... KM-P-... EXECUTADA` antes de qualquer consulta, e a `ZERADA` antes da R5 do Kalman (nenhum `SEM_POSICAO` da reserva) |
 | `FLEXSCAN_WEBHOOK_INCOERENTE` "conta 4582351, esperada D-4582351" | a Flexscan escreve a conta sem o `D-` no webhook (a consulta devolve com o `D-`); todo webhook do 5725 seria descartado, com crítico | volta V1 depois do teste (nada vivo). A correção é no código (comparar a conta sem o prefixo de rota), numa versão, sem improvisar |
 | nenhum WEBHOOK e um `FLEXSCAN_WEBHOOK_ATRASADO` depois de 5 s | o webhook não chegou: o proxy barrou (403) ou não repassou | no host do proxy: `sudo grep 'webhook-real' /var/log/nginx/access.log \| tail -5 \| sed -E 's#(webhook-real-btg/)[A-Za-z0-9_-]+#\1(oculto)#'`. Se o IP de origem não for 177.71.196.212, é dado da FX-7 (perguntar à Flexscan antes de mudar o `allow`). Volta V1 depois do teste |
 | um WEBHOOK de outro IP | não pode, com o N1 | confira o N1 |
@@ -254,7 +319,14 @@ sleep 3; curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&li
   ```bash
   sudo cp -a $F.antes-webhook-$D $F && sudo systemctl restart kalman-ordens
   ```
-  Isso põe o segredo vazado de volta. Por isso o E7 só roda depois do E6 ok.
+  Isso põe o segredo vazado de volta (e a `PRECOS_SAUDE_URL`). Por isso o E7 só roda depois do E6 ok.
+- **V2, só a `PRECOS_SAUDE_URL` de volta** (não deve ser preciso; ela só muda texto). A linha
+  anotada no E0, no fim do env, e um restart depois da zeragem:
+  ```bash
+  echo 'PRECOS_SAUDE_URL=http://127.0.0.1:9096/saude' | sudo tee -a $F > /dev/null
+  sudo systemctl restart kalman-ordens
+  ```
+  As voltas V0 e V1 não precisam dela: a V0 já a tem, e a V1 continua sem, de propósito.
 
 ## 6. Os comandos do George
 
@@ -262,9 +334,11 @@ sleep 3; curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&li
 |---|---|---|---|
 | C1–C3 | proxy / .53 | **feitas em 24/11** | sem exposição imediata (§1) |
 | F1 | .53 | opcional, fora do pregão | a 9098 só para o IP interno do proxy |
-| N1 | host do proxy | dia D | a location do REAL com `allow 177.71.196.212; deny all;` |
-| E1–E4 | .53 | dia D | as cópias, o segredo novo, as conferências, o diff |
-| E5 | .53 | dia D, depois da zeragem, até 17:55 | o `cp` e o restart |
-| E7 | .53 | dia D, depois do E6 ok | a procura e a limpeza do segredo vazado |
-| T1, T3 | .53 (sem sudo) | dia D+1, 09:00 | a boleta e o cancelamento |
-| V0 / V1 + N2 | .53 / proxy | se der problema | a volta |
+| N1 | host do proxy | 27/11 | a location do REAL com `allow 177.71.196.212; deny all;` |
+| E0 | .53 | 27/11 | a `PRECOS_SAUDE_URL` de hoje (anotar) |
+| E1–E3, E3b, E4 | .53 | 27/11 | as cópias, o segredo novo, a `PRECOS_SAUDE_URL` fora (§2.4), as conferências, os dois diffs |
+| E5 | .53 | 27/11, depois da zeragem, até 17:55 | o `cp` e o restart |
+| E7 | .53 | 27/11, depois do E6 ok | a procura e a limpeza do segredo vazado |
+| — | .53 (sem sudo) | 30/11, 08:02 | a abertura (§4.0); o 5725 com o envio desligado até o fim do T3 |
+| T1, T3 | .53 (sem sudo) | 30/11, 09:00 | a boleta e o cancelamento |
+| V0 / V1 + N2 / V2 | .53 / proxy | se der problema | a volta |
