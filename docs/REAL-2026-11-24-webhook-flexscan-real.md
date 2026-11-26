@@ -1,8 +1,10 @@
 # Webhook da Flexscan no REAL (BTG): o segredo novo, a rota no nginx e o teste
 
 Preparado em 24/11. **Revisto em 26/11 para o dia D = 27/11** (decisão do George: o webhook REAL liga
-**antes** do HMAC, sem modo de assinatura; a `PRECOS_SAUDE_URL` sai no mesmo restart). **Não
-executado.** Os comandos com `sudo` são do George: **N** no host do proxy público, **F** e **E** na .53,
+**antes** do HMAC, sem modo de assinatura; a `PRECOS_SAUDE_URL` sai no mesmo restart). **Executado
+antes, em 26/11 (D=2611), com o E5 às 15:25:48; T1–T3 em 27/11 às 09:00. O registro está no §7**: onde o
+texto diz 27/11, leia 26/11; onde diz 30/11, leia 27/11.
+Os comandos com `sudo` são do George: **N** no host do proxy público, **F** e **E** na .53,
 **V** a volta; a lista está no §6. Todo comando que mostra o `service.env` termina no filtro de
 segredos, **aqui com `WEBHOOK_URL` a mais**, porque a URL do webhook carrega o segredo (§2.3).
 
@@ -259,7 +261,9 @@ sudo $W procura $F.antes-webhook-$D REAL_FLEXSCAN_BTG_WEBHOOK_SEGREDO /etc /opt 
 ### 4.0 A abertura, 08:02 (sem sudo)
 O primeiro recadastro do REAL depois da limpeza da madrugada. O 5725 continua com o envio desligado.
 ```bash
-curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&limite=10" | jq -r '.mensagens[] | "\(.em) \(.tipo) \(.status_http) \(.resumo)"' | head -5
+# o /flexscan/trafego devolve as mais antigas primeiro: limite=200 e filtro pela hora (não head/tail com limite=10)
+H=$(date +%F)T
+curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&limite=200" | jq -r --arg h "${H}08:00" '.mensagens[] | select(.em >= $h) | "\(.em) \(.tipo) \(.status_http) \(.resumo)"' | head -8
 #   08:02 LOGIN OK; WEBHOOK_CADASTRO conferencia: ausente → recadastro → presente (a Flexscan limpou de madrugada)
 journalctl -u kalman-ordens --since '08:00' --no-pager | grep -E 'ALERTA' | cut -c1-200
 #   FLEXSCAN_ABERTURA "webhook recadastrado" (aviso, como o do SIMULADOR todo dia); nenhum FLEXSCAN_WEBHOOK_AUSENTE
@@ -280,7 +284,8 @@ OP=<operacao_id da resposta>
 
 **T2 (uns 10 s depois):**
 ```bash
-curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&limite=10" | jq -r '.mensagens[] | "\(.em) \(.tipo) \(.status_http) \(.ip // "-") \(.resumo)"' | tail -4
+H=$(date +%F)T
+curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&limite=200" | jq -r --arg h "${H}09:00" '.mensagens[] | select(.em >= $h) | "\(.em) \(.tipo) \(.status_http) \(.ip // "-") \(.resumo)"'
 #   POST 202; WEBHOOK 200 177.71.196.212 "1 retrato(s): KM-BOLETA-E-<op>-1 VIVA exec 0/1 limite $P ..." até ~1–2 s depois do POST
 journalctl -u kalman-ordens --since '09:00' --no-pager | grep -E 'ALERTA|webhook' | cut -c1-220
 #   nenhum FLEXSCAN_WEBHOOK_INCOERENTE, _ATRASADO, _SEM_CHEGAR
@@ -291,7 +296,7 @@ curl -s 127.0.0.1:9092/saude | jq -c '.ambientes.REAL.flexscan_corretoras.BTG | 
 **T3:** o cancelamento.
 ```bash
 $K boleta cancelar -op $OP -por 5725 -motivo "webhook REAL D+1: fim"
-sleep 3; curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&limite=10" | jq -r '.mensagens[] | "\(.em) \(.tipo) \(.status_http) \(.ip // "-") \(.resumo)"' | tail -3
+sleep 3; curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&limite=200" | jq -r --arg h "${H}09:00" '.mensagens[] | select(.em >= $h) | "\(.em) \(.tipo) \(.status_http) \(.ip // "-") \(.resumo)"' | tail -4
 #   DELETE 202; WEBHOOK 200 177.71.196.212 "... CANCELADA ..."; a operação ENCERRADA_SEM_ENTRADA (confira no Profit)
 ```
 
@@ -315,7 +320,8 @@ sleep 3; curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&li
 - **Só o N2, no meio do pregão** (sem restart): se os alertas de webhook virarem barulho. Os webhooks
   param na hora. Como a URL continua no env, vêm `FLEXSCAN_WEBHOOK_ATRASADO` e, depois de 3 faltas,
   `FLEXSCAN_WEBHOOK_SEM_CHEGAR` (crítico, mas não bloqueia nada). O V1 vem depois da zeragem.
-- **V0, o serviço não subiu no E5:**
+- **V0, o serviço não subiu no E5** (**não existe mais desde 26/11**: o `antes-webhook-2611` foi apagado
+  no E7, depois do E6 ok; §7):
   ```bash
   sudo cp -a $F.antes-webhook-$D $F && sudo systemctl restart kalman-ordens
   ```
@@ -342,3 +348,27 @@ sleep 3; curl -s "127.0.0.1:9092/flexscan/trafego?ambiente=REAL&corretora=BTG&li
 | — | .53 (sem sudo) | 30/11, 08:02 | a abertura (§4.0); o 5725 com o envio desligado até o fim do T3 |
 | T1, T3 | .53 (sem sudo) | 30/11, 09:00 | a boleta e o cancelamento |
 | V0 / V1 + N2 / V2 | .53 / proxy | se der problema | a volta |
+
+## 7. Registro da execução (26/11, D=2611)
+
+Executado pelo George em 26/11, à tarde, com a v1.36.5 instalada (`7a0e7f419bf2`).
+- **N1:** no `souquant.com.br` (`conf.d/souquant.com.br.conf`), a `location ^~ .../webhook-real-btg/`
+  depois da do SIMULADOR, com `access_log off`, `allow 177.71.196.212` e `deny all`. Cópia de antes em
+  `/root/souquant.com.br.conf.antes-webhook-real-2611`. `nginx -t` ok; GET 200; POST de fora 403.
+- **E0:** `PRECOS_SAUDE_URL=http://127.0.0.1:9096/saude`, linha 83 (é a que o V2 devolve).
+- **E1–E4 ok:** `compara` diferentes / diferentes / iguais; `confere-url` sim / vazia; os dois diffs só
+  com o esperado. **E3b:** 0.
+- **E5 às 15:25:48. E6 ok:**
+  - REAL BTG logado; receptor, `webhook_esperado` e `webhook_cadastrado` true; faltas 0;
+  - tráfego às 15:25:48: conferência ausente → recadastro (`order.all,algo.changed`) → presente;
+  - um `FLEXSCAN_WEBHOOK_AUSENTE` "recadastrado" (WARN) na primeira conferência, como esperado;
+  - SIMULADOR cadastrado; REAL `criticos {}`, posição 0, canais `NO_AR`;
+  - `PRECOS_SAUDE_URL` 0 no env; `NRestarts=0`.
+- **E7:** o segredo vazado só estava em 14 cópias em `/etc/kalman-ordens`; todas apagadas, inclusive o
+  `service.env.antes-webhook-2611`. **A volta V0 deixou de existir.** Ficaram o
+  `service.env.webhook-2611` e o `service.env.webhook-sem-url-2611` (a volta V1), e as cópias antigas,
+  sem o vazado.
+- **Nota para o §4:** o `/flexscan/trafego` devolve as mensagens mais antigas primeiro. Com `limite=10`,
+  o `head`/`tail` mostra a manhã. O §4 já usa `limite=200` e o filtro pela hora.
+- **O que falta:** 27/11, a abertura às 08:02 (§4.0) e T1–T3 às 09:00 (§4.1). O 5725 fica com o envio
+  REAL desligado até o fim do T3.
