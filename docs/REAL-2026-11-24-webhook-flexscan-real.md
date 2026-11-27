@@ -372,3 +372,14 @@ Executado pelo George em 26/11, à tarde, com a v1.36.5 instalada (`7a0e7f419bf2
   o `head`/`tail` mostra a manhã. O §4 já usa `limite=200` e o filtro pela hora.
 - **O que falta:** 27/11, a abertura às 08:02 (§4.0) e T1–T3 às 09:00 (§4.1). O 5725 fica com o envio
   REAL desligado até o fim do T3.
+
+**27/11, a abertura e T1–T3 (George): concluídos.**
+- **08:02:** recadastro no REAL e no SIMULADOR; conferência presente às 08:30; o `/saude` do REAL limpo,
+  na v1.36.5.
+- **T1–T3:** a boleta 1127090757 (5725, D-4582351, C 1 WINZ26 lim 183000):
+  - POST às 09:08:00.978, e o WEBHOOK de 177.71.196.212 às 09:08:01.965 (VIVA 0/1);
+  - DELETE às 09:09:23.600, e o WEBHOOK às 09:09:23.986 (CANCELADA 0/1).
+- Nenhum `FLEXSCAN_WEBHOOK_INCOERENTE`: a conta D- foi reconhecida. O único alerta foi o `BOLETA_REAL`.
+- **Resultado:** a linha "sucesso" do §4.1. A stop executada pelo webhook se prova na primeira saída de
+  verdade do 5725.
+
